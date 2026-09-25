@@ -2,8 +2,6 @@
 
 ## Git commits
 
-This is a solo project: commit and push directly to `main`. Don't create feature branches or pull requests unless asked.
-
 Do not add Claude as a co-author. Leave `Co-Authored-By: Claude ...` trailers (and any other Claude co-author attribution) out of commit messages.
 
 ## Agent skills
