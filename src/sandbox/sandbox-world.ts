@@ -37,6 +37,8 @@ export interface ObjectView {
   /** Convex collider pieces relative to the body's origin. */
   readonly pieces: readonly Polygon[];
   readonly transform: Transform;
+  /** Linear velocity, px/s. */
+  readonly velocity: Vec2;
   readonly frozen: boolean;
 }
 
@@ -129,6 +131,7 @@ export class SandboxWorld {
       outline: stroke.outline,
       pieces: stroke.pieces,
       transform: this.physics.getTransform(stroke.body),
+      velocity: this.physics.getVelocity(stroke.body),
       frozen: this.physics.isFrozen(stroke.body),
     };
   }
@@ -185,11 +188,22 @@ export class SandboxWorld {
       const stroke = this.strokes[i]!;
       if (stroke.kind !== 'object' || !this.physics.isFrozen(stroke.body)) continue;
       const outline = transformPoints(stroke.outline, this.physics.getTransform(stroke.body));
-      if (!polygonContainsPoint(outline, point)) continue;
-      this.physics.release(stroke.body);
-      return true;
+      if (polygonContainsPoint(outline, point)) return this.release(stroke.id);
     }
     return false;
+  }
+
+  /**
+   * Releases a Frozen Object, optionally setting it moving (the stress tests
+   * launch balls this way). Only while physics is running.
+   */
+  release(id: StrokeId, velocity?: Vec2): boolean {
+    if (!this.running) return false;
+    const stroke = this.strokes.find((s) => s.id === id);
+    if (stroke?.kind !== 'object' || !this.physics.isFrozen(stroke.body)) return false;
+    this.physics.release(stroke.body);
+    if (velocity) this.physics.setVelocity(stroke.body, velocity);
+    return true;
   }
 
   /** Removes the most recent Stroke. */

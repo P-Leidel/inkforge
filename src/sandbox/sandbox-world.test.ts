@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { polygonContainsPoint } from '../geometry/polygon';
+import { polygonArea, polygonContainsPoint } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import { dragAlong, dragBox, dragCircle } from '../stroke/pointer-paths';
 import { SandboxWorld } from './sandbox-world';
@@ -322,5 +322,94 @@ describe('Sandbox world: Objects', () => {
     world.clear();
     expect(world.objects).toHaveLength(0);
     expect(world.bodyCount).toBe(1);
+  });
+});
+
+describe('Sandbox world: Frozen Objects wake on hits', () => {
+  /** A Frozen 60 × 60 box in mid-air and a ball of radius 15 just left of it. */
+  function boxAndBall(gap: number) {
+    const world = createWorld();
+    const box = drawObject(world, dragBox(600, 400, 60, 60));
+    const ball = drawObject(world, dragCircle({ x: 600 - gap - 15, y: 430 }, 15));
+    world.togglePause();
+    return { world, box, ball };
+  }
+
+  it('wakes when a moving body hits it faster than the wake speed', () => {
+    const { world, box, ball } = boxAndBall(5);
+    world.release(ball, { x: 300, y: 0 });
+
+    runFor(world, 0.2);
+
+    expect(objectById(world, box).frozen).toBe(false);
+  });
+
+  it('stays Frozen when touched more slowly than the wake speed', () => {
+    const { world, box, ball } = boxAndBall(5);
+    world.release(ball, { x: 100, y: 0 });
+
+    runFor(world, 0.2);
+
+    expect(objectById(world, box).frozen).toBe(true);
+  });
+
+  it('moves the woken Object in the direction of the hit, sharing momentum as if it had been free', () => {
+    const { world, box, ball } = boxAndBall(100);
+    const speed = 600;
+    world.release(ball, { x: speed, y: 0 });
+
+    runFor(world, 0.3);
+
+    const b = objectById(world, box);
+    const c = objectById(world, ball);
+    expect(b.frozen).toBe(false);
+    expect(b.velocity.x).toBeGreaterThan(0);
+    // The ball carries on forwards rather than stopping dead as at a wall.
+    expect(c.velocity.x).toBeGreaterThan(0);
+    // Uniform density: mass is proportional to area. Momentum is conserved.
+    const massBall = polygonArea(c.outline);
+    const massBox = polygonArea(b.outline);
+    const after = massBall * c.velocity.x + massBox * b.velocity.x;
+    expect(after / (massBall * speed)).toBeCloseTo(1, 1);
+  });
+
+  it('stays Frozen under resting contact', () => {
+    const world = createWorld();
+    const box = drawObject(world, dragBox(320, 520, 160, 160));
+    const ball = drawObject(world, dragCircle({ x: 400, y: 500 }, 15)); // 5 px above the box
+    world.togglePause();
+    world.release(ball);
+
+    runFor(world, 2);
+
+    expect(objectById(world, box).frozen).toBe(true);
+  });
+
+  it('is never woken by Terrain or a Line it touches', () => {
+    const world = createWorld();
+    world.submitStroke(
+      dragAlong([
+        { x: 600, y: 500 },
+        { x: 900, y: 500 },
+      ]),
+    );
+    const onGround = drawObject(world, dragBox(200, 820, 60, 60));
+    const onLine = drawObject(world, dragBox(700, 436, 60, 60)); // bottom touches the Line's top
+
+    runFor(world, 2);
+
+    expect(objectById(world, onGround).frozen).toBe(true);
+    expect(objectById(world, onLine).frozen).toBe(true);
+  });
+
+  it('keeps Frozen Objects that touch each other Frozen', () => {
+    const world = createWorld();
+    const upper = drawObject(world, dragBox(400, 300, 60, 60));
+    const lower = drawObject(world, dragBox(400, 360, 60, 60));
+
+    runFor(world, 2);
+
+    expect(objectById(world, upper).frozen).toBe(true);
+    expect(objectById(world, lower).frozen).toBe(true);
   });
 });
