@@ -187,6 +187,8 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   export function b2Shape_GetBody(shapeId: b2ShapeId): b2BodyId;
   export function b2Shape_GetRestitution(shapeId: b2ShapeId): number;
   export function b2Shape_SetDensity(shapeId: b2ShapeId, density: number): void;
+  export function b2Shape_SetFriction(shapeId: b2ShapeId, friction: number): void;
+  export function b2Shape_SetRestitution(shapeId: b2ShapeId, restitution: number): void;
   /** Fills `contactData` with the shape's touching contacts, up to `capacity`; returns how many. */
   export function b2Shape_GetContactData(
     shapeId: b2ShapeId,

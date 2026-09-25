@@ -19,6 +19,100 @@
         width: 100%;
         height: 100%;
       }
+      /* The F2 tuning panel (src/rendering/tuning-panel.ts). */
+      .tuning-panel {
+        position: fixed;
+        top: 8px;
+        right: 8px;
+        max-height: calc(100% - 16px);
+        overflow: auto;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: rgba(24, 27, 34, 0.94);
+        color: #e8e2d0;
+        font:
+          12px ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+        z-index: 10;
+      }
+      .tuning-panel[hidden] {
+        display: none;
+      }
+      .tuning-header {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .tuning-title {
+        font-weight: bold;
+        margin-right: auto;
+      }
+      .tuning-status {
+        color: #62d98b;
+        min-width: 7em;
+      }
+      .tuning-panel button {
+        font: inherit;
+        color: inherit;
+        background: #2c313b;
+        border: 1px solid #4f5666;
+        border-radius: 4px;
+        padding: 3px 8px;
+        cursor: pointer;
+      }
+      .tuning-grid {
+        border-collapse: collapse;
+        margin-bottom: 8px;
+      }
+      .tuning-grid th,
+      .tuning-grid td {
+        padding: 1px 3px;
+      }
+      .tuning-label {
+        text-align: left;
+        font-weight: normal;
+        color: #9aa0ad;
+        white-space: nowrap;
+      }
+      .tuning-colour {
+        border-radius: 3px;
+        color: #14161a;
+      }
+      .tuning-colour.grey {
+        background: #9d9a92;
+      }
+      .tuning-colour.blue {
+        background: #3b82f6;
+      }
+      .tuning-colour.green {
+        background: #44c05a;
+      }
+      .tuning-colour.black {
+        background: #131317;
+        color: #e8e2d0;
+      }
+      .tuning-colour.red {
+        background: #e5483b;
+      }
+      .tuning-panel input {
+        width: 6.5em;
+        font: inherit;
+        color: inherit;
+        background: #1d2027;
+        border: 1px solid #3b4250;
+        border-radius: 3px;
+        padding: 1px 3px;
+      }
+      .tuning-panel input.modified {
+        border-color: #f0c05a;
+      }
+      .tuning-panel input.invalid {
+        border-color: #ff5a5a;
+      }
     </style>
   </head>
   <body>

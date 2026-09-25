@@ -52,3 +52,26 @@ export function drawLine(world: SandboxWorld, path: Vec2[], colour: Colour = 'gr
   if (outcome.kind !== 'line') throw new Error(`expected a Line, got ${outcome.kind}`);
   return outcome.id;
 }
+
+/**
+ * Steps until the Object has landed and climbed back to the top of its
+ * first bounce; returns how high it climbed (px), 0 if it didn't bounce.
+ */
+export function reboundHeight(world: SandboxWorld, id: number): number {
+  if (!world.isRunning) world.togglePause();
+  let landedAt: number | null = null;
+  let apex = Infinity;
+  for (let step = 0; step < 300; step++) {
+    const falling = objectById(world, id).velocity.y > 0;
+    world.step();
+    const object = objectById(world, id);
+    if (landedAt === null) {
+      if (falling && object.velocity.y <= 0) landedAt = object.transform.y;
+      continue;
+    }
+    apex = Math.min(apex, object.transform.y);
+    if (object.velocity.y > 0) break;
+  }
+  if (landedAt === null) throw new Error('the Object never landed');
+  return Math.max(0, landedAt - apex);
+}

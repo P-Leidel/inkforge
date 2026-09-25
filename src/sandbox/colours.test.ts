@@ -3,32 +3,16 @@ import { add, scale, type Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
 import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
 import type { SandboxWorld } from './sandbox-world';
-import { drawLine, drawObject, objectById, runFor, sandboxWorlds } from './test-support';
+import {
+  drawLine,
+  drawObject,
+  objectById,
+  reboundHeight,
+  runFor,
+  sandboxWorlds,
+} from './test-support';
 
 const createWorld = sandboxWorlds();
-
-/**
- * Steps until the Object has landed and climbed back to the top of its
- * first bounce; returns how high it climbed (px), 0 if it didn't bounce.
- */
-function reboundHeight(world: SandboxWorld, id: number): number {
-  if (!world.isRunning) world.togglePause();
-  let landedAt: number | null = null;
-  let apex = Infinity;
-  for (let step = 0; step < 300; step++) {
-    const falling = objectById(world, id).velocity.y > 0;
-    world.step();
-    const object = objectById(world, id);
-    if (landedAt === null) {
-      if (falling && object.velocity.y <= 0) landedAt = object.transform.y;
-      continue;
-    }
-    apex = Math.min(apex, object.transform.y);
-    if (object.velocity.y > 0) break;
-  }
-  if (landedAt === null) throw new Error('the Object never landed');
-  return Math.max(0, landedAt - apex);
-}
 
 describe('Colours: Lines', () => {
   function bounceOffLine(colour: Colour): number {

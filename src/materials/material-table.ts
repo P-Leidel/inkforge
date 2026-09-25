@@ -36,7 +36,8 @@ export interface MaterialTable {
   colours: Record<Colour, ColourMaterial>;
   /**
    * Mass of 1 px² of ink at density 1. Set so that milestone 1's 60 px box,
-   * a hollow grey shell now, keeps its milestone 1 mass of 1.44.
+   * a hollow grey shell now, keeps its milestone 1 mass of 1.44:
+   * 1.44 / (4 × 60 px × 8 px).
    */
   inkMass: number;
   /** Contacts approaching slower than this (px/s) don't bounce, whatever their restitution. */
@@ -49,27 +50,38 @@ export interface MaterialTable {
   wakeSpeed: number;
 }
 
-/** Friction of the plain material (grey), and of Terrain. */
-const NORMAL_FRICTION = 0.6;
-
-/** A Colour whose Line and Outline share one surface, and whose Outline and Fill one density. */
-function material(friction: number, restitution: number, density: number): ColourMaterial {
-  return {
-    line: { friction, restitution },
-    outline: { friction, restitution, density },
-    fill: { density },
-  };
-}
-
+/**
+ * The starting values. The F2 tuning panel's "Copy as JSON" gives a table in
+ * this shape, to paste over it.
+ */
 export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   colours: {
-    grey: material(NORMAL_FRICTION, 0.1, 1),
-    blue: material(0.1, 0.9, 0.5),
-    green: material(NORMAL_FRICTION, 0, 1),
-    black: material(1, 0, 3),
-    red: material(NORMAL_FRICTION, 0.1, 1),
+    grey: {
+      line: { friction: 0.6, restitution: 0.1 },
+      outline: { friction: 0.6, restitution: 0.1, density: 1 },
+      fill: { density: 1 },
+    },
+    blue: {
+      line: { friction: 0.1, restitution: 0.9 },
+      outline: { friction: 0.1, restitution: 0.9, density: 0.5 },
+      fill: { density: 0.5 },
+    },
+    green: {
+      line: { friction: 0.6, restitution: 0 },
+      outline: { friction: 0.6, restitution: 0, density: 1 },
+      fill: { density: 1 },
+    },
+    black: {
+      line: { friction: 1, restitution: 0 },
+      outline: { friction: 1, restitution: 0, density: 3 },
+      fill: { density: 3 },
+    },
+    red: {
+      line: { friction: 0.6, restitution: 0.1 },
+      outline: { friction: 0.6, restitution: 0.1, density: 1 },
+      fill: { density: 1 },
+    },
   },
-  // 1.44 / (4 × 60 px × 8 px)
   inkMass: 0.00075,
   minBounceSpeed: 50,
   wakeSpeed: 82.5,
@@ -80,5 +92,5 @@ export function createMaterialTable(): MaterialTable {
   return structuredClone(DEFAULT_MATERIAL_TABLE);
 }
 
-/** Terrain is not ink: plain friction, no bounce. */
-export const TERRAIN_SURFACE: SurfaceMaterial = { friction: NORMAL_FRICTION, restitution: 0 };
+/** Terrain is not ink: grey's friction, no bounce. */
+export const TERRAIN_SURFACE: SurfaceMaterial = { friction: 0.6, restitution: 0 };

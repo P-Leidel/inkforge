@@ -95,6 +95,13 @@ export interface PhysicsWorld {
    */
   slideOut(id: BodyId, displacement: Vec2, speed: number): void;
 
+  /** Changes the surface of all of a body's shapes from the next step. It stays through rebuilds. */
+  setSurface(id: BodyId, surface: Surface): void;
+  /** Changes `wakeSpeed` from the next step. */
+  setWakeSpeed(speed: number): void;
+  /** Changes `minBounceSpeed` from the next step. */
+  setMinBounceSpeed(speed: number): void;
+
   /** An Object's mass. */
   getMass(id: BodyId): number;
   /** Sets an Object's mass, spread evenly over its shape. Never wakes a Frozen Object. */

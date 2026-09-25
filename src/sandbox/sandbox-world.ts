@@ -5,7 +5,7 @@ import type { Segment } from '../geometry/segment';
 import { transformPoints, type Transform } from '../geometry/transform';
 import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import { objectMass } from '../materials/mass';
+import { fillMass, outlineMass } from '../materials/mass';
 import {
   createMaterialTable,
   TERRAIN_SURFACE,
@@ -93,8 +93,10 @@ interface ObjectStroke {
   readonly outline: Polygon;
   readonly parts: readonly Polygon[];
   fill: Colour | null;
-  /** Set when it is drawn or filled, from the densities of the time. */
-  mass: number;
+  /** Its Outline's mass, set when it was drawn from the densities of the time. */
+  readonly outlineMass: number;
+  /** Its Fill's mass, set when it was filled. */
+  fillMass: number;
 }
 
 type Stroke = LineStroke | ObjectStroke;
@@ -144,6 +146,8 @@ export class SandboxWorld {
   private readonly physics: PhysicsWorld;
   /** Taken whenever physics starts; R returns to it. */
   private snapshot: Snapshot | null = null;
+  /** The material table as it was last applied to the physics world. */
+  private appliedMaterials = '';
   /** Strokes in the order they were drawn. */
   private strokes: Stroke[] = [];
   /** Strokes and Fills in the order they were made, for undo. */
@@ -237,7 +241,7 @@ export class SandboxWorld {
         const local = (polygon: Polygon) => polygon.map((p) => sub(p, origin));
         const outline = local(result.outline);
         const parts = result.parts.map(local);
-        const mass = objectMass(outline, colour, null, this.materials);
+        const mass = outlineMass(outline, colour, this.materials);
         const body = this.physics.addObject({
           position: origin,
           parts,
@@ -245,7 +249,17 @@ export class SandboxWorld {
           surface: material.outline,
           mass,
         });
-        this.strokes.push({ kind: 'object', id, colour, body, outline, parts, fill: null, mass });
+        this.strokes.push({
+          kind: 'object',
+          id,
+          colour,
+          body,
+          outline,
+          parts,
+          fill: null,
+          outlineMass: mass,
+          fillMass: 0,
+        });
         this.history.push({ kind: 'stroke', id });
         this.releaseObjectsUnderLines();
         return { kind: 'object', id };
@@ -356,8 +370,8 @@ export class SandboxWorld {
 
   private setFill(object: ObjectStroke, fill: Colour | null): void {
     object.fill = fill;
-    object.mass = objectMass(object.outline, object.colour, fill, this.materials);
-    this.physics.setMass(object.body, object.mass);
+    object.fillMass = fillMass(object.outline, fill, this.materials);
+    this.physics.setMass(object.body, object.outlineMass + object.fillMass);
   }
 
   /**
@@ -459,6 +473,25 @@ export class SandboxWorld {
     };
   }
 
+  /**
+   * Applies edits to the material table from the next step. Densities are
+   * left out: an Object's mass is set when it is drawn or filled.
+   */
+  private applyMaterials(): void {
+    const materials = JSON.stringify(this.materials);
+    if (materials === this.appliedMaterials) return;
+    this.appliedMaterials = materials;
+    this.physics.setWakeSpeed(this.materials.wakeSpeed);
+    this.physics.setMinBounceSpeed(this.materials.minBounceSpeed);
+    for (const stroke of this.strokes) {
+      const material = this.materials.colours[stroke.colour];
+      this.physics.setSurface(
+        stroke.body,
+        stroke.kind === 'line' ? material.line : material.outline,
+      );
+    }
+  }
+
   /** Rebuilds the physics world from a snapshot's Strokes, from a fresh engine state. */
   private rebuild(snapshot: Snapshot): void {
     this.physics.reset();
@@ -478,7 +511,7 @@ export class SandboxWorld {
         parts: object.parts,
         frozen: motion.frozen || motion.slide !== null,
         surface: material.outline,
-        mass: object.mass,
+        mass: object.outlineMass + object.fillMass,
         velocity: motion.velocity,
         angularVelocity: motion.angularVelocity,
       });
@@ -490,6 +523,7 @@ export class SandboxWorld {
   /** Advances physics by one fixed step, if running. */
   step(): void {
     if (!this.running) return;
+    this.applyMaterials();
     this.physics.step();
     this.elapsed += STEP_SECONDS;
   }

@@ -35,9 +35,12 @@ import {
   b2Shape_GetContactData,
   b2Shape_GetRestitution,
   b2Shape_SetDensity,
+  b2Shape_SetFriction,
+  b2Shape_SetRestitution,
   b2Vec2,
   b2World_GetContactEvents,
   b2World_IsValid,
+  b2World_SetRestitutionThreshold,
   b2World_Step,
   type b2BodyId,
   type b2Polygon,
@@ -91,7 +94,7 @@ interface BodyRecord {
   /** An Object's convex parts in body coordinates, to rebuild it on Release. */
   readonly parts: readonly Polygon[];
   /** The surface of its shapes, kept when it is rebuilt. */
-  readonly surface: Surface;
+  surface: Surface;
   /** Mass per m², the same over all shapes; kept when it is rebuilt. */
   density: number;
   readonly unit: UnitMass;
@@ -137,7 +140,11 @@ interface Slide {
   readonly velocity: b2Vec2;
 }
 
-export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWorld {
+export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): PhysicsWorld {
+  /** The options, some of which can be changed while the world runs. */
+  const options: { -readonly [K in keyof PhysicsWorldOptions]: PhysicsWorldOptions[K] } = {
+    ...initialOptions,
+  };
   let worldId = createB2World(options);
   const bodies = new Map<BodyId, BodyRecord>();
   /** Objects sliding out of Lines. */
@@ -551,6 +558,26 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       if (!slide) return null;
       const t = Math.max(0, slide.remaining);
       return { x: toPx(slide.velocity.x * t), y: toPx(slide.velocity.y * t) };
+    },
+
+    setSurface(id, surface) {
+      const rec = record(id);
+      rec.surface = surface;
+      const shapes: b2ShapeId[] = [];
+      const count = b2Body_GetShapes(rec.b2Id, shapes);
+      for (let i = 0; i < count; i++) {
+        b2Shape_SetFriction(shapes[i]!, surface.friction);
+        b2Shape_SetRestitution(shapes[i]!, surface.restitution);
+      }
+    },
+
+    setWakeSpeed(speed) {
+      options.wakeSpeed = speed;
+    },
+
+    setMinBounceSpeed(speed) {
+      options.minBounceSpeed = speed;
+      b2World_SetRestitutionThreshold(worldId, toM(speed));
     },
 
     getMass(id) {

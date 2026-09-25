@@ -8,6 +8,7 @@ import { Hud } from '../rendering/hud';
 import { PaletteBar } from '../rendering/palette-bar';
 import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../rendering/toolbar';
+import { TuningPanel } from '../rendering/tuning-panel';
 import { WorldRenderer } from '../rendering/world-renderer';
 import { SandboxWorld } from '../sandbox/sandbox-world';
 import { BallCannon } from '../stress-tests/ball-cannon';
@@ -36,6 +37,7 @@ export class SandboxScene extends Phaser.Scene {
   private hud!: Hud;
   private preview!: StrokePreview;
   private palette!: PaletteBar;
+  private tuning!: TuningPanel;
   /** The Colour new Strokes are drawn in. */
   private colour: Colour = 'grey';
   /** Whether the pointer is over the game canvas. */
@@ -54,7 +56,11 @@ export class SandboxScene extends Phaser.Scene {
 
   create(): void {
     this.world = new SandboxWorld();
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.world.dispose());
+    this.tuning = new TuningPanel(this.world.materials);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.tuning.destroy();
+      this.world.dispose();
+    });
 
     this.worldView = new WorldRenderer(this, this.world);
     this.preview = new StrokePreview(this);
@@ -99,6 +105,7 @@ export class SandboxScene extends Phaser.Scene {
       .addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
       .on('down', () => this.world.togglePause());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.toggle());
+    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F2).on('down', () => this.tuning.toggle());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R).on('down', () => this.world.reset());
     keyboard.on('keydown-Z', (event: KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
