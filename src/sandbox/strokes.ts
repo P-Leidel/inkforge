@@ -11,7 +11,8 @@ import type { BodyId, PhysicsWorld } from '../physics';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
 import type { Arena } from './arena';
 import { motionOf, type Kind, type Motion, type Solids } from './arena-contents';
-import { durabilityLeft, wear, type Breakable, type Party } from './material-rules';
+import type { PartyId, PartyIndex } from './contact-ledger';
+import { durabilityLeft, wear, type Breakable } from './material-rules';
 
 /** Speed (px/s) at which a Line squeezes an Object off itself; Box2D's push-out cap. */
 export const SLIDE_OUT_SPEED = 250;
@@ -89,12 +90,16 @@ export interface Piece extends Breakable {
   readonly index: number;
   readonly role: 'line';
   readonly segments: readonly Segment[];
+  /** Its Party id, the same after a rebuild. */
+  readonly party: PartyId;
   readonly body: BodyId;
 }
 
 interface LineStroke {
   readonly kind: 'line';
   readonly id: StrokeId;
+  /** Its Party id. It has no body, but each of its Pieces' Parties carries it as their Stroke. */
+  readonly party: PartyId;
   readonly colour: Colour;
   readonly thickness: number;
   /** The Pieces still there, in order; broken ones are gone. */
@@ -105,6 +110,8 @@ export interface ObjectStroke extends Breakable {
   readonly kind: 'object';
   readonly id: StrokeId;
   readonly role: 'outline';
+  /** Its Party id, the same after a rebuild. */
+  readonly party: PartyId;
   readonly body: BodyId;
   readonly outline: Polygon;
   readonly parts: readonly Polygon[];
@@ -171,22 +178,23 @@ export interface Broken {
 /**
  * The Strokes: Lines with their Pieces, Objects with their Fills, the undo
  * history, the squeeze, and breaking Objects and Pieces. Stroke ids are
- * never reused, not even after R or Clear.
+ * never reused, not even after R or Clear. Each Object and each Piece is a
+ * Party to the Contact ledger; each Line has a Party id too, which its
+ * Pieces' Parties carry as their Stroke.
  */
-export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews, StrokeTarget> {
+export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   readonly name = 'strokes';
   /** In the order they were drawn. */
   private strokes: Stroke[] = [];
   /** Strokes and Fills in the order they were made, for undo. */
   private history: Action[] = [];
   private nextId = 1;
-  /** The Object or Piece each body is. */
-  private targets = new Map<BodyId, StrokeTarget>();
 
   constructor(
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
     private readonly arena: Arena,
+    private readonly contacts: PartyIndex<StrokeTarget>,
   ) {}
 
   get views(): StrokeViews {
@@ -237,6 +245,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews, Strok
     const id = this.nextId++;
     if (result.kind === 'line') {
       const { thickness } = result;
+      const party = this.contacts.newId();
       const pieces = result.pieces.map((segments, index) =>
         this.addPiece(
           {
@@ -246,13 +255,15 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews, Strok
             colour,
             role: 'line',
             segments,
+            party: this.contacts.newId(),
             damage: 0,
             impacts: 0,
           },
           thickness,
+          party,
         ),
       );
-      const line: LineStroke = { kind: 'line', id, colour, thickness, pieces };
+      const line: LineStroke = { kind: 'line', id, party, colour, thickness, pieces };
       this.strokes.push(line);
       this.history.push({ kind: 'stroke', id });
       if (running) this.squeeze(this.objectStrokes(), [line]);
@@ -276,6 +287,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews, Strok
       id,
       colour,
       role: 'outline',
+      party: this.contacts.newId(),
       body,
       outline,
       parts,
@@ -285,19 +297,24 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews, Strok
       damage: 0,
       impacts: 0,
     };
-    this.targets.set(body, object);
+    this.registerObject(object);
     this.strokes.push(object);
     this.history.push({ kind: 'stroke', id });
     if (running) this.squeeze([object], this.lineStrokes());
     return id;
   }
 
-  /** Adds a Piece's fixed body to the physics world. */
-  private addPiece(saved: SavedPiece, thickness: number): Piece {
+  /** Adds a Piece's fixed body to the physics world. Its Party's Stroke is its Line's, `line`. */
+  private addPiece(saved: SavedPiece, thickness: number, line: PartyId): Piece {
     const material = this.materials.colours[saved.colour].line;
     const piece = { ...saved, body: this.physics.addLine(saved.segments, thickness, material) };
-    this.targets.set(piece.body, piece);
+    this.contacts.register({ id: piece.party, stroke: line, body: piece.body, target: piece });
     return piece;
+  }
+
+  private registerObject(object: ObjectStroke): void {
+    const { party, body } = object;
+    this.contacts.register({ id: party, stroke: party, body, target: object });
   }
 
   /** Every body a Stroke has: an Object's one, or one per Piece still there. */
@@ -307,7 +324,13 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews, Strok
 
   private removeBody(body: BodyId): void {
     this.physics.removeBody(body);
-    this.targets.delete(body);
+    this.contacts.unregister(body);
+  }
+
+  /** Slides an Object `move` off the Lines; it is Squeezed until it arrives. */
+  private slideOut(body: BodyId, move: Vec2): void {
+    this.physics.slideOut(body, move, SLIDE_OUT_SPEED);
+    this.contacts.squeezed(body);
   }
 
   private objectStrokes(): ObjectStroke[] {
@@ -362,7 +385,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews, Strok
         crossing.map((c) => capsulePolygon(c.segment, c.radius)),
         [...this.arena.terrain, ...others, ...clearOf],
       );
-      if (move) this.physics.slideOut(object.body, move, SLIDE_OUT_SPEED);
+      if (move) this.slideOut(object.body, move);
       else this.physics.release(object.body);
     }
   }
@@ -500,12 +523,13 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews, Strok
 
   /** Adds the Strokes again in the order they were drawn, each Line's Pieces in order. */
   restore(saved: SavedStrokes): void {
-    this.targets = new Map();
     this.strokes = saved.strokes.map((stroke): Stroke => {
       if (stroke.kind === 'line') {
         return {
           ...stroke,
-          pieces: stroke.pieces.map((piece) => this.addPiece(piece, stroke.thickness)),
+          pieces: stroke.pieces.map((piece) =>
+            this.addPiece(piece, stroke.thickness, stroke.party),
+          ),
         };
       }
       const { motion, ...object } = stroke;
@@ -519,9 +543,9 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews, Strok
         velocity: motion.velocity,
         angularVelocity: motion.angularVelocity,
       });
-      if (motion.slide) this.physics.slideOut(body, motion.slide, SLIDE_OUT_SPEED);
       const restored: ObjectStroke = { ...object, body };
-      this.targets.set(body, restored);
+      this.registerObject(restored);
+      if (motion.slide) this.slideOut(body, motion.slide);
       return restored;
     });
     this.history = [...saved.history];
@@ -535,24 +559,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews, Strok
     }
     this.strokes = [];
     this.history = [];
-  }
-
-  partyOf(body: BodyId): Party<StrokeTarget> | null {
-    const target = this.targets.get(body);
-    if (!target) return null;
-    // Keys stay the same across a rebuild, and Stroke ids are never reused.
-    return target.kind === 'piece'
-      ? {
-          key: `stroke ${target.lineId} piece ${target.index}`,
-          stroke: `stroke ${target.lineId}`,
-          target,
-          sliding: false,
-        }
-      : {
-          key: `stroke ${target.id}`,
-          target,
-          sliding: this.physics.getSlide(body) !== null,
-        };
   }
 
   /** Objects are solid; Lines aren't (an Object drawn over one is squeezed off it). */

@@ -15,12 +15,12 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
 - **Arena contents** (#24). Each kind is a module behind `Kind` (`src/sandbox/arena-contents.ts`), and the Sandbox world runs its list of kinds in order. See README, "Patterns the slices follow".
 - **Fill release** (#16) is `releaseFill(fill)` in `sandbox-world.ts`, handed the `ReleasedFill` (Colour, mass, local Outline, and the Object's pose and motion) that `strokes.break` reports for a broken Object. It puts out Rubble for grey and black Fills; blue and green Fills still give only Debris. The Fill kick is in the table: `kickSpeed` per Fill Colour (blue 400 and green 300 px/s, already the fastest; grey and black 200) and the shared `kickSpread` (0.35 rad either side). `launchRubble` in `src/sandbox/rubble.ts` applies it to any list of centres inside the Outline, so Droplets can reuse it.
 - **`addCircle(def: CircleBodyDef)`** (#16) makes dynamic circle bodies with hit events on, a `Placement`, and an angular damping so they roll to a stop. Add the Droplet options as optional fields of `CircleBodyDef`.
-- **The Contact ledger** (#27, `src/sandbox/contact-ledger.ts`) gives every rule its contacts. Each step it gives, in the engine's report order:
-  - hits, with their Parties and shapes;
-  - new contacts, with the first shape pair;
-  - what touches each Party, with the shape pairs of each touching entry.
+- **The Contact ledger** (#27, `ContactLedger` in `src/sandbox/contact-ledger.ts`, the Sandbox world's `contacts`) gives every rule its contacts. Each step it gives, in the engine's report order:
+  - `hits`: `{ a, b, hit }`, two Parties and the `ContactHit` with its shapes;
+  - `newContacts`: `{ a, b, pair }`, two Parties that didn't touch as the step began and do at its end, with the shape pair that made them touch;
+  - `touching(body)`: `{ party, pairs }` for each other Party touching that body's Party, with the shape pairs between them.
 
-  It has already dropped Settled pairs (`CONTEXT.md`) from hits and new contacts, and Squeezed Objects from everything. Parties have numeric ids that are never reused and stay the same through a rebuild. Each kind registers its bodies' Parties with the ledger as it adds them, and unregisters them as it removes them.
+  It has already dropped Settled pairs (`CONTEXT.md`) from hits and new contacts, and Squeezed Objects from everything. A Party (`Party<T>`: `id`, `stroke`, `body`, `target`) has a numeric id that is never reused and stays the same through a rebuild; each record keeps it as `party`. Each kind gets the ledger's `PartyIndex` when it is constructed, registers its bodies' Parties as it adds them (`newId`, `register`), and unregisters them as it removes them (`unregister`).
 - **Glue drag** (#17) is applied once per body per step for bodies touching green Pieces, read from the ledger. Its wear goes to the Pieces.
 - **Hits name their shapes** (`shapeA`, `shapeB`). A `ShapeId` stays the same when an Object's body is rebuilt, but not through `physics.reset()`.
 - **Three adapter functions** in `box2d-physics-world.ts` must change for Patch shapes:
@@ -51,7 +51,7 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
 - Continuous collision against fixed bodies is already on. Test Droplets against a thin Line the way the milestone 1 ball cannon does.
 - Count: `10 + floor(6 × random)` from `world.random`. Unit-test it across seeds.
 - Spawn inside the Outline, e.g. with #16's packing or seeded points kept clear of the edges, and launch with the Fill kick. `packRubble` returns nothing for Colours whose `rubbleMax` is 0, so for Droplets export and reuse its hex-grid helper (`hexSpots`) rather than calling it.
-- Droplets register Parties, since they need the ledger's new contacts to land. The Material rules must skip Droplet Parties, though: they deal and take no damage. Mark them on the Party.
+- Droplets register Parties, since they need the ledger's new contacts to land. The Material rules must skip Droplet Parties, though: they deal and take no damage. Mark them on the Party (`Party` in `contact-ledger.ts`), or give them their own `stroke` rule; decide.
 - Droplets are not solid: leave them out of `solids()`, so a Stroke can be drawn through a Spill.
 - Droplets leaving the Arena (outside `0…arena.width × 0…arena.height`, with a margin) vanish.
 
@@ -79,7 +79,7 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
 **Behaviour.**
 
 - **Blue:** its restitution does the bouncing. Each of the ledger's hits naming its `ShapeId` wears it by the hit's impulse. The Material rules' "one impact per Stroke" is for damage only; wear counts every hit.
-- **Green:** a body touching a green Patch shape gets glue drag. The ledger's touching is per Party, so check the shape pairs of the host's touching entries for the Patch's `ShapeId`. Keep it once per body per step across green Pieces and green Patches. The drag's momentum is charged to the green things touched. The Patch's host isn't dragged by its own Patch.
+- **Green:** a body touching a green Patch shape gets glue drag. The ledger's touching is per Party, so check the `pairs` of the host's `touching(hostBody)` entries for the Patch's `ShapeId`. Keep it once per body per step across green Pieces and green Patches. The drag's momentum is charged to the green things touched. The Patch's host isn't dragged by its own Patch.
 - **Hits on a Patch** damage its host by the normal rule (the user decision). Patches take no damage from hits or Blasts.
 - **Capacity** is `capacityPerLength × length`. At capacity, remove the shape and burst a puff of Debris.
 

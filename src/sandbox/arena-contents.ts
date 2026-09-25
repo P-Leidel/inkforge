@@ -3,7 +3,6 @@ import type { Polygon } from '../geometry/polygon';
 import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { BodyId, PhysicsWorld } from '../physics';
-import type { Breakable, Party } from './material-rules';
 
 /**
  * Arena contents: everything the simulation tracks and Reset brings back.
@@ -23,9 +22,11 @@ export interface Solids {
 
 /**
  * One kind of Arena contents. It owns its records and their ids, which are
- * never reused, and keeps nothing for what is gone.
+ * never reused, and keeps nothing for what is gone. It registers each of its
+ * bodies' Parties with the Contact ledger as it adds the body, also on
+ * restore, and unregisters it as it removes the body.
  */
-export interface Kind<Name extends string, Saved, Views, Target extends Breakable = never> {
+export interface Kind<Name extends string, Saved, Views> {
   /** Its key in `world.contents` and in the snapshot. */
   readonly name: Name;
   /** What the renderer and the tests read. Only Arena contents: nothing visual only. */
@@ -38,8 +39,6 @@ export interface Kind<Name extends string, Saved, Views, Target extends Breakabl
   dropVisuals(): void;
   /** Removes all of it. */
   clear(): void;
-  /** Who a body is to the Material rules, or null if it isn't this kind's. */
-  partyOf(body: BodyId): Party<Target> | null;
   /** What of it new Objects may not overlap. */
   solids(): Solids;
   /** Re-applies its surfaces after a material table edit. */

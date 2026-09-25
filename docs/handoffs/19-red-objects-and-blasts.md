@@ -43,7 +43,7 @@ Pick values so a typical bomb (use the gallery's) destroys red within about its 
 
 That's how "its Blast then acts on the released Rubble and Droplets" falls out.
 
-**Blasts are a kind** (#24's decision), after the kinds whose bodies they act on. Each Blast is `{ id, centre, R, S, radius now, acted-on Party ids }`, with ids never reused. Its ring grows in the kind's `step` turn. Kinds never call each other, so a Blast doesn't push or damage other kinds' bodies itself: it reports what its ring reached, and the world pushes through the physics module, damages through the Material rules and breaks through `breakTarget`. `Kind.step` returns nothing today; give Blasts their own call for this rather than reaching into Strokes.
+**Blasts are a kind** (#24's decision), after the kinds whose bodies they act on. Each Blast is `{ id, centre, R, S, radius now, acted-on Party ids }`, with ids never reused. Its ring grows in the kind's `step` turn. Kinds never call each other, so a Blast doesn't push or damage other kinds' bodies itself: it reports what its ring reached, and the world pushes through the physics module, damages through the Material rules and breaks through `breakTarget`. `Kind.step` returns nothing today; give Blasts their own call for this rather than reaching into Strokes. `MaterialRules.applyStep` reads only the Contact ledger's hits (#27), so Blast damage needs a call of its own there.
 
 **Each step, after the Material rules,** grow each Blast's radius by `speed × dt`, up to `R`. Then act on every Piece, Object, Rubble and Droplet not yet acted on whose nearest point is within the radius, at strength `s = S × (1 − d/R)²`:
 
@@ -53,7 +53,7 @@ That's how "its Blast then acts on the released Rubble and Droplets" falls out.
 - **Green Objects** start moving when a Blast pushes them or wakes them (#17's sticking hook).
 - **Red destroyed by a Blast** explodes in turn (by the same break path). The delay between chained Blasts is only the ring's travel time.
 - A Blast is finished once its radius reaches `R`.
-- **Deterministic order:** Blasts in creation order, bodies by Party id. Ids only grow, so the order is the same in a replay even where the ids differ.
+- **Deterministic order:** Blasts in creation order, bodies by Party id. Ids only grow, so the order is the same in a replay even where the ids differ. Each record keeps its Party id as `party`; the Contact ledger's index from body to Party is private, so expose a lookup there if the world needs one.
 
 **No effect on Terrain or Patches.** Blasts pass through Terrain and Lines (no occlusion) and don't affect Terrain or Patches. Filter Patch shapes out of the query, and measure hosts to their own shapes.
 

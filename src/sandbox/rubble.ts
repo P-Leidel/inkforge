@@ -12,7 +12,7 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import { motionOf, type Kind, type Motion, type Solids } from './arena-contents';
-import type { Party } from './material-rules';
+import type { PartyId, PartyIndex } from './contact-ledger';
 import type { Random } from './random';
 
 /**
@@ -213,6 +213,8 @@ export interface LooseRubble {
 /** A piece of Rubble: a moving circle that never breaks. */
 interface RubbleRecord {
   readonly id: number;
+  /** Its Party id, the same after a rebuild. */
+  readonly party: PartyId;
   readonly colour: Colour;
   readonly radius: number;
   readonly mass: number;
@@ -234,20 +236,21 @@ interface FadingRubble {
  * The Rubble in the Arena, oldest first, and the cap on it. Rubble ids, like
  * Stroke ids, are never reused, not even after R or Clear. Rubble the cap
  * removes leaves a fading ghost that is visual only, like Debris: it isn't
- * in the snapshot, and R and Clear drop it.
+ * in the snapshot, and R and Clear drop it. Each piece is a Party of its
+ * own to the Contact ledger, with no target: it deals damage by the normal
+ * rule, as its own hitter, and never takes any.
  */
 export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly RubbleView[]> {
   readonly name = 'rubble';
   /** Oldest first. */
   private rubble: RubbleRecord[] = [];
-  /** The Rubble each body is. */
-  private byBody = new Map<BodyId, RubbleRecord>();
   private fading: FadingRubble[] = [];
   private nextId = 1;
 
   constructor(
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
+    private readonly contacts: PartyIndex<never>,
   ) {}
 
   /** Rubble, oldest first. */
@@ -276,7 +279,7 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
   /** Sets Rubble loose, in order, then applies the cap. */
   add(loose: readonly LooseRubble[]): void {
     for (const { motion, ...rubble } of loose)
-      this.addBody({ id: this.nextId++, ...rubble }, motion);
+      this.addBody({ id: this.nextId++, party: this.contacts.newId(), ...rubble }, motion);
     this.cap();
   }
 
@@ -290,20 +293,23 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
       velocity: motion.velocity,
       angularVelocity: motion.angularVelocity,
     });
-    const record = { ...rubble, body };
-    this.rubble.push(record);
-    this.byBody.set(body, record);
+    this.rubble.push({ ...rubble, body });
+    this.contacts.register({ id: rubble.party, stroke: rubble.party, body, target: null });
   }
 
   /** Over the Rubble cap, the oldest Rubble goes at once and fades out where it was. */
   private cap(): void {
     const cap = Math.max(0, this.materials.rubbleCap);
     while (this.rubble.length > cap) {
-      const { body, ...oldest } = this.rubble.shift()!;
-      this.fading.push({ ...oldest, transform: this.physics.getTransform(body), age: 0 });
-      this.physics.removeBody(body);
-      this.byBody.delete(body);
+      const { id, colour, radius, body } = this.rubble.shift()!;
+      this.fading.push({ id, colour, radius, transform: this.physics.getTransform(body), age: 0 });
+      this.removeBody(body);
     }
+  }
+
+  private removeBody(body: BodyId): void {
+    this.physics.removeBody(body);
+    this.contacts.unregister(body);
   }
 
   save(): readonly SavedRubble[] {
@@ -316,7 +322,6 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
   /** Adds the Rubble again, oldest first. */
   restore(saved: readonly SavedRubble[]): void {
     this.rubble = [];
-    this.byBody = new Map();
     for (const { motion, ...rubble } of saved) this.addBody(rubble, motion);
   }
 
@@ -325,16 +330,9 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
   }
 
   clear(): void {
-    for (const { body } of this.rubble) this.physics.removeBody(body);
+    for (const { body } of this.rubble) this.removeBody(body);
     this.rubble = [];
-    this.byBody = new Map();
     this.fading = [];
-  }
-
-  /** Rubble deals damage but never takes any. Each piece is its own hitter. */
-  partyOf(body: BodyId): Party<never> | null {
-    const rubble = this.byBody.get(body);
-    return rubble ? { key: `rubble ${rubble.id}`, target: null, sliding: false } : null;
   }
 
   /** Rubble is solid: an Object drawn over it is refused. */
