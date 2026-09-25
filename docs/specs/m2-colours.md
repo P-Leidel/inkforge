@@ -108,7 +108,7 @@ The milestone answers one question: **are the five Colours clearly distinct, and
 
 ### Scope
 
-- Builds on milestone 1 as specced. Written before milestone 1 is implemented; if the engine verdict changes anything, this spec is patched.
+- Builds on milestone 1. Written while milestone 1 was being implemented (its first five slices are in); if the engine verdict changes anything, this spec is patched.
 - Engine-neutral. Every number below is a starting value, tuned with the F2 panel.
 - No ink costs and no Ink Tanks: every Colour is unlimited (milestone 3). No enemies (milestone 4).
 
@@ -123,6 +123,8 @@ The milestone answers one question: **are the five Colours clearly distinct, and
   The F2 panel edits it at runtime and exports it as JSON to paste back into the code.
 - **Stroke pipeline** (milestone 1, still pure). Takes the Colour as input and additionally splits each Line into Pieces (see below).
 - **Physics module** (milestone 1). Stays engine-neutral and knows nothing about Colours. It gains:
+  - the impact impulse on every reported hit, computed from the approach speed and both bodies' effective mass the way the Frozen wake already does (milestone 1 reports only the approach speed);
+  - hit reports for every contact that can deal damage (Lines, Objects, Rubble), not only those involving Objects;
   - friction and restitution per shape;
   - applying forces and impulses;
   - fixed joints between two bodies (for green sticking only);
@@ -165,7 +167,8 @@ Restitution is never 1 or more, so nothing gains energy from a bounce (milestone
 ### Lines and Pieces
 
 - After cutting at Terrain (milestone 1), the pipeline splits each part of a Line into equal Pieces, as close to 48 px long as the length allows. A Line shorter than that is one Piece.
-- A Piece is one or more of milestone 1's 8 px capsules. It has its own durability and cracks.
+- A Piece is one or more of milestone 1's 8 px capsules. The pipeline cuts at Piece boundaries first and then splits each Piece into capsules of at most 32 px (milestone 1's longest capsule), so no capsule straddles two Pieces.
+- Each Piece has its own durability and cracks.
 - A Piece breaks as a whole: its capsules are removed and Debris spawns. The rest of the Line stays fixed, even when split in two.
 - The 48 px length is a tunable constant, to be revisited when milestone 4 sizes the Crawler.
 
@@ -181,7 +184,7 @@ Restitution is never 1 or more, so nothing gains energy from a bounce (milestone
 
 Milestone 1's rules stay: a hard hit from a moving body wakes a Frozen Object, and the waking collision plays out normally. In addition:
 
-- A Blast wakes a Frozen Object when its strength on arrival exceeds the wake threshold; the Blast's push is then applied. A weaker Blast only damages it.
+- A Blast wakes a Frozen Object when the push it would give (its impulse on arrival divided by the Object's mass) is faster than milestone 1's wake speed; the push is then applied. A weaker Blast only damages it.
 - A Frozen Object takes damage and can break (releasing its Fill) without moving.
 - Droplets never wake a Frozen Object.
 - A blue Object's impact counter also counts impacts while it is Frozen.
@@ -220,7 +223,7 @@ Milestone 1's rules stay: a hard hit from a moving body wakes a Frozen Object, a
 - **On arrival.** When the ring reaches a Line Piece, Object or Rubble (measured to its nearest point), it acts once, at the strength it has there:
   - moving bodies get an outward impulse proportional to that strength;
   - it deals damage when the strength exceeds the receiver's damage threshold (see Damage);
-  - it wakes a Frozen Object when the strength exceeds the wake threshold, and then pushes it;
+  - it wakes a Frozen Object when the push would beat the wake speed (see Frozen), and then pushes it;
   - red that it destroys explodes in turn. The delay between chained Blasts is simply the ring's travel time.
 - **Fuse.** With the default table, a red Piece's Blast must still destroy red 48 px away, so a red Line burns end to end at the ring's speed.
 - Blasts pass through Terrain and Lines (no occlusion) and don't affect Terrain or Patches.
