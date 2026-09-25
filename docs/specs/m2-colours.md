@@ -108,7 +108,7 @@ The milestone answers one question: **are the five Colours clearly distinct, and
 
 ### Scope
 
-- Builds on milestone 1. Written while milestone 1 was being implemented (its first five slices are in); if the engine verdict changes anything, this spec is patched.
+- Builds on the finished milestone 1, which keeps Phaser Box2D ([ADR 0001 verdict](../adr/0001-phaser-box2d-physics.md#verdict-milestone-1)). Written while milestone 1 was being finished; to be reviewed against its implementation before the slice issues are filed.
 - Engine-neutral. Every number below is a starting value, tuned with the F2 panel.
 - No ink costs and no Ink Tanks: every Colour is unlimited (milestone 3). No enemies (milestone 4).
 
