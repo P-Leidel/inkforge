@@ -22,16 +22,17 @@ export class Hud {
       })
       .setOrigin(0.5, 0)
       .setDepth(50);
+    // Control hints along the bottom edge, clear of the toolbar.
     scene.add
-      .text(scene.scale.width / 2, 86, HELP_TEXT, {
+      .text(scene.scale.width / 2, scene.scale.height - 24, HELP_TEXT, {
         fontFamily: FONT_FAMILY,
         fontSize: '20px',
         color: PALETTE.textMuted,
       })
-      .setOrigin(0.5, 0)
+      .setOrigin(0.5, 1)
       .setDepth(50);
     this.readout = scene.add
-      .text(scene.scale.width / 2, 124, '', {
+      .text(scene.scale.width / 2, 130, '', {
         fontFamily: FONT_FAMILY,
         fontSize: '22px',
         color: PALETTE.text,

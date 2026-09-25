@@ -15,18 +15,32 @@ npm install
 npm run dev        # dev server at http://localhost:5173
 ```
 
-| Command              | What it does                                      |
-| -------------------- | ------------------------------------------------- |
-| `npm run dev`        | Start the Vite dev server with hot reload         |
-| `npm test`           | Run all Vitest tests once                         |
-| `npm run test:watch` | Run tests in watch mode                           |
-| `npm run lint`       | Lint with ESLint                                  |
-| `npm run format`     | Format with Prettier (`format:check` only checks) |
-| `npm run typecheck`  | Typecheck with `tsc`                              |
-| `npm run build`      | Typecheck and build the static site into `dist/`  |
-| `npm run preview`    | Serve the built `dist/` locally                   |
+| Command              | What it does                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `npm run dev`        | Start the Vite dev server with hot reload                                                                                            |
+| `npm test`           | Run all Vitest tests once                                                                                                            |
+| `npm run test:watch` | Run tests in watch mode                                                                                                              |
+| `npm run lint`       | Lint with ESLint                                                                                                                     |
+| `npm run format`     | Format with Prettier (`format:check` only checks)                                                                                    |
+| `npm run typecheck`  | Typecheck with `tsc`                                                                                                                 |
+| `npm run build`      | Typecheck and build the static site into `dist/`                                                                                     |
+| `npm run preview`    | Serve the built `dist/` locally                                                                                                      |
+| `npm run verdict`    | Run the engine stress tests headless and print the numbers for [ADR 0001](docs/adr/0001-phaser-box2d-physics.md#verdict-milestone-1) |
 
 CI runs lint, format check, typecheck, tests and build on every push and pull request. Every push to `main` is deployed to GitHub Pages.
+
+## Playing the sandbox
+
+| Action                                  | Input                         |
+| --------------------------------------- | ----------------------------- |
+| Draw a Line (open Stroke)               | Hold the left button and drag |
+| Draw an Object (end near the start)     | Drag back to the green marker |
+| Run / pause physics                     | Space                         |
+| Release a Frozen Object (while running) | Right-click it                |
+| Undo the last Stroke                    | Ctrl+Z                        |
+| Debug overlay (colliders, bodies, fps)  | F1                            |
+
+The toolbar clears the Arena and runs the engine stress tests: **Ball cannon** (3000 px/s balls at a 4 px Line), **Box tower** (10 drawn boxes) and **Pebbles** (100 drawn pebbles). Each shows its measurements under the toolbar.
 
 ## Project structure
 
@@ -43,6 +57,7 @@ CI runs lint, format check, typecheck, tests and build on every push and pull re
 │   ├── stress-tests/    Scripted engine stress tests (ball cannon, box tower, pebbles)
 │   ├── scenes/          Phaser scenes: input → Sandbox world commands
 │   └── rendering/       Phaser drawing: world, debug overlay, toolbar, feedback
+├── scripts/             Developer scripts (engine verdict)
 ├── index.html
 └── CONTEXT.md           Domain glossary
 ```

@@ -8,6 +8,8 @@ import { Toolbar } from '../rendering/toolbar';
 import { WorldRenderer } from '../rendering/world-renderer';
 import { SandboxWorld } from '../sandbox/sandbox-world';
 import { BallCannon } from '../stress-tests/ball-cannon';
+import { BoxTower } from '../stress-tests/box-tower';
+import { PebbleDrop } from '../stress-tests/pebble-drop';
 import type { StressTest } from '../stress-tests/stress-test';
 import { isClosingStroke } from '../stroke/close-detection';
 
@@ -43,6 +45,8 @@ export class SandboxScene extends Phaser.Scene {
     this.hud = new Hud(this, this.world);
     new Toolbar(this)
       .addButton('Clear', () => this.startStressTest(null))
+      .addButton('Pebbles', () => this.startStressTest((world) => new PebbleDrop(world)))
+      .addButton('Box tower', () => this.startStressTest((world) => new BoxTower(world)))
       .addButton('Ball cannon', () => this.startStressTest((world) => new BallCannon(world)));
 
     this.bindKeys();
