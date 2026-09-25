@@ -95,10 +95,12 @@ describe('Lines break Piece by Piece', () => {
     expect(cracked.durability).toBeLessThan(GREY_LINE);
     expect(cracked.wear).toBeGreaterThan(0.5);
 
-    const bodies = world.bodyCount;
+    // The balls break too, into Rubble: count the other bodies.
+    const bodiesBesidesRubble = () => world.bodyCount - world.rubble.length;
+    const bodies = bodiesBesidesRubble();
     throwBall();
     expect(pieceIndexes(world, wall)).not.toContain(target);
-    expect(world.bodyCount).toBeLessThan(bodies);
+    expect(bodiesBesidesRubble()).toBeLessThan(bodies);
     expect(world.debrisParticles.length).toBeGreaterThan(0);
     // Every other Piece is still there, exactly where it was drawn.
     expect(lineById(world, wall).pieces.map((p) => p.segments)).toEqual(
@@ -245,8 +247,10 @@ describe('Undo, Clear and Reset after a Piece has broken', () => {
     const world = createWorld();
     const id = shelf(world);
     const ball = drawObject(world, dragCircle({ x: 440, y: 300 }, 20));
-    world.fillAt({ x: 440, y: 300 }, 'black');
+    // Grey-filled, it cracks the shelf without breaking and leaving Rubble.
+    world.fillAt({ x: 440, y: 300 }, 'grey');
     drop(world, ball, 1.5); // cracks the shelf
+    expect(world.objects.map((o) => o.id)).toContain(ball);
     const cracked = lineById(world, id).pieces.map((p) => p.durability);
     expect(cracked.some((d) => d < GREY_LINE)).toBe(true);
     world.togglePause();

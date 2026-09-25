@@ -13,7 +13,7 @@ Red Objects explode when they are destroyed. A Blast spreads out as a visible ri
 ## What already exists
 
 - **Red Outlines** already have the lowest durability in the table: 250 at `1e13bc5`, with a threshold of 300; red Lines' Pieces have the same. Blue's threshold of 200 is lower; the spec wants red's "very low", so consider lowering it while tuning (below). Red Outlines break by the normal rule, but release only Debris.
-- **The Fill release** (#16, #18) puts out Rubble or a Spill. Red Fills still release nothing.
+- **The Fill release** (#16, #18) puts out Rubble or a Spill from `releaseFill(object, from)` in `sandbox-world.ts`, called by `breakObject` after the Object's body is removed. Red Fills still release nothing; their Blast goes there. Red's `kickSpeed` is 0.
 - **Physics.** `applyImpulse` (#17), `release`, `isFrozen` and `getMass` exist. There is no radius query. **Don't use `b2World_OverlapCircle`: it throws in this port** (see README). Use `b2World_OverlapAABB`, then `b2Shape_GetClosestPoint` per shape. Or use the Sandbox world's own geometry: Object parts moved by their transform, Piece capsules, Rubble and Droplet circles.
 - **Damage.** `impactDamage(impulse, threshold, k)` is the formula, and Blasts use it too. The Material rules' private `receive` applies it against the target's own numbers (by its `role`: Line or Outline) and also counts an impact. Blasts need their own entry point that does the first but not the second.
 
@@ -79,7 +79,8 @@ Impulse grows with mass, so one threshold can't give the same drop ratio for eve
   - `src/sandbox/breaking.test.ts` breaks red balls in several tests: the Debris test, `breakSomething`, and "a Frozen Object can break without moving". Check that each still tests what its name says.
 - **Chains within one step:** a Blast created while other Blasts are being processed starts growing at the next step (or this one; decide), and the result must be deterministic.
 - **Droplets:** they never wake anything and take no damage, but Blasts do push them.
-- **Blast-created bodies:** Rubble released by a Blast-destroyed Object is inside that Object's own Blast at radius 0, and is acted on as the ring passes. Their ids must be stable for the acted-on set.
+- **Blast-created bodies:** Rubble released by a Blast-destroyed Object is inside that Object's own Blast at radius 0, and is acted on as the ring passes. Their ids must be stable for the acted-on set. Rubble ids (`nextRubbleId`) are never reused and survive R for Rubble in the snapshot; Rubble released after it gets new ids in a replay, which is fine as long as nothing keys on the numbers themselves.
+- **Existing tests with red Objects** now release Rubble when they break: `breakSomething` in `src/sandbox/breaking.test.ts` breaks a grey-filled red ball. Once red explodes, check what its Blast does to them.
 
 ## Tests (from the issue)
 

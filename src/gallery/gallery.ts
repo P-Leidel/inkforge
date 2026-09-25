@@ -164,6 +164,41 @@ export const BOULDER_DEMO: Demo = {
   },
 };
 
+/**
+ * A grey-filled and a black-filled box dropped side by side onto a short
+ * black Line, an anvil: both break, the grey one into a shower of pebbles
+ * and the black one into fewer, heavier stones. The Rubble spills onto a
+ * grey Line below, where the stones crack it and the pebbles barely do.
+ */
+export const RUBBLE_DEMO: Demo = {
+  name: 'Rubble',
+  build(world) {
+    const boxes = (['grey', 'black'] as const).map((fill, k) => {
+      const x = 640 + 620 * k;
+      drawLine(
+        world,
+        [
+          { x: x - 160, y: 850 },
+          { x: x + 160, y: 850 },
+        ],
+        'grey',
+      );
+      drawLine(
+        world,
+        [
+          { x: x - 20, y: 364 },
+          { x: x + 20, y: 364 },
+        ],
+        'black',
+      );
+      const box = drawObject(world, dragBox(x - 50, 180, 100, 100), 'grey');
+      world.fillAt({ x, y: 230 }, fill);
+      return box;
+    });
+    letGo(world, boxes);
+  },
+};
+
 export const GALLERY: readonly Demo[] = [
   BOUNCE_DEMO,
   SLIDE_DEMO,
@@ -171,4 +206,5 @@ export const GALLERY: readonly Demo[] = [
   DROP_DEMO,
   THIRD_BOUNCE_DEMO,
   BOULDER_DEMO,
+  RUBBLE_DEMO,
 ];

@@ -12,8 +12,8 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
 
 ## What already exists
 
-- **Fill release** (#16) puts out Rubble for grey and black Fills; blue and green Fills still give only Debris. The Fill kick (`kickSpeed` per Fill Colour) is in the table. Droplets should be the fastest.
-- **`addCircle`** (#16) makes circle bodies.
+- **Fill release** (#16) is `releaseFill(object, from)` in `sandbox-world.ts`. It puts out Rubble for grey and black Fills; blue and green Fills still give only Debris. The Fill kick is in the table: `kickSpeed` per Fill Colour (blue 400 and green 300 px/s, already the fastest; grey and black 200) and the shared `kickSpread` (0.35 rad either side). `launchRubble` in `src/sandbox/rubble.ts` applies it to any list of centres inside the Outline, so Droplets can reuse it.
+- **`addCircle(def: CircleBodyDef)`** (#16) makes dynamic circle bodies with hit events on, a `Placement`, and an angular damping so they roll to a stop. Add the Droplet options as optional fields of `CircleBodyDef`.
 - **Glue drag** (#17) is applied once per body per step for bodies touching green Pieces. Its wear goes to the Pieces.
 - **Hits name their shapes** (`shapeA`, `shapeB`). A `ShapeId` stays the same when an Object's body is rebuilt, but not through `physics.reset()`.
 - **Three adapter functions** in `box2d-physics-world.ts` must change for Patch shapes:
@@ -41,7 +41,7 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
   - optionally `isBullet`.
 - Continuous collision against fixed bodies is already on. Test Droplets against a thin Line the way the milestone 1 ball cannon does.
 - Count: `10 + floor(6 × random)` from `world.random`. Unit-test it across seeds.
-- Spawn inside the Outline, e.g. with #16's packing or seeded points kept clear of the edges, and launch with the Fill kick.
+- Spawn inside the Outline, e.g. with #16's packing or seeded points kept clear of the edges, and launch with the Fill kick. `packRubble` returns nothing for Colours whose `rubbleMax` is 0, so for Droplets export and reuse its hex-grid helper (`hexSpots`) rather than calling it.
 - The Material rules must skip Droplet Parties: they deal and take no damage.
 - Droplets leaving the Arena (outside `0…arena.width × 0…arena.height`, with a margin) vanish.
 
@@ -75,7 +75,7 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
 
 **Lifetime.**
 
-- A Patch vanishes when its host breaks, is undone, or is removed by the Rubble cap.
+- A Patch vanishes when its host breaks, is undone, or is removed by the Rubble cap (`capRubble()`).
 - Patches on Terrain last until worn out.
 - The cap: at most 200; the oldest goes first.
 - Clear removes Patches. Undo leaves the ones on other hosts, since they are never in the history.

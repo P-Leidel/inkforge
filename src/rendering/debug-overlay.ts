@@ -4,7 +4,10 @@ import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { strokeCapsule, strokePolygon } from './draw';
 import { PALETTE } from './palette';
 
-/** F1 overlay: collider outlines, each Piece's and Object's durability, body count and fps. */
+/**
+ * F1 overlay: collider outlines, each Piece's and Object's durability, body
+ * count and fps. Rubble never breaks, so it gets no label.
+ */
 export class DebugOverlay {
   private readonly colliders: Phaser.GameObjects.Graphics;
   private readonly stats: Phaser.GameObjects.Text;
@@ -66,6 +69,11 @@ export class DebugOverlay {
     for (const polygon of this.world.arena.terrain) strokePolygon(g, polygon);
     for (const line of this.world.lines) {
       for (const { a, b } of line.segments) strokeCapsule(g, a, b, line.thickness);
+    }
+    for (const { transform: t, radius } of this.world.rubble) {
+      g.strokeCircle(t.x, t.y, radius);
+      // A spoke, to show it rolling.
+      g.lineBetween(t.x, t.y, t.x + radius * Math.cos(t.angle), t.y + radius * Math.sin(t.angle));
     }
     let k = 0;
     for (const line of this.world.lines) {

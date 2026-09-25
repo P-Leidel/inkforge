@@ -2,6 +2,12 @@ import { polygonBounds, polygonContainsPoint, boundsOverlap, type Polygon } from
 import { distanceSegmentToSegment, segmentsIntersect } from './segment';
 import type { Vec2 } from './vec2';
 
+/** A circle in world coordinates. */
+export interface Circle {
+  readonly centre: Vec2;
+  readonly radius: number;
+}
+
 /** Overlap shallower than this (px) counts as touching. */
 export const TOUCH_TOLERANCE = 1;
 
@@ -61,4 +67,13 @@ export function capsuleOverlapsPolygon(
     if (distanceSegmentToSegment(a, b, p1, p2) < reach) return true;
   }
   return false;
+}
+
+/** Whether a circle overlaps a polygon by more than `tolerance` px. */
+export function circleOverlapsPolygon(
+  circle: Circle,
+  polygon: Polygon,
+  tolerance = TOUCH_TOLERANCE,
+): boolean {
+  return capsuleOverlapsPolygon(circle.centre, circle.centre, circle.radius, polygon, tolerance);
 }

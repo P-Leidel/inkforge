@@ -492,6 +492,17 @@ describe('Stroke pipeline: overlap', () => {
     expect(processStroke(dragBox(400, 300, 60, 60), withObject).kind).toBe('object');
   });
 
+  it('rejects an Object that overlaps Rubble, and accepts one that only touches it', () => {
+    const withRubble: StrokeContext = {
+      ...context,
+      rubble: [{ centre: { x: 300, y: 300 }, radius: 10 }],
+    };
+
+    expect(rejectionOf(processStroke(dragBox(305, 250, 60, 60), withRubble))).toBe('overlaps');
+    expect(rejectionOf(processStroke(dragBox(200, 200, 200, 200), withRubble))).toBe('overlaps');
+    expect(processStroke(dragBox(310, 250, 60, 60), withRubble).kind).toBe('object');
+  });
+
   it('does not cut a Line where it crosses an Object', () => {
     const existing = objectOf(processStroke(dragBox(300, 300, 100, 100), context));
     const withObject: StrokeContext = { ...context, objects: [existing.parts] };

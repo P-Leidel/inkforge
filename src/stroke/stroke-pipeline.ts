@@ -1,6 +1,6 @@
 import { cutPolylineOutside } from '../geometry/clip';
 import { decomposeConvex } from '../geometry/convex-decomposition';
-import { convexPolygonsOverlap } from '../geometry/overlap';
+import { circleOverlapsPolygon, convexPolygonsOverlap, type Circle } from '../geometry/overlap';
 import {
   isSelfIntersecting,
   polygonArea,
@@ -33,6 +33,8 @@ export interface StrokeContext {
   readonly terrain: readonly Polygon[];
   /** Existing Objects, each as its convex parts in world coordinates. */
   readonly objects: readonly (readonly Polygon[])[];
+  /** Existing Rubble, as circles in world coordinates. */
+  readonly rubble?: readonly Circle[];
   /** Thickness of a Line; defaults to LINE_THICKNESS. */
   readonly lineThickness?: number;
   /**
@@ -117,12 +119,18 @@ function scaleToArea(ring: readonly Vec2[], area: number): Vec2[] {
 }
 
 /**
- * Whether an Object would overlap Terrain or another Object. Touching is
- * fine; overlapping Lines is allowed (physics squeezes the Object out).
+ * Whether an Object would overlap Terrain, another Object or Rubble.
+ * Touching is fine; overlapping Lines is allowed (physics squeezes the
+ * Object out).
  */
 function overlapsSolid(parts: readonly Polygon[], context: StrokeContext): boolean {
   const solids = [...context.terrain, ...context.objects.flat()];
-  return parts.some((part) => solids.some((solid) => convexPolygonsOverlap(part, solid)));
+  const rubble = context.rubble ?? [];
+  return parts.some(
+    (part) =>
+      solids.some((solid) => convexPolygonsOverlap(part, solid)) ||
+      rubble.some((circle) => circleOverlapsPolygon(circle, part)),
+  );
 }
 
 function processOpenStroke(samples: readonly Vec2[], context: StrokeContext): StrokeResult {

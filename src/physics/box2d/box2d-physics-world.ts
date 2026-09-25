@@ -16,11 +16,13 @@ import {
   b2Body_SetLinearVelocity,
   b2BodyType,
   b2Capsule,
+  b2Circle,
   b2ComputeHull,
   b2ComputePolygonMass,
   b2ContactData,
   b2CreateBody,
   b2CreateCapsuleShape,
+  b2CreateCircleShape,
   b2CreatePolygonShape,
   b2CreateWorld,
   b2CreateWorldArray,
@@ -56,6 +58,7 @@ import type { Transform } from '../../geometry/transform';
 import type { Vec2 } from '../../geometry/vec2';
 import type {
   BodyId,
+  CircleBodyDef,
   ContactHit,
   ContactPair,
   ObjectBodyDef,
@@ -73,12 +76,18 @@ const PX_PER_METRE = 50;
 const SUB_STEPS = 4;
 /** Hit events are reported above this speed; we decide about waking ourselves. */
 const HIT_EVENT_THRESHOLD_PX = 5;
+/**
+ * Angular damping (1/s) of circles. Box2D has no rolling resistance, so
+ * without it a circle on flat ground would roll for ever; damping its spin
+ * slows the roll through friction, and a pebble comes to rest.
+ */
+const CIRCLE_ANGULAR_DAMPING = 3;
 
 const toM = (px: number) => px / PX_PER_METRE;
 const toPx = (m: number) => m * PX_PER_METRE;
 const toB2 = (p: Vec2) => new b2Vec2(toM(p.x), toM(p.y));
 
-type BodyKind = 'terrain' | 'line' | 'object';
+type BodyKind = 'terrain' | 'line' | 'object' | 'circle';
 
 /** The mass of a body's shapes at density 1, in metres: what its density scales. */
 interface UnitMass {
@@ -99,17 +108,19 @@ interface BodyRecord {
   frozen: boolean;
   /** An Object's convex parts in body coordinates, to rebuild it on Release. */
   readonly parts: readonly Polygon[];
+  /** A circle's radius, px. */
+  readonly radius?: number;
   /** The surface of its shapes, kept when it is rebuilt. */
   surface: Surface;
   /** Mass per m², the same over all shapes; kept when it is rebuilt. */
   density: number;
   readonly unit: UnitMass;
-  /** What an Object was created with, to read back exactly while the engine still holds it. */
+  /** What a moving body was created with, to read back exactly while the engine still holds it. */
   placed?: Placement;
 }
 
 /**
- * An Object's transform and velocity in px as it was created, and the
+ * A moving body's transform and velocity in px as it was created, and the
  * engine's copy of them. Converting to the engine and back isn't exact to
  * the last bit (an angle becomes a cosine and sine), so while the engine
  * still holds exactly what it was given, the body reports what it was
@@ -192,11 +203,18 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     return rec;
   }
 
-  function makeB2Body(id: BodyId, type: number, position: b2Vec2, rotation?: b2Rot): b2BodyId {
+  function makeB2Body(
+    id: BodyId,
+    type: number,
+    position: b2Vec2,
+    rotation?: b2Rot,
+    angularDamping = 0,
+  ): b2BodyId {
     const def = b2DefaultBodyDef();
     def.type = type;
     def.position = position;
     if (rotation) def.rotation = rotation;
+    def.angularDamping = angularDamping;
     def.userData = id;
     return b2CreateBody(worldId, def);
   }
@@ -257,11 +275,23 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     }
   }
 
-  /** Creates an Object's shapes on its (new) body. */
-  function addParts(rec: BodyRecord): void {
+  /** Creates an Object's or a circle's shapes on its (new) body. */
+  function addShapes(rec: BodyRecord): void {
+    if (rec.radius !== undefined) {
+      const def = shapeDef(rec.shapes[0]!, rec.surface, true, rec.density);
+      b2CreateCircleShape(rec.b2Id, def, new b2Circle(new b2Vec2(0, 0), toM(rec.radius)));
+      return;
+    }
     rec.parts.forEach((part, k) =>
       addPolygon(rec.b2Id, rec.shapes[k]!, part, rec.surface, true, rec.density),
     );
+  }
+
+  /** A circle's mass at density 1, about its centre. */
+  function unitMassOfCircle(radius: number): UnitMass {
+    const r = toM(radius);
+    const area = Math.PI * r * r;
+    return { area, centre: new b2Vec2(0, 0), inertia: 0.5 * area * r * r };
   }
 
   function unitMassOf(parts: readonly Polygon[]): UnitMass {
@@ -371,11 +401,16 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     readonly push: number;
   }
 
-  /** Velocities of moving Objects before the step, to replay a waking hit. */
+  /** Whether a body can move: an Object that isn't Frozen, or a circle. */
+  function movable(rec: BodyRecord): boolean {
+    return (rec.kind === 'object' || rec.kind === 'circle') && !rec.frozen;
+  }
+
+  /** Velocities of moving bodies before the step, to replay a waking hit. */
   function snapshotMotion(): Map<BodyId, Motion> {
     const motion = new Map<BodyId, Motion>();
     for (const [id, rec] of bodies) {
-      if (rec.kind === 'object' && !rec.frozen) {
+      if (movable(rec)) {
         motion.set(id, {
           v: b2Body_GetLinearVelocity(rec.b2Id),
           w: b2Body_GetAngularVelocity(rec.b2Id),
@@ -401,8 +436,9 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     const position = new b2Vec2(p.x, p.y);
     const rotation = b2MakeRot(b2Rot_GetAngle(b2Body_GetRotation(rec.b2Id)));
     b2DestroyBody(rec.b2Id);
-    rec.b2Id = makeB2Body(id, type, position, rotation);
-    addParts(rec);
+    const damping = rec.kind === 'circle' ? CIRCLE_ANGULAR_DAMPING : 0;
+    rec.b2Id = makeB2Body(id, type, position, rotation, damping);
+    addShapes(rec);
   }
 
   /** Advances sliding Objects; one that has arrived becomes dynamic, at rest. */
@@ -502,7 +538,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
 
   /** A body's mass properties in a hit, or null if it can't be moved by one. */
   function hitInertial(rec: BodyRecord): Inertial | null {
-    if (rec.kind !== 'object' || rec.frozen) return null;
+    if (!movable(rec)) return null;
     if (b2Body_GetType(rec.b2Id) !== b2BodyType.b2_dynamicBody) return null; // sliding
     return movingInertial(rec);
   }
@@ -511,9 +547,13 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
    * Where the collision between two shapes acted as a whole: their contact
    * points weighted by the impulse each took. A box hitting another face-on
    * touches at two corners and acts at the middle of the face, not at one
-   * corner.
+   * corner. The contacts are read from the moving side's shape: a fixed
+   * shape, such as the ground under a Rubble pile, can have more than the
+   * buffer holds.
    */
-  function contactCentre(shapeA: b2ShapeId, shapeB: b2ShapeId, fallback: b2Vec2): b2Vec2 {
+  function contactCentre(first: b2ShapeId, second: b2ShapeId, fallback: b2Vec2): b2Vec2 {
+    const fixed = b2Body_GetType(b2Shape_GetBody(first)) === b2BodyType.b2_staticBody;
+    const [shapeA, shapeB] = fixed ? [second, first] : [first, second];
     const count = b2Shape_GetContactData(shapeA, contactBuffer, contactBuffer.length);
     for (let i = 0; i < count; i++) {
       const { shapeIdA, shapeIdB, manifold } = contactBuffer[i]!;
@@ -562,6 +602,24 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     const now = engineState(rec.b2Id);
     for (let k = from; k < to; k++) if (now[k] !== placed.engine[k]) return false;
     return true;
+  }
+
+  /**
+   * Sets a new body moving and records its Placement: the pose it was made
+   * with and, if it moves, its velocity.
+   */
+  function place(
+    rec: BodyRecord,
+    pose: { readonly position: Vec2; readonly angle?: number },
+    motion: { readonly velocity?: Vec2; readonly angularVelocity?: number },
+  ): void {
+    if (motion.velocity) b2Body_SetLinearVelocity(rec.b2Id, toB2(motion.velocity));
+    if (motion.angularVelocity) b2Body_SetAngularVelocity(rec.b2Id, motion.angularVelocity);
+    rec.placed = {
+      transform: { x: pose.position.x, y: pose.position.y, angle: pose.angle ?? 0 },
+      velocity: motion.velocity ?? { x: 0, y: 0 },
+      engine: engineState(rec.b2Id),
+    };
   }
 
   function bodyIdOf(b2Id: b2BodyId): BodyId {
@@ -617,16 +675,34 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
         density,
       };
       bodies.set(id, rec);
-      addParts(rec);
-      if (!def.frozen) {
-        if (def.velocity) b2Body_SetLinearVelocity(b2Id, toB2(def.velocity));
-        if (def.angularVelocity) b2Body_SetAngularVelocity(b2Id, def.angularVelocity);
-      }
-      rec.placed = {
-        transform: { x: def.position.x, y: def.position.y, angle: def.angle ?? 0 },
-        velocity: def.frozen || !def.velocity ? { x: 0, y: 0 } : def.velocity,
-        engine: engineState(b2Id),
+      addShapes(rec);
+      place(rec, def, def.frozen ? {} : def);
+      return id;
+    },
+
+    addCircle(def: CircleBodyDef) {
+      const unit = unitMassOfCircle(def.radius);
+      const id = nextId++ as BodyId;
+      const rec: BodyRecord = {
+        b2Id: makeB2Body(
+          id,
+          b2BodyType.b2_dynamicBody,
+          toB2(def.position),
+          b2MakeRot(def.angle ?? 0),
+          CIRCLE_ANGULAR_DAMPING,
+        ),
+        kind: 'circle',
+        shapes: newShapeIds(1),
+        frozen: false,
+        parts: [],
+        radius: def.radius,
+        surface: def.surface,
+        unit,
+        density: def.mass / unit.area,
       };
+      bodies.set(id, rec);
+      addShapes(rec);
+      place(rec, def, def);
       return id;
     },
 

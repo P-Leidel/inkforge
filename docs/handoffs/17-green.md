@@ -22,7 +22,7 @@ Anything moving across a green Line Piece slows right down (heavier things less)
   - The module has `getVelocity`, `setVelocity`, `getAngularVelocity` and `getMass`, but no forces, impulses or joints.
   - A Frozen Object is a fixed body. Waking, Release and the end of a slide destroy it and build a new one (`rebuild` in the adapter), and joints die with their body.
 - **Sliding.** A sliding Object is kinematic, and `getSlide(id)` is non-null while it slides.
-- **Pieces (#15)** are `Piece` records in `LineStroke.pieces`. Each is its own fixed body with the Party key `stroke ${lineId} piece ${index}`. A green Piece has durability 6000 and threshold 400 at `1e13bc5`. Rubble (#16) is dynamic circles.
+- **Pieces (#15)** are `Piece` records in `LineStroke.pieces`. Each is its own fixed body with the Party key `stroke ${lineId} piece ${index}`. A green Piece has durability 6000 and threshold 400 at `1e13bc5`. Rubble (#16) is dynamic circles (`addCircle`) with the Party key `rubble ${id}` and no target; the Sandbox world keeps it in `rubbleList`.
 - **Breaking.** `MaterialRules.applyStep` returns only what impacts broke. Damage from wear must break Pieces through the same `breakPiece` path, so check `wear(piece, table) >= 1` after adding it.
 
 ## Suggested design (a proposal)
@@ -42,7 +42,7 @@ Anything moving across a green Line Piece slows right down (heavier things less)
   - Moving means an Object that is neither Frozen nor sliding, or Rubble.
   - Apply the drag once per body, however many green things it touches.
 - The spec's force is `F = −c·v`, not scaled by mass. Apply it as an impulse clamped so it can never reverse the motion: `Δp = −min(c·dt, m)·v`. A plain force blows up on light bodies once `c·dt > m`, and pebbles are light.
-- Do the same for spin: `ΔL = −min(c_spin·dt, I)·ω`. That means exposing the rotational inertia, or adding a physics call that damps spin directly.
+- Do the same for spin: `ΔL = −min(c_spin·dt, I)·ω`. That means exposing the rotational inertia, or adding a physics call that damps spin directly. The adapter already gives circles an angular damping of its own so they roll to a stop (`CIRCLE_ANGULAR_DAMPING`); the glue's spin damping comes on top.
 - The physics module gains `applyImpulse(id, impulse, point?)`, or `applyForce`, plus an angular counterpart.
 - Pick whether the drag goes in before or after the step. Either works if it is deterministic: iterate bodies in a fixed order.
 
@@ -75,7 +75,7 @@ Anything moving across a green Line Piece slows right down (heavier things less)
   - Stuck to Terrain, a Line or a Frozen Object is a weld to a fixed body, so the green Object is effectively fixed.
   - Stuck to a moving body, the two move as one.
 - **A moving green Object that hits a Frozen Object** sticks to it. The adapter's mass-aware wake rule decides, inside `step()`, whether the Frozen one wakes. The bond is made after the step, so if the host woke it is already a moving body.
-- **It falls free** when either side breaks, is undone, or is removed by a cap (the Rubble cap). It becomes spent and never sticks again. Spec: "Undoing something a green Object is stuck to frees the green Object as if it had broken."
+- **It falls free** when either side breaks, is undone, or is removed by a cap (the Rubble cap: `capRubble()` in `sandbox-world.ts`). It becomes spent and never sticks again. Spec: "Undoing something a green Object is stuck to frees the green Object as if it had broken."
 - **A green Outline sticks but causes no drag.** Only green Pieces (and, in #18, green Patches) drag.
 
 **Snapshot.**

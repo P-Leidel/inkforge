@@ -5,6 +5,7 @@
  */
 export type {
   BodyId,
+  CircleBodyDef,
   ContactHit,
   ContactPair,
   ObjectBodyDef,

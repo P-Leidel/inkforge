@@ -4,7 +4,6 @@ One handoff per remaining agent slice of milestone 2. Each is for a fresh sessio
 
 | Issue | Handoff |
 |---|---|
-| [#16 Rubble](https://github.com/P-Leidel/inkforge/issues/16) | [16-rubble.md](16-rubble.md) |
 | [#17 Green](https://github.com/P-Leidel/inkforge/issues/17) | [17-green.md](17-green.md) |
 | [#18 Spills and Patches](https://github.com/P-Leidel/inkforge/issues/18) | [18-spills-and-patches.md](18-spills-and-patches.md) |
 | [#19 Red Objects and Blasts](https://github.com/P-Leidel/inkforge/issues/19) | [19-red-objects-and-blasts.md](19-red-objects-and-blasts.md) |
@@ -15,7 +14,7 @@ One handoff per remaining agent slice of milestone 2. Each is for a fresh sessio
 
 The issues form a chain: each is blocked by the one before it. Start an issue only once the one before it is closed and CI is green on `main`. To start one, open a session on this repository and say:
 
-> Implement issue #16 of P-Leidel/inkforge. Read `docs/handoffs/README.md`, then `docs/handoffs/16-rubble.md`, and follow them.
+> Implement issue #17 of P-Leidel/inkforge. Read `docs/handoffs/README.md`, then `docs/handoffs/17-green.md`, and follow them.
 
 ## How fresh these are
 
@@ -107,21 +106,23 @@ These were written on 2026-09-25 against the code at `1e13bc5`, the commit that 
   - Kinematic bodies (Objects sliding off a Line) don't touch fixed ones.
 - **Contact events.**
   - Begin and end events are per shape pair. They are cleared at the start of every `b2World_Step`.
-  - A hit event is reported when either shape enables hit events. Object shapes have them on; Line and Terrain shapes have them off.
+  - A hit event is reported when either shape enables hit events. Object and circle (Rubble) shapes have them on; Line and Terrain shapes have them off.
 - **Replays are identical only in a fresh engine world.** Every start and every R calls `physics.reset()` and rebuilds everything from the snapshot. Body and shape ids start again from 1 after a reset, so never keep them in a snapshot or a settled-pair key; use the Sandbox world's own ids, which are never reused (`nextStrokeId`).
 - **Live references.** `b2Body_GetPosition` and `b2Body_GetRotation` return live objects. Copy them before you destroy or rebuild a body.
-- **Exact transforms.** Converting an angle to the engine's cosine and sine and back isn't exact to the last bit, so R and then Space could drift. Since #15, an Object reports the transform and velocity it was created with for as long as the engine still holds exactly those (`Placement` and `placed` in the adapter). Every new body kind created with a pose or a velocity (Rubble, Droplets) needs the same.
+- **Exact transforms.** Converting an angle to the engine's cosine and sine and back isn't exact to the last bit, so R and then Space could drift. Since #15, an Object reports the transform and velocity it was created with for as long as the engine still holds exactly those (`Placement` and `placed` in the adapter). Circles (`addCircle`, #16) do the same through the adapter's `place` helper; any other new body kind created with a pose or a velocity needs it too.
 - **Ghost collisions.** A body sliding fast along a Line can catch the round end where two capsules meet and be thrown off (ADR 0001). Pieces add seams.
 - **Continuous collision** is on. Every fast moving body gets it against fixed bodies; that is the milestone 1 tunnelling check. `isBullet` adds it against moving bodies too.
-- **Contact buffer.** `contactBuffer` holds 64 entries. `contactCentre` and `trackContacts` read at most 64 contacts of one shape or body. The Terrain's ground under a big Rubble pile can have more; `contactCentre` then falls back to the event's point.
+- **Contact buffer.** `contactBuffer` holds 64 entries. `contactCentre` and `trackContacts` read at most 64 contacts of one shape or body. Since #16, `contactCentre` reads the moving side's shape, so the Terrain's ground under a big Rubble pile doesn't overflow it. A rebuilt body buried in more than 64 contacts would still lose track of some in `trackContacts`.
+- **Circles roll to a stop.** Box2D has no rolling resistance, so the adapter gives circles an angular damping (`CIRCLE_ANGULAR_DAMPING`, 3 per second); spin damping slows a roll through friction. Glue drag on Rubble (#17) comes on top of it.
 
-## Patterns the slices follow (as of #15)
+## Patterns the slices follow (as of #16)
 
 - **Step order.** `SandboxWorld.step()` applies table edits, steps physics (`StepReport { hits, begins, ends }`), then runs the Material rules (`src/sandbox/material-rules.ts`). It breaks what they return with `breakObject` or `breakPiece`.
+- **Fill release.** `breakObject` reads the Object's pose and motion, removes it and calls `releaseFill(object, from)`, which puts out the Fill in the same step. Grey and black give Rubble: `packRubble` and `launchRubble` in `src/sandbox/rubble.ts` pack circles inside the Outline and kick them outward (`kickSpeed` per Fill Colour, `kickSpread` shared). #18 adds Spills and #19 Blasts in `releaseFill`.
 - **Parties.** The Material rules see each body as a Party:
-  - a stable `key`: `stroke ${id}` for an Object, `stroke ${lineId} piece ${index}` for a Piece, `terrain`;
+  - a stable `key`: `stroke ${id}` for an Object, `stroke ${lineId} piece ${index}` for a Piece, `rubble ${id}` for a piece of Rubble, `terrain`;
   - for a Piece, also `stroke`: its Line's key;
-  - a `target` that takes damage (an Object or a Piece), or `null`;
+  - a `target` that takes damage (an Object or a Piece), or `null` (Terrain, Rubble);
   - a `sliding` flag.
 
   `partyFinder()` in `sandbox-world.ts` maps bodies to Parties. A body without a Party is ignored by every rule.
@@ -132,16 +133,18 @@ These were written on 2026-09-25 against the code at `1e13bc5`, the commit that 
   - Sliding Parties deal and take no damage.
   - Terrain takes none.
   - A blue Object also counts impacts and breaks on the third.
-- **Snapshot.** `takeSnapshot()` and `rebuild()` hold the whole simulation except Debris. Rebuild adds bodies in a fixed order, so the first run and every retry match.
+- **Rubble.** `rubbleList` in the Sandbox world, oldest first, each with an id from `nextRubbleId` (never reused, not reset by R or Clear). `capRubble()` removes the oldest over `rubbleCap` at once and leaves a body-less fading ghost (`fadingRubble`, visual only like Debris). Anything attached to Rubble (a green bond, a Patch) must go when the cap removes it.
+- **Snapshot.** `takeSnapshot()` and `rebuild()` hold the whole simulation except Debris and fading Rubble. Rebuild adds bodies in a fixed order (Strokes, then Rubble oldest first), so the first run and every retry match.
 - **Randomness.** Simulation randomness comes only from `world.random`, whose state is in the snapshot. Debris has its own generator, so visuals never shift the simulation.
 - **Rendering.**
-  - The renderer reads only views: `world.lines`, `world.objects`, `world.debrisParticles`, and the ones you add. It never reads the physics module.
+  - The renderer reads only views: `world.lines`, `world.objects`, `world.rubble`, `world.fadingRubble`, `world.debrisParticles`, and the ones you add. It never reads the physics module.
   - `world-renderer.ts` redraws a Stroke only when its look key changes.
   - `debug-overlay.ts` (F1) reuses a pool of text labels.
 - **Tests.** There are two seams: pure units, and the headless Sandbox world with the helpers in `src/sandbox/test-support.ts`.
   - Tests check what a player would notice, not engine internals.
   - Milestone 1's tests must keep passing unchanged, unless your issue changes what they measure. Say so in the commit message, as #15 did.
-  - The gallery replay test (`played` in `src/gallery/gallery.test.ts`) compares Object transforms and each Line's Pieces. Extend it to whatever your slice adds, so replays are really checked.
+  - The gallery replay test (`played` in `src/gallery/gallery.test.ts`) compares Object transforms, each Line's Pieces and the Rubble. Extend it to whatever your slice adds, so replays are really checked.
+  - The Fill release tests (`src/sandbox/fill-release.test.ts`) break grey-outlined boxes on short black Lines, so red exploding (#19, #20) and blue spilling (#18) leave them alone. One test checks that blue, green and red Fills release no Rubble; it stays true when they release Spills and Blasts.
 
 ## When you're done
 

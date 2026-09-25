@@ -27,6 +27,7 @@ import { SANDBOX_ARENA, type Arena } from './arena';
 import { Debris, type DebrisParticle } from './debris';
 import { durabilityLeft, MaterialRules, wear, type Breakable, type Party } from './material-rules';
 import { Random } from './random';
+import { launchRubble, packRubble } from './rubble';
 
 /** Fixed physics step: 60 Hz. */
 export const STEP_SECONDS = 1 / 60;
@@ -43,6 +44,8 @@ const SQUEEZE_TOLERANCE = 1;
 const DEBRIS_SEED = 0x0deb415;
 /** At most this many steps per `advance`, so a long frame can't stall the game. */
 const MAX_STEPS_PER_ADVANCE = 8;
+/** Seconds Rubble removed by the cap takes to fade out. */
+const RUBBLE_FADE_SECONDS = 0.5;
 
 export type StrokeId = number;
 
@@ -88,6 +91,28 @@ export interface ObjectView {
   readonly impacts: number;
   /** How near it is to breaking, from 0 (whole) to 1: what its cracks show. */
   readonly wear: number;
+}
+
+export interface RubbleView {
+  readonly id: number;
+  /** The Colour of the Fill it came from. */
+  readonly colour: Colour;
+  readonly radius: number;
+  readonly mass: number;
+  /** Its centre and rotation. */
+  readonly transform: Transform;
+  /** Linear velocity, px/s. */
+  readonly velocity: Vec2;
+}
+
+/** Rubble the cap removed, fading out where it was. It has no body. */
+export interface FadingRubbleView {
+  readonly id: number;
+  readonly colour: Colour;
+  readonly radius: number;
+  readonly transform: Transform;
+  /** From 1 as it is removed down to 0. */
+  readonly opacity: number;
 }
 
 /** What a submitted Stroke became. */
@@ -147,6 +172,24 @@ interface ObjectStroke extends Breakable {
 
 type Stroke = LineStroke | ObjectStroke;
 
+/** A piece of Rubble: a moving circle that never breaks. */
+interface Rubble {
+  readonly id: number;
+  readonly colour: Colour;
+  readonly radius: number;
+  readonly mass: number;
+  readonly body: BodyId;
+}
+
+interface FadingRubble {
+  readonly id: number;
+  readonly colour: Colour;
+  readonly radius: number;
+  readonly transform: Transform;
+  /** Seconds since the cap removed it. */
+  age: number;
+}
+
 /** One undo step: a Stroke, or the Fill of an Object. */
 type Action = { readonly kind: 'stroke' | 'fill'; readonly id: StrokeId };
 
@@ -162,6 +205,11 @@ interface ObjectMotion {
 
 type SavedPiece = Omit<Piece, 'body'>;
 
+/** A body's pose and motion when a snapshot is taken. */
+type Motion = Pick<ObjectMotion, 'transform' | 'velocity' | 'angularVelocity'>;
+
+type SavedRubble = Omit<Rubble, 'body'> & { readonly motion: Motion };
+
 type SavedStroke =
   | (Omit<LineStroke, 'pieces'> & { readonly pieces: readonly SavedPiece[] })
   | (Omit<ObjectStroke, 'body'> & { readonly motion: ObjectMotion });
@@ -173,6 +221,8 @@ type Target = ObjectStroke | Piece;
 interface Snapshot {
   readonly strokes: readonly SavedStroke[];
   readonly history: readonly Action[];
+  /** Rubble, oldest first. */
+  readonly rubble: readonly SavedRubble[];
   readonly random: number;
   readonly time: number;
   /** Contacts touching when it was taken: they deal no damage until they separate. */
@@ -210,6 +260,12 @@ export class SandboxWorld {
   /** Strokes and Fills in the order they were made, for undo. */
   private history: Action[] = [];
   private nextStrokeId = 1;
+  /** Rubble, oldest first. */
+  private rubbleList: Rubble[] = [];
+  /** Rubble the cap removed, fading out. Visual only, like Debris. */
+  private fading: FadingRubble[] = [];
+  /** Rubble ids, like Stroke ids, are never reused. */
+  private nextRubbleId = 1;
   private running = false;
   private accumulator = 0;
   private elapsed = 0;
@@ -264,6 +320,29 @@ export class SandboxWorld {
   /** Debris particles in flight. */
   get debrisParticles(): readonly DebrisParticle[] {
     return this.debris.views;
+  }
+
+  /** Rubble, oldest first. */
+  get rubble(): readonly RubbleView[] {
+    return this.rubbleList.map(({ id, colour, radius, mass, body }) => ({
+      id,
+      colour,
+      radius,
+      mass,
+      transform: this.physics.getTransform(body),
+      velocity: this.physics.getVelocity(body),
+    }));
+  }
+
+  /** Rubble the cap removed, fading out. */
+  get fadingRubble(): readonly FadingRubbleView[] {
+    return this.fading.map(({ id, colour, radius, transform, age }) => ({
+      id,
+      colour,
+      radius,
+      transform,
+      opacity: Math.max(0, 1 - age / RUBBLE_FADE_SECONDS),
+    }));
   }
 
   private viewObject(stroke: ObjectStroke): ObjectView {
@@ -385,6 +464,10 @@ export class SandboxWorld {
       terrain: this.arena.terrain,
       pieceLength: this.materials.pieceLength,
       objects: this.objectStrokes().map((s) => this.worldParts(s)),
+      rubble: this.rubbleList.map(({ body, radius }) => {
+        const { x, y } = this.physics.getTransform(body);
+        return { centre: { x, y }, radius };
+      }),
       ...(options.lineThickness !== undefined && { lineThickness: options.lineThickness }),
     };
   }
@@ -521,13 +604,16 @@ export class SandboxWorld {
   }
 
   /**
-   * Removes every Stroke and Fill and the Debris; the Terrain stays. R has
-   * nothing to go back to.
+   * Removes every Stroke and Fill, the Rubble and the Debris; the Terrain
+   * stays. R has nothing to go back to.
    */
   clear(): void {
     for (const body of this.strokes.flatMap((stroke) => this.bodiesOf(stroke))) {
       this.physics.removeBody(body);
     }
+    for (const { body } of this.rubbleList) this.physics.removeBody(body);
+    this.rubbleList = [];
+    this.fading = [];
     this.strokes = [];
     this.history = [];
     this.snapshot = null;
@@ -535,12 +621,67 @@ export class SandboxWorld {
     this.debris.clear();
   }
 
-  /** Breaks an Object: its body is removed and Debris bursts from it. */
+  /**
+   * Breaks an Object: its body is removed, Debris bursts from it and its
+   * Fill comes out.
+   */
   private breakObject(object: ObjectStroke): void {
-    const outline = transformPoints(object.outline, this.physics.getTransform(object.body));
+    const motion = this.motionOf(object.body);
+    const outline = transformPoints(object.outline, motion.transform);
     const colours = object.fill ? [object.colour, object.fill] : [object.colour];
-    this.debris.burst(outline, this.physics.getVelocity(object.body), colours);
+    this.debris.burst(outline, motion.velocity, colours);
     this.remove(object.id);
+    this.releaseFill(object, motion);
+  }
+
+  /**
+   * Lets out a broken Object's Fill, in the same step, from where the Object
+   * was and moving as it moved: grey and black Fills release Rubble, kicked
+   * outward from its centre. Other Fills release nothing yet.
+   */
+  private releaseFill(object: ObjectStroke, from: Motion): void {
+    const colour = object.fill;
+    if (!colour) return;
+    const fill = this.materials.colours[colour].fill;
+    const pieces = packRubble(object.outline, colour, object.fillMass, this.materials, this.random);
+    const launched = launchRubble(
+      pieces,
+      from,
+      fill.kickSpeed,
+      this.materials.kickSpread,
+      this.random,
+    );
+    launched.forEach(({ position, velocity, angularVelocity }, k) => {
+      const { radius, mass } = pieces[k]!;
+      this.addRubble(
+        { id: this.nextRubbleId++, colour, radius, mass },
+        { transform: { ...position, angle: from.transform.angle }, velocity, angularVelocity },
+      );
+    });
+    this.capRubble();
+  }
+
+  private addRubble(rubble: Omit<Rubble, 'body'>, motion: Motion): void {
+    const body = this.physics.addCircle({
+      position: { x: motion.transform.x, y: motion.transform.y },
+      angle: motion.transform.angle,
+      radius: rubble.radius,
+      mass: rubble.mass,
+      surface: this.materials.colours[rubble.colour].outline,
+      velocity: motion.velocity,
+      angularVelocity: motion.angularVelocity,
+    });
+    this.rubbleList.push({ ...rubble, body });
+  }
+
+  /** Over the Rubble cap, the oldest Rubble goes at once and fades out where it was. */
+  private capRubble(): void {
+    const cap = Math.max(0, this.materials.rubbleCap);
+    while (this.rubbleList.length > cap) {
+      const { body, ...oldest } = this.rubbleList.shift()!;
+      this.fading.push({ ...oldest, transform: this.physics.getTransform(body), age: 0 });
+      this.physics.removeBody(body);
+    }
   }
 
   /**
@@ -583,6 +724,7 @@ export class SandboxWorld {
     if (!snapshot) return;
     this.rebuild(snapshot);
     this.debris.clear();
+    this.fading = [];
     this.history = [...snapshot.history];
     this.random.state = snapshot.random;
     this.elapsed = snapshot.time;
@@ -598,9 +740,13 @@ export class SandboxWorld {
           return { ...line, pieces: pieces.map(({ body: _body, ...piece }) => piece) };
         }
         const { body, ...object } = stroke;
-        return { ...object, motion: this.motionOf(body) };
+        return { ...object, motion: this.objectMotionOf(body) };
       }),
       history: [...this.history],
+      rubble: this.rubbleList.map(({ body, ...rubble }) => ({
+        ...rubble,
+        motion: this.motionOf(body),
+      })),
       random: this.random.state,
       time: this.elapsed,
       settled: this.settledPairs(),
@@ -624,8 +770,13 @@ export class SandboxWorld {
       if (stroke.kind === 'object') byBody.set(stroke.body, stroke);
       else for (const piece of stroke.pieces) byBody.set(piece.body, piece);
     }
+    const rubble = new Map(this.rubbleList.map((r) => [r.body, r.id]));
     return (body) => {
       if (body === this.terrainBody) return { key: 'terrain', target: null, sliding: false };
+      // Rubble deals damage but never takes any. Each piece is its own hitter.
+      const rubbleId = rubble.get(body);
+      if (rubbleId !== undefined)
+        return { key: `rubble ${rubbleId}`, target: null, sliding: false };
       const target = byBody.get(body);
       if (!target) return null;
       // Keys stay the same across a rebuild, and Stroke ids are never reused.
@@ -644,11 +795,17 @@ export class SandboxWorld {
     };
   }
 
-  private motionOf(body: BodyId): ObjectMotion {
+  private motionOf(body: BodyId): Motion {
     return {
       transform: this.physics.getTransform(body),
       velocity: this.physics.getVelocity(body),
       angularVelocity: this.physics.getAngularVelocity(body),
+    };
+  }
+
+  private objectMotionOf(body: BodyId): ObjectMotion {
+    return {
+      ...this.motionOf(body),
       frozen: this.physics.isFrozen(body),
       slide: this.physics.getSlide(body),
     };
@@ -669,9 +826,15 @@ export class SandboxWorld {
       const surface = stroke.kind === 'line' ? material.line : material.outline;
       for (const body of this.bodiesOf(stroke)) this.physics.setSurface(body, surface);
     }
+    for (const { body, colour } of this.rubbleList) {
+      this.physics.setSurface(body, this.materials.colours[colour].outline);
+    }
   }
 
-  /** Rebuilds the physics world from a snapshot's Strokes, from a fresh engine state. */
+  /**
+   * Rebuilds the physics world from a snapshot's Strokes and then its
+   * Rubble, from a fresh engine state.
+   */
   private rebuild(snapshot: Snapshot): void {
     this.physics.reset();
     this.terrainBody = this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
@@ -698,6 +861,8 @@ export class SandboxWorld {
       if (motion.slide) this.physics.slideOut(body, motion.slide, SLIDE_OUT_SPEED);
       return { ...object, body };
     });
+    this.rubbleList = [];
+    for (const { motion, ...rubble } of snapshot.rubble) this.addRubble(rubble, motion);
   }
 
   /** Advances physics by one fixed step, if running. */
@@ -707,6 +872,8 @@ export class SandboxWorld {
     const report = this.physics.step();
     this.elapsed += STEP_SECONDS;
     this.debris.step(STEP_SECONDS);
+    for (const ghost of this.fading) ghost.age += STEP_SECONDS;
+    this.fading = this.fading.filter((ghost) => ghost.age < RUBBLE_FADE_SECONDS);
     const broken = this.rules.applyStep(
       report,
       () => this.physics.touchingPairs(),

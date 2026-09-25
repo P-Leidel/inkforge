@@ -22,7 +22,7 @@ A worst-case scene for performance: a chain of red bombs tearing through filled 
 **The scene.** Build it as a Demolition demo in the gallery (the issue asks for a gallery button), through the Sandbox world, with:
 
 - **a chain of 5 red bombs,** spaced so each Blast sets off the next. The chain rule from #19 depends only on distance and strength.
-- **3 grey-filled boxes and 1 black-filled box,** big enough that each releases the maximum Rubble: 3 × 18 + 8 = 62, "about 60". Check the Rubble cap of 150 isn't hit.
+- **3 grey-filled boxes and 1 black-filled box,** big enough that each releases the maximum Rubble: 3 × 18 + 8 = 62, "about 60". Check the Rubble cap of 150 isn't hit. With #16's numbers a 70 px grey-filled box gives 18 pebbles and a 60 px black-filled one 8 stones (`rubbleArea`, `rubbleRadius` and `rubbleMax` in the table). With the cap full of Rubble, a headless step took 0.46 ms on average at #16.
 - **one blue- and one green-filled Object** that the chain breaks: 10–15 Droplets each, "about 30".
 - **a wall of mixed-Colour Lines** in the Blasts' way.
 - **a trigger,** e.g. the first bomb dropped from a height, or a ball Released at it.

@@ -59,6 +59,25 @@ export interface ObjectBodyDef {
 }
 
 /**
+ * A movable circle (Rubble). It never starts Frozen, and like an Object it
+ * reports its hits.
+ */
+export interface CircleBodyDef {
+  /** World position of its centre. */
+  readonly position: Vec2;
+  /** px. */
+  readonly radius: number;
+  readonly surface: Surface;
+  readonly mass: number;
+  /** Rotation, radians; 0 by default. */
+  readonly angle?: number;
+  /** Linear velocity, px/s. */
+  readonly velocity?: Vec2;
+  /** Angular velocity, rad/s. */
+  readonly angularVelocity?: number;
+}
+
+/**
  * Opaque handle to one shape of a body: a part of an Object, a capsule of a
  * Line, a polygon of the Terrain. It stays the same when an Object's body is
  * rebuilt (Release, waking, slide-out).
@@ -85,14 +104,15 @@ export interface ContactHit extends ContactPair {
    * The impact impulse (mass × px/s): the collision played out between the
    * two bodies at `point`, with their bounce, as the Frozen wake plays it.
    * Fixed and sliding bodies, and Frozen Objects the hit doesn't wake, count
-   * as immovable; a Frozen Object it wakes counts with its mass.
+   * as immovable; a Frozen Object it wakes counts with its mass. Moving
+   * Objects and circles count with their mass.
    */
   readonly impulse: number;
 }
 
 /** What one step did to contacts. */
 export interface StepReport {
-  /** Every hit between shapes of which at least one belongs to an Object. */
+  /** Every hit between shapes of which at least one belongs to an Object or a circle. */
   readonly hits: readonly ContactHit[];
   /** Pairs of shapes that started touching. */
   readonly begins: readonly ContactPair[];
@@ -109,6 +129,12 @@ export interface PhysicsWorld {
   addLine(segments: readonly Segment[], thickness: number, surface: Surface): BodyId;
   /** Adds a movable Object. */
   addObject(def: ObjectBodyDef): BodyId;
+  /**
+   * Adds a moving circle. It moves and hits like a moving Object, and its
+   * hits can wake a Frozen Object. On flat ground it rolls to a stop, as a
+   * pebble does, rather than rolling for ever.
+   */
+  addCircle(def: CircleBodyDef): BodyId;
   removeBody(id: BodyId): void;
 
   /**
@@ -140,9 +166,12 @@ export interface PhysicsWorld {
   /** Changes `minBounceSpeed` from the next step. */
   setMinBounceSpeed(speed: number): void;
 
-  /** An Object's mass. */
+  /** An Object's or a circle's mass. */
   getMass(id: BodyId): number;
-  /** Sets an Object's mass, spread evenly over its shape. Never wakes a Frozen Object. */
+  /**
+   * Sets an Object's or a circle's mass, spread evenly over its shape. Never
+   * wakes a Frozen Object.
+   */
   setMass(id: BodyId, mass: number): void;
 
   getTransform(id: BodyId): Transform;

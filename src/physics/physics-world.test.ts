@@ -218,3 +218,98 @@ describe('Physics placement', () => {
     });
   });
 });
+
+describe('Circle bodies', () => {
+  const circle = (overrides: Partial<Parameters<PhysicsWorld['addCircle']>[0]> = {}) => ({
+    position: { x: 500, y: 250 },
+    radius: 6,
+    surface: DEAD,
+    mass: 0.2,
+    ...overrides,
+  });
+
+  it('fall, weigh what they were given and report their landing', () => {
+    const world = createWorld();
+    const ground = world.addTerrain([GROUND], DEAD);
+    const pebble = world.addCircle(
+      circle({ position: { x: 500, y: 470 }, velocity: { x: 0, y: 600 } }),
+    );
+
+    expect(world.getMass(pebble)).toBeCloseTo(0.2, 9);
+    expect(world.isFrozen(pebble)).toBe(false);
+    const [hit] = stepUntilHit(world).hits;
+
+    expect(new Set([hit!.bodyA, hit!.bodyB])).toEqual(new Set([ground, pebble]));
+    expect(hit!.impulse / hit!.speed).toBeCloseTo(0.2, 2);
+    for (let step = 0; step < 60; step++) world.step();
+    expect(world.getTransform(pebble).y).toBeCloseTo(500 - 6, 0); // resting on the ground
+  });
+
+  it('report hitting a Line, and hit a moving Object with both masses', () => {
+    const world = createWorld();
+    world.addLine([{ a: { x: 300, y: 400 }, b: { x: 700, y: 400 } }], 8, DEAD);
+    world.addCircle(circle({ position: { x: 400, y: 380 }, velocity: { x: 0, y: 500 } }));
+    const [onLine] = stepUntilHit(world).hits;
+    expect(onLine!.impulse / onLine!.speed).toBeCloseTo(0.2, 2);
+
+    const other = createWorld();
+    other.addObject({
+      position: { x: 500, y: 300 },
+      parts: [square(20)],
+      frozen: false,
+      surface: DEAD,
+      mass: 0.2,
+    });
+    other.addCircle(circle({ position: { x: 500, y: 250 }, velocity: { x: 0, y: 400 } }));
+    const [onObject] = stepUntilHit(other).hits;
+    // Two equal masses, head on: each counts half.
+    expect(onObject!.impulse / onObject!.speed).toBeCloseTo(0.1, 1);
+  });
+
+  it('wake a Frozen Object light enough, and not one too heavy', () => {
+    function wakes(frozenMass: number): boolean {
+      const world = createWorld();
+      const box = world.addObject({
+        position: { x: 500, y: 300 },
+        parts: [square(20)],
+        frozen: true,
+        surface: DEAD,
+        mass: frozenMass,
+      });
+      world.addCircle(circle({ position: { x: 500, y: 270 }, velocity: { x: 0, y: 800 } }));
+      stepUntilHit(world);
+      return !world.isFrozen(box);
+    }
+
+    expect(wakes(0.2)).toBe(true);
+    expect(wakes(20)).toBe(false);
+  });
+
+  it('roll to a stop on flat ground', () => {
+    const world = createWorld();
+    world.addTerrain([GROUND], DEAD);
+    const pebble = world.addCircle(
+      circle({ position: { x: 200, y: 494 }, velocity: { x: 300, y: 0 } }),
+    );
+
+    for (let step = 0; step < 60 * 8; step++) world.step();
+
+    expect(Math.abs(world.getVelocity(pebble).x)).toBeLessThan(1);
+    expect(world.getTransform(pebble).x).toBeGreaterThan(300); // it did roll
+  });
+
+  it('report exactly the pose, velocity and spin they were created with until they move', () => {
+    const world = createWorld();
+    const def = circle({
+      position: { x: 123.456, y: 234.567 },
+      angle: 0.7071,
+      velocity: { x: -321.1, y: 17.3 },
+      angularVelocity: 3.3,
+    });
+    const pebble = world.addCircle(def);
+
+    expect(world.getTransform(pebble)).toEqual({ ...def.position, angle: def.angle });
+    expect(world.getVelocity(pebble)).toEqual(def.velocity);
+    expect(world.getAngularVelocity(pebble)).toBe(3.3);
+  });
+});

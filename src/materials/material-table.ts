@@ -34,6 +34,17 @@ export interface OutlineMaterial extends SurfaceMaterial {
 export interface FillMaterial {
   /** Weight of its ink (the Object's area) relative to plain ink. */
   density: number;
+  /**
+   * Speed (px/s) at which what it releases is flung outward from the broken
+   * Object's centre, on top of the Object's own velocity.
+   */
+  kickSpeed: number;
+  /** Most pieces of Rubble it releases; 0 if it releases none. */
+  rubbleMax: number;
+  /** Radius (px) of each piece of Rubble. */
+  rubbleRadius: number;
+  /** Fill area (px²) per piece of Rubble, so the count grows with the Fill's area. */
+  rubbleArea: number;
 }
 
 export interface ColourMaterial {
@@ -68,6 +79,10 @@ export interface MaterialTable {
    * Objects of equal mass wake from 150 px/s, as in milestone 1.
    */
   wakeSpeed: number;
+  /** Most Rubble at once; a release that would go over it fades out the oldest. */
+  rubbleCap: number;
+  /** A released piece is kicked up to this far (radians) either side of straight outward. */
+  kickSpread: number;
 }
 
 /**
@@ -86,7 +101,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 400,
         impactLimit: 0,
       },
-      fill: { density: 1 },
+      fill: { density: 1, kickSpeed: 200, rubbleMax: 18, rubbleRadius: 6, rubbleArea: 250 },
     },
     blue: {
       line: { friction: 0.1, restitution: 0.9, durability: 4000, damageThreshold: 200 },
@@ -98,7 +113,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 200,
         impactLimit: 3,
       },
-      fill: { density: 0.5 },
+      fill: { density: 0.5, kickSpeed: 400, rubbleMax: 0, rubbleRadius: 0, rubbleArea: 0 },
     },
     green: {
       line: { friction: 0.6, restitution: 0, durability: 6000, damageThreshold: 400 },
@@ -110,7 +125,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 400,
         impactLimit: 0,
       },
-      fill: { density: 1 },
+      fill: { density: 1, kickSpeed: 300, rubbleMax: 0, rubbleRadius: 0, rubbleArea: 0 },
     },
     black: {
       line: { friction: 1, restitution: 0, durability: 20000, damageThreshold: 2000 },
@@ -122,7 +137,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 2000,
         impactLimit: 0,
       },
-      fill: { density: 3 },
+      fill: { density: 3, kickSpeed: 200, rubbleMax: 8, rubbleRadius: 8.5, rubbleArea: 450 },
     },
     red: {
       line: { friction: 0.6, restitution: 0.1, durability: 250, damageThreshold: 300 },
@@ -134,7 +149,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 300,
         impactLimit: 0,
       },
-      fill: { density: 1 },
+      fill: { density: 1, kickSpeed: 0, rubbleMax: 0, rubbleRadius: 0, rubbleArea: 0 },
     },
   },
   inkMass: 0.00075,
@@ -142,6 +157,8 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   damagePerImpulse: 1,
   minBounceSpeed: 50,
   wakeSpeed: 82.5,
+  rubbleCap: 150,
+  kickSpread: 0.35,
 };
 
 /** A fresh, editable copy of the default table. */

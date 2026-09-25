@@ -8,16 +8,18 @@ import {
   DROP_DEMO,
   GALLERY,
   KNOCK_DEMO,
+  RUBBLE_DEMO,
   SLIDE_DEMO,
   THIRD_BOUNCE_DEMO,
 } from './gallery';
 
 const createWorld = sandboxWorlds();
 
-/** Where every Object is and what is left of every Line. */
+/** Where every Object and piece of Rubble is, and what is left of every Line. */
 const played = (world: SandboxWorld) => ({
   objects: world.objects.map((o) => o.transform),
   pieces: world.lines.map((l) => l.pieces.map((p) => [p.index, p.durability])),
+  rubble: world.rubble.map((r) => [r.colour, r.mass, r.transform]),
 });
 
 describe('Colour gallery', () => {
@@ -122,5 +124,23 @@ describe('Colour gallery', () => {
     const [fallen, held] = world.objects;
     expect(fallen!.transform.y).toBeGreaterThan(700);
     expect(held!.transform.y + 30).toBeCloseTo(616, 0);
+  });
+
+  it('Rubble: pebbles and stones spill onto the grey Line, and the stones crack it', () => {
+    const world = createWorld();
+    RUBBLE_DEMO.build(world);
+
+    runFor(world, 3);
+
+    expect(world.objects).toHaveLength(0);
+    const pebbles = world.rubble.filter((r) => r.colour === 'grey');
+    const stones = world.rubble.filter((r) => r.colour === 'black');
+    expect(pebbles.length).toBeGreaterThan(stones.length);
+    expect(stones.length).toBeGreaterThan(0);
+    // The grey Lines under the pebbles and under the stones; the anvils between.
+    const [underPebbles, , underStones] = world.lines;
+    const worn = (line: typeof underPebbles) => Math.max(...line!.pieces.map((p) => p.wear));
+    expect(worn(underStones)).toBeGreaterThan(0.25); // cracked
+    expect(worn(underPebbles)).toBeLessThan(worn(underStones));
   });
 });

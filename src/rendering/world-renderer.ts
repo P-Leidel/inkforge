@@ -2,6 +2,7 @@ import type Phaser from 'phaser';
 import type { Segment } from '../geometry/segment';
 import type { Vec2 } from '../geometry/vec2';
 import type {
+  FadingRubbleView,
   LineView,
   ObjectView,
   PieceView,
@@ -21,11 +22,16 @@ type Graphics = Phaser.GameObjects.Graphics;
 const CRACK_STAGES = [0.25, 0.5, 0.75];
 const CRACK_WIDTH = 2;
 const DEBRIS_DEPTH = 5;
+/** Sides of the polygon a piece of Rubble is drawn as. */
+const RUBBLE_SIDES = 20;
+/** Width of the rim around a piece of Rubble. */
+const RUBBLE_RIM = 2;
 
 /**
- * Draws the Sandbox world's state: Terrain, Lines, Objects and Debris. Each
- * Stroke gets its own Graphics, drawn again only when its look changes;
- * moving Objects only update its transform. Debris is redrawn every frame.
+ * Draws the Sandbox world's state: Terrain, Lines, Objects, Rubble and
+ * Debris. Each Stroke gets its own Graphics, drawn again only when its look
+ * changes; moving Objects only update its transform. So does each piece of
+ * Rubble, which never changes its look. Debris is redrawn every frame.
  */
 export class WorldRenderer {
   private readonly lines = new Map<StrokeId, Graphics>();
@@ -34,6 +40,8 @@ export class WorldRenderer {
   private readonly drawnLineLook = new Map<StrokeId, string>();
   /** The Frozen state and Fill each Object was last drawn with. */
   private readonly drawnLook = new Map<StrokeId, string>();
+  /** Each piece of Rubble, live or fading out, by its id. */
+  private readonly rubble = new Map<number, Graphics>();
   private readonly debris: Graphics;
 
   constructor(
@@ -56,7 +64,29 @@ export class WorldRenderer {
   draw(): void {
     this.syncLines();
     this.syncObjects();
+    this.syncRubble();
     this.drawDebris();
+  }
+
+  /** Rubble in the place it is, and what the cap removed fading out where it was. */
+  private syncRubble(): void {
+    const current = new Set<number>();
+    const pieces: FadingRubbleView[] = [
+      ...this.world.rubble.map((piece) => ({ ...piece, opacity: 1 })),
+      ...this.world.fadingRubble,
+    ];
+    for (const piece of pieces) {
+      current.add(piece.id);
+      let g = this.rubble.get(piece.id);
+      if (!g) {
+        g = this.scene.add.graphics();
+        drawRubble(g, piece);
+        this.rubble.set(piece.id, g);
+      }
+      const { x, y, angle } = piece.transform;
+      g.setPosition(x, y).setRotation(angle).setAlpha(piece.opacity);
+    }
+    removeStale(this.rubble, current);
   }
 
   /** Each particle as a small tumbling square in its Colour, fading out. */
@@ -197,6 +227,17 @@ function drawObject(g: Graphics, object: ObjectView): void {
   }
 }
 
+/** A piece of Rubble in its own coordinates: a disc of its Fill Colour's ink, with a rim. */
+function drawRubble(g: Graphics, piece: FadingRubbleView): void {
+  const disc = Array.from({ length: RUBBLE_SIDES }, (_, k) => {
+    const angle = (2 * Math.PI * k) / RUBBLE_SIDES;
+    const r = piece.radius - RUBBLE_RIM / 2;
+    return { x: r * Math.cos(angle), y: r * Math.sin(angle) };
+  });
+  fillInk(g, piece.colour, disc);
+  drawInk(g, piece.colour, disc, true, RUBBLE_RIM);
+}
+
 /** How many crack stages a Piece's or an Object's wear shows: 0 to 3. */
 function crackStage(wear: number): number {
   return CRACK_STAGES.filter((stage) => wear >= stage).length;
@@ -231,7 +272,7 @@ function drawCracks(g: Graphics, object: ObjectView): void {
   }
 }
 
-function removeStale(graphics: Map<StrokeId, Graphics>, current: Set<StrokeId>): void {
+function removeStale(graphics: Map<number, Graphics>, current: Set<number>): void {
   for (const [id, g] of graphics) {
     if (current.has(id)) continue;
     g.destroy();

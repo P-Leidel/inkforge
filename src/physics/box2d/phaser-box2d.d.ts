@@ -51,6 +51,7 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     rotation: b2Rot;
     linearVelocity: b2Vec2;
     angularVelocity: number;
+    angularDamping: number;
     gravityScale: number;
     userData: unknown;
     enableSleep: boolean;
@@ -104,6 +105,12 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     shapeIdA: b2ShapeId;
     shapeIdB: b2ShapeId;
     manifold: b2Manifold;
+  }
+
+  export class b2Circle {
+    constructor(center?: b2Vec2 | null, radius?: number);
+    center: b2Vec2;
+    radius: number;
   }
 
   export class b2Capsule {
@@ -197,6 +204,11 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     bodyId: b2BodyId,
     def: b2ShapeDef,
     capsule: b2Capsule,
+  ): b2ShapeId;
+  export function b2CreateCircleShape(
+    bodyId: b2BodyId,
+    def: b2ShapeDef,
+    circle: b2Circle,
   ): b2ShapeId;
   export function b2Shape_GetBody(shapeId: b2ShapeId): b2BodyId;
   export function b2Shape_GetUserData(shapeId: b2ShapeId): unknown;
