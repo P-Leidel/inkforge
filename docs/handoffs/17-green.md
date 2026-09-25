@@ -1,6 +1,6 @@
 # Handoff: #17 Green
 
-Issue: https://github.com/P-Leidel/inkforge/issues/17 (slice 8 of 13; blocked by #24, the Arena contents refactor). Read [README.md](README.md) first: it has the working agreement, the checks and the engine facts every slice needs.
+Issue: https://github.com/P-Leidel/inkforge/issues/17 (slice 8 of 13; blocked by #24, the Arena contents refactor, and by the Contact ledger slice if the user adds one first). Read [README.md](README.md) first: it has the working agreement, the checks and the engine facts every slice needs.
 
 Anything moving across a green Line Piece slows right down (heavier things less), and the Piece wears as it works. A green Object sticks once to the first new thing it touches after it starts moving, and falls free for good when either side breaks. Green Patches come with Spills in #18.
 
@@ -8,11 +8,12 @@ Anything moving across a green Line Piece slows right down (heavier things less)
 
 - In the spec: [Green](../specs/m2-colours.md#green), [Frozen](../specs/m2-colours.md#frozen), [Lines and Pieces](../specs/m2-colours.md#lines-and-pieces) (squeezing) and [Sandbox controls](../specs/m2-colours.md#sandbox-controls) (undo frees a stuck green Object).
 - [ADR 0007](../adr/0007-glue-drags-every-moving-body.md) (glue drags every moving body) and [ADR 0003](../adr/0003-no-joints-in-mvp.md) (green sticking is the only runtime joint).
-- The commits of #15 and #16. They decide how Pieces and Rubble are keyed and how the Fill release looks.
+- The commits of #15, #16 and #24. They decide how Pieces and Rubble are keyed, how the Fill release looks, and how each kind of Arena contents is a module of its own.
 - **The user decided (2026-09-25):** a green Object never sticks while it slides off a Line. The end of the slide counts as it starting to move, and contacts touching at that moment (usually the Line it slid off) don't count. It sticks to the next thing it touches.
 
 ## What already exists
 
+- **Arena contents (#24).** Each kind is a module behind `Kind` (`src/sandbox/arena-contents.ts`): `Strokes` (`strokes.ts`) and `Rubble` (`rubble.ts`). The Sandbox world runs the snapshot, rebuilding, Clear, Party lookup and each step over its list of kinds, in order. See README, "Patterns the slices follow".
 - **Contacts.**
   - `physics.touchingPairs()` gives every shape pair touching now, with their bodies.
   - `StepReport.begins` and `StepReport.ends` give the pairs that began and ended in the step.
@@ -22,8 +23,8 @@ Anything moving across a green Line Piece slows right down (heavier things less)
   - The module has `getVelocity`, `setVelocity`, `getAngularVelocity` and `getMass`, but no forces, impulses or joints.
   - A Frozen Object is a fixed body. Waking, Release and the end of a slide destroy it and build a new one (`rebuild` in the adapter), and joints die with their body.
 - **Sliding.** A sliding Object is kinematic, and `getSlide(id)` is non-null while it slides.
-- **Pieces (#15)** are `Piece` records in `LineStroke.pieces`. Each is its own fixed body with the Party key `stroke ${lineId} piece ${index}`. A green Piece has durability 6000 and threshold 400 at `1e13bc5`. Rubble (#16) is dynamic circles (`addCircle`) with the Party key `rubble ${id}` and no target; the Sandbox world keeps it in `rubbleList`.
-- **Breaking.** `MaterialRules.applyStep` returns only what impacts broke. Damage from wear must break Pieces through the same `breakPiece` path, so check `wear(piece, table) >= 1` after adding it.
+- **Pieces (#15)** are `Piece` records in `LineStroke.pieces`. Each is its own fixed body with the Party key `stroke ${lineId} piece ${index}`. A green Piece has durability 6000 and threshold 400 at `1e13bc5`. Rubble (#16) is dynamic circles (`addCircle`) with the Party key `rubble ${id}` and no target; the `Rubble` kind keeps it.
+- **Breaking.** `MaterialRules.applyStep` returns only what impacts broke, and the world's `breakTarget` breaks each through `strokes.break`, which reports the Debris to burst. Damage from wear must break Pieces through the same path, so check `wear(piece, table) >= 1` after adding it and hand the Piece to `breakTarget`.
 
 ## Suggested design (a proposal)
 
@@ -75,14 +76,28 @@ Anything moving across a green Line Piece slows right down (heavier things less)
   - Stuck to Terrain, a Line or a Frozen Object is a weld to a fixed body, so the green Object is effectively fixed.
   - Stuck to a moving body, the two move as one.
 - **A moving green Object that hits a Frozen Object** sticks to it. The adapter's mass-aware wake rule decides, inside `step()`, whether the Frozen one wakes. The bond is made after the step, so if the host woke it is already a moving body.
-- **It falls free** when either side breaks, is undone, or is removed by a cap (the Rubble cap: `capRubble()` in `sandbox-world.ts`). It becomes spent and never sticks again. Spec: "Undoing something a green Object is stuck to frees the green Object as if it had broken."
+- **It falls free** when either side breaks, is undone, cleared, or removed by a cap (the Rubble cap: `cap()` in the `Rubble` kind). It becomes spent and never sticks again. Spec: "Undoing something a green Object is stuck to frees the green Object as if it had broken."
 - **A green Outline sticks but causes no drag.** Only green Pieces (and, in #18, green Patches) drag.
+
+**Bonds are a kind** (#24's decision), say `Bonds` in `src/sandbox/bonds.ts`, after Strokes and Rubble in the world's list of kinds, so its `restore` runs once every body exists.
+
+- It owns the bonds, their ids and their views (for the drawing below), and implements every part of `Kind`. It has no Party, no solids and no surfaces of its own.
+- The green Object's sticking state can live with the Object in `Strokes` or in `Bonds`; decide. Either way, kinds never call each other: the world passes on what one reports.
+
+**"Host gone".** #24 left this for its first consumer. Build it here:
+
+- The Sandbox world collects what each step or command removed: broken, undone (`remove`, `undo`), cleared, or capped (the Rubble cap). Kinds report their removals, as `strokes.break` already reports what it broke.
+- It hands them to every kind, in kind order, e.g. as a new `Kind` method.
+- A bond whose host is gone is removed, and its green Object is spent: it falls free for good.
+- #18's Patches hear the same removals.
 
 **Snapshot.**
 
 - Save each bond as the Party keys of both sides, plus the local anchors and reference angle.
 - Save each green Object's state and touched set, and each Piece's wear. (Piece wear is its damage; #15 already saves that.)
-- `rebuild` adds bonds after all bodies exist.
+- Each kind's `save` and `restore` cover their own part.
+
+**Contacts.** The architecture review's candidate 2, the Contact ledger, may come before this slice: one module behind the `StepReport` that owns Parties, settled pairs and the touching set, and hands every rule the contacts that count. If it has landed, read sticking's new contacts and the glue drag's touching bodies from it rather than from `begins` and `touchingPairs()`.
 
 **Drawing.** A small green blob at the bond point shows why an Object hangs (optional).
 
@@ -92,7 +107,7 @@ Anything moving across a green Line Piece slows right down (heavier things less)
 - A squeeze unfreezes an Object when its slide *starts*: `slideOut` rebuilds it as kinematic, and `isFrozen` turns false at once. Check `getSlide` before you take Frozen turning false as a wake; a squeezed Object starts moving only when its slide ends.
 - A green Object stuck to a body that is later squeezed (it turns kinematic for the slide) must keep its bond through that rebuild too.
 - The glue drag and sticking must also work on a Frozen Object after it wakes, and on Rubble for drag. Frozen and sliding bodies get no drag.
-- Replays: bonds, states and touched sets all go in the snapshot. Extend the gallery replay test to cover a bond.
+- Replays: bonds, states and touched sets all go in the snapshot. The gallery replay test compares `world.contents`, so a demo with a bond covers it once `Bonds` has views.
 
 ## Tests (from the issue)
 

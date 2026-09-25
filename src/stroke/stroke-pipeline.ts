@@ -31,9 +31,9 @@ import {
 /** A read-only view of what already exists in the Arena. */
 export interface StrokeContext {
   readonly terrain: readonly Polygon[];
-  /** Existing Objects, each as its convex parts in world coordinates. */
+  /** Existing solid bodies (Objects), each as its convex parts in world coordinates. */
   readonly objects: readonly (readonly Polygon[])[];
-  /** Existing Rubble, as circles in world coordinates. */
+  /** Existing solid circles (Rubble), in world coordinates. */
   readonly rubble?: readonly Circle[];
   /** Thickness of a Line; defaults to LINE_THICKNESS. */
   readonly lineThickness?: number;
