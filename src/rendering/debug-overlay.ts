@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
-import { strokePolygon } from './draw';
+import { strokeCapsule, strokePolygon } from './draw';
 import { PALETTE } from './palette';
 
 /** F1 overlay: collider outlines, body count and fps. */
@@ -42,6 +42,9 @@ export class DebugOverlay {
     g.clear();
     g.lineStyle(2, PALETTE.debug, 1);
     for (const polygon of this.world.arena.terrain) strokePolygon(g, polygon);
+    for (const line of this.world.lines) {
+      for (const { a, b } of line.segments) strokeCapsule(g, a, b, line.thickness);
+    }
 
     const fps = this.scene.game.loop.actualFps;
     this.stats.setText(`fps    ${fps.toFixed(0)}\nbodies ${this.world.bodyCount}`);

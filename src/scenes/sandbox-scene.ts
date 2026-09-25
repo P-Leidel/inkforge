@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
+import type { Vec2 } from '../geometry/vec2';
 import { DebugOverlay } from '../rendering/debug-overlay';
 import { Hud } from '../rendering/hud';
+import { StrokePreview } from '../rendering/stroke-preview';
+import { Toolbar } from '../rendering/toolbar';
 import { WorldRenderer } from '../rendering/world-renderer';
 import { SandboxWorld } from '../sandbox/sandbox-world';
 
@@ -13,6 +16,9 @@ export class SandboxScene extends Phaser.Scene {
   private worldView!: WorldRenderer;
   private overlay!: DebugOverlay;
   private hud!: Hud;
+  private preview!: StrokePreview;
+  /** Pointer samples of the Stroke being drawn, or null. */
+  private stroke: Vec2[] | null = null;
 
   constructor() {
     super('sandbox');
@@ -23,19 +29,55 @@ export class SandboxScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.world.dispose());
 
     this.worldView = new WorldRenderer(this, this.world);
+    this.preview = new StrokePreview(this);
     this.overlay = new DebugOverlay(this, this.world);
     this.hud = new Hud(this, this.world);
+    new Toolbar(this).addButton('Clear', () => this.world.clear());
 
+    this.bindKeys();
+    this.bindPointer();
+  }
+
+  private bindKeys(): void {
     const keyboard = this.input.keyboard!;
     keyboard
       .addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
       .on('down', () => this.world.togglePause());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.toggle());
+    keyboard.on('keydown-Z', (event: KeyboardEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      this.world.undo();
+    });
+  }
+
+  private bindPointer(): void {
+    this.input.mouse?.disableContextMenu();
+    this.input.on(
+      Phaser.Input.Events.POINTER_DOWN,
+      (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
+        if (over.length > 0) return; // a toolbar button
+        if (pointer.leftButtonDown()) this.stroke = [{ x: pointer.worldX, y: pointer.worldY }];
+      },
+    );
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
+      this.stroke?.push({ x: pointer.worldX, y: pointer.worldY });
+    });
+    const finish = () => this.finishStroke();
+    this.input.on(Phaser.Input.Events.POINTER_UP, finish);
+    this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, finish);
+  }
+
+  private finishStroke(): void {
+    if (!this.stroke) return;
+    this.world.submitStroke(this.stroke);
+    this.stroke = null;
   }
 
   override update(_time: number, deltaMs: number): void {
     this.world.advance(deltaMs / 1000);
     this.worldView.draw();
+    this.preview.draw(this.stroke);
     this.overlay.draw();
     this.hud.draw();
   }
