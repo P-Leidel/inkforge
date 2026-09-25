@@ -13,6 +13,15 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // Runs must be repeatable: all randomness comes from the seeded generator.
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'Math',
+          property: 'random',
+          message: 'Use the seeded Random from src/sandbox/random.ts.',
+        },
+      ],
     },
   },
   {
