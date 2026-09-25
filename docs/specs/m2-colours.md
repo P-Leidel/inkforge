@@ -108,7 +108,7 @@ The milestone answers one question: **are the five Colours clearly distinct, and
 
 ### Scope
 
-- Builds on the finished milestone 1, which keeps Phaser Box2D ([ADR 0001 verdict](../adr/0001-phaser-box2d-physics.md#verdict-milestone-1)). Written while milestone 1 was being finished; to be reviewed against its implementation before the slice issues are filed.
+- Builds on the finished milestone 1, which keeps Phaser Box2D ([ADR 0001 verdict](../adr/0001-phaser-box2d-physics.md#verdict-milestone-1)). Reviewed against the milestone 1 code before slicing; what that changed is listed under [Further Notes](#further-notes).
 - Engine-neutral. Every number below is a starting value, tuned with the F2 panel.
 - No ink costs and no Ink Tanks: every Colour is unlimited (milestone 3). No enemies (milestone 4).
 
@@ -124,16 +124,22 @@ The milestone answers one question: **are the five Colours clearly distinct, and
 - **Stroke pipeline** (milestone 1, still pure). Takes the Colour as input and additionally splits each Line into Pieces (see below).
 - **Physics module** (milestone 1). Stays engine-neutral and knows nothing about Colours. It gains:
   - the impact impulse on every reported hit, computed from the approach speed and both bodies' effective mass the way the Frozen wake already does (milestone 1 reports only the approach speed);
-  - hit reports for every contact that can deal damage (Lines, Objects, Rubble), not only those involving Objects;
+  - hit reports for every contact that can deal damage (Lines, Objects, Rubble), not only those involving Objects, naming the shape that was hit so a Patch can be told from its host;
+  - reports of contacts beginning and ending, per shape (green sticking, Droplets landing, glue drag);
   - friction and restitution per shape;
+  - circle bodies (Rubble, Droplets);
+  - collision groups, so Droplets ignore each other;
+  - bodies that never wake a Frozen Object (Droplets);
   - applying forces and impulses;
   - fixed joints between two bodies (for green sticking only);
-  - adding and removing shapes on an existing body (Pieces breaking off, Patches);
+  - adding and removing shapes on an existing body (Patches);
   - querying bodies within a radius;
   - setting a body's mass;
-  - flagging contacts that began while the two bodies overlapped.
+  - creating a body with a given angle and linear and angular velocity, and reading its angular velocity back (Reset).
+
+  Whatever is attached to a body (shape friction and restitution, mass, Patches, the green bond) survives Release, wake-on-hit and slide-out. Phaser Box2D rebuilds a Frozen Object's body when it unfreezes ([ADR 0001](../adr/0001-phaser-box2d-physics.md#verdict-milestone-1)), so the adapter carries this state over. The replayed waking hit uses the restitution of the two shapes involved instead of milestone 1's fixed 0.
 - **Material rules** (new, headless, part of the Sandbox world). Consumes contact reports and the step clock and applies everything Colour-specific: damage and durability, the blue counter, wear by use, glue drag, green sticking, Blasts, Fill release (Rubble, Spills, the kick) and the caps. It talks to the engine only through the physics module.
-- **Sandbox world** (milestone 1). Gains the commands: select Colour, fill at a point, reset. Takes a snapshot whenever physics starts.
+- **Sandbox world** (milestone 1). Gains the commands: fill at a point, reset. Submitting a Stroke and filling take the Colour as an argument; the scene remembers the selected Colour, the Sandbox world doesn't. Takes a snapshot whenever physics starts and rebuilds the world from it (see Reset).
 - **Phaser scene** (milestone 1). Additionally draws the palette, Colour textures, Fills, cracks, Debris, Patches and Blast rings, and hosts the F2 panel and the gallery buttons.
 - **Gallery and Demolition scenes.** Scripted setups built through the Sandbox world, like milestone 1's stress tests.
 
@@ -155,7 +161,7 @@ Restitution is never 1 or more, so nothing gains energy from a bounce (milestone
 - An impact whose impulse exceeds the receiver's damage threshold deals `(impulse − threshold) × k` damage to it. Both sides are checked separately against their own threshold. There is no Colour-versus-Colour table.
 - Terrain and Rubble take no damage. Frozen Objects do.
 - Droplets deal no damage.
-- A contact that began while the two bodies overlapped (an Object drawn over a Line, or a Line drawn through an Object) deals no damage until they have separated.
+- An Object being squeezed off a Line (see Lines and Pieces) deals and takes no damage while it slides. The slide never touches the Line, so an Object drawn over a Line, or a Line drawn through an Object, damages neither.
 - Blasts deal damage as described under Blasts.
 - At zero durability a Piece or Object breaks. Red explodes instead of just breaking.
 
@@ -163,13 +169,15 @@ Restitution is never 1 or more, so nothing gains energy from a bounce (milestone
 
 - Object mass = Outline length × Outline density + Fill area × Fill density.
 - The mass is spread evenly over the shape (centre of mass at the centroid). Filling changes the mass immediately.
+- Grey's Outline density per length is set so that milestone 1's 60 px stress-test box keeps its milestone 1 mass. The new mass model must keep `npm run verdict` checks 2 (stacking) and 4 (stability) passing, and the ADR 0001 table is updated with the new numbers.
 
 ### Lines and Pieces
 
 - After cutting at Terrain (milestone 1), the pipeline splits each part of a Line into equal Pieces, as close to 48 px long as the length allows. A Line shorter than that is one Piece.
 - A Piece is one or more of milestone 1's 8 px capsules. The pipeline cuts at Piece boundaries first and then splits each Piece into capsules of at most 32 px (milestone 1's longest capsule), so no capsule straddles two Pieces.
-- Each Piece has its own durability and cracks.
-- A Piece breaks as a whole: its capsules are removed and Debris spawns. The rest of the Line stays fixed, even when split in two.
+- Each Piece is its own fixed body, with its own durability and cracks. A Line is the ordered list of its Pieces.
+- A Piece breaks as a whole: its body is removed and Debris spawns. The rest of the Line stays fixed, even when split in two.
+- Milestone 1 squeezes a Frozen Object off a Line drawn through it. Milestone 2 squeezes any Object a new Line crosses, moving or Frozen, the same way: it slides the shortest way off at the push-out speed and restarts from rest. Box2D's own push-out, which milestone 1 still left to moving Objects, can jam an Object made of several convex parts ([ADR 0001](../adr/0001-phaser-box2d-physics.md#verdict-milestone-1)).
 - The 48 px length is a tunable constant, to be revisited when milestone 4 sizes the Crawler.
 
 ### Fill
@@ -182,9 +190,13 @@ Restitution is never 1 or more, so nothing gains energy from a bounce (milestone
 
 ### Frozen
 
-Milestone 1's rules stay: a hard hit from a moving body wakes a Frozen Object, and the waking collision plays out normally. In addition:
+Milestone 1's rules stay: a hard hit from a moving body wakes a Frozen Object, and the waking collision plays out normally. What counts as hard now depends on mass:
 
-- A Blast wakes a Frozen Object when the push it would give (its impulse on arrival divided by the Object's mass) is faster than milestone 1's wake speed; the push is then applied. A weaker Blast only damages it.
+- A hit wakes a Frozen Object when the replayed collision would set it moving faster than the wake speed (the impulse it receives divided by its mass), the same test Blasts use below. Milestone 1 compared only the hitter's approach speed, which with Rubble and black would let any pebble wake a boulder. The wake speed is retuned so that two Objects of equal mass behave as in milestone 1.
+
+In addition:
+
+- A Blast wakes a Frozen Object when the push it would give (its impulse on arrival divided by the Object's mass) is faster than the wake speed; the push is then applied. A weaker Blast only damages it.
 - A Frozen Object takes damage and can break (releasing its Fill) without moving.
 - Droplets never wake a Frozen Object.
 - A blue Object's impact counter also counts impacts while it is Frozen.
@@ -196,6 +208,7 @@ Milestone 1's rules stay: a hard hit from a moving body wakes a Frozen Object, a
 - Total Rubble mass equals Fill area × Fill density, so black stones are heavier than grey pebbles from the same area.
 - Rubble is circular, packed inside the broken Object's Outline without overlapping (overlapping bodies fly apart violently). Each piece's mass is set so that the total matches the Fill, however much space the packing leaves.
 - Rubble is not an Object: it is never Frozen, can't be filled or Released, and never breaks. It deals damage by the normal rule, is slowed by glue and can carry Patches.
+- Rubble counts as solid for milestone 1's overlap rule: an Object that would overlap Rubble is refused (`overlaps`), like one overlapping Terrain or another Object. Droplets and Patches don't count.
 - At most 150 Rubble exist at once. When a release would go over the cap, the oldest Rubble fades out.
 
 ### Blue
@@ -250,12 +263,15 @@ Milestone 1's rules stay: a hard hit from a moving body wakes a Frozen Object, a
 
 ### Sandbox controls
 
-- **Palette.** Keys 1–5 select grey, blue, green, black, red; the palette bar is clickable. The default is grey. The pointer shows the current Colour.
+- **Palette.** Keys 1–5 select grey, blue, green, black, red; the palette bar is clickable. The default is grey. The pointer and the Stroke in progress show the current Colour.
 - Space, drawing, Release and F1 work as in milestone 1. The F1 overlay also shows durability on Pieces and Objects, and Blast rings.
-- **Reset (R).** Starting physics with Space saves a snapshot of the whole world: Strokes, Fills, damage, counters, bonds, Rubble, Patches and the random generator's state. R restores that snapshot and pauses. Before the first snapshot, R does nothing.
+- **Reset (R).** Starting physics with Space saves a snapshot of the whole simulation and rebuilds the world from it, so the first run and every retry after R play out identically. (Box2D can't save its own state, and a world rebuilt from scratch doesn't reproduce one that wasn't.)
+  - The snapshot holds everything except Debris: Strokes and Fills, poses and velocities, Frozen state, slides in progress, damage, counters and wear, bonds, which green Objects have already stuck and the contacts they started moving with, Rubble, Droplets in flight, Patches, Blast rings still spreading and what they have already acted on, and the random generator's state.
+  - Contacts touching when the snapshot is taken don't count as beginning after the rebuild: they deal no damage, stick nothing and land no Droplet.
+  - R restores the snapshot and pauses. Before the first snapshot, R does nothing.
 - **Undo (Ctrl+Z).** Removes what's left of the latest Stroke or Fill that still exists; fully destroyed Strokes and already released Fills are skipped. Rubble, Patches and Blasts it caused stay. Undoing something a green Object is stuck to frees the green Object as if it had broken.
 - **Clear** removes all Strokes, Fills, Rubble and Patches.
-- **Tuning panel (F2, development only).** Every material table value, editable live, with "copy as JSON". Density changes apply to Objects drawn or filled afterwards; everything else applies from the next step.
+- **Tuning panel (F2, in every build, including the deployed one).** Every material table value, editable live, with "copy as JSON". Density changes apply to Objects drawn or filled afterwards; everything else applies from the next step.
 - **Colour gallery.** Buttons that each load a ready-made demo through the Sandbox world, for example the same ball dropped onto each Line Colour side by side, or one Object of each Fill broken in a row.
 
 ### Visuals
@@ -269,6 +285,7 @@ Milestone 1's rules stay: a hard hit from a moving body wakes a Frozen Object, a
 ### Performance and exit criteria
 
 - **Demolition scene** (gallery button): a chain of 5 red bombs, 3 grey-filled boxes, 1 black-filled box, one blue and one green Spill, and a wall of mixed-Colour Lines. That's about 60 Rubble, 30 Droplets and 5 Blasts in quick succession.
+- `npm run verdict` also prints the physics step times for the Demolition scene, so a slow physics step shows up before anyone reads the frame rate.
 
 Milestone 2 is done when all three hold:
 
@@ -278,16 +295,21 @@ Milestone 2 is done when all three hold:
 
 ### Delivery order
 
-Vertical slices, one GitHub issue each, linking to this spec. Each slice adds its own demos to the Colour gallery. All slices build on a finished milestone 1; slices 4–7 need slice 3, and slice 6 also needs slice 5.
+Vertical slices, one GitHub issue each, linking to this spec. The slices form one chain: each is blocked by the one before it, and all build on the finished milestone 1. Each slice adds its own demos to the Colour gallery, extends Reset and Clear to what it adds, and updates the README's controls table when it adds a control.
 
-1. **Colours on Strokes.** Palette, material table, textures, per-Colour friction, restitution and density on Lines and Outlines, the F2 panel, Reset.
-2. **Fill.** Click to fill, the mass model, Fill as an undo step, "Already filled".
-3. **Breaking.** The damage rule, Pieces, Object durability, the blue counter, cracks, Debris, the overlap exemption, durability in the F1 overlay, undo and Clear with broken things.
-4. **Grey and black Fill.** Rubble packing, the Fill kick, the Rubble cap.
-5. **Green.** Glue drag, wear by use, sticking.
-6. **Spills and Patches.** Droplets, Patches, wear by use, the Patch cap.
-7. **Red.** Destroyed means explode, the Blast ring, chains and the fuse, Blasts waking Frozen Objects.
-8. **Demolition scene and blind check.**
+1. **Colours on Strokes.** Palette, material table, textures, per-Colour friction and restitution on Lines and Outlines (kept through Release, waking and slide-out), the gallery buttons with a first demo.
+2. **Fill and mass.** Click to fill, "Already filled", Fill as an undo step, the mass model and its calibration, the mass-aware hit wake, the verdict re-run.
+3. **Reset.** The snapshot, rebuilding at every start, R.
+4. **Tuning panel.** F2, live editing, copy as JSON.
+5. **Objects break.** Impact impulses and shape-level hit reports, the damage rule, Object durability, the blue counter, damage to Frozen Objects, cracks, Debris, squeezing any crossed Object, durability in the F1 overlay, undo and Clear with broken things.
+6. **Lines break Piece by Piece.** Piece splitting, one fixed body per Piece, Piece durability and cracks.
+7. **Rubble.** Grey and black Fill release, packing, the Fill kick, the Rubble cap, Rubble in the overlap rule.
+8. **Green.** Glue drag, wear by use, sticking.
+9. **Spills and Patches.** Droplets, Patches, wear by use, the Patch cap.
+10. **Red Objects and Blasts.** Destroyed means explode, Blast size, the ring, what it does on arrival, chains, Blasts waking Frozen Objects and throwing the released Fill, Blast rings in the F1 overlay.
+11. **Red Lines and the fuse.** Red Pieces exploding, the fuse.
+12. **Demolition scene.** The scene, a headless check that its chain plays out, its physics step times in `npm run verdict`.
+13. **Blind check and frame rate** (for a person, not an agent). The blind check and the Demolition frame rate on a mid-range laptop.
 
 ## Testing Decisions
 
@@ -313,6 +335,11 @@ Vertical slices, one GitHub issue each, linking to this spec. Each slice adds it
   - a red Line burns end to end;
   - a Blast damages a weakly hit Frozen Object without moving it, and wakes and pushes one it hits strongly;
   - an Object drawn over a red Line doesn't set it off at play;
+  - a Line drawn through a moving Object squeezes it off without jamming;
+  - a pebble doesn't wake a Frozen black Object that a same-mass hit would;
+  - an Object's friction and restitution, and a green bond on it, survive the Object waking;
+  - a run, R and the same run again end identically, also after pausing mid-chain;
+  - the Demolition chain plays out: 5 Blasts, about 60 Rubble and 30 Droplets;
   - the Rubble and Patch caps;
   - undo, Clear and Reset after things have broken.
 - **Browser only.** The blind check, the Demolition frame rate and tuning for feel. These depend on people and hardware, so they are not CI tests.
@@ -332,7 +359,18 @@ Vertical slices, one GitHub issue each, linking to this spec. Each slice adds it
 ## Further Notes
 
 - Decided while writing this spec: glue drags every moving body ([ADR 0007](../adr/0007-glue-drags-every-moving-body.md)); red explodes when destroyed, and Blasts act through the normal thresholds ([ADR 0008](../adr/0008-red-explodes-when-destroyed.md)). The GDD is updated to v0.4 and `CONTEXT.md` gains Piece, Rubble, Droplet and Blast.
-- Keeping milestone 1's hit-wake rule was briefly reconsidered and confirmed.
+- Keeping milestone 1's hit-wake rule was briefly reconsidered and confirmed. The review against the milestone 1 code then made it mass-aware (below).
 - The 48 px Piece length is provisional until milestone 4 sizes the Crawler.
 - The Fill kick is a fixed speed per Colour for now. A later system may shape these trajectories.
-- Numbers to tune by feel: the whole material table, above all red's threshold (the ramp and short-drop target), milestone 1's wake threshold, Blast speed and falloff, glue drag strength and Patch capacity.
+- Numbers to tune by feel: the whole material table, above all red's threshold (the ramp and short-drop target), the wake speed, Blast speed and falloff, glue drag strength and Patch capacity.
+- Decided while reviewing this spec against the milestone 1 code:
+  - A Piece is its own fixed body, not a set of shapes on one Line body, so breaking it needs no shape removal and Patches on it vanish with it.
+  - The physics module gains shape-level and begin/end contact reports, circles, collision groups, non-waking bodies and full pose and velocity on creation; the per-contact overlap flag is dropped.
+  - State attached to a body must survive Phaser Box2D rebuilding a Frozen Object when it unfreezes.
+  - Any Object a new Line crosses is squeezed off it, moving or Frozen; a sliding Object deals and takes no damage. This replaces the overlap exemption.
+  - The hit wake is mass-aware, the same test Blasts use, because Rubble and black made the milestone 1 rule let pebbles wake boulders.
+  - Grey's Outline density keeps milestone 1's stress-test box at its milestone 1 mass, and the verdict's stacking and stability checks must still pass.
+  - Rubble is solid for the overlap rule.
+  - Every start rebuilds the world from its snapshot, so retries match the first run; the snapshot holds all simulation state except Debris.
+  - The Colour is an argument of each command, not Sandbox world state.
+  - The F2 panel ships in every build.
