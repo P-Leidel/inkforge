@@ -47,7 +47,7 @@ export class DebugOverlay {
       for (const { a, b } of line.segments) strokeCapsule(g, a, b, line.thickness);
     }
     for (const object of this.world.objects) {
-      for (const piece of object.pieces) strokePolygon(g, transformPoints(piece, object.transform));
+      for (const part of object.parts) strokePolygon(g, transformPoints(part, object.transform));
     }
 
     const fps = this.scene.game.loop.actualFps;

@@ -11,7 +11,7 @@ import { smooth } from './smoothing';
 import {
   LINE_THICKNESS,
   MAX_LINE_SEGMENT_LENGTH,
-  MAX_PIECE_VERTICES,
+  MAX_PART_VERTICES,
   MAX_STROKE_POINTS,
   MIN_LINE_LENGTH,
   MIN_OBJECT_AREA,
@@ -24,7 +24,7 @@ import {
 /** A read-only view of what already exists in the Arena. */
 export interface StrokeContext {
   readonly terrain: readonly Polygon[];
-  /** Existing Objects, each as its convex pieces in world coordinates. */
+  /** Existing Objects, each as its convex parts in world coordinates. */
   readonly objects: readonly (readonly Polygon[])[];
   /** Thickness of a Line; defaults to LINE_THICKNESS. */
   readonly lineThickness?: number;
@@ -44,8 +44,8 @@ export type StrokeResult =
       readonly kind: 'object';
       /** The simplified outline in world coordinates. */
       readonly outline: Polygon;
-      /** Convex pieces that together cover the outline. */
-      readonly pieces: readonly Polygon[];
+      /** Convex parts that together cover the outline. */
+      readonly parts: readonly Polygon[];
     }
   | {
       readonly kind: 'rejected';
@@ -82,19 +82,18 @@ function processClosedStroke(samples: readonly Vec2[], context: StrokeContext): 
   if (polygonArea(outline) < MIN_OBJECT_AREA) {
     return { kind: 'rejected', reason: 'too-small', path: samples };
   }
-  const pieces = decomposeConvex(outline, MAX_PIECE_VERTICES);
-  if (overlapsSolid(pieces, context))
-    return { kind: 'rejected', reason: 'overlaps', path: samples };
-  return { kind: 'object', outline, pieces };
+  const parts = decomposeConvex(outline, MAX_PART_VERTICES);
+  if (overlapsSolid(parts, context)) return { kind: 'rejected', reason: 'overlaps', path: samples };
+  return { kind: 'object', outline, parts };
 }
 
 /**
  * Whether an Object would overlap Terrain or another Object. Touching is
  * fine; overlapping Lines is allowed (physics squeezes the Object out).
  */
-function overlapsSolid(pieces: readonly Polygon[], context: StrokeContext): boolean {
+function overlapsSolid(parts: readonly Polygon[], context: StrokeContext): boolean {
   const solids = [...context.terrain, ...context.objects.flat()];
-  return pieces.some((piece) => solids.some((solid) => convexPolygonsOverlap(piece, solid)));
+  return parts.some((part) => solids.some((solid) => convexPolygonsOverlap(part, solid)));
 }
 
 function processOpenStroke(samples: readonly Vec2[], context: StrokeContext): StrokeResult {
@@ -116,9 +115,9 @@ function processOpenStroke(samples: readonly Vec2[], context: StrokeContext): St
 function splitSegments(segments: readonly Segment[], maxLength: number): Segment[] {
   const out: Segment[] = [];
   for (const { a, b } of segments) {
-    const pieces = Math.max(1, Math.ceil(distance(a, b) / maxLength));
-    for (let k = 0; k < pieces; k++) {
-      out.push({ a: lerp(a, b, k / pieces), b: lerp(a, b, (k + 1) / pieces) });
+    const parts = Math.max(1, Math.ceil(distance(a, b) / maxLength));
+    for (let k = 0; k < parts; k++) {
+      out.push({ a: lerp(a, b, k / parts), b: lerp(a, b, (k + 1) / parts) });
     }
   }
   return out;

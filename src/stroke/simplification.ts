@@ -99,7 +99,7 @@ export function flattenSpikesOpen(points: readonly Vec2[], thickness: number): V
 
 /**
  * Cuts off thin spikes and thin notches of a closed outline, so no convex
- * piece of the Object is a sliver.
+ * part of the Object is a sliver.
  */
 export function flattenSpikesClosed(points: readonly Vec2[], thickness: number): Vec2[] {
   let current = [...points];

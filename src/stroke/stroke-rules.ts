@@ -24,4 +24,4 @@ export const SIMPLIFY_TOLERANCE = 1.5;
 /** Most points a simplified Stroke may keep. */
 export const MAX_STROKE_POINTS = 64;
 /** Box2D polygons are convex with at most this many vertices. */
-export const MAX_PIECE_VERTICES = 8;
+export const MAX_PART_VERTICES = 8;

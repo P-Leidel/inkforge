@@ -1,16 +1,16 @@
-import { isConvex, polygonContainsPoint, signedArea, type Polygon } from './polygon';
+import { isConvex, signedArea, type Polygon } from './polygon';
 import { cross, sub, type Vec2 } from './vec2';
 
 /**
- * Splits a simple polygon into convex pieces of at most `maxVertices`
+ * Splits a simple polygon into convex parts of at most `maxVertices`
  * vertices that together cover it exactly: ear-clipping triangulation, then
- * Hertel–Mehlhorn merging of neighbouring pieces while they stay convex.
+ * Hertel–Mehlhorn merging of neighbouring parts while they stay convex.
  */
 export function decomposeConvex(polygon: Polygon, maxVertices: number): Vec2[][] {
   const points = signedArea(polygon) < 0 ? [...polygon].reverse() : [...polygon];
   if (points.length <= maxVertices && isConvex(points)) return [points];
   const triangles = triangulate(points);
-  return mergeConvex(points, triangles, maxVertices).map((piece) => piece.map((i) => points[i]!));
+  return mergeConvex(points, triangles, maxVertices).map((part) => part.map((i) => points[i]!));
 }
 
 /** Ear clipping of a simple polygon with positive signed area, as vertex index triples. */
@@ -67,9 +67,9 @@ function pointInOrOnTriangle(p: Vec2, [a, b, c]: Vec2[]): boolean {
   return d1 >= -1e-9 && d2 >= -1e-9 && d3 >= -1e-9;
 }
 
-/** Greedily removes shared diagonals while the merged piece stays convex and small enough. */
-function mergeConvex(points: readonly Vec2[], pieces: number[][], maxVertices: number): number[][] {
-  const current = pieces.map((p) => [...p]);
+/** Greedily removes shared diagonals while the merged part stays convex and small enough. */
+function mergeConvex(points: readonly Vec2[], parts: number[][], maxVertices: number): number[][] {
+  const current = parts.map((p) => [...p]);
   let merged = true;
   while (merged) {
     merged = false;
@@ -89,8 +89,8 @@ function mergeConvex(points: readonly Vec2[], pieces: number[][], maxVertices: n
 }
 
 /**
- * If pieces a and b (both with positive orientation) share an edge, the
- * piece formed by removing it; otherwise null.
+ * If parts a and b (both with positive orientation) share an edge, the
+ * part formed by removing it; otherwise null.
  */
 function joinAtSharedEdge(a: readonly number[], b: readonly number[]): number[] | null {
   for (let i = 0; i < a.length; i++) {
@@ -109,9 +109,4 @@ function joinAtSharedEdge(a: readonly number[], b: readonly number[]): number[] 
 
 function rotate<T>(items: readonly T[], start: number): T[] {
   return [...items.slice(start), ...items.slice(0, start)];
-}
-
-/** Whether a point lies inside any of the pieces. */
-export function piecesContainPoint(pieces: readonly Polygon[], point: Vec2): boolean {
-  return pieces.some((piece) => polygonContainsPoint(piece, point));
 }

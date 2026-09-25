@@ -40,14 +40,14 @@ export function cutSegmentOutside(a: Vec2, b: Vec2, polygons: readonly Polygon[]
     .filter((interval): interval is [number, number] => interval !== null)
     .sort((p, q) => p[0] - q[0]);
 
-  const pieces: Segment[] = [];
+  const parts: Segment[] = [];
   let t = 0;
   for (const [tIn, tOut] of inside) {
-    if (tIn > t + EPSILON) pieces.push({ a: lerp(a, b, t), b: lerp(a, b, tIn) });
+    if (tIn > t + EPSILON) parts.push({ a: lerp(a, b, t), b: lerp(a, b, tIn) });
     t = Math.max(t, tOut);
   }
-  if (t < 1 - EPSILON) pieces.push({ a: lerp(a, b, t), b });
-  return pieces;
+  if (t < 1 - EPSILON) parts.push({ a: lerp(a, b, t), b });
+  return parts;
 }
 
 /** The parts of an open polyline outside every one of the convex polygons, as segments. */
@@ -55,9 +55,9 @@ export function cutPolylineOutside(
   points: readonly Vec2[],
   polygons: readonly Polygon[],
 ): Segment[] {
-  const pieces: Segment[] = [];
+  const parts: Segment[] = [];
   for (let i = 1; i < points.length; i++) {
-    pieces.push(...cutSegmentOutside(points[i - 1]!, points[i]!, polygons));
+    parts.push(...cutSegmentOutside(points[i - 1]!, points[i]!, polygons));
   }
-  return pieces;
+  return parts;
 }

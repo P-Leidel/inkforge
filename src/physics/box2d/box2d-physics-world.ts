@@ -70,8 +70,8 @@ interface BodyRecord {
   b2Id: b2BodyId;
   readonly kind: BodyKind;
   frozen: boolean;
-  /** An Object's convex pieces in body coordinates, to rebuild it on Release. */
-  readonly pieces: readonly Polygon[];
+  /** An Object's convex parts in body coordinates, to rebuild it on Release. */
+  readonly parts: readonly Polygon[];
 }
 
 /*
@@ -121,11 +121,11 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     type: number,
     position: Vec2,
     frozen = false,
-    pieces: readonly Polygon[] = [],
+    parts: readonly Polygon[] = [],
   ) {
     const id = nextId++ as BodyId;
     const b2Id = makeB2Body(id, type, toB2(position));
-    bodies.set(id, { b2Id, kind, frozen, pieces });
+    bodies.set(id, { b2Id, kind, frozen, parts });
     return { id, b2Id };
   }
 
@@ -142,7 +142,7 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     const points = polygon.map(toB2);
     const hull = b2ComputeHull(points, points.length);
     const shape = hull.count >= 3 ? b2MakePolygon(hull, 0) : null;
-    // Pieces too thin or small for Box2D to represent are skipped; the
+    // Parts too thin or small for Box2D to represent are skipped; the
     // Stroke pipeline keeps them rare.
     if (shape) b2CreatePolygonShape(bodyId, shapeDef(hitEvents), shape);
   }
@@ -182,7 +182,7 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     const rotation = b2Body_GetRotation(rec.b2Id);
     b2DestroyBody(rec.b2Id);
     rec.b2Id = makeB2Body(id, b2BodyType.b2_dynamicBody, position, rotation);
-    for (const piece of rec.pieces) addPolygon(rec.b2Id, piece, true);
+    for (const part of rec.parts) addPolygon(rec.b2Id, part, true);
   }
 
   /**
@@ -255,8 +255,8 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       // fixed bodies don't touch each other, so Frozen Objects never wake
       // each other and Lines or Terrain never wake them.
       const type = def.frozen ? b2BodyType.b2_staticBody : b2BodyType.b2_dynamicBody;
-      const { id, b2Id } = createBody('object', type, def.position, def.frozen, def.pieces);
-      for (const piece of def.pieces) addPolygon(b2Id, piece, true);
+      const { id, b2Id } = createBody('object', type, def.position, def.frozen, def.parts);
+      for (const part of def.parts) addPolygon(b2Id, part, true);
       return id;
     },
 

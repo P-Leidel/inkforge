@@ -23,8 +23,8 @@ export interface PhysicsWorldOptions {
 export interface ObjectBodyDef {
   /** World position of the body's origin. */
   readonly position: Vec2;
-  /** Convex pieces relative to the origin, together forming one rigid body. */
-  readonly pieces: readonly Polygon[];
+  /** Convex parts relative to the origin, together forming one rigid body. */
+  readonly parts: readonly Polygon[];
   /** Whether the Object starts Frozen: it collides but ignores gravity and doesn't move. */
   readonly frozen: boolean;
 }

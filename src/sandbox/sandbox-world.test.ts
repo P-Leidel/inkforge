@@ -427,12 +427,12 @@ describe('Sandbox world: overlap rules', () => {
     const object = objectById(world, id);
     return world.lines.some((line) =>
       line.segments.some((s) =>
-        object.pieces.some((piece) =>
+        object.parts.some((part) =>
           capsuleOverlapsPolygon(
             s.a,
             s.b,
             line.thickness / 2,
-            transformPoints(piece, object.transform),
+            transformPoints(part, object.transform),
           ),
         ),
       ),

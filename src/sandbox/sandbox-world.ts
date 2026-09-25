@@ -40,8 +40,8 @@ export interface ObjectView {
   readonly id: StrokeId;
   /** Outline relative to the body's origin; place it with `transform`. */
   readonly outline: Polygon;
-  /** Convex collider pieces relative to the body's origin. */
-  readonly pieces: readonly Polygon[];
+  /** Convex collider parts relative to the body's origin. */
+  readonly parts: readonly Polygon[];
   readonly transform: Transform;
   /** Linear velocity, px/s. */
   readonly velocity: Vec2;
@@ -70,7 +70,7 @@ interface ObjectStroke {
   readonly id: StrokeId;
   readonly body: BodyId;
   readonly outline: Polygon;
-  readonly pieces: readonly Polygon[];
+  readonly parts: readonly Polygon[];
 }
 
 type Stroke = LineStroke | ObjectStroke;
@@ -133,7 +133,7 @@ export class SandboxWorld {
     return {
       id: stroke.id,
       outline: stroke.outline,
-      pieces: stroke.pieces,
+      parts: stroke.parts,
       transform: this.physics.getTransform(stroke.body),
       velocity: this.physics.getVelocity(stroke.body),
       frozen: this.physics.isFrozen(stroke.body),
@@ -162,9 +162,9 @@ export class SandboxWorld {
         // The body's origin is the outline's centroid; shapes are stored relative to it.
         const origin = polygonCentroid(result.outline);
         const local = (polygon: Polygon) => polygon.map((p) => sub(p, origin));
-        const pieces = result.pieces.map(local);
-        const body = this.physics.addObject({ position: origin, pieces, frozen: true });
-        this.strokes.push({ kind: 'object', id, body, outline: local(result.outline), pieces });
+        const parts = result.parts.map(local);
+        const body = this.physics.addObject({ position: origin, parts, frozen: true });
+        this.strokes.push({ kind: 'object', id, body, outline: local(result.outline), parts });
         this.releaseObjectsUnderLines();
         return { kind: 'object', id };
       }
@@ -186,7 +186,7 @@ export class SandboxWorld {
   private strokeContext(options: StrokeOptions): StrokeContext {
     return {
       terrain: this.arena.terrain,
-      objects: this.objectStrokes().map((s) => this.worldPieces(s)),
+      objects: this.objectStrokes().map((s) => this.worldParts(s)),
       ...(options.lineThickness !== undefined && { lineThickness: options.lineThickness }),
     };
   }
@@ -195,10 +195,10 @@ export class SandboxWorld {
     return this.strokes.filter((s): s is ObjectStroke => s.kind === 'object');
   }
 
-  /** An Object's collider pieces where the Object is now. */
-  private worldPieces(stroke: ObjectStroke): Polygon[] {
+  /** An Object's collider parts where the Object is now. */
+  private worldParts(stroke: ObjectStroke): Polygon[] {
     const transform = this.physics.getTransform(stroke.body);
-    return stroke.pieces.map((piece) => transformPoints(piece, transform));
+    return stroke.parts.map((part) => transformPoints(part, transform));
   }
 
   /**
@@ -210,10 +210,10 @@ export class SandboxWorld {
     const lines = this.strokes.filter((s): s is LineStroke => s.kind === 'line');
     for (const object of this.objectStrokes()) {
       if (!this.physics.isFrozen(object.body)) continue;
-      const pieces = this.worldPieces(object);
+      const parts = this.worldParts(object);
       const crossed = lines.some((line) =>
         line.segments.some((s) =>
-          pieces.some((piece) => capsuleOverlapsPolygon(s.a, s.b, line.thickness / 2, piece)),
+          parts.some((part) => capsuleOverlapsPolygon(s.a, s.b, line.thickness / 2, part)),
         ),
       );
       if (crossed) this.physics.release(object.body);

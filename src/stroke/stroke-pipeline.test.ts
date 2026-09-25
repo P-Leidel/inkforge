@@ -206,21 +206,21 @@ function objectOf(result: StrokeResult) {
   return result;
 }
 
-/** The pieces are convex, within Box2D's vertex limit, and cover the outline exactly. */
-function expectPiecesCoverOutline(outline: Polygon, pieces: readonly Polygon[]) {
-  for (const piece of pieces) {
-    expect(isConvex(piece)).toBe(true);
-    expect(piece.length).toBeLessThanOrEqual(8);
+/** The parts are convex, within Box2D's vertex limit, and cover the outline exactly. */
+function expectPartsCoverOutline(outline: Polygon, parts: readonly Polygon[]) {
+  for (const part of parts) {
+    expect(isConvex(part)).toBe(true);
+    expect(part.length).toBeLessThanOrEqual(8);
   }
-  const pieceArea = pieces.reduce((sum, piece) => sum + polygonArea(piece), 0);
-  expect(pieceArea).toBeCloseTo(polygonArea(outline), 3);
+  const partArea = parts.reduce((sum, part) => sum + polygonArea(part), 0);
+  expect(partArea).toBeCloseTo(polygonArea(outline), 3);
 
   const bounds = polygonBounds(outline);
   for (let x = bounds.minX + 0.5; x < bounds.maxX; x += 3) {
     for (let y = bounds.minY + 0.5; y < bounds.maxY; y += 3) {
       const p = { x, y };
-      const inPieces = pieces.some((piece) => polygonContainsPoint(piece, p));
-      expect(inPieces, `(${x}, ${y})`).toBe(polygonContainsPoint(outline, p));
+      const inParts = parts.some((part) => polygonContainsPoint(part, p));
+      expect(inParts, `(${x}, ${y})`).toBe(polygonContainsPoint(outline, p));
     }
   }
 }
@@ -306,10 +306,10 @@ describe('Stroke pipeline: Objects', () => {
     const result = objectOf(processStroke(dragPolygon(triangle), context));
 
     expect(polygonArea(result.outline) / polygonArea(triangle)).toBeGreaterThan(0.93);
-    expect(result.pieces).toHaveLength(1);
+    expect(result.parts).toHaveLength(1);
   });
 
-  it('splits a concave L into convex pieces that cover it', () => {
+  it('splits a concave L into convex parts that cover it', () => {
     const l = [
       { x: 300, y: 300 },
       { x: 340, y: 300 },
@@ -320,11 +320,11 @@ describe('Stroke pipeline: Objects', () => {
     ];
     const result = objectOf(processStroke(dragPolygon(l), context));
 
-    expect(result.pieces.length).toBeGreaterThan(1);
-    expectPiecesCoverOutline(result.outline, result.pieces);
+    expect(result.parts.length).toBeGreaterThan(1);
+    expectPartsCoverOutline(result.outline, result.parts);
   });
 
-  it('splits a star into convex pieces that cover it', () => {
+  it('splits a star into convex parts that cover it', () => {
     const star: Vec2[] = [];
     for (let k = 0; k < 10; k++) {
       const r = k % 2 === 0 ? 100 : 45;
@@ -333,13 +333,13 @@ describe('Stroke pipeline: Objects', () => {
     }
     const result = objectOf(processStroke(dragPolygon(star), context));
 
-    expectPiecesCoverOutline(result.outline, result.pieces);
+    expectPartsCoverOutline(result.outline, result.parts);
   });
 
-  it('keeps every piece of a large, detailed shape within 8 vertices', () => {
+  it('keeps every part of a large, detailed shape within 8 vertices', () => {
     const result = objectOf(processStroke(dragCircle({ x: 600, y: 400 }, 200), context));
 
-    expectPiecesCoverOutline(result.outline, result.pieces);
+    expectPartsCoverOutline(result.outline, result.parts);
   });
 });
 
@@ -408,7 +408,7 @@ describe('Stroke pipeline: rejections', () => {
     }
     const result = objectOf(processStroke(dragPolygon(bumpy), context));
 
-    expectPiecesCoverOutline(result.outline, result.pieces);
+    expectPartsCoverOutline(result.outline, result.parts);
   });
 });
 
@@ -424,7 +424,7 @@ describe('Stroke pipeline: overlap', () => {
 
   it('rejects an Object that overlaps another Object', () => {
     const existing = objectOf(processStroke(dragBox(300, 300, 100, 100), context));
-    const withObject: StrokeContext = { ...context, objects: [existing.pieces] };
+    const withObject: StrokeContext = { ...context, objects: [existing.parts] };
 
     const result = processStroke(dragBox(380, 380, 60, 60), withObject);
 
@@ -433,14 +433,14 @@ describe('Stroke pipeline: overlap', () => {
 
   it('accepts an Object that only touches another Object', () => {
     const existing = objectOf(processStroke(dragBox(300, 300, 100, 100), context));
-    const withObject: StrokeContext = { ...context, objects: [existing.pieces] };
+    const withObject: StrokeContext = { ...context, objects: [existing.parts] };
 
     expect(processStroke(dragBox(400, 300, 60, 60), withObject).kind).toBe('object');
   });
 
   it('does not cut a Line where it crosses an Object', () => {
     const existing = objectOf(processStroke(dragBox(300, 300, 100, 100), context));
-    const withObject: StrokeContext = { ...context, objects: [existing.pieces] };
+    const withObject: StrokeContext = { ...context, objects: [existing.parts] };
 
     const points = linePoints(
       processStroke(
