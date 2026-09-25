@@ -451,8 +451,8 @@ export class SandboxWorld {
     return {
       strokes: this.strokes.map((stroke): SavedStroke => {
         if (stroke.kind === 'line') {
-          const { body: _body, ...line } = stroke;
-          return line;
+          const { id, colour, segments, thickness } = stroke;
+          return { kind: 'line', id, colour, segments, thickness };
         }
         const { body, ...object } = stroke;
         return { ...object, motion: this.motionOf(body) };
