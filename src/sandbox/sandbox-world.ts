@@ -93,12 +93,35 @@ interface ObjectStroke {
   readonly outline: Polygon;
   readonly parts: readonly Polygon[];
   fill: Colour | null;
+  /** Set when it is drawn or filled, from the densities of the time. */
+  mass: number;
 }
 
 type Stroke = LineStroke | ObjectStroke;
 
 /** One undo step: a Stroke, or the Fill of an Object. */
 type Action = { readonly kind: 'stroke' | 'fill'; readonly id: StrokeId };
+
+/** An Object's pose and motion when a snapshot is taken. */
+interface ObjectMotion {
+  readonly transform: Transform;
+  readonly velocity: Vec2;
+  readonly angularVelocity: number;
+  readonly frozen: boolean;
+  /** The displacement still to slide off a Line, or null. */
+  readonly slide: Vec2 | null;
+}
+
+type SavedStroke =
+  Omit<LineStroke, 'body'> | (Omit<ObjectStroke, 'body'> & { readonly motion: ObjectMotion });
+
+/** Everything R brings back: the whole simulation when physics last started. */
+interface Snapshot {
+  readonly strokes: readonly SavedStroke[];
+  readonly history: readonly Action[];
+  readonly random: number;
+  readonly time: number;
+}
 
 export interface SandboxWorldOptions {
   readonly seed?: number;
@@ -119,6 +142,8 @@ export class SandboxWorld {
   readonly random: Random;
   readonly materials: MaterialTable;
   private readonly physics: PhysicsWorld;
+  /** Taken whenever physics starts; R returns to it. */
+  private snapshot: Snapshot | null = null;
   /** Strokes in the order they were drawn. */
   private strokes: Stroke[] = [];
   /** Strokes and Fills in the order they were made, for undo. */
@@ -212,14 +237,15 @@ export class SandboxWorld {
         const local = (polygon: Polygon) => polygon.map((p) => sub(p, origin));
         const outline = local(result.outline);
         const parts = result.parts.map(local);
+        const mass = objectMass(outline, colour, null, this.materials);
         const body = this.physics.addObject({
           position: origin,
           parts,
           frozen: true,
           surface: material.outline,
-          mass: objectMass(outline, colour, null, this.materials),
+          mass,
         });
-        this.strokes.push({ kind: 'object', id, colour, body, outline, parts, fill: null });
+        this.strokes.push({ kind: 'object', id, colour, body, outline, parts, fill: null, mass });
         this.history.push({ kind: 'stroke', id });
         this.releaseObjectsUnderLines();
         return { kind: 'object', id };
@@ -330,10 +356,8 @@ export class SandboxWorld {
 
   private setFill(object: ObjectStroke, fill: Colour | null): void {
     object.fill = fill;
-    this.physics.setMass(
-      object.body,
-      objectMass(object.outline, object.colour, fill, this.materials),
-    );
+    object.mass = objectMass(object.outline, object.colour, fill, this.materials);
+    this.physics.setMass(object.body, object.mass);
   }
 
   /**
@@ -370,17 +394,97 @@ export class SandboxWorld {
     if (object) this.setFill(object, null);
   }
 
-  /** Removes every Stroke and Fill; the Terrain stays. */
+  /** Removes every Stroke and Fill; the Terrain stays. R has nothing to go back to. */
   clear(): void {
     for (const stroke of this.strokes) this.physics.removeBody(stroke.body);
     this.strokes = [];
     this.history = [];
+    this.snapshot = null;
   }
 
+  /**
+   * Starts or pauses physics. Box2D can't save its own state, and a world
+   * rebuilt from scratch doesn't play out like one that wasn't, so every
+   * start takes a snapshot for R and rebuilds the world from it: the first
+   * run and every retry play out identically.
+   */
   togglePause(): void {
     this.running = !this.running;
     this.accumulator = 0;
+    if (!this.running) return;
+    this.snapshot = this.takeSnapshot();
+    this.rebuild(this.snapshot);
     this.releaseObjectsUnderLines();
+  }
+
+  /**
+   * Takes the world back to the moment physics last started, damage and all,
+   * and pauses. Strokes and Fills made since are gone, and undo carries on
+   * from the history of that moment. Does nothing before the first start.
+   */
+  reset(): void {
+    const snapshot = this.snapshot;
+    if (!snapshot) return;
+    this.rebuild(snapshot);
+    this.history = [...snapshot.history];
+    this.random.state = snapshot.random;
+    this.elapsed = snapshot.time;
+    this.running = false;
+    this.accumulator = 0;
+  }
+
+  private takeSnapshot(): Snapshot {
+    return {
+      strokes: this.strokes.map((stroke): SavedStroke => {
+        if (stroke.kind === 'line') {
+          const { body: _body, ...line } = stroke;
+          return line;
+        }
+        const { body, ...object } = stroke;
+        return { ...object, motion: this.motionOf(body) };
+      }),
+      history: [...this.history],
+      random: this.random.state,
+      time: this.elapsed,
+    };
+  }
+
+  private motionOf(body: BodyId): ObjectMotion {
+    return {
+      transform: this.physics.getTransform(body),
+      velocity: this.physics.getVelocity(body),
+      angularVelocity: this.physics.getAngularVelocity(body),
+      frozen: this.physics.isFrozen(body),
+      slide: this.physics.getSlide(body),
+    };
+  }
+
+  /** Rebuilds the physics world from a snapshot's Strokes, from a fresh engine state. */
+  private rebuild(snapshot: Snapshot): void {
+    this.physics.reset();
+    this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
+    this.strokes = snapshot.strokes.map((saved): Stroke => {
+      const material = this.materials.colours[saved.colour];
+      if (saved.kind === 'line') {
+        return {
+          ...saved,
+          body: this.physics.addLine(saved.segments, saved.thickness, material.line),
+        };
+      }
+      const { motion, ...object } = saved;
+      const body = this.physics.addObject({
+        position: { x: motion.transform.x, y: motion.transform.y },
+        angle: motion.transform.angle,
+        parts: object.parts,
+        frozen: motion.frozen || motion.slide !== null,
+        surface: material.outline,
+        mass: object.mass,
+        velocity: motion.velocity,
+        angularVelocity: motion.angularVelocity,
+      });
+      if (motion.slide) this.physics.slideOut(body, motion.slide, SLIDE_OUT_SPEED);
+      return { ...object, body };
+    });
   }
 
   /** Advances physics by one fixed step, if running. */

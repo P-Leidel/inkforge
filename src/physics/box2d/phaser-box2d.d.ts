@@ -138,6 +138,9 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   export function b2DefaultWorldDef(): b2WorldDef;
   export function b2CreateWorld(def: b2WorldDef): b2WorldId;
   export function b2World_Step(worldId: b2WorldId, timeStep: number, subStepCount: number): void;
+  /** Frees the world's slot for a new world (with scripts/patch-phaser-box2d.mjs applied). */
+  export function b2DestroyWorld(worldId: b2WorldId): void;
+  export function b2World_IsValid(worldId: b2WorldId): boolean;
   export function b2World_SetGravity(worldId: b2WorldId, gravity: b2Vec2): void;
   /** Contacts approaching slower than this (m/s) don't bounce. */
   export function b2World_SetRestitutionThreshold(worldId: b2WorldId, value: number): void;

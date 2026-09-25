@@ -27,6 +27,7 @@ import {
   b2DefaultShapeDef,
   b2DefaultWorldDef,
   b2DestroyBody,
+  b2DestroyWorld,
   b2MakePolygon,
   b2MakeRot,
   b2Rot_GetAngle,
@@ -36,8 +37,7 @@ import {
   b2Shape_SetDensity,
   b2Vec2,
   b2World_GetContactEvents,
-  b2World_SetGravity,
-  b2World_SetRestitutionThreshold,
+  b2World_IsValid,
   b2World_Step,
   type b2BodyId,
   type b2Polygon,
@@ -105,20 +105,7 @@ interface Inertial {
   readonly centre: b2Vec2;
 }
 
-/*
- * Phaser Box2D 1.1.0 never frees a destroyed world's slot, so a process can
- * only ever create 32 worlds. We recycle worlds instead: a destroyed
- * PhysicsWorld removes its bodies and hands its Box2D world back here.
- */
-const idleWorlds: b2WorldId[] = [];
-
-function acquireWorld(options: PhysicsWorldOptions): b2WorldId {
-  const recycled = idleWorlds.pop();
-  if (recycled) {
-    b2World_SetGravity(recycled, toB2(options.gravity));
-    b2World_SetRestitutionThreshold(recycled, toM(options.minBounceSpeed));
-    return recycled;
-  }
+function createB2World(options: PhysicsWorldOptions): b2WorldId {
   b2CreateWorldArray(); // no-op after the first call
   const def = b2DefaultWorldDef();
   def.gravity = toB2(options.gravity);
@@ -128,11 +115,33 @@ function acquireWorld(options: PhysicsWorldOptions): b2WorldId {
   return b2CreateWorld(def);
 }
 
+/*
+ * Phaser Box2D 1.1.0's b2DestroyWorld never frees the world's slot, so a
+ * process could only ever create 32 worlds. scripts/patch-phaser-box2d.mjs
+ * fixes that on install; without it, Reset would soon run out of worlds.
+ */
+function destroyB2World(worldId: b2WorldId): void {
+  b2DestroyWorld(worldId);
+  if (b2World_IsValid(worldId)) {
+    throw new Error(
+      'phaser-box2d is not patched: run `npm install` (scripts/patch-phaser-box2d.mjs)',
+    );
+  }
+}
+
+/** A slide in progress: an Object moving off a Line at a set velocity. */
+interface Slide {
+  /** Seconds of sliding left. */
+  remaining: number;
+  /** m/s. */
+  readonly velocity: b2Vec2;
+}
+
 export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWorld {
-  const worldId = acquireWorld(options);
+  let worldId = createB2World(options);
   const bodies = new Map<BodyId, BodyRecord>();
-  /** Objects sliding out of Lines: seconds of sliding left. */
-  const sliding = new Map<BodyId, number>();
+  /** Objects sliding out of Lines. */
+  const sliding = new Map<BodyId, Slide>();
   let nextId = 1;
   let destroyed = false;
 
@@ -275,16 +284,19 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
 
   /** Advances sliding Objects; one that has arrived becomes dynamic, at rest. */
   function advanceSlides(): void {
-    for (const [id, remaining] of sliding) {
+    for (const [id, slide] of sliding) {
       const rec = record(id);
+      const { remaining } = slide;
       if (remaining > 1e-9) {
         if (remaining < options.timeStep) {
           // Shorten the last step so the slide ends exactly where it should.
-          const v = b2Body_GetLinearVelocity(rec.b2Id);
           const k = remaining / options.timeStep;
-          b2Body_SetLinearVelocity(rec.b2Id, new b2Vec2(v.x * k, v.y * k));
+          b2Body_SetLinearVelocity(
+            rec.b2Id,
+            new b2Vec2(slide.velocity.x * k, slide.velocity.y * k),
+          );
         }
-        sliding.set(id, remaining - options.timeStep);
+        slide.remaining = remaining - options.timeStep;
         continue;
       }
       sliding.delete(id);
@@ -425,17 +437,22 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       const type = def.frozen ? b2BodyType.b2_staticBody : b2BodyType.b2_dynamicBody;
       const unit = unitMassOf(def.parts);
       const density = unit.area > 0 ? def.mass / unit.area : 0;
-      const { id, b2Id } = createBody(
-        'object',
-        type,
-        def.position,
-        def.surface,
-        def.frozen,
-        def.parts,
+      const id = nextId++ as BodyId;
+      const b2Id = makeB2Body(id, type, toB2(def.position), b2MakeRot(def.angle ?? 0));
+      bodies.set(id, {
+        b2Id,
+        kind: 'object',
+        frozen: def.frozen,
+        parts: def.parts,
+        surface: def.surface,
         unit,
         density,
-      );
+      });
       for (const part of def.parts) addPolygon(b2Id, part, def.surface, true, density);
+      if (!def.frozen) {
+        if (def.velocity) b2Body_SetLinearVelocity(b2Id, toB2(def.velocity));
+        if (def.angularVelocity) b2Body_SetAngularVelocity(b2Id, def.angularVelocity);
+      }
       return id;
     },
 
@@ -524,8 +541,16 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       // A kinematic body moves at a set velocity and passes through fixed bodies.
       unfreeze(id, rec, b2BodyType.b2_kinematicBody);
       const k = speed / distance;
-      b2Body_SetLinearVelocity(rec.b2Id, toB2({ x: displacement.x * k, y: displacement.y * k }));
-      sliding.set(id, distance / speed);
+      const velocity = toB2({ x: displacement.x * k, y: displacement.y * k });
+      b2Body_SetLinearVelocity(rec.b2Id, velocity);
+      sliding.set(id, { remaining: distance / speed, velocity });
+    },
+
+    getSlide(id) {
+      const slide = sliding.get(id);
+      if (!slide) return null;
+      const t = Math.max(0, slide.remaining);
+      return { x: toPx(slide.velocity.x * t), y: toPx(slide.velocity.y * t) };
     },
 
     getMass(id) {
@@ -554,16 +579,28 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       return { x: toPx(v.x), y: toPx(v.y) };
     },
 
+    getAngularVelocity(id) {
+      return b2Body_GetAngularVelocity(record(id).b2Id);
+    },
+
     setVelocity(id, velocity) {
       b2Body_SetLinearVelocity(record(id).b2Id, toB2(velocity));
+    },
+
+    reset() {
+      destroyB2World(worldId);
+      worldId = createB2World(options);
+      bodies.clear();
+      sliding.clear();
+      nextId = 1;
     },
 
     destroy() {
       if (destroyed) return;
       destroyed = true;
-      for (const rec of bodies.values()) b2DestroyBody(rec.b2Id);
       bodies.clear();
-      idleWorlds.push(worldId);
+      sliding.clear();
+      destroyB2World(worldId);
     },
   };
   return world;

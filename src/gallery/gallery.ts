@@ -7,7 +7,7 @@ import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-p
  * The Colour gallery: ready-made demos that show each Colour's behaviour
  * without building it first. Each demo sets itself up on a cleared Arena
  * through the Sandbox world's commands, then starts physics and lets its
- * Objects go.
+ * Objects go, so that R and Space replay it.
  */
 export interface Demo {
   readonly name: string;
@@ -28,10 +28,19 @@ function drawObject(world: SandboxWorld, samples: Vec2[], colour: Colour): Strok
   return outcome.id;
 }
 
-/** Starts physics and Releases the given Objects. */
-function letGo(world: SandboxWorld, objects: readonly StrokeId[]): void {
+/**
+ * Starts physics and Releases the given Objects, each with its velocity if
+ * given. Then pauses and starts again at once, so the snapshot R returns to
+ * has them let go and R, Space replays the demo.
+ */
+function letGo(world: SandboxWorld, objects: readonly (StrokeId | [StrokeId, Vec2])[]): void {
   if (!world.isRunning) world.togglePause();
-  for (const id of objects) world.release(id);
+  for (const object of objects) {
+    if (typeof object === 'number') world.release(object);
+    else world.release(...object);
+  }
+  world.togglePause();
+  world.togglePause();
 }
 
 /** The same grey ball dropped onto a Line of each Colour: blue bounces it back up. */
@@ -99,8 +108,10 @@ export const KNOCK_DEMO: Demo = {
       // Aimed a little high: it drops 8 px on its way to the box.
       return drawObject(world, dragCircle({ x: x - 80, y: 582 }, 20), 'grey');
     });
-    if (!world.isRunning) world.togglePause();
-    for (const ball of balls) world.release(ball, { x: 600, y: 0 });
+    letGo(
+      world,
+      balls.map((ball): [StrokeId, Vec2] => [ball, { x: 600, y: 0 }]),
+    );
   },
 };
 

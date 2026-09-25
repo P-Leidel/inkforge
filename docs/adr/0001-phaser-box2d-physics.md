@@ -31,7 +31,7 @@ Re-measured in milestone 2, after grey got a little bounce (restitution 0.1) and
 What we learned about Phaser Box2D 1.1.0 along the way (all handled inside `src/physics/`):
 
 - It ships no TypeScript types, and its `main` entry points at a missing file. We import `dist/PhaserBox2D.js` and declare the parts we use in `phaser-box2d.d.ts`.
-- `b2DestroyWorld` never frees the world's slot, so a process can only ever create 32 worlds. The adapter recycles worlds instead.
+- `b2DestroyWorld` never frees the world's slot, so a process can only ever create 32 worlds. Milestone 1 recycled worlds instead. Milestone 2's Reset needs a fresh world at every start, because a world whose bodies were removed and rebuilt keeps internal id order that changes how the rebuild plays out, so `npm install` now patches the one line that frees the slot (`scripts/patch-phaser-box2d.mjs`).
 - `b2Body_SetType` never moves a fixed body into the simulated set (it tests `b2BodyType.staticBody`, which doesn't exist). Releasing a Frozen Object therefore rebuilds it as a dynamic body.
 - `b2Body_GetPosition` and `b2Body_GetRotation` return the body's live transform, which destroying the body can reset. Rebuilding an Object that had slid off a Line from them moved it to the Arena's top-left corner. The push-out numbers above were measured with that bug; after the fix (milestone 2) they come out the same: 0 of 25 stuck, 233 px/s.
 - The default minimum bounce speed (`restitutionThreshold`) is 10 m/s, 500 px/s at our scale, so small drops never bounce. The sandbox sets its own.

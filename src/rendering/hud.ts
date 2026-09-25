@@ -3,7 +3,7 @@ import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { FONT_FAMILY, PALETTE } from './palette';
 
 const HELP_TEXT =
-  '1–5: Colour    Drag: draw    Click: fill    Right-click: release    Space: run / pause    Ctrl+Z: undo    F1: debug overlay';
+  '1–5: Colour    Drag: draw    Click: fill    Right-click: release    Space: run / pause    R: reset    Ctrl+Z: undo    F1: debug overlay';
 
 /** Pause / running indicator, control hints and the stress-test readout. */
 export class Hud {

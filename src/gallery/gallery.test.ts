@@ -15,6 +15,18 @@ describe('Colour gallery', () => {
       expect(world.isRunning).toBe(true);
       expect(world.objects.some((o) => !o.frozen)).toBe(true);
     });
+
+    it(`${demo.name}: plays the same again after R and Space`, () => {
+      const world = createWorld();
+      demo.build(world);
+      runFor(world, 1);
+      const first = world.objects.map((o) => o.transform);
+
+      world.reset();
+      runFor(world, 1);
+
+      expect(world.objects.map((o) => o.transform)).toEqual(first);
+    });
   }
 
   it('Bounce: puts a Line of each Colour side by side', () => {

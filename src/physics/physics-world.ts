@@ -50,6 +50,12 @@ export interface ObjectBodyDef {
   readonly surface: Surface;
   /** Its mass, spread evenly over the parts. It stays with the Object when it unfreezes. */
   readonly mass: number;
+  /** Rotation about `position`, radians; 0 by default. */
+  readonly angle?: number;
+  /** Linear velocity, px/s, if it starts moving (not Frozen). */
+  readonly velocity?: Vec2;
+  /** Angular velocity, rad/s, if it starts moving (not Frozen). */
+  readonly angularVelocity?: number;
 }
 
 /** A contact reported by a step, with its impact strength. */
@@ -97,6 +103,23 @@ export interface PhysicsWorld {
   getTransform(id: BodyId): Transform;
   getVelocity(id: BodyId): Vec2;
   setVelocity(id: BodyId, velocity: Vec2): void;
+
+  /**
+   * The displacement (px) a sliding Object still has to go, or null if it
+   * isn't sliding. Handing it to `slideOut` on a rebuilt world resumes the
+   * slide.
+   */
+  getSlide(id: BodyId): Vec2 | null;
+
+  /** Angular velocity, rad/s. */
+  getAngularVelocity(id: BodyId): number;
+
+  /**
+   * Removes every body and starts again from a fresh engine state, as if the
+   * world had just been created. A world rebuilt after a reset plays out the
+   * same as one built the same way after any other reset.
+   */
+  reset(): void;
 
   /** Frees the world. It must not be used afterwards. */
   destroy(): void;

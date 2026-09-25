@@ -99,6 +99,7 @@ export class SandboxScene extends Phaser.Scene {
       .addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
       .on('down', () => this.world.togglePause());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.toggle());
+    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R).on('down', () => this.world.reset());
     keyboard.on('keydown-Z', (event: KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();

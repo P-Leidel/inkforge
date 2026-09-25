@@ -8,7 +8,7 @@ The project is at **milestone 1, the physics sandbox** ([spec](docs/specs/m1-phy
 
 ## Getting started
 
-Requires Node.js 22.13 or newer (see [`.nvmrc`](.nvmrc)).
+Requires Node.js 22.13 or newer (see [`.nvmrc`](.nvmrc)). `npm install` also patches a bug in Phaser Box2D (see [`scripts/patch-phaser-box2d.mjs`](scripts/patch-phaser-box2d.mjs)).
 
 ```sh
 npm install
@@ -38,11 +38,14 @@ CI runs lint, format check, typecheck, tests and build on every push and pull re
 | Draw an Object (end near the start)           | Drag back to the green marker |
 | Fill an Object with the picked Colour         | Click inside it (no drag)     |
 | Run / pause physics                           | Space                         |
+| Reset to when physics last started            | R                             |
 | Release a Frozen Object (while running)       | Right-click it                |
 | Undo the last Stroke or Fill                  | Ctrl+Z                        |
 | Debug overlay (colliders, bodies, fps)        | F1                            |
 
 Each Colour is a material with its own hue and texture: grey is grainy, blue glossy, green drippy, black solid and red striped like a fuse. Blue is bouncy and slippery, black grips hardest, and grey is the plain material. An unfilled Object is a light, hollow shell; its Fill adds weight by area, blue half as much as grey and black three times as much. A hit only wakes a Frozen Object that it would really set moving, so a light ball can't wake a heavy box.
+
+Every time physics starts, the sandbox takes a snapshot, and R takes the world back to it and pauses, so you can build, watch it play out and try again. A retry plays out exactly like the first run: every start rebuilds the physics world from its snapshot.
 
 The toolbar clears the Arena and runs the engine stress tests: **Ball cannon** (3000 px/s balls at a 4 px Line), **Box tower** (10 drawn boxes) and **Pebbles** (100 drawn pebbles). Each shows its measurements under the toolbar.
 

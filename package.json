@@ -17,7 +17,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verdict": "tsx scripts/engine-verdict.ts"
+    "verdict": "tsx scripts/engine-verdict.ts",
+    "postinstall": "node scripts/patch-phaser-box2d.mjs"
   },
   "dependencies": {
     "phaser": "4.2.1",
