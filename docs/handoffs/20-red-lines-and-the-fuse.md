@@ -12,8 +12,8 @@ A red Line burns from end to end like a fuse. Each red Piece explodes with a sma
 
 ## What already exists
 
-- **Red Pieces** (#15) break by the normal rule with the red Line values in the table (durability 250, threshold 300 at `1e13bc5`), releasing Debris through `breakPiece`. Nothing explodes yet.
-- **Blasts** (#19) have size from red ink, the ring, action on arrival, chains through destroyed red, the snapshot, and drawing plus F1.
+- **Red Pieces** (#15) break by the normal rule with the red Line values in the table (durability 250, threshold 300 at `1e13bc5`), releasing Debris through `strokes.break` (the world's `breakTarget`). Nothing explodes yet.
+- **Blasts** (#19) are a kind of Arena contents (#24), with size from red ink, the ring, action on arrival, chains through destroyed red, the snapshot, and drawing plus F1.
 - **Squeeze and settled pairs** (#14):
   - An Object drawn over a Line is squeezed off at start. It slides as a kinematic body that touches no fixed body, and deals and takes no damage.
   - Contacts touching at the start deal no damage until they come apart.
@@ -22,7 +22,7 @@ A red Line burns from end to end like a fuse. Each red Piece explodes with a sma
 
 **Table.** Add the fixed size of a Piece's Blast, e.g. `blast.pieceRadius` and `blast.pieceStrength`, and give red Lines very low durability and threshold if #15 didn't already.
 
-**A red Piece destroyed** by an impact or a Blast explodes: a Blast of that fixed size at the Piece's centre, the midpoint along it. Reuse #19's break path. Red ink doesn't scale a Piece's Blast.
+**A red Piece destroyed** by an impact or a Blast explodes: a Blast of that fixed size at the Piece's centre, the midpoint along it. Reuse #19's break path: `strokes.break` reports a broken Piece too, so have it report what the Blast needs. Red ink doesn't scale a Piece's Blast.
 
 **The fuse rule, as a pure function tested against `DEFAULT_MATERIAL_TABLE`.** A red Piece's Blast, measured 48 px from its centre, must destroy a red Piece:
 

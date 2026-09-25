@@ -4,7 +4,6 @@ One handoff per remaining agent slice of milestone 2. Each is for a fresh sessio
 
 | Issue | Handoff |
 |---|---|
-| [#24 Arena contents in their own modules](https://github.com/P-Leidel/inkforge/issues/24) | [24-arena-contents.md](24-arena-contents.md) |
 | [#17 Green](https://github.com/P-Leidel/inkforge/issues/17) | [17-green.md](17-green.md) |
 | [#18 Spills and Patches](https://github.com/P-Leidel/inkforge/issues/18) | [18-spills-and-patches.md](18-spills-and-patches.md) |
 | [#19 Red Objects and Blasts](https://github.com/P-Leidel/inkforge/issues/19) | [19-red-objects-and-blasts.md](19-red-objects-and-blasts.md) |
@@ -13,13 +12,13 @@ One handoff per remaining agent slice of milestone 2. Each is for a fresh sessio
 
 [#22](https://github.com/P-Leidel/inkforge/issues/22) (the blind check and the frame rate) is for a person, so it has no handoff.
 
-The issues form a chain, in the order of the table: each is blocked by the one before it. #24 is a refactor inserted before #17 by the [architecture review after #16](../adr/reports/architecture-review-2026-09-25.html). Start an issue only once the one before it is closed and CI is green on `main`. To start one, open a session on this repository and say:
+The issues form a chain, in the order of the table: each is blocked by the one before it. The [architecture review after #16](../adr/reports/architecture-review-2026-09-25.html) inserted refactors before #17: #24 (Arena contents in their own modules) is done, and the Contact ledger (its candidate 2) may come next, once it is worked through with the user. Start an issue only once the one before it is closed and CI is green on `main`. To start one, open a session on this repository and say:
 
-> Implement issue #24 of P-Leidel/inkforge. Read `docs/handoffs/README.md`, then `docs/handoffs/24-arena-contents.md`, and follow them.
+> Implement issue #17 of P-Leidel/inkforge. Read `docs/handoffs/README.md`, then `docs/handoffs/17-green.md`, and follow them.
 
 ## How fresh these are
 
-These were written on 2026-09-25 against the code at `1e13bc5`, the commit that closed #15 (Lines break Piece by Piece). Anything they say about code from #16 onwards is a plan, not a fact. The #24 handoff was written later the same day against `1560bd3`, the commit that closed #16; #17–#21 don't know about #24 yet, and #24 updates them.
+These were written on 2026-09-25 against the code at `1e13bc5`, the commit that closed #15 (Lines break Piece by Piece). Anything they say about code from #16 onwards is a plan, not a fact. #16 and #24 updated them to the code they left behind: #24 moved each kind of Arena contents into a module of its own, so every name below from `sandbox-world.ts` was checked against the code after #24.
 
 - The code on `main` wins where it disagrees with a handoff. So do the commit messages of the slices before yours; each ends with "Decisions the spec left open:". Read those for every slice since #14 (`git log --oneline`), before you design anything.
 - Each handoff's design section is a proposal. Change it when the code argues otherwise, and record why in your commit message.
@@ -41,7 +40,7 @@ These were written on 2026-09-25 against the code at `1e13bc5`, the commit that 
 - **Commits.** Don't add Claude as a co-author (CLAUDE.md). End each commit message with a `Claude-Session:` line for your own session only. Put no model names in commits. The subject is imperative with no prefix. The body explains what changed and why, in plain prose.
 - **README.** Update `README.md` in the same commit: the controls table if you add a control, a paragraph on what your slice adds, and the gallery paragraph for new demos.
 - **Gallery demos.** Build them through the Sandbox world's commands. Start physics and let the Objects go before the snapshot with `letGo()` in `src/gallery/gallery.ts`, so R and then Space replay the demo. Add each demo to `GALLERY`. The gallery test checks that every demo builds and replays identically.
-- **Reset and Clear.** Each slice extends Reset (the snapshot) and Clear to whatever it adds. Clear also forgets the snapshot.
+- **Reset and Clear.** Whatever a slice adds to the Arena contents is a kind (see [Patterns](#patterns-the-slices-follow-as-of-24)), or part of one: its `save`, `restore` and `clear` are how Reset and Clear cover it. Clear also forgets the snapshot.
 - **Also settled:**
   - F2 edits are lost on reload; "Copy as JSON" is how the user keeps them.
   - Restitution mixes as the max of the two sides and friction as the geometric mean, as Box2D does.
@@ -116,35 +115,42 @@ These were written on 2026-09-25 against the code at `1e13bc5`, the commit that 
 - **Contact buffer.** `contactBuffer` holds 64 entries. `contactCentre` and `trackContacts` read at most 64 contacts of one shape or body. Since #16, `contactCentre` reads the moving side's shape, so the Terrain's ground under a big Rubble pile doesn't overflow it. A rebuilt body buried in more than 64 contacts would still lose track of some in `trackContacts`.
 - **Circles roll to a stop.** Box2D has no rolling resistance, so the adapter gives circles an angular damping (`CIRCLE_ANGULAR_DAMPING`, 3 per second); spin damping slows a roll through friction. Glue drag on Rubble (#17) comes on top of it.
 
-## Patterns the slices follow (as of #16)
+## Patterns the slices follow (as of #24)
 
-- **Step order.** `SandboxWorld.step()` applies table edits, steps physics (`StepReport { hits, begins, ends }`), then runs the Material rules (`src/sandbox/material-rules.ts`). It breaks what they return with `breakObject` or `breakPiece`.
-- **Fill release.** `breakObject` reads the Object's pose and motion, removes it and calls `releaseFill(object, from)`, which puts out the Fill in the same step. Grey and black give Rubble: `packRubble` and `launchRubble` in `src/sandbox/rubble.ts` pack circles inside the Outline and kick them outward (`kickSpeed` per Fill Colour, `kickSpread` shared). #18 adds Spills and #19 Blasts in `releaseFill`.
+- **Arena contents are kinds.** Each kind of Arena contents (`CONTEXT.md`) is a module of its own behind the shared `Kind` shape in `src/sandbox/arena-contents.ts`. Today there are two:
+  - `Strokes` (`src/sandbox/strokes.ts`): Lines with their Pieces, Objects with their Fills, the undo history, the squeeze, and breaking Objects and Pieces;
+  - `Rubble` (`src/sandbox/rubble.ts`, next to `packRubble` and `launchRubble`): the Rubble, the cap and the fading ghosts.
+
+  A kind owns its records and its own ids, which are never reused (not even after R or Clear). It covers its `views`, its part of the snapshot (`save`) and rebuilding from it (`restore`), `clear`, `dropVisuals` (what R drops), `partyOf` (the Party of each of its bodies), `solids` (what new Objects may not overlap), `applySurfaces` (after a table edit) and `step` (its turn in each step). It keeps nothing for what is gone, not even a lookup entry, apart from its ids.
+- **One list of kinds.** The Sandbox world holds the kinds in one fixed list, in rebuild order: `Kinds` and `this.kinds` in `sandbox-world.ts`, today Strokes, then Rubble. A new kind is one new module added to that list after its hosts. The snapshot, rebuilding, Clear, Party lookup, the Stroke context, the table re-apply and the step then cover it with no other change. `world.contents` holds every kind's views by kind name (`contents.strokes.lines`, `contents.rubble`); it is only Arena contents, and the renderer doesn't use it.
+- **Kinds never call each other.** A kind reports what happened, and the world passes it on. `strokes.break(target)` removes a broken Object or Piece and returns a `Broken`: the Debris to burst, and for an Object its `ReleasedFill` (Colour, mass, local Outline, and the Object's pose and motion as it broke). The world's `breakTarget` bursts the Debris and calls `releaseFill`, which hands the Rubble to `rubble.add`.
+- **Step order.** `SandboxWorld.step()` applies table edits, steps physics (`StepReport { hits, begins, ends }`) and Debris, then runs the Material rules (`src/sandbox/material-rules.ts`). It breaks what they return with `breakTarget`, and then gives each kind its turn, in list order. (Rubble's turn ages the fading ghosts.)
+- **Fill release.** `releaseFill(fill)` in the world puts out a broken Object's Fill in the same step. Grey and black give Rubble: `packRubble` and `launchRubble` in `src/sandbox/rubble.ts` pack circles inside the Outline and kick them outward (`kickSpeed` per Fill Colour, `kickSpread` shared), and `rubble.add` gives them ids and applies the cap. #18 adds Spills and #19 Blasts in `releaseFill`.
 - **Parties.** The Material rules see each body as a Party:
   - a stable `key`: `stroke ${id}` for an Object, `stroke ${lineId} piece ${index}` for a Piece, `rubble ${id}` for a piece of Rubble, `terrain`;
   - for a Piece, also `stroke`: its Line's key;
-  - a `target` that takes damage (an Object or a Piece), or `null` (Terrain, Rubble);
+  - a `target` that takes damage (an Object or a Piece, a `StrokeTarget`), or `null` (Terrain, Rubble);
   - a `sliding` flag.
 
-  `partyFinder()` in `sandbox-world.ts` maps bodies to Parties. A body without a Party is ignored by every rule.
-- **Breakables** (`ObjectStroke`, `Piece`) carry a `role`, `'outline'` or `'line'`, which picks their Colour's numbers in the table. Pieces have no impact limit.
+  `partyOf` in `sandbox-world.ts` checks the Terrain, then asks each kind in turn; each kind keeps a map from its bodies to its records. A body without a Party is ignored by every rule.
+- **Breakables** (`ObjectStroke`, `Piece` in `strokes.ts`) carry a `role`, `'outline'` or `'line'`, which picks their Colour's numbers in the table. Pieces have no impact limit.
 - **Lines.** A `LineStroke` holds the ordered `Piece`s it has left. Each Piece is its own fixed body, made with `physics.addLine(piece.segments, …)`, so its capsules are in world coordinates. The Line goes with its last Piece.
-- **Settled pairs.** Pairs of Parties touching when physics starts are settled: they deal no damage until they have come apart. The snapshot keeps them by key, and `settledPairs()` unions the rules' settled pairs with the pairs touching now (see `64210ef`). After a rebuild, the engine reports every existing contact as beginning again. Anything triggered by a contact beginning (green sticking, a Droplet landing) must skip settled pairs the same way.
+- **Settled pairs.** Pairs of Parties touching when physics starts are settled: they deal no damage until they have come apart. The snapshot keeps them by key, and `settledPairs()` in the world unions the rules' settled pairs with the pairs touching now (see `64210ef`). After a rebuild, the engine reports every existing contact as beginning again. Anything triggered by a contact beginning (green sticking, a Droplet landing) must skip settled pairs the same way.
 - **Damage.** Each target takes only the strongest hit of the step from each Stroke it hit. So an Object landing across two Pieces takes one impact, while each Piece takes its own hit. Each side is checked against its own threshold, and damage is `(impulse − threshold) × damagePerImpulse`.
   - Sliding Parties deal and take no damage.
   - Terrain takes none.
   - A blue Object also counts impacts and breaks on the third.
-- **Rubble.** `rubbleList` in the Sandbox world, oldest first, each with an id from `nextRubbleId` (never reused, not reset by R or Clear). `capRubble()` removes the oldest over `rubbleCap` at once and leaves a body-less fading ghost (`fadingRubble`, visual only like Debris). Anything attached to Rubble (a green bond, a Patch) must go when the cap removes it.
-- **Snapshot.** `takeSnapshot()` and `rebuild()` hold the whole simulation except Debris and fading Rubble. Rebuild adds bodies in a fixed order (Strokes, then Rubble oldest first), so the first run and every retry match.
-- **Randomness.** Simulation randomness comes only from `world.random`, whose state is in the snapshot. Debris has its own generator, so visuals never shift the simulation.
+- **Rubble.** The `Rubble` kind holds it oldest first. Its private `cap()` removes the oldest over `rubbleCap` at once and leaves a body-less fading ghost (`world.fadingRubble`, visual only like Debris, not in `world.contents`). Anything attached to Rubble (a green bond, a Patch) must go when the cap removes it: that is "host gone", which #17 adds.
+- **Snapshot.** `takeSnapshot()` keeps `{ contents, random, time, settled }`, where `contents` is each kind's `save()` by kind name. `rebuild()` resets physics, adds the Terrain and calls each kind's `restore` in list order: Strokes in drawing order (each Line's Pieces in order), then Rubble oldest first. That order is replay order: changing it moves Box2D's ids and breaks exact replays. Only Debris and fading ghosts are left out. Space rebuilds from the snapshot it just took; R rebuilds from it and also drops Debris and each kind's visuals.
+- **Randomness.** Simulation randomness comes only from `world.random`, whose state is in the snapshot. Kinds don't draw from it themselves: the world draws in a fixed order (`packRubble`, then `launchRubble`, per broken Object, in the order the rules return them) and hands the results on. Debris has its own generator, so visuals never shift the simulation.
 - **Rendering.**
-  - The renderer reads only views: `world.lines`, `world.objects`, `world.rubble`, `world.fadingRubble`, `world.debrisParticles`, and the ones you add. It never reads the physics module.
+  - The renderer reads only views: `world.lines`, `world.objects`, `world.rubble`, `world.fadingRubble`, `world.debrisParticles`, and the ones you add (forward a getter to your kind's views). It never reads the physics module.
   - `world-renderer.ts` redraws a Stroke only when its look key changes.
   - `debug-overlay.ts` (F1) reuses a pool of text labels.
 - **Tests.** There are two seams: pure units, and the headless Sandbox world with the helpers in `src/sandbox/test-support.ts`.
   - Tests check what a player would notice, not engine internals.
   - Milestone 1's tests must keep passing unchanged, unless your issue changes what they measure. Say so in the commit message, as #15 did.
-  - The gallery replay test (`played` in `src/gallery/gallery.test.ts`) compares Object transforms, each Line's Pieces and the Rubble. Extend it to whatever your slice adds, so replays are really checked.
+  - The gallery replay test (`played` in `src/gallery/gallery.test.ts`) compares `world.contents` with every `id` left out, since what a run makes (Rubble from a broken Fill) gets new ids each time it is played. A new kind is covered without editing it. Another gallery test checks, for every demo, that `world.contents` after R equals `world.contents` at Space, ids included.
   - The Fill release tests (`src/sandbox/fill-release.test.ts`) break grey-outlined boxes on short black Lines, so red exploding (#19, #20) and blue spilling (#18) leave them alone. One test checks that blue, green and red Fills release no Rubble; it stays true when they release Spills and Blasts.
 
 ## When you're done
