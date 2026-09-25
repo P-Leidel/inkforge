@@ -1,11 +1,13 @@
 import Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
 import { DebugOverlay } from '../rendering/debug-overlay';
+import { flashRejection } from '../rendering/rejection-flash';
 import { Hud } from '../rendering/hud';
 import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../rendering/toolbar';
 import { WorldRenderer } from '../rendering/world-renderer';
 import { SandboxWorld } from '../sandbox/sandbox-world';
+import { isClosingStroke } from '../stroke/close-detection';
 
 /**
  * The sandbox scene: turns pointer and keyboard input into Sandbox world
@@ -19,6 +21,10 @@ export class SandboxScene extends Phaser.Scene {
   private preview!: StrokePreview;
   /** Pointer samples of the Stroke being drawn, or null. */
   private stroke: Vec2[] | null = null;
+  /** Whether the Stroke being drawn would be refused as an overlapping Object. */
+  private strokeRefused = false;
+  /** Sample count the refusal was last checked at. */
+  private checkedSamples = 0;
 
   constructor() {
     super('sandbox');
@@ -71,15 +77,34 @@ export class SandboxScene extends Phaser.Scene {
   }
 
   private finishStroke(): void {
-    if (!this.stroke) return;
-    this.world.submitStroke(this.stroke);
+    const stroke = this.stroke;
+    if (!stroke) return;
     this.stroke = null;
+    const outcome = this.world.submitStroke(stroke);
+    if (outcome.kind === 'rejected') {
+      flashRejection(this, outcome.path, outcome.reason, stroke[stroke.length - 1]!);
+    }
+  }
+
+  /** Re-checks, at most once per frame, whether the Stroke being drawn would be refused. */
+  private updateRefusal(): void {
+    const stroke = this.stroke;
+    if (!stroke || !isClosingStroke(stroke)) {
+      this.strokeRefused = false;
+      this.checkedSamples = 0;
+      return;
+    }
+    if (stroke.length === this.checkedSamples) return;
+    this.checkedSamples = stroke.length;
+    const preview = this.world.previewStroke(stroke);
+    this.strokeRefused = preview.kind === 'rejected' && preview.reason === 'overlaps';
   }
 
   override update(_time: number, deltaMs: number): void {
     this.world.advance(deltaMs / 1000);
     this.worldView.draw();
-    this.preview.draw(this.stroke);
+    this.updateRefusal();
+    this.preview.draw(this.stroke, this.strokeRefused);
     this.overlay.draw();
     this.hud.draw();
   }

@@ -1,47 +1,72 @@
 import { simplifyPolygon, simplifyPolyline } from '../geometry/simplify';
 import { cross, distance, type Vec2 } from '../geometry/vec2';
 
-interface Excursion {
-  /** Path length from point i to point j. */
-  length: number;
-  /** Twice the area enclosed by the path from i to j and the chord back to i. */
-  doubleArea: number;
-}
-
 /** Prefix sums over a point list, to measure any sub-path in O(1). */
 function measureExcursions(points: readonly Vec2[]) {
-  const lengths = [0];
-  const shoelace = [0];
-  for (let k = 1; k < points.length; k++) {
-    lengths.push(lengths[k - 1]! + distance(points[k - 1]!, points[k]!));
-    shoelace.push(shoelace[k - 1]! + cross(points[k - 1]!, points[k]!));
+  const n = points.length;
+  const lengths = new Float64Array(n);
+  const shoelace = new Float64Array(n);
+  let maxStep = 0;
+  for (let k = 1; k < n; k++) {
+    const step = distance(points[k - 1]!, points[k]!);
+    maxStep = Math.max(maxStep, step);
+    lengths[k] = lengths[k - 1]! + step;
+    shoelace[k] = shoelace[k - 1]! + cross(points[k - 1]!, points[k]!);
   }
-  return (i: number, j: number): Excursion => ({
-    length: lengths[j]! - lengths[i]!,
-    doubleArea: Math.abs(shoelace[j]! - shoelace[i]! + cross(points[j]!, points[i]!)),
-  });
+  return {
+    /** Longest distance between consecutive points. */
+    maxStep,
+    /** Path length from point i to point j. */
+    length: (i: number, j: number) => lengths[j]! - lengths[i]!,
+    /** Twice the area enclosed by the path from i to j and the chord back to i. */
+    doubleArea: (i: number, j: number) =>
+      Math.abs(shoelace[j]! - shoelace[i]! + cross(points[j]!, points[i]!)),
+  };
 }
 
+type Measure = ReturnType<typeof measureExcursions>;
+
 /**
- * Whether the path from i to j is a thin spike: it returns to within
- * `thickness` of where it left, it is long for its width, and the region it
- * encloses is clearly thinner than `thickness`. A loop or a small blob is
- * wider and is kept.
+ * The last j in [jMin, jMax], searching downwards, where the path from i to j
+ * is a thin spike: it returns to within `thickness` of where it left, it is
+ * long for its width, and the region it encloses is clearly thinner than
+ * `thickness`. A loop or a small blob is wider and is kept. Returns -1 if
+ * there is none.
  */
-function isSpike(
+function findSpikeEnd(
   points: readonly Vec2[],
   i: number,
-  j: number,
+  jMin: number,
+  jMax: number,
   thickness: number,
-  measure: ReturnType<typeof measureExcursions>,
-): boolean {
-  const chord = distance(points[i]!, points[j]!);
-  if (chord >= thickness) return false;
-  const { length, doubleArea } = measure(i, j);
-  if (length < 4 * thickness) return false;
-  // 2 · area / perimeter is between half and all of the region's widest
-  // point, so below thickness / 2 the spike is thinner than a Line.
-  return doubleArea / (length + chord) < thickness / 2;
+  measure: Measure,
+  maxLength = Infinity,
+): number {
+  const p = points[i]!;
+  const step = Math.max(measure.maxStep, 1e-9);
+  let j = jMax;
+  while (j >= jMin) {
+    const q = points[j]!;
+    const chord = Math.sqrt((q.x - p.x) ** 2 + (q.y - p.y) ** 2);
+    if (chord >= thickness) {
+      // Consecutive points are at most `step` apart, so the next points down
+      // can't come within `thickness` of p any sooner than this.
+      j -= Math.max(1, Math.floor((chord - thickness) / step));
+      continue;
+    }
+    const length = measure.length(i, j);
+    // 2 · area / perimeter is between half and all of the region's widest
+    // point, so below thickness / 2 the spike is thinner than a Line.
+    if (
+      length >= 4 * thickness &&
+      length <= maxLength &&
+      measure.doubleArea(i, j) / (length + chord) < thickness / 2
+    ) {
+      return j;
+    }
+    j--;
+  }
+  return -1;
 }
 
 /**
@@ -59,15 +84,7 @@ export function flattenSpikesOpen(points: readonly Vec2[], thickness: number): V
     let i = 0;
     while (i < n) {
       out.push(current[i]!);
-      let spikeEnd = -1;
-      if (i > 0) {
-        for (let j = n - 2; j >= i + 2; j--) {
-          if (isSpike(current, i, j, thickness, measure)) {
-            spikeEnd = j;
-            break;
-          }
-        }
-      }
+      const spikeEnd = i > 0 ? findSpikeEnd(current, i, i + 2, n - 2, thickness, measure) : -1;
       if (spikeEnd >= 0) {
         i = spikeEnd;
         changed = true;
@@ -92,16 +109,19 @@ export function flattenSpikesClosed(points: readonly Vec2[], thickness: number):
     // Walk the ring twice so excursions may wrap past the first point.
     const ring = [...current, ...current];
     const measure = measureExcursions(ring);
-    const perimeter = measure(0, n).length;
+    const halfPerimeter = measure.length(0, n) / 2;
     let cut: [number, number] | null = null;
     for (let i = 0; i < n && !cut; i++) {
-      for (let j = i + Math.floor(n / 2); j >= i + 2; j--) {
-        if (measure(i, j).length > perimeter / 2) continue;
-        if (isSpike(ring, i, j, thickness, measure)) {
-          cut = [i, j];
-          break;
-        }
-      }
+      const j = findSpikeEnd(
+        ring,
+        i,
+        i + 2,
+        i + Math.floor(n / 2),
+        thickness,
+        measure,
+        halfPerimeter,
+      );
+      if (j >= 0) cut = [i, j];
     }
     if (!cut) return current;
     const [i, j] = cut;

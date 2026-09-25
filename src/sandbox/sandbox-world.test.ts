@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { polygonArea, polygonContainsPoint } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
+import { capsuleOverlapsPolygon } from '../geometry/overlap';
+import { transformPoints } from '../geometry/transform';
 import { dragAlong, dragBox, dragCircle } from '../stroke/pointer-paths';
-import { SandboxWorld } from './sandbox-world';
+import { GRAVITY, SandboxWorld } from './sandbox-world';
 
 const worlds: SandboxWorld[] = [];
 function createWorld(seed = 1): SandboxWorld {
@@ -411,5 +413,98 @@ describe('Sandbox world: Frozen Objects wake on hits', () => {
 
     expect(objectById(world, upper).frozen).toBe(true);
     expect(objectById(world, lower).frozen).toBe(true);
+  });
+});
+
+describe('Sandbox world: overlap rules', () => {
+  const lineThrough = (y: number) =>
+    dragAlong([
+      { x: 250, y },
+      { x: 550, y },
+    ]);
+
+  function overlapsAnyLine(world: SandboxWorld, id: number): boolean {
+    const object = objectById(world, id);
+    return world.lines.some((line) =>
+      line.segments.some((s) =>
+        object.pieces.some((piece) =>
+          capsuleOverlapsPolygon(
+            s.a,
+            s.b,
+            line.thickness / 2,
+            transformPoints(piece, object.transform),
+          ),
+        ),
+      ),
+    );
+  }
+
+  it('refuses an Object that would overlap another Object where it is now', () => {
+    const world = createWorld();
+    const box = drawObject(world, dragBox(300, 300, 60, 60));
+    world.togglePause();
+    world.release(box);
+    runFor(world, 2); // falls to the ground at y = 880
+
+    expect(world.submitStroke(dragBox(310, 830, 40, 40)).kind).toBe('rejected');
+    expect(world.submitStroke(dragBox(300, 300, 60, 60)).kind).toBe('object');
+  });
+
+  it('lets an Object be drawn over a Line and keeps it Frozen while paused', () => {
+    const world = createWorld();
+    world.submitStroke(lineThrough(430));
+
+    const box = drawObject(world, dragBox(370, 400, 60, 60));
+
+    expect(objectById(world, box).frozen).toBe(true);
+  });
+
+  it('Releases Frozen Objects overlapped by a Line when physics starts', () => {
+    const world = createWorld();
+    const crossed = drawObject(world, dragBox(370, 400, 60, 60));
+    const clear = drawObject(world, dragBox(700, 400, 60, 60));
+    world.submitStroke(lineThrough(430));
+
+    world.togglePause();
+
+    expect(objectById(world, crossed).frozen).toBe(false);
+    expect(objectById(world, clear).frozen).toBe(true);
+  });
+
+  it('squeezes a Released Object off the Line without flinging it', () => {
+    const world = createWorld();
+    const box = drawObject(world, dragBox(370, 400, 60, 60));
+    world.submitStroke(lineThrough(420)); // 20 px below the box's top edge
+    world.togglePause();
+
+    let maxExcess = 0;
+    for (let step = 1; step <= 120; step++) {
+      world.step();
+      const v = objectById(world, box).velocity;
+      // Anything beyond what gravity alone explains came from the push-out.
+      maxExcess = Math.max(maxExcess, Math.hypot(v.x, v.y) - GRAVITY * (step / 60));
+    }
+
+    expect(maxExcess).toBeLessThan(300);
+    expect(overlapsAnyLine(world, box)).toBe(false);
+  });
+
+  it('Releases a Frozen Object at once when a Line is drawn through it while running', () => {
+    const world = createWorld();
+    const box = drawObject(world, dragBox(370, 400, 60, 60));
+    world.togglePause();
+
+    world.submitStroke(lineThrough(430));
+
+    expect(objectById(world, box).frozen).toBe(false);
+  });
+
+  it('previews an Object that would overlap as refused, before it is submitted', () => {
+    const world = createWorld();
+
+    const preview = world.previewStroke(dragBox(300, 850, 60, 60));
+
+    expect(preview).toEqual(expect.objectContaining({ kind: 'rejected', reason: 'overlaps' }));
+    expect(world.objects).toHaveLength(0);
   });
 });

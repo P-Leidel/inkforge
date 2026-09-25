@@ -1,3 +1,4 @@
+import { capsuleOverlapsPolygon } from '../geometry/overlap';
 import { polygonCentroid, polygonContainsPoint, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import { transformPoints, type Transform } from '../geometry/transform';
@@ -8,7 +9,12 @@ import {
   type PhysicsWorld,
   type PhysicsWorldFactory,
 } from '../physics';
-import { processStroke, type RejectionReason, type StrokeContext } from '../stroke/stroke-pipeline';
+import {
+  processStroke,
+  type RejectionReason,
+  type StrokeContext,
+  type StrokeResult,
+} from '../stroke/stroke-pipeline';
 import { SANDBOX_ARENA, type Arena } from './arena';
 import { Random } from './random';
 
@@ -120,9 +126,7 @@ export class SandboxWorld {
   }
 
   get objects(): readonly ObjectView[] {
-    return this.strokes
-      .filter((s): s is ObjectStroke => s.kind === 'object')
-      .map((s) => this.viewObject(s));
+    return this.objectStrokes().map((s) => this.viewObject(s));
   }
 
   private viewObject(stroke: ObjectStroke): ObjectView {
@@ -150,6 +154,7 @@ export class SandboxWorld {
           segments: result.segments,
           thickness: result.thickness,
         });
+        this.releaseObjectsUnderLines();
         return { kind: 'line', id };
       }
       case 'object': {
@@ -160,6 +165,7 @@ export class SandboxWorld {
         const pieces = result.pieces.map(local);
         const body = this.physics.addObject({ position: origin, pieces, frozen: true });
         this.strokes.push({ kind: 'object', id, body, outline: local(result.outline), pieces });
+        this.releaseObjectsUnderLines();
         return { kind: 'object', id };
       }
       case 'rejected':
@@ -169,12 +175,49 @@ export class SandboxWorld {
     }
   }
 
+  /**
+   * What a Stroke would become if it were submitted now, without adding it.
+   * The scene uses this to show a refused Object in red while drawing.
+   */
+  previewStroke(samples: readonly Vec2[]): StrokeResult {
+    return processStroke(samples, this.strokeContext({}));
+  }
+
   private strokeContext(options: StrokeOptions): StrokeContext {
     return {
       terrain: this.arena.terrain,
-      objects: [],
+      objects: this.objectStrokes().map((s) => this.worldPieces(s)),
       ...(options.lineThickness !== undefined && { lineThickness: options.lineThickness }),
     };
+  }
+
+  private objectStrokes(): ObjectStroke[] {
+    return this.strokes.filter((s): s is ObjectStroke => s.kind === 'object');
+  }
+
+  /** An Object's collider pieces where the Object is now. */
+  private worldPieces(stroke: ObjectStroke): Polygon[] {
+    const transform = this.physics.getTransform(stroke.body);
+    return stroke.pieces.map((piece) => transformPoints(piece, transform));
+  }
+
+  /**
+   * While physics runs, a Frozen Object overlapped by a Line is Released so
+   * physics can squeeze it out: drawing a Line through an Object shoves it.
+   */
+  private releaseObjectsUnderLines(): void {
+    if (!this.running) return;
+    const lines = this.strokes.filter((s): s is LineStroke => s.kind === 'line');
+    for (const object of this.objectStrokes()) {
+      if (!this.physics.isFrozen(object.body)) continue;
+      const pieces = this.worldPieces(object);
+      const crossed = lines.some((line) =>
+        line.segments.some((s) =>
+          pieces.some((piece) => capsuleOverlapsPolygon(s.a, s.b, line.thickness / 2, piece)),
+        ),
+      );
+      if (crossed) this.physics.release(object.body);
+    }
   }
 
   /**
@@ -221,6 +264,7 @@ export class SandboxWorld {
   togglePause(): void {
     this.running = !this.running;
     this.accumulator = 0;
+    this.releaseObjectsUnderLines();
   }
 
   /** Advances physics by one fixed step, if running. */

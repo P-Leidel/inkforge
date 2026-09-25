@@ -6,7 +6,8 @@ import { PALETTE } from './palette';
 
 /**
  * Draws the Stroke the player is drawing right now, and the close marker at
- * its start while releasing would close it into an Object.
+ * its start while releasing would close it into an Object. A Stroke that
+ * would be refused is drawn red.
  */
 export class StrokePreview {
   private readonly g: Phaser.GameObjects.Graphics;
@@ -15,11 +16,11 @@ export class StrokePreview {
     this.g = scene.add.graphics().setDepth(10);
   }
 
-  draw(points: readonly Vec2[] | null): void {
+  draw(points: readonly Vec2[] | null, refused: boolean): void {
     const g = this.g;
     g.clear();
     if (!points || points.length === 0) return;
-    const color = PALETTE.ink;
+    const color = refused ? PALETTE.rejected : PALETTE.ink;
     const r = LINE_THICKNESS / 2;
     g.fillStyle(color, 0.7);
     g.lineStyle(LINE_THICKNESS, color, 0.7);

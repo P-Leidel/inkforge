@@ -1,5 +1,6 @@
 import { cutPolylineOutside } from '../geometry/clip';
 import { decomposeConvex } from '../geometry/convex-decomposition';
+import { convexPolygonsOverlap } from '../geometry/overlap';
 import { isSelfIntersecting, polygonArea, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import { distance, lerp, pathLength, type Vec2 } from '../geometry/vec2';
@@ -61,11 +62,11 @@ export type StrokeResult =
 export function processStroke(samples: readonly Vec2[], context: StrokeContext): StrokeResult {
   if (samples.length < 2 || pathLength(samples) < MIN_LINE_LENGTH) return { kind: 'dropped' };
   return isClosingStroke(samples)
-    ? processClosedStroke(samples)
+    ? processClosedStroke(samples, context)
     : processOpenStroke(samples, context);
 }
 
-function processClosedStroke(samples: readonly Vec2[]): StrokeResult {
+function processClosedStroke(samples: readonly Vec2[], context: StrokeContext): StrokeResult {
   const even = resampleClosed(closeRing(samples), SAMPLE_SPACING);
   const presmoothed = smooth(even, SAMPLE_SPACING, PRESMOOTHING_SIGMA, true);
   const flattened = resampleClosed(
@@ -81,7 +82,19 @@ function processClosedStroke(samples: readonly Vec2[]): StrokeResult {
   if (polygonArea(outline) < MIN_OBJECT_AREA) {
     return { kind: 'rejected', reason: 'too-small', path: samples };
   }
-  return { kind: 'object', outline, pieces: decomposeConvex(outline, MAX_PIECE_VERTICES) };
+  const pieces = decomposeConvex(outline, MAX_PIECE_VERTICES);
+  if (overlapsSolid(pieces, context))
+    return { kind: 'rejected', reason: 'overlaps', path: samples };
+  return { kind: 'object', outline, pieces };
+}
+
+/**
+ * Whether an Object would overlap Terrain or another Object. Touching is
+ * fine; overlapping Lines is allowed (physics squeezes the Object out).
+ */
+function overlapsSolid(pieces: readonly Polygon[], context: StrokeContext): boolean {
+  const solids = [...context.terrain, ...context.objects.flat()];
+  return pieces.some((piece) => solids.some((solid) => convexPolygonsOverlap(piece, solid)));
 }
 
 function processOpenStroke(samples: readonly Vec2[], context: StrokeContext): StrokeResult {

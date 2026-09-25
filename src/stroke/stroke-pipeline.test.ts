@@ -342,3 +342,118 @@ describe('Stroke pipeline: Objects', () => {
     expectPiecesCoverOutline(result.outline, result.pieces);
   });
 });
+
+function rejectionOf(result: StrokeResult) {
+  if (result.kind !== 'rejected') throw new Error(`expected a rejection, got ${result.kind}`);
+  return result.reason;
+}
+
+describe('Stroke pipeline: rejections', () => {
+  it('rejects an Object smaller than 20 × 20 px² as too small', () => {
+    expect(rejectionOf(processStroke(dragBox(300, 300, 19, 19), context))).toBe('too-small');
+    expect(rejectionOf(processStroke(dragBox(300, 300, 30, 12), context))).toBe('too-small');
+  });
+
+  it('accepts an Object a little over 20 × 20 px²', () => {
+    expect(processStroke(dragBox(300, 300, 24, 24), context).kind).toBe('object');
+  });
+
+  it('rejects a closed Stroke that crosses itself', () => {
+    const figureEight = [
+      { x: 300, y: 300 },
+      { x: 400, y: 400 },
+      { x: 400, y: 300 },
+      { x: 300, y: 400 },
+    ];
+    expect(rejectionOf(processStroke(dragPolygon(figureEight), context))).toBe('self-crossing');
+  });
+
+  it('flattens a thin spike on an Object silently', () => {
+    const boxWithSpike = [
+      { x: 300, y: 300 },
+      { x: 348, y: 300 },
+      { x: 350, y: 220 }, // 80 px spike, 4 px wide
+      { x: 352, y: 300 },
+      { x: 400, y: 300 },
+      { x: 400, y: 380 },
+      { x: 300, y: 380 },
+    ];
+    const result = objectOf(processStroke(dragPolygon(boxWithSpike), context));
+
+    expect(polygonBounds(result.outline).minY).toBeGreaterThan(300 - 8);
+  });
+
+  it('flattens a thin notch in an Object silently', () => {
+    const boxWithNotch = [
+      { x: 300, y: 300 },
+      { x: 348, y: 300 },
+      { x: 350, y: 360 }, // 60 px deep crack, 4 px wide
+      { x: 352, y: 300 },
+      { x: 400, y: 300 },
+      { x: 400, y: 380 },
+      { x: 300, y: 380 },
+    ];
+    const result = objectOf(processStroke(dragPolygon(boxWithNotch), context));
+
+    expect(polygonContainsPoint(result.outline, { x: 350, y: 330 })).toBe(true);
+  });
+
+  it('simplifies a very detailed outline silently', () => {
+    // A circle with 150 small bumps round its edge.
+    const bumpy: Vec2[] = [];
+    for (let k = 0; k < 600; k++) {
+      const angle = (k / 600) * 2 * Math.PI;
+      const r = 150 + 3 * Math.sin(150 * angle);
+      bumpy.push({ x: 600 + r * Math.cos(angle), y: 400 + r * Math.sin(angle) });
+    }
+    const result = objectOf(processStroke(dragPolygon(bumpy), context));
+
+    expectPiecesCoverOutline(result.outline, result.pieces);
+  });
+});
+
+describe('Stroke pipeline: overlap', () => {
+  it('rejects an Object that overlaps Terrain', () => {
+    // Straddles the ground surface at y = 880.
+    expect(rejectionOf(processStroke(dragBox(300, 850, 60, 60), context))).toBe('overlaps');
+  });
+
+  it('accepts an Object that only touches Terrain', () => {
+    expect(processStroke(dragBox(300, 820, 60, 60), context).kind).toBe('object');
+  });
+
+  it('rejects an Object that overlaps another Object', () => {
+    const existing = objectOf(processStroke(dragBox(300, 300, 100, 100), context));
+    const withObject: StrokeContext = { ...context, objects: [existing.pieces] };
+
+    const result = processStroke(dragBox(380, 380, 60, 60), withObject);
+
+    expect(rejectionOf(result)).toBe('overlaps');
+  });
+
+  it('accepts an Object that only touches another Object', () => {
+    const existing = objectOf(processStroke(dragBox(300, 300, 100, 100), context));
+    const withObject: StrokeContext = { ...context, objects: [existing.pieces] };
+
+    expect(processStroke(dragBox(400, 300, 60, 60), withObject).kind).toBe('object');
+  });
+
+  it('does not cut a Line where it crosses an Object', () => {
+    const existing = objectOf(processStroke(dragBox(300, 300, 100, 100), context));
+    const withObject: StrokeContext = { ...context, objects: [existing.pieces] };
+
+    const points = linePoints(
+      processStroke(
+        drag([
+          { x: 200, y: 350 },
+          { x: 500, y: 350 },
+        ]),
+        withObject,
+      ),
+    );
+
+    expect(Math.min(...points.map((p) => p.x))).toBeCloseTo(200, 0);
+    expect(Math.max(...points.map((p) => p.x))).toBeCloseTo(500, 0);
+    expect(points.some((p) => p.x > 300 && p.x < 400)).toBe(true);
+  });
+});
