@@ -1,7 +1,12 @@
 import { cutPolylineOutside } from '../geometry/clip';
 import { decomposeConvex } from '../geometry/convex-decomposition';
 import { convexPolygonsOverlap } from '../geometry/overlap';
-import { isSelfIntersecting, polygonArea, type Polygon } from '../geometry/polygon';
+import {
+  isSelfIntersecting,
+  polygonArea,
+  polygonCentroid,
+  type Polygon,
+} from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import { distance, lerp, pathLength, type Vec2 } from '../geometry/vec2';
 import { closeRing, isClosingStroke } from './close-detection';
@@ -74,17 +79,30 @@ function processClosedStroke(samples: readonly Vec2[], context: StrokeContext): 
     SAMPLE_SPACING,
   );
   const smoothed = smooth(flattened, SAMPLE_SPACING, SMOOTHING_SIGMA, true);
-  const outline = simplifyCapped(smoothed, SIMPLIFY_TOLERANCE, MAX_STROKE_POINTS, true);
+  const simplified = simplifyCapped(smoothed, SIMPLIFY_TOLERANCE, MAX_STROKE_POINTS, true);
+  // Smoothing and simplifying shrink a ring, most of all a small round one;
+  // scale it back so the Object keeps the area (and so the mass) that was drawn.
+  const drawnArea = polygonArea(flattened);
+  const outline = scaleToArea(simplified, drawnArea);
 
   if (outline.length < 3 || isSelfIntersecting(outline)) {
     return { kind: 'rejected', reason: 'self-crossing', path: samples };
   }
-  if (polygonArea(outline) < MIN_OBJECT_AREA) {
+  if (drawnArea < MIN_OBJECT_AREA) {
     return { kind: 'rejected', reason: 'too-small', path: samples };
   }
   const parts = decomposeConvex(outline, MAX_PART_VERTICES);
   if (overlapsSolid(parts, context)) return { kind: 'rejected', reason: 'overlaps', path: samples };
   return { kind: 'object', outline, parts };
+}
+
+/** The ring scaled about its centroid to the given area. */
+function scaleToArea(ring: readonly Vec2[], area: number): Vec2[] {
+  const current = polygonArea(ring);
+  if (current === 0) return [...ring];
+  const c = polygonCentroid(ring);
+  const k = Math.sqrt(area / current);
+  return ring.map((p) => ({ x: c.x + (p.x - c.x) * k, y: c.y + (p.y - c.y) * k }));
 }
 
 /**

@@ -20,7 +20,7 @@ export const PRESMOOTHING_SIGMA = 2;
 /** Width (standard deviation, px along the Stroke) of the smoothing that removes hand jitter. */
 export const SMOOTHING_SIGMA = 5;
 /** Simplification keeps points that deviate more than this from a straight run. */
-export const SIMPLIFY_TOLERANCE = 1.5;
+export const SIMPLIFY_TOLERANCE = 1;
 /** Most points a simplified Stroke may keep. */
 export const MAX_STROKE_POINTS = 64;
 /** Box2D polygons are convex with at most this many vertices. */

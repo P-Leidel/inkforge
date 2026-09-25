@@ -305,8 +305,12 @@ describe('Stroke pipeline: Objects', () => {
     ];
     const result = objectOf(processStroke(dragPolygon(triangle), context));
 
-    expect(polygonArea(result.outline) / polygonArea(triangle)).toBeGreaterThan(0.93);
-    expect(result.parts).toHaveLength(1);
+    expect(polygonArea(result.outline) / polygonArea(triangle)).toBeCloseTo(1, 1);
+    const bounds = polygonBounds(result.outline);
+    expect(bounds.minX).toBeCloseTo(300, -1);
+    expect(bounds.maxX).toBeCloseTo(400, -1);
+    expect(bounds.minY).toBeCloseTo(313, -1);
+    expect(bounds.maxY).toBeCloseTo(400, -1);
   });
 
   it('splits a concave L into convex parts that cover it', () => {
@@ -356,6 +360,12 @@ describe('Stroke pipeline: rejections', () => {
 
   it('accepts an Object a little over 20 × 20 px²', () => {
     expect(processStroke(dragBox(300, 300, 24, 24), context).kind).toBe('object');
+  });
+
+  it('judges size by the area drawn: a small ball of 452 px² is accepted and keeps its size', () => {
+    const result = objectOf(processStroke(dragCircle({ x: 400, y: 400 }, 12), context));
+
+    expect(polygonArea(result.outline) / (Math.PI * 12 * 12)).toBeGreaterThan(0.9);
   });
 
   it('rejects a closed Stroke that crosses itself', () => {
