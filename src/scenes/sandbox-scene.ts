@@ -7,6 +7,8 @@ import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../rendering/toolbar';
 import { WorldRenderer } from '../rendering/world-renderer';
 import { SandboxWorld } from '../sandbox/sandbox-world';
+import { BallCannon } from '../stress-tests/ball-cannon';
+import type { StressTest } from '../stress-tests/stress-test';
 import { isClosingStroke } from '../stroke/close-detection';
 
 /**
@@ -25,6 +27,7 @@ export class SandboxScene extends Phaser.Scene {
   private strokeRefused = false;
   /** Sample count the refusal was last checked at. */
   private checkedSamples = 0;
+  private stressTest: StressTest | null = null;
 
   constructor() {
     super('sandbox');
@@ -38,10 +41,18 @@ export class SandboxScene extends Phaser.Scene {
     this.preview = new StrokePreview(this);
     this.overlay = new DebugOverlay(this, this.world);
     this.hud = new Hud(this, this.world);
-    new Toolbar(this).addButton('Clear', () => this.world.clear());
+    new Toolbar(this)
+      .addButton('Clear', () => this.startStressTest(null))
+      .addButton('Ball cannon', () => this.startStressTest((world) => new BallCannon(world)));
 
     this.bindKeys();
     this.bindPointer();
+  }
+
+  /** Clears the Arena and starts a stress test on it (or none). */
+  private startStressTest(create: ((world: SandboxWorld) => StressTest) | null): void {
+    this.world.clear();
+    this.stressTest = create ? create(this.world) : null;
   }
 
   private bindKeys(): void {
@@ -102,10 +113,11 @@ export class SandboxScene extends Phaser.Scene {
 
   override update(_time: number, deltaMs: number): void {
     this.world.advance(deltaMs / 1000);
+    this.stressTest?.update();
     this.worldView.draw();
     this.updateRefusal();
     this.preview.draw(this.stroke, this.strokeRefused);
     this.overlay.draw();
-    this.hud.draw();
+    this.hud.draw(this.stressTest?.status());
   }
 }

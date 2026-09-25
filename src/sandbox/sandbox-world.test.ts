@@ -198,6 +198,18 @@ describe('Sandbox world: undo and clear', () => {
     expect(world.bodyCount).toBe(1);
   });
 
+  it('remove takes out one Stroke by id', () => {
+    const world = createWorld();
+    const first = world.submitStroke(strokeAt(300));
+    world.submitStroke(strokeAt(400));
+    if (first.kind !== 'line') throw new Error('expected a Line');
+
+    world.remove(first.id);
+
+    expect(world.lines).toHaveLength(1);
+    expect(world.lines[0]!.segments[0]!.a.y).toBeCloseTo(400);
+  });
+
   it('clear removes every Stroke but keeps the Terrain', () => {
     const world = createWorld();
     world.submitStroke(strokeAt(300));

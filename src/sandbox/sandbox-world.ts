@@ -269,6 +269,14 @@ export class SandboxWorld {
     return true;
   }
 
+  /** Removes one Stroke, e.g. a spent stress-test ball. */
+  remove(id: StrokeId): void {
+    const index = this.strokes.findIndex((s) => s.id === id);
+    if (index < 0) return;
+    const [stroke] = this.strokes.splice(index, 1);
+    this.physics.removeBody(stroke!.body);
+  }
+
   /** Removes the most recent Stroke. */
   undo(): void {
     const stroke = this.strokes.pop();
