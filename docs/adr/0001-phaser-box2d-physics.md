@@ -23,7 +23,7 @@ Measured with `npm run verdict` (headless, seed 2026) on an Intel Xeon @ 2.80 GH
 |---|---|---|---|---|
 | 1 | Tunnelling | 1000 shots at 3000 px/s at a 4 px Line, random angles: none pass | 1000 fired, 1000 reached the Line, 0 passed. With continuous collision switched off, all 1000 pass, so the check has teeth | Pass |
 | 2 | Stacking | 10 drawn boxes settle within 2 s, no visible jitter, standing after 60 s | Settled after 0.65 s; moved at most 0.16 px after that; standing after 62 s | Pass |
-| 3 | Performance | 100 pebbles falling into a pile hold ≥ 60 fps on a mid-range laptop in Chrome | Physics step with 100 drawn pebbles: 1.0 ms mean, 7.4 ms p99, 8.5 ms max (a 60 fps frame has 16.7 ms). Held 60 fps on a mid-range laptop in Chrome, checked by hand in the deployed build | Pass |
+| 3 | Performance | 100 pebbles falling into a pile hold ≥ 60 fps on a mid-range laptop in Chrome | Physics step with 100 drawn pebbles: 1.0 ms mean, 7.4 ms p99, 8.5 ms max (a 60 fps frame has 16.7 ms). Held 60 fps on a mid-range laptop in Chrome, checked by hand | Pass |
 | 4 | Stability | No body gains speed from nothing or is flung out of a contact | Pebbles never beat free fall (1050 vs 1208 px/s). Line push-out: 0 of 25 Objects stuck, none faster than gravity plus 233 px/s. Wake-on-hit keeps momentum (after / before = 1.000 from 300 to 3000 px/s) | Pass |
 
 What we learned about Phaser Box2D 1.1.0 along the way (all handled inside `src/physics/`):
