@@ -43,7 +43,7 @@ Pick values so a typical bomb (use the gallery's) destroys red within about its 
 
 That's how "its Blast then acts on the released Rubble and Droplets" falls out.
 
-**Blasts are a kind** (#24's decision), after the kinds whose bodies they act on. Each Blast is `{ id, centre, R, S, radius now, acted-on Party keys }`, with ids never reused. Its ring grows in the kind's `step` turn. Kinds never call each other, so a Blast doesn't push or damage other kinds' bodies itself: it reports what its ring reached, and the world pushes through the physics module, damages through the Material rules and breaks through `breakTarget`. `Kind.step` returns nothing today; give Blasts their own call for this rather than reaching into Strokes.
+**Blasts are a kind** (#24's decision), after the kinds whose bodies they act on. Each Blast is `{ id, centre, R, S, radius now, acted-on Party ids }`, with ids never reused. Its ring grows in the kind's `step` turn. Kinds never call each other, so a Blast doesn't push or damage other kinds' bodies itself: it reports what its ring reached, and the world pushes through the physics module, damages through the Material rules and breaks through `breakTarget`. `Kind.step` returns nothing today; give Blasts their own call for this rather than reaching into Strokes.
 
 **Each step, after the Material rules,** grow each Blast's radius by `speed × dt`, up to `R`. Then act on every Piece, Object, Rubble and Droplet not yet acted on whose nearest point is within the radius, at strength `s = S × (1 − d/R)²`:
 
@@ -53,7 +53,7 @@ That's how "its Blast then acts on the released Rubble and Droplets" falls out.
 - **Green Objects** start moving when a Blast pushes them or wakes them (#17's sticking hook).
 - **Red destroyed by a Blast** explodes in turn (by the same break path). The delay between chained Blasts is only the ring's travel time.
 - A Blast is finished once its radius reaches `R`.
-- **Deterministic order:** Blasts in creation order, bodies by a fixed key.
+- **Deterministic order:** Blasts in creation order, bodies by Party id. Ids only grow, so the order is the same in a replay even where the ids differ.
 
 **No effect on Terrain or Patches.** Blasts pass through Terrain and Lines (no occlusion) and don't affect Terrain or Patches. Filter Patch shapes out of the query, and measure hosts to their own shapes.
 
@@ -80,7 +80,7 @@ Impulse grows with mass, so one threshold can't give the same drop ratio for eve
   - `src/sandbox/breaking.test.ts` breaks red balls in several tests: the Debris test, `breakSomething`, and "a Frozen Object can break without moving". Check that each still tests what its name says.
 - **Chains within one step:** a Blast created while other Blasts are being processed starts growing at the next step (or this one; decide), and the result must be deterministic.
 - **Droplets:** they never wake anything and take no damage, but Blasts do push them.
-- **Blast-created bodies:** Rubble released by a Blast-destroyed Object is inside that Object's own Blast at radius 0, and is acted on as the ring passes. Their ids must be stable for the acted-on set. Rubble ids (the `Rubble` kind's own counter) are never reused and survive R for Rubble in the snapshot; Rubble released after it gets new ids in a replay, which is fine as long as nothing keys on the numbers themselves.
+- **Blast-created bodies:** Rubble released by a Blast-destroyed Object is inside that Object's own Blast at radius 0, and is acted on as the ring passes. The acted-on set holds Party ids (the Contact ledger's, #27). They are never reused and survive R for whatever is in the snapshot. Rubble released after the snapshot gets new ids in a replay, which is fine as long as nothing depends on the numbers themselves, only on their order.
 - **Existing tests with red Objects** now release Rubble when they break: `breakSomething` in `src/sandbox/breaking.test.ts` breaks a grey-filled red ball. Once red explodes, check what its Blast does to them.
 
 ## Tests (from the issue)

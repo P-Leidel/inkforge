@@ -70,6 +70,10 @@ _Avoid_: Pinned, asleep, static
 The player's action of unfreezing an Object during a Wave.
 _Avoid_: Activate, trigger, drop
 
+**Squeeze**:
+What happens to an Object a new Line is drawn across: it slides the shortest way off the Line, passing through Terrain and Lines, then carries on from rest. It deals and takes no damage while it slides.
+_Avoid_: Push-out, overlap
+
 ### Breaking
 
 **Piece**:
@@ -138,3 +142,7 @@ The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with ph
 **Arena contents**:
 Everything the simulation tracks and Reset brings back: Strokes (with their Pieces and Fills), Rubble, and later Droplets, Patches, Bonds, Blasts and enemies. Debris is not part of it.
 _Avoid_: Entities, world state
+
+**Settled**:
+Two things already touching when physics starts. Their contact deals no damage, sticks nothing and lands no Droplet until they come apart.
+_Avoid_: Resting contact

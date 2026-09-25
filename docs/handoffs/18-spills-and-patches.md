@@ -7,7 +7,7 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
 ## Read first
 
 - In the spec: [Spills and Patches](../specs/m2-colours.md#spills-and-patches), [Fill release](../specs/m2-colours.md#fill-release), [Green](../specs/m2-colours.md#green) (glue drag, wear by use) and [Blue](../specs/m2-colours.md#blue).
-- The commits of #15, #16, #24 and #17: Pieces, Rubble (`addCircle`, the Fill release, the cap), each kind of Arena contents in a module of its own, and glue drag with its wear and "host gone".
+- The commits of #15, #16, #24, #27 and #17: Pieces, Rubble (`addCircle`, the Fill release, the cap), each kind of Arena contents in a module of its own, the Contact ledger, and glue drag with its wear and "host gone".
 - **The user decided (2026-09-25):** a hit on a Patch damages the Patch's host by the normal rule. The Patch itself takes no damage, and a blue Patch wears by the impulse of the bounce.
 
 ## What already exists
@@ -15,7 +15,13 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
 - **Arena contents** (#24). Each kind is a module behind `Kind` (`src/sandbox/arena-contents.ts`), and the Sandbox world runs its list of kinds in order. See README, "Patterns the slices follow".
 - **Fill release** (#16) is `releaseFill(fill)` in `sandbox-world.ts`, handed the `ReleasedFill` (Colour, mass, local Outline, and the Object's pose and motion) that `strokes.break` reports for a broken Object. It puts out Rubble for grey and black Fills; blue and green Fills still give only Debris. The Fill kick is in the table: `kickSpeed` per Fill Colour (blue 400 and green 300 px/s, already the fastest; grey and black 200) and the shared `kickSpread` (0.35 rad either side). `launchRubble` in `src/sandbox/rubble.ts` applies it to any list of centres inside the Outline, so Droplets can reuse it.
 - **`addCircle(def: CircleBodyDef)`** (#16) makes dynamic circle bodies with hit events on, a `Placement`, and an angular damping so they roll to a stop. Add the Droplet options as optional fields of `CircleBodyDef`.
-- **Glue drag** (#17) is applied once per body per step for bodies touching green Pieces. Its wear goes to the Pieces.
+- **The Contact ledger** (#27, `src/sandbox/contact-ledger.ts`) gives every rule its contacts. Each step it gives, in the engine's report order:
+  - hits, with their Parties and shapes;
+  - new contacts, with the first shape pair;
+  - what touches each Party, with the shape pairs of each touching entry.
+
+  It has already dropped Settled pairs (`CONTEXT.md`) from hits and new contacts, and Squeezed Objects from everything. Parties have numeric ids that are never reused and stay the same through a rebuild. Each kind registers its bodies' Parties with the ledger as it adds them, and unregisters them as it removes them.
+- **Glue drag** (#17) is applied once per body per step for bodies touching green Pieces, read from the ledger. Its wear goes to the Pieces.
 - **Hits name their shapes** (`shapeA`, `shapeB`). A `ShapeId` stays the same when an Object's body is rebuilt, but not through `physics.reset()`.
 - **Three adapter functions** in `box2d-physics-world.ts` must change for Patch shapes:
   - `setSurface(id)` and `setMass(id)` loop over every shape of a body (`b2Body_GetShapes`), so a Patch shape would get its host's surface and density. Limit them to the body's own shapes. Whenever the table changes, the Sandbox world calls each kind's `applySurfaces`, which calls `setSurface` for each of its bodies (`bodiesOf` in `Strokes`).
@@ -34,7 +40,7 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
   - `patchCap: 200`.
 - A Patch's surface can be its Colour's `line` surface: blue restitution 0.9, green's friction. Its glue drag is green's `line` value from #17. Impulse and momentum have the same unit (mass × px/s), so one capacity per length serves both blue and green.
 
-**Kinds.** Droplets and Patches become kinds (#24's decision), after their hosts in the world's list: Strokes, Rubble, Bonds, then Droplets and Patches. Each owns its records, ids, views, snapshot part and Party lookup, and implements every part of `Kind`. Kinds never call each other: the world hands a landed Droplet's Patch from one to the other, and passes a broken Object's Spill from `releaseFill` to Droplets.
+**Kinds.** Droplets and Patches become kinds (#24's decision), after their hosts in the world's list: Strokes, Rubble, Bonds, then Droplets and Patches. Each owns its records, ids, views and snapshot part, registers its bodies' Parties with the ledger, and implements every part of `Kind`. Kinds never call each other: the world hands a landed Droplet's Patch from one to the other, and passes a broken Object's Spill from `releaseFill` to Droplets.
 
 **Droplets.**
 
@@ -45,13 +51,13 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
 - Continuous collision against fixed bodies is already on. Test Droplets against a thin Line the way the milestone 1 ball cannon does.
 - Count: `10 + floor(6 × random)` from `world.random`. Unit-test it across seeds.
 - Spawn inside the Outline, e.g. with #16's packing or seeded points kept clear of the edges, and launch with the Fill kick. `packRubble` returns nothing for Colours whose `rubbleMax` is 0, so for Droplets export and reuse its hex-grid helper (`hexSpots`) rather than calling it.
-- The Material rules must skip Droplet Parties: they deal and take no damage.
+- Droplets register Parties, since they need the ledger's new contacts to land. The Material rules must skip Droplet Parties, though: they deal and take no damage. Mark them on the Party.
 - Droplets are not solid: leave them out of `solids()`, so a Stroke can be drawn through a Spill.
 - Droplets leaving the Arena (outside `0…arena.width × 0…arena.height`, with a margin) vanish.
 
 **Landing.**
 
-- A Droplet lands at its first begin that isn't settled. Remove the Droplet, and add a Patch on the other body in the same step.
+- A Droplet lands at its first entry in the ledger's new contacts (Settled pairs are already left out). Remove the Droplet, and add a Patch on the other body in the same step.
 - Where the Patch goes: the host's surface point nearest the Droplet's centre. The surface is:
   - an Object's Outline, in its body coordinates;
   - the side of a Piece's capsule facing the Droplet;
@@ -68,12 +74,12 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
   - Leave them out of `setSurface`, `setMass`, `frozenInertial` and `unitMassOf`.
   - A Piece's body sits at the origin with its capsules in world coordinates (`physics.addLine(piece.segments, …)`), so a Patch on a Piece is in world coordinates too.
 
-**Patch record.** `{ id, colour, host Party key, local segment, length, wear, shapeId }`, and a view for the renderer.
+**Patch record.** `{ id, colour, host Party id, local segment, length, wear, shapeId }`, and a view for the renderer.
 
 **Behaviour.**
 
-- **Blue:** its restitution does the bouncing. Each hit naming its `ShapeId` wears it by the hit's impulse.
-- **Green:** a body touching a green Patch shape gets glue drag. Keep it once per body per step across green Pieces and green Patches. The drag's momentum is charged to the green things touched. The Patch's host isn't dragged by its own Patch.
+- **Blue:** its restitution does the bouncing. Each of the ledger's hits naming its `ShapeId` wears it by the hit's impulse. The Material rules' "one impact per Stroke" is for damage only; wear counts every hit.
+- **Green:** a body touching a green Patch shape gets glue drag. The ledger's touching is per Party, so check the shape pairs of the host's touching entries for the Patch's `ShapeId`. Keep it once per body per step across green Pieces and green Patches. The drag's momentum is charged to the green things touched. The Patch's host isn't dragged by its own Patch.
 - **Hits on a Patch** damage its host by the normal rule (the user decision). Patches take no damage from hits or Blasts.
 - **Capacity** is `capacityPerLength × length`. At capacity, remove the shape and burst a puff of Debris.
 
@@ -87,9 +93,9 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
 **Snapshot.**
 
 - Save Droplets in flight: pose, velocity, colour, length share.
-- Save Patches: host key, local segment, colour, length, wear.
+- Save Patches: host Party id, local segment, colour, length, wear.
 - `restore` adds Patches after their hosts, since Patches come after them in the list of kinds. They get new `ShapeId`s, since ids restart after a reset, so the Patches kind maps them.
-- Spec: "a Droplet already touching something at the snapshot doesn't land again." This is the settled-pair filter applied to Droplet begins.
+- Spec: "a Droplet already touching something at the snapshot doesn't land again." The ledger's new contacts already leave out Settled pairs, so this needs no extra work. Test it.
 
 **Views.** Each kind's views are in `world.contents`, so the gallery replay test covers them. Forward a getter to them for the renderer, like `world.rubble`.
 
