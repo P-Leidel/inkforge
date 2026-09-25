@@ -461,6 +461,7 @@ export class SandboxWorld {
     this.strokes = [];
     this.history = [];
     this.snapshot = null;
+    this.rules.settle([]);
     this.debris.clear();
   }
 
@@ -517,8 +518,18 @@ export class SandboxWorld {
       history: [...this.history],
       random: this.random.state,
       time: this.elapsed,
-      settled: this.rules.pairKeys(this.physics.touchingPairs(), this.partyFinder()),
+      settled: this.settledPairs(),
     };
+  }
+
+  /**
+   * The pairs touching now. Straight after a rebuild (R, or a start not yet
+   * stepped) the engine hasn't found any contacts yet, so the pairs settled
+   * at the last start still count until they have stepped apart.
+   */
+  private settledPairs(): string[] {
+    const touching = this.rules.pairKeys(this.physics.touchingPairs(), this.partyFinder());
+    return [...new Set([...this.rules.settledPairs, ...touching])];
   }
 
   /** Who each body is to the Material rules. */

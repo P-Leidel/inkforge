@@ -165,6 +165,25 @@ describe('Breaking', () => {
     expect(corner).toBeLessThan(GREY_DURABILITY);
     expect(slam).toBeLessThan(corner);
   });
+
+  it('R and Space replay a start with contacts touching the same way', () => {
+    const world = createWorld();
+    const box = drawObject(world, tiltedBox());
+    world.togglePause();
+    world.release(box);
+    runFor(world, 0.5);
+    world.togglePause();
+    world.togglePause(); // the snapshot: landed on a corner, touching the ground
+    runFor(world, 1.5);
+    const first = objectById(world, box).durability;
+
+    world.reset();
+    world.togglePause();
+    runFor(world, 1.5);
+
+    expect(first).toBeLessThan(GREY_DURABILITY);
+    expect(objectById(world, box).durability).toBe(first);
+  });
 });
 
 describe('Squeezing', () => {
