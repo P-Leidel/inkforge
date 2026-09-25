@@ -288,6 +288,50 @@ describe('Stroke pipeline: Objects', () => {
     expect(polygonArea(result.outline) / (120 * 80)).toBeGreaterThan(0.97);
   });
 
+  it('keeps the corners of a drawn box sharp and its sides straight', () => {
+    const result = objectOf(processStroke(dragBox(300, 300, 120, 80), context));
+
+    const corners = [
+      { x: 300, y: 300 },
+      { x: 420, y: 300 },
+      { x: 420, y: 380 },
+      { x: 300, y: 380 },
+    ];
+    for (const corner of corners) {
+      const nearest = Math.min(
+        ...result.outline.map((p) => Math.hypot(p.x - corner.x, p.y - corner.y)),
+      );
+      expect(nearest, `corner (${corner.x}, ${corner.y})`).toBeLessThan(1);
+    }
+    // Straight sides: every outline point lies on the drawn rectangle.
+    for (const p of result.outline) {
+      const offSide = Math.min(
+        Math.abs(p.x - 300),
+        Math.abs(p.x - 420),
+        Math.abs(p.y - 300),
+        Math.abs(p.y - 380),
+      );
+      expect(offSide).toBeLessThan(0.5);
+    }
+  });
+
+  it('keeps the corners of a shaky hand-drawn box', () => {
+    const shaky = jitter(dragBox(300, 300, 120, 80), 1.5, 11);
+    const result = objectOf(processStroke(shaky, context));
+
+    for (const corner of [
+      { x: 300, y: 300 },
+      { x: 420, y: 300 },
+      { x: 420, y: 380 },
+      { x: 300, y: 380 },
+    ]) {
+      const nearest = Math.min(
+        ...result.outline.map((p) => Math.hypot(p.x - corner.x, p.y - corner.y)),
+      );
+      expect(nearest, `corner (${corner.x}, ${corner.y})`).toBeLessThan(3);
+    }
+  });
+
   it('keeps a drawn circle round', () => {
     const result = objectOf(processStroke(dragCircle({ x: 400, y: 400 }, 40), context));
 

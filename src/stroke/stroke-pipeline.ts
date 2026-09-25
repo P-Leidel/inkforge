@@ -12,7 +12,8 @@ import { distance, lerp, pathLength, type Vec2 } from '../geometry/vec2';
 import { closeRing, isClosingStroke } from './close-detection';
 import { resample, resampleClosed } from './sampling';
 import { flattenSpikesClosed, flattenSpikesOpen, simplifyCapped } from './simplification';
-import { smooth } from './smoothing';
+import { findCorners, sharpenCorners } from './corners';
+import { smooth, smoothBetweenCorners } from './smoothing';
 import {
   LINE_THICKNESS,
   MAX_LINE_SEGMENT_LENGTH,
@@ -78,7 +79,9 @@ function processClosedStroke(samples: readonly Vec2[], context: StrokeContext): 
     flattenSpikesClosed(presmoothed, LINE_THICKNESS),
     SAMPLE_SPACING,
   );
-  const smoothed = smooth(flattened, SAMPLE_SPACING, SMOOTHING_SIGMA, true);
+  const corners = findCorners(flattened, true);
+  const sharpened = sharpenCorners(flattened, corners, true);
+  const smoothed = smoothBetweenCorners(sharpened, corners, SAMPLE_SPACING, SMOOTHING_SIGMA, true);
   const simplified = simplifyCapped(smoothed, SIMPLIFY_TOLERANCE, MAX_STROKE_POINTS, true);
   // Smoothing and simplifying shrink a ring, most of all a small round one;
   // scale it back so the Object keeps the area (and so the mass) that was drawn.
@@ -121,7 +124,9 @@ function processOpenStroke(samples: readonly Vec2[], context: StrokeContext): St
   // base; a light pass first keeps per-sample jitter from looking like spikes.
   const presmoothed = smooth(even, SAMPLE_SPACING, PRESMOOTHING_SIGMA, false);
   const flattened = resample(flattenSpikesOpen(presmoothed, thickness), SAMPLE_SPACING);
-  const smoothed = smooth(flattened, SAMPLE_SPACING, SMOOTHING_SIGMA, false);
+  const corners = findCorners(flattened, false);
+  const sharpened = sharpenCorners(flattened, corners, false);
+  const smoothed = smoothBetweenCorners(sharpened, corners, SAMPLE_SPACING, SMOOTHING_SIGMA, false);
   const simplified = simplifyCapped(smoothed, SIMPLIFY_TOLERANCE, MAX_STROKE_POINTS, false);
   const cut = cutPolylineOutside(simplified, context.terrain);
   const total = cut.reduce((sum, s) => sum + distance(s.a, s.b), 0);
