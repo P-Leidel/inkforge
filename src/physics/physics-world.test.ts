@@ -186,3 +186,35 @@ describe('Physics step reports', () => {
     expect(world.getVelocity(box).x).toBe(0); // it lost its 100 px/s
   });
 });
+
+describe('Physics placement', () => {
+  it('reports exactly the transform and velocity an Object was created with until it moves', () => {
+    const world = createWorld();
+    const placed = Array.from({ length: 50 }, (_, k) => ({
+      position: { x: 100.1 + 17.3 * k, y: 200.7 + 3.1 * k },
+      angle: -1.5 + 0.0613 * k,
+      velocity: { x: 33.3 * k - 700, y: 12.7 * k },
+    }));
+    const bodies = placed.map((p) =>
+      world.addObject({
+        ...p,
+        parts: [square(10)],
+        frozen: false,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
+
+    bodies.forEach((body, k) => {
+      const { position, angle, velocity } = placed[k]!;
+      expect(world.getTransform(body)).toEqual({ ...position, angle });
+      expect(world.getVelocity(body)).toEqual(velocity);
+    });
+
+    world.step();
+    expect(world.getTransform(bodies[1]!)).not.toEqual({
+      ...placed[1]!.position,
+      angle: placed[1]!.angle,
+    });
+  });
+});

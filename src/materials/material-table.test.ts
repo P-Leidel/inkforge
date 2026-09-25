@@ -26,6 +26,16 @@ describe('Material table', () => {
     }
   });
 
+  it('ranks Line durability as the spec does: black far toughest, red weakest, blue below grey', () => {
+    const line = (colour: (typeof COLOURS)[number]) =>
+      DEFAULT_MATERIAL_TABLE.colours[colour].line.durability;
+    expect(line('black')).toBeGreaterThan(3 * line('grey'));
+    expect(line('green')).toBe(line('grey'));
+    expect(line('blue')).toBeLessThan(line('grey'));
+    expect(line('red')).toBeLessThan(line('blue'));
+    expect(DEFAULT_MATERIAL_TABLE.pieceLength).toBe(48);
+  });
+
   it('hands out independent copies to edit', () => {
     const table = createMaterialTable();
     table.colours.blue.line.restitution = 0.5;

@@ -135,18 +135,22 @@ describe('Colours: Objects', () => {
       const box = drawObject(world, dragBox(380, 480, 40, 40), colour);
       const ball = drawObject(world, dragCircle({ x: 360, y: 500 }, 15));
       drawLine(world, [
-        { x: 520, y: 300 },
-        { x: 520, y: 860 },
+        { x: 430, y: 300 },
+        { x: 430, y: 860 },
       ]);
       world.togglePause();
       world.release(ball, { x: 300, y: 0 });
       let hit = 0;
       let back = 0;
-      for (let step = 0; step < 90; step++) {
+      // Only the bounce: from the knock until a little after the wall, not
+      // tumbling on the ground later.
+      let bounced = -1;
+      for (let step = 0; step < 300 && (bounced < 0 || step < bounced + 15); step++) {
         world.step();
         const vx = objectById(world, box).velocity.x;
         hit = Math.max(hit, vx);
         back = Math.max(back, -vx);
+        if (bounced < 0 && hit > 50 && vx < hit / 2) bounced = step;
       }
       return back / hit;
     };

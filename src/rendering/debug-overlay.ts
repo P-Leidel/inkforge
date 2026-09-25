@@ -4,7 +4,7 @@ import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { strokeCapsule, strokePolygon } from './draw';
 import { PALETTE } from './palette';
 
-/** F1 overlay: collider outlines, each Object's durability, body count and fps. */
+/** F1 overlay: collider outlines, each Piece's and Object's durability, body count and fps. */
 export class DebugOverlay {
   private readonly colliders: Phaser.GameObjects.Graphics;
   private readonly stats: Phaser.GameObjects.Text;
@@ -67,18 +67,30 @@ export class DebugOverlay {
     for (const line of this.world.lines) {
       for (const { a, b } of line.segments) strokeCapsule(g, a, b, line.thickness);
     }
-    const objects = this.world.objects;
-    objects.forEach((object, k) => {
+    let k = 0;
+    for (const line of this.world.lines) {
+      for (const piece of line.pieces) {
+        // At the middle of the Piece's middle capsule.
+        const { a, b } = piece.segments[Math.floor(piece.segments.length / 2)]!;
+        const middle =
+          piece.segments.length % 2 === 0 ? a : { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        this.label(k++)
+          .setText(`${Math.ceil(piece.durability)}`)
+          .setPosition(middle.x, middle.y)
+          .setVisible(true);
+      }
+    }
+    for (const object of this.world.objects) {
       for (const part of object.parts) strokePolygon(g, transformPoints(part, object.transform));
       // The impact count, for Colours that break on a number of impacts (blue).
       const limit = this.world.materials.colours[object.colour].outline.impactLimit;
       const impacts = limit > 0 ? ` ×${object.impacts}/${limit}` : '';
-      this.label(k)
+      this.label(k++)
         .setText(`${Math.ceil(object.durability)}${impacts}`)
         .setPosition(object.transform.x, object.transform.y)
         .setVisible(true);
-    });
-    for (let k = objects.length; k < this.labels.length; k++) this.labels[k]!.setVisible(false);
+    }
+    for (; k < this.labels.length; k++) this.labels[k]!.setVisible(false);
 
     const fps = this.scene.game.loop.actualFps;
     this.stats.setText(`fps    ${fps.toFixed(0)}\nbodies ${this.world.bodyCount}`);

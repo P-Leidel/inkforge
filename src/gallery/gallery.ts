@@ -138,10 +138,37 @@ export const THIRD_BOUNCE_DEMO: Demo = {
   },
 };
 
+/**
+ * The same boulder, a black box filled with black, dropped onto a grey and a
+ * black Line: the grey Pieces under it break and it falls through, while
+ * the black Line cracks and holds it. F1 shows each Piece's durability.
+ */
+export const BOULDER_DEMO: Demo = {
+  name: 'Boulder',
+  build(world) {
+    const boulders = (['grey', 'black'] as const).map((colour, k) => {
+      const x = 560 + 800 * k;
+      drawLine(
+        world,
+        [
+          { x: x - 120, y: 620 },
+          { x: x + 120, y: 620 },
+        ],
+        colour,
+      );
+      const boulder = drawObject(world, dragBox(x - 30, 150, 60, 60), 'black');
+      world.fillAt({ x, y: 180 }, 'black');
+      return boulder;
+    });
+    letGo(world, boulders);
+  },
+};
+
 export const GALLERY: readonly Demo[] = [
   BOUNCE_DEMO,
   SLIDE_DEMO,
   KNOCK_DEMO,
   DROP_DEMO,
   THIRD_BOUNCE_DEMO,
+  BOULDER_DEMO,
 ];

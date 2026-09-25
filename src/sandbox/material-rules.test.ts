@@ -24,7 +24,12 @@ describe('Material rules', () => {
   table.colours.blue.outline.impactLimit = 3;
   table.damagePerImpulse = 1;
 
-  const breakable = (colour: Colour): Breakable => ({ colour, damage: 0, impacts: 0 });
+  const breakable = (colour: Colour): Breakable => ({
+    colour,
+    role: 'outline',
+    damage: 0,
+    impacts: 0,
+  });
   const TERRAIN: Party = { key: 'terrain', target: null, sliding: false };
 
   /** A world of parties by body id, and a report of hits between them. */
@@ -135,5 +140,52 @@ describe('Material rules', () => {
     rules.applyStep(report(), () => [], partyOf); // they separated
     rules.applyStep(report(hit(0, 1, 1000)), () => touching, partyOf);
     expect(grey.damage).toBe(600);
+  });
+
+  it("damages a Piece against its Line's numbers, not its Outline's", () => {
+    const lines = createMaterialTable();
+    lines.colours.grey.line.damageThreshold = 100;
+    lines.colours.grey.line.durability = 500;
+    const piece: Breakable = { colour: 'grey', role: 'line', damage: 0, impacts: 0 };
+    const rules = new MaterialRules(lines);
+    const { partyOf, hit, report } = setup([{ key: 'a', target: piece, sliding: false }, TERRAIN]);
+
+    expect(rules.applyStep(report(hit(0, 1, 350)), () => [], partyOf)).toEqual([]);
+    expect(piece.damage).toBe(250);
+    expect(wear(piece, lines)).toBe(0.5);
+
+    expect(rules.applyStep(report(hit(0, 1, 350)), () => [], partyOf)).toEqual([piece]);
+  });
+
+  it('never breaks a blue Piece by counting impacts: only damage wears it', () => {
+    const piece: Breakable = { colour: 'blue', role: 'line', damage: 0, impacts: 0 };
+    const rules = new MaterialRules(table);
+    const { partyOf, hit, report } = setup([{ key: 'a', target: piece, sliding: false }, TERRAIN]);
+    const threshold = table.colours.blue.line.damageThreshold;
+
+    for (let k = 0; k < 4; k++)
+      rules.applyStep(report(hit(0, 1, threshold + 10)), () => [], partyOf);
+
+    expect(piece.damage).toBe(40);
+    expect(wear(piece, table)).toBeLessThan(1);
+  });
+
+  it("counts one Line's Pieces hit in one step as one impact on what hit them", () => {
+    const grey = breakable('grey');
+    const left: Breakable = { colour: 'grey', role: 'line', damage: 0, impacts: 0 };
+    const right: Breakable = { colour: 'grey', role: 'line', damage: 0, impacts: 0 };
+    const rules = new MaterialRules(table);
+    const { partyOf, hit, report } = setup([
+      { key: 'a', target: grey, sliding: false },
+      { key: 'line piece 0', stroke: 'line', target: left, sliding: false },
+      { key: 'line piece 1', stroke: 'line', target: right, sliding: false },
+    ]);
+
+    rules.applyStep(report(hit(0, 1, 1000), hit(0, 2, 900)), () => [], partyOf);
+
+    expect(grey.damage).toBe(600);
+    expect(grey.impacts).toBe(1);
+    expect(left.damage).toBe(600);
+    expect(right.damage).toBe(500);
   });
 });

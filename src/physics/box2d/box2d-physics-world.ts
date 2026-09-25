@@ -104,6 +104,23 @@ interface BodyRecord {
   /** Mass per m², the same over all shapes; kept when it is rebuilt. */
   density: number;
   readonly unit: UnitMass;
+  /** What an Object was created with, to read back exactly while the engine still holds it. */
+  placed?: Placement;
+}
+
+/**
+ * An Object's transform and velocity in px as it was created, and the
+ * engine's copy of them. Converting to the engine and back isn't exact to
+ * the last bit (an angle becomes a cosine and sine), so while the engine
+ * still holds exactly what it was given, the body reports what it was
+ * given: a world rebuilt from a snapshot then snapshots the same again,
+ * and R, Space replays exactly.
+ */
+interface Placement {
+  readonly transform: Transform;
+  readonly velocity: Vec2;
+  /** The engine's position, rotation and velocity: x, y, cos, sin, vx, vy. */
+  readonly engine: readonly number[];
 }
 
 /** Mass properties of a body taking part in a collision, in metres. */
@@ -533,6 +550,20 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     b2Body_ApplyLinearImpulse(frozen.b2Id, new b2Vec2(j * normal.x, j * normal.y), point, true);
   }
 
+  function engineState(b2Id: b2BodyId): number[] {
+    const p = b2Body_GetPosition(b2Id);
+    const q = b2Body_GetRotation(b2Id);
+    const v = b2Body_GetLinearVelocity(b2Id);
+    return [p.x, p.y, q.c, q.s, v.x, v.y];
+  }
+
+  /** Whether the engine still holds exactly what a body was placed with, in `engine[from..to)`. */
+  function stillPlaced(rec: BodyRecord, placed: Placement, from: number, to: number): boolean {
+    const now = engineState(rec.b2Id);
+    for (let k = from; k < to; k++) if (now[k] !== placed.engine[k]) return false;
+    return true;
+  }
+
   function bodyIdOf(b2Id: b2BodyId): BodyId {
     return b2Body_GetUserData(b2Id) as BodyId;
   }
@@ -591,6 +622,11 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
         if (def.velocity) b2Body_SetLinearVelocity(b2Id, toB2(def.velocity));
         if (def.angularVelocity) b2Body_SetAngularVelocity(b2Id, def.angularVelocity);
       }
+      rec.placed = {
+        transform: { x: def.position.x, y: def.position.y, angle: def.angle ?? 0 },
+        velocity: def.frozen || !def.velocity ? { x: 0, y: 0 } : def.velocity,
+        engine: engineState(b2Id),
+      };
       return id;
     },
 
@@ -760,13 +796,16 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     },
 
     getTransform(id): Transform {
-      const b2Id = record(id).b2Id;
-      const p = b2Body_GetPosition(b2Id);
-      return { x: toPx(p.x), y: toPx(p.y), angle: b2Rot_GetAngle(b2Body_GetRotation(b2Id)) };
+      const rec = record(id);
+      if (rec.placed && stillPlaced(rec, rec.placed, 0, 4)) return rec.placed.transform;
+      const p = b2Body_GetPosition(rec.b2Id);
+      return { x: toPx(p.x), y: toPx(p.y), angle: b2Rot_GetAngle(b2Body_GetRotation(rec.b2Id)) };
     },
 
     getVelocity(id) {
-      const v = b2Body_GetLinearVelocity(record(id).b2Id);
+      const rec = record(id);
+      if (rec.placed && stillPlaced(rec, rec.placed, 4, 6)) return rec.placed.velocity;
+      const v = b2Body_GetLinearVelocity(rec.b2Id);
       return { x: toPx(v.x), y: toPx(v.y) };
     },
 

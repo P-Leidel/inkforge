@@ -8,8 +8,9 @@ import {
   type Polygon,
 } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
-import { distance, lerp, pathLength, type Vec2 } from '../geometry/vec2';
+import { distance, pathLength, type Vec2 } from '../geometry/vec2';
 import { closeRing, isClosingStroke } from './close-detection';
+import { splitIntoPieces } from './pieces';
 import { resample, resampleClosed } from './sampling';
 import { flattenSpikesClosed, flattenSpikesOpen, simplifyCapped } from './simplification';
 import { findCorners, sharpenCorners } from './corners';
@@ -34,6 +35,11 @@ export interface StrokeContext {
   readonly objects: readonly (readonly Polygon[])[];
   /** Thickness of a Line; defaults to LINE_THICKNESS. */
   readonly lineThickness?: number;
+  /**
+   * The length (px) Lines are split into Pieces of, from the material table.
+   * Without it each part of a Line is one Piece.
+   */
+  readonly pieceLength?: number;
 }
 
 export type RejectionReason = 'too-small' | 'self-crossing' | 'overlaps';
@@ -42,8 +48,10 @@ export type RejectionReason = 'too-small' | 'self-crossing' | 'overlaps';
 export type StrokeResult =
   | {
       readonly kind: 'line';
-      /** Capsule centre lines, after cutting at Terrain. */
+      /** Capsule centre lines, after cutting at Terrain: every Piece's, in order. */
       readonly segments: readonly Segment[];
+      /** The Line's Pieces in order along it, each as its capsule centre lines. */
+      readonly pieces: readonly (readonly Segment[])[];
       readonly thickness: number;
     }
   | {
@@ -131,17 +139,6 @@ function processOpenStroke(samples: readonly Vec2[], context: StrokeContext): St
   const cut = cutPolylineOutside(simplified, context.terrain);
   const total = cut.reduce((sum, s) => sum + distance(s.a, s.b), 0);
   if (total < MIN_LINE_LENGTH) return { kind: 'dropped' };
-  return { kind: 'line', segments: splitSegments(cut, MAX_LINE_SEGMENT_LENGTH), thickness };
-}
-
-/** Splits segments so none is longer than `maxLength`. */
-function splitSegments(segments: readonly Segment[], maxLength: number): Segment[] {
-  const out: Segment[] = [];
-  for (const { a, b } of segments) {
-    const parts = Math.max(1, Math.ceil(distance(a, b) / maxLength));
-    for (let k = 0; k < parts; k++) {
-      out.push({ a: lerp(a, b, k / parts), b: lerp(a, b, (k + 1) / parts) });
-    }
-  }
-  return out;
+  const pieces = splitIntoPieces(cut, context.pieceLength, MAX_LINE_SEGMENT_LENGTH);
+  return { kind: 'line', segments: pieces.flat(), pieces, thickness };
 }

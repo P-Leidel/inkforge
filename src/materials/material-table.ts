@@ -13,6 +13,13 @@ export interface SurfaceMaterial {
   restitution: number;
 }
 
+export interface LineMaterial extends SurfaceMaterial {
+  /** Damage each Piece of the Line takes before it breaks. */
+  durability: number;
+  /** Hits with a smaller impulse (mass × px/s) than this don't damage a Piece. */
+  damageThreshold: number;
+}
+
 export interface OutlineMaterial extends SurfaceMaterial {
   /** Weight of its ink (length × Line thickness) relative to plain ink. */
   density: number;
@@ -31,7 +38,7 @@ export interface FillMaterial {
 
 export interface ColourMaterial {
   /** As a Line. */
-  line: SurfaceMaterial;
+  line: LineMaterial;
   /** As the Outline of an Object. */
   outline: OutlineMaterial;
   /** As the Fill of an Object. */
@@ -46,6 +53,11 @@ export interface MaterialTable {
    * 1.44 / (4 × 60 px × 8 px).
    */
   inkMass: number;
+  /**
+   * Lines are split into equal Pieces as close to this long (px) as their
+   * length allows: about one enemy wide.
+   */
+  pieceLength: number;
   /** Damage per unit of impulse above the receiver's damage threshold. */
   damagePerImpulse: number;
   /** Contacts approaching slower than this (px/s) don't bounce, whatever their restitution. */
@@ -65,7 +77,7 @@ export interface MaterialTable {
 export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   colours: {
     grey: {
-      line: { friction: 0.6, restitution: 0.1 },
+      line: { friction: 0.6, restitution: 0.1, durability: 6000, damageThreshold: 400 },
       outline: {
         friction: 0.6,
         restitution: 0.1,
@@ -77,7 +89,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
       fill: { density: 1 },
     },
     blue: {
-      line: { friction: 0.1, restitution: 0.9 },
+      line: { friction: 0.1, restitution: 0.9, durability: 4000, damageThreshold: 200 },
       outline: {
         friction: 0.1,
         restitution: 0.9,
@@ -89,7 +101,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
       fill: { density: 0.5 },
     },
     green: {
-      line: { friction: 0.6, restitution: 0 },
+      line: { friction: 0.6, restitution: 0, durability: 6000, damageThreshold: 400 },
       outline: {
         friction: 0.6,
         restitution: 0,
@@ -101,7 +113,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
       fill: { density: 1 },
     },
     black: {
-      line: { friction: 1, restitution: 0 },
+      line: { friction: 1, restitution: 0, durability: 20000, damageThreshold: 2000 },
       outline: {
         friction: 1,
         restitution: 0,
@@ -113,7 +125,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
       fill: { density: 3 },
     },
     red: {
-      line: { friction: 0.6, restitution: 0.1 },
+      line: { friction: 0.6, restitution: 0.1, durability: 250, damageThreshold: 300 },
       outline: {
         friction: 0.6,
         restitution: 0.1,
@@ -126,6 +138,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
     },
   },
   inkMass: 0.00075,
+  pieceLength: 48,
   damagePerImpulse: 1,
   minBounceSpeed: 50,
   wakeSpeed: 82.5,

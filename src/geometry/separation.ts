@@ -3,6 +3,36 @@ import { boundsOverlap, polygonBounds, type Polygon } from './polygon';
 import type { Segment } from './segment';
 import type { Vec2 } from './vec2';
 
+/**
+ * The outline of a band `radius` either side of a path of connected
+ * segments: one side forward, the other back. Not exact at sharp bends, so
+ * only for looks (a broken Piece's Debris).
+ */
+export function bandPolygon(segments: readonly Segment[], radius: number): Vec2[] {
+  if (segments.length === 1) return capsulePolygon(segments[0]!, radius);
+  const points = [segments[0]!.a, ...segments.map((s) => s.b)];
+  const normals = segments.map(({ a, b }) => {
+    const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: (a.y - b.y) / length, y: (b.x - a.x) / length };
+  });
+  const normalAt = (k: number) => {
+    const before = normals[Math.max(0, k - 1)]!;
+    const after = normals[Math.min(normals.length - 1, k)]!;
+    const n = { x: before.x + after.x, y: before.y + after.y };
+    const length = Math.hypot(n.x, n.y) || 1;
+    return { x: n.x / length, y: n.y / length };
+  };
+  const left = points.map((p, k) => {
+    const n = normalAt(k);
+    return { x: p.x + n.x * radius, y: p.y + n.y * radius };
+  });
+  const right = points.map((p, k) => {
+    const n = normalAt(k);
+    return { x: p.x - n.x * radius, y: p.y - n.y * radius };
+  });
+  return [...left, ...right.reverse()];
+}
+
 /** A convex polygon enclosing a capsule (segment ab thickened by `radius`). */
 export function capsulePolygon({ a, b }: Segment, radius: number, capVertices = 6): Vec2[] {
   const angle = Math.atan2(b.y - a.y, b.x - a.x);

@@ -1,5 +1,5 @@
 import { capsuleOverlapsPolygon } from '../geometry/overlap';
-import { capsulePolygon, shortestWayOut } from '../geometry/separation';
+import { bandPolygon, capsulePolygon, shortestWayOut } from '../geometry/separation';
 import { polygonCentroid, polygonContainsPoint, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import { transformPoints, type Transform } from '../geometry/transform';
@@ -25,7 +25,7 @@ import {
 } from '../stroke/stroke-pipeline';
 import { SANDBOX_ARENA, type Arena } from './arena';
 import { Debris, type DebrisParticle } from './debris';
-import { durabilityLeft, MaterialRules, wear, type Party } from './material-rules';
+import { durabilityLeft, MaterialRules, wear, type Breakable, type Party } from './material-rules';
 import { Random } from './random';
 
 /** Fixed physics step: 60 Hz. */
@@ -46,12 +46,25 @@ const MAX_STEPS_PER_ADVANCE = 8;
 
 export type StrokeId = number;
 
+export interface PieceView {
+  /** Its place along the Line when it was drawn, counting broken Pieces. */
+  readonly index: number;
+  /** Capsule centre lines. */
+  readonly segments: readonly Segment[];
+  /** Damage it can still take before it breaks. */
+  readonly durability: number;
+  /** How near it is to breaking, from 0 (whole) to 1: what its cracks show. */
+  readonly wear: number;
+}
+
 export interface LineView {
   readonly id: StrokeId;
   readonly colour: Colour;
-  /** Capsule centre lines. */
+  /** Capsule centre lines of the Pieces still there. */
   readonly segments: readonly Segment[];
   readonly thickness: number;
+  /** The Pieces still there, in order along the Line. */
+  readonly pieces: readonly PieceView[];
 }
 
 export interface ObjectView {
@@ -95,15 +108,29 @@ export interface StrokeOptions {
   readonly lineThickness?: number;
 }
 
-interface LineStroke extends LineView {
-  readonly kind: 'line';
+/** One Piece of a Line: its own fixed body, with its own damage. */
+interface Piece extends Breakable {
+  readonly kind: 'piece';
+  readonly lineId: StrokeId;
+  readonly index: number;
+  readonly role: 'line';
+  readonly segments: readonly Segment[];
   readonly body: BodyId;
 }
 
-interface ObjectStroke {
-  readonly kind: 'object';
+interface LineStroke {
+  readonly kind: 'line';
   readonly id: StrokeId;
   readonly colour: Colour;
+  readonly thickness: number;
+  /** The Pieces still there, in order; broken ones are gone. */
+  pieces: Piece[];
+}
+
+interface ObjectStroke extends Breakable {
+  readonly kind: 'object';
+  readonly id: StrokeId;
+  readonly role: 'outline';
   readonly body: BodyId;
   readonly outline: Polygon;
   readonly parts: readonly Polygon[];
@@ -133,8 +160,14 @@ interface ObjectMotion {
   readonly slide: Vec2 | null;
 }
 
+type SavedPiece = Omit<Piece, 'body'>;
+
 type SavedStroke =
-  Omit<LineStroke, 'body'> | (Omit<ObjectStroke, 'body'> & { readonly motion: ObjectMotion });
+  | (Omit<LineStroke, 'pieces'> & { readonly pieces: readonly SavedPiece[] })
+  | (Omit<ObjectStroke, 'body'> & { readonly motion: ObjectMotion });
+
+/** What takes damage: an Object or a Piece. */
+type Target = ObjectStroke | Piece;
 
 /** Everything R brings back: the whole simulation when physics last started. */
 interface Snapshot {
@@ -210,7 +243,18 @@ export class SandboxWorld {
   }
 
   get lines(): readonly LineView[] {
-    return this.strokes.filter((s): s is LineStroke => s.kind === 'line');
+    return this.lineStrokes().map((line) => ({
+      id: line.id,
+      colour: line.colour,
+      thickness: line.thickness,
+      segments: line.pieces.flatMap((piece) => piece.segments),
+      pieces: line.pieces.map((piece) => ({
+        index: piece.index,
+        segments: piece.segments,
+        durability: durabilityLeft(piece, this.materials),
+        wear: wear(piece, this.materials),
+      })),
+    }));
   }
 
   get objects(): readonly ObjectView[] {
@@ -254,15 +298,23 @@ export class SandboxWorld {
     switch (result.kind) {
       case 'line': {
         const id = this.nextStrokeId++;
-        const body = this.physics.addLine(result.segments, result.thickness, material.line);
-        const line: LineStroke = {
-          kind: 'line',
-          id,
-          colour,
-          body,
-          segments: result.segments,
-          thickness: result.thickness,
-        };
+        const { thickness } = result;
+        const pieces = result.pieces.map((segments, index) =>
+          this.addPiece(
+            {
+              kind: 'piece',
+              lineId: id,
+              index,
+              colour,
+              role: 'line',
+              segments,
+              damage: 0,
+              impacts: 0,
+            },
+            thickness,
+          ),
+        );
+        const line: LineStroke = { kind: 'line', id, colour, thickness, pieces };
         this.strokes.push(line);
         this.history.push({ kind: 'stroke', id });
         if (this.running) this.squeeze(this.objectStrokes(), [line]);
@@ -287,6 +339,7 @@ export class SandboxWorld {
           kind: 'object',
           id,
           colour,
+          role: 'outline',
           body,
           outline,
           parts,
@@ -316,9 +369,21 @@ export class SandboxWorld {
     return processStroke(samples, this.strokeContext({}));
   }
 
+  /** Adds a Piece's fixed body to the physics world. */
+  private addPiece(piece: SavedPiece, thickness: number): Piece {
+    const material = this.materials.colours[piece.colour].line;
+    return { ...piece, body: this.physics.addLine(piece.segments, thickness, material) };
+  }
+
+  /** Every body a Stroke has: an Object's one, or one per Piece still there. */
+  private bodiesOf(stroke: Stroke): BodyId[] {
+    return stroke.kind === 'line' ? stroke.pieces.map((piece) => piece.body) : [stroke.body];
+  }
+
   private strokeContext(options: StrokeOptions): StrokeContext {
     return {
       terrain: this.arena.terrain,
+      pieceLength: this.materials.pieceLength,
       objects: this.objectStrokes().map((s) => this.worldParts(s)),
       ...(options.lineThickness !== undefined && { lineThickness: options.lineThickness }),
     };
@@ -349,7 +414,9 @@ export class SandboxWorld {
    */
   private squeeze(objects: readonly ObjectStroke[], lines: readonly LineStroke[]): void {
     const capsulesOf = (line: LineStroke) =>
-      line.segments.map((segment) => ({ segment, radius: line.thickness / 2 }));
+      line.pieces.flatMap((piece) =>
+        piece.segments.map((segment) => ({ segment, radius: line.thickness / 2 })),
+      );
     const trigger = lines.flatMap(capsulesOf);
     const capsules = this.lineStrokes().flatMap(capsulesOf);
     for (const object of objects) {
@@ -433,13 +500,14 @@ export class SandboxWorld {
     const index = this.strokes.findIndex((s) => s.id === id);
     if (index < 0) return;
     const [stroke] = this.strokes.splice(index, 1);
-    this.physics.removeBody(stroke!.body);
+    for (const body of this.bodiesOf(stroke!)) this.physics.removeBody(body);
     this.history = this.history.filter((action) => action.id !== id);
   }
 
   /**
-   * Takes back the most recent Stroke or Fill that still exists. Broken
-   * Objects are gone from the history, so undo skips them.
+   * Takes back the most recent Stroke or Fill that still exists: what's left
+   * of a Line goes as a whole. Broken Objects, and Lines whose every Piece
+   * broke, are gone from the history, so undo skips them.
    */
   undo(): void {
     const action = this.history.pop();
@@ -457,7 +525,9 @@ export class SandboxWorld {
    * nothing to go back to.
    */
   clear(): void {
-    for (const stroke of this.strokes) this.physics.removeBody(stroke.body);
+    for (const body of this.strokes.flatMap((stroke) => this.bodiesOf(stroke))) {
+      this.physics.removeBody(body);
+    }
     this.strokes = [];
     this.history = [];
     this.snapshot = null;
@@ -471,6 +541,21 @@ export class SandboxWorld {
     const colours = object.fill ? [object.colour, object.fill] : [object.colour];
     this.debris.burst(outline, this.physics.getVelocity(object.body), colours);
     this.remove(object.id);
+  }
+
+  /**
+   * Breaks a Piece: its body is removed and Debris bursts from it. The rest
+   * of the Line stays fixed where it is; the Line goes with its last Piece.
+   */
+  private breakPiece(piece: Piece): void {
+    const line = this.lineStrokes().find((s) => s.id === piece.lineId);
+    if (!line) return;
+    this.debris.burst(bandPolygon(piece.segments, line.thickness / 2), { x: 0, y: 0 }, [
+      line.colour,
+    ]);
+    this.physics.removeBody(piece.body);
+    line.pieces = line.pieces.filter((p) => p !== piece);
+    if (line.pieces.length === 0) this.remove(line.id);
   }
 
   /**
@@ -509,8 +594,8 @@ export class SandboxWorld {
     return {
       strokes: this.strokes.map((stroke): SavedStroke => {
         if (stroke.kind === 'line') {
-          const { id, colour, segments, thickness } = stroke;
-          return { kind: 'line', id, colour, segments, thickness };
+          const { pieces, ...line } = stroke;
+          return { ...line, pieces: pieces.map(({ body: _body, ...piece }) => piece) };
         }
         const { body, ...object } = stroke;
         return { ...object, motion: this.motionOf(body) };
@@ -533,17 +618,29 @@ export class SandboxWorld {
   }
 
   /** Who each body is to the Material rules. */
-  private partyFinder(): (body: BodyId) => Party<ObjectStroke> | null {
-    const byBody = new Map(this.strokes.map((stroke) => [stroke.body, stroke]));
+  private partyFinder(): (body: BodyId) => Party<Target> | null {
+    const byBody = new Map<BodyId, Target>();
+    for (const stroke of this.strokes) {
+      if (stroke.kind === 'object') byBody.set(stroke.body, stroke);
+      else for (const piece of stroke.pieces) byBody.set(piece.body, piece);
+    }
     return (body) => {
       if (body === this.terrainBody) return { key: 'terrain', target: null, sliding: false };
-      const stroke = byBody.get(body);
-      if (!stroke) return null;
-      return {
-        key: `stroke ${stroke.id}`,
-        target: stroke.kind === 'object' ? stroke : null,
-        sliding: this.physics.getSlide(body) !== null,
-      };
+      const target = byBody.get(body);
+      if (!target) return null;
+      // Keys stay the same across a rebuild, and Stroke ids are never reused.
+      return target.kind === 'piece'
+        ? {
+            key: `stroke ${target.lineId} piece ${target.index}`,
+            stroke: `stroke ${target.lineId}`,
+            target,
+            sliding: false,
+          }
+        : {
+            key: `stroke ${target.id}`,
+            target,
+            sliding: this.physics.getSlide(body) !== null,
+          };
     };
   }
 
@@ -569,10 +666,8 @@ export class SandboxWorld {
     this.physics.setMinBounceSpeed(this.materials.minBounceSpeed);
     for (const stroke of this.strokes) {
       const material = this.materials.colours[stroke.colour];
-      this.physics.setSurface(
-        stroke.body,
-        stroke.kind === 'line' ? material.line : material.outline,
-      );
+      const surface = stroke.kind === 'line' ? material.line : material.outline;
+      for (const body of this.bodiesOf(stroke)) this.physics.setSurface(body, surface);
     }
   }
 
@@ -586,7 +681,7 @@ export class SandboxWorld {
       if (saved.kind === 'line') {
         return {
           ...saved,
-          body: this.physics.addLine(saved.segments, saved.thickness, material.line),
+          pieces: saved.pieces.map((piece) => this.addPiece(piece, saved.thickness)),
         };
       }
       const { motion, ...object } = saved;
@@ -617,7 +712,10 @@ export class SandboxWorld {
       () => this.physics.touchingPairs(),
       this.partyFinder(),
     );
-    for (const object of broken) this.breakObject(object);
+    for (const target of broken) {
+      if (target.kind === 'piece') this.breakPiece(target);
+      else this.breakObject(target);
+    }
   }
 
   /** Advances by real elapsed time, in whole fixed steps; the remainder carries over. */

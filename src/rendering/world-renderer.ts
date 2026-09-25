@@ -1,6 +1,13 @@
 import type Phaser from 'phaser';
+import type { Segment } from '../geometry/segment';
 import type { Vec2 } from '../geometry/vec2';
-import type { ObjectView, SandboxWorld, StrokeId } from '../sandbox/sandbox-world';
+import type {
+  LineView,
+  ObjectView,
+  PieceView,
+  SandboxWorld,
+  StrokeId,
+} from '../sandbox/sandbox-world';
 import { fillPolygon, strokePolygon, strokePolyline } from './draw';
 import { drawInk, fillInk, hash, INK_HUES, segmentRuns } from './ink';
 import { PALETTE } from './palette';
@@ -23,6 +30,8 @@ const DEBRIS_DEPTH = 5;
 export class WorldRenderer {
   private readonly lines = new Map<StrokeId, Graphics>();
   private readonly objects = new Map<StrokeId, Graphics>();
+  /** The Pieces and cracks each Line was last drawn with. */
+  private readonly drawnLineLook = new Map<StrokeId, string>();
   /** The Frozen state and Fill each Object was last drawn with. */
   private readonly drawnLook = new Map<StrokeId, string>();
   private readonly debris: Graphics;
@@ -71,14 +80,19 @@ export class WorldRenderer {
     const current = new Set<StrokeId>();
     for (const line of this.world.lines) {
       current.add(line.id);
-      if (this.lines.has(line.id)) continue;
-      const g = this.scene.add.graphics();
-      for (const run of segmentRuns(line.segments)) {
-        drawInk(g, line.colour, run, false, line.thickness);
+      let g = this.lines.get(line.id);
+      if (!g) {
+        g = this.scene.add.graphics();
+        this.lines.set(line.id, g);
       }
-      this.lines.set(line.id, g);
+      const look = line.pieces.map((p) => `${p.index}:${crackStage(p.wear)}`).join(' ');
+      if (this.drawnLineLook.get(line.id) !== look) {
+        drawLine(g, line);
+        this.drawnLineLook.set(line.id, look);
+      }
     }
     removeStale(this.lines, current);
+    for (const id of this.drawnLineLook.keys()) if (!current.has(id)) this.drawnLineLook.delete(id);
   }
 
   private syncObjects(): void {
@@ -100,6 +114,62 @@ export class WorldRenderer {
     removeStale(this.objects, current);
     for (const id of this.drawnLook.keys()) if (!current.has(id)) this.drawnLook.delete(id);
   }
+}
+
+/**
+ * Draws what's left of a Line: its Pieces joined where they meet, so a
+ * broken Piece leaves a gap, and each Piece's cracks.
+ */
+function drawLine(g: Graphics, line: LineView): void {
+  g.clear();
+  for (const run of segmentRuns(line.segments)) {
+    drawInk(g, line.colour, run, false, line.thickness);
+  }
+  for (const piece of line.pieces) drawPieceCracks(g, line, piece);
+}
+
+/**
+ * One jagged crack per stage straight across a Piece, from edge to edge.
+ * Placed by the Line's id and the Piece's index, so each Piece cracks the
+ * same way every time.
+ */
+function drawPieceCracks(g: Graphics, line: LineView, piece: PieceView): void {
+  const stages = crackStage(piece.wear);
+  if (stages === 0) return;
+  const half = line.thickness / 2;
+  g.lineStyle(CRACK_WIDTH, line.colour === 'black' ? PALETTE.crackOnBlack : PALETTE.crack, 0.9);
+  for (let k = 0; k < stages; k++) {
+    const seed = line.id * 31 + piece.index * 7 + k * 3;
+    // Spread the stages along the Piece, each nudged a little.
+    const along = (k + 0.5 + (hash(seed) - 0.5) * 0.6) / CRACK_STAGES.length;
+    const { p, t } = pointAlong(piece.segments, along);
+    const n = { x: -t.y, y: t.x };
+    const points: Vec2[] = [];
+    const steps = 3;
+    for (let i = 0; i <= steps; i++) {
+      const across = half * (1 - (2 * i) / steps);
+      const zig = (i % 2 === 0 ? 1 : -1) * (1 + 1.5 * hash(seed + i + 1));
+      points.push({ x: p.x + n.x * across + t.x * zig, y: p.y + n.y * across + t.y * zig });
+    }
+    strokePolyline(g, points);
+  }
+}
+
+/** The point `fraction` of the way along connected segments, and the direction there. */
+function pointAlong(segments: readonly Segment[], fraction: number): { p: Vec2; t: Vec2 } {
+  const lengths = segments.map(({ a, b }) => Math.hypot(b.x - a.x, b.y - a.y));
+  let left = fraction * lengths.reduce((sum, l) => sum + l, 0);
+  for (let i = 0; i < segments.length; i++) {
+    const { a, b } = segments[i]!;
+    const length = lengths[i]!;
+    if (left <= length || i === segments.length - 1) {
+      const u = length > 0 ? Math.min(1, left / length) : 0;
+      const t = length > 0 ? { x: (b.x - a.x) / length, y: (b.y - a.y) / length } : { x: 1, y: 0 };
+      return { p: { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u }, t };
+    }
+    left -= length;
+  }
+  return { p: segments[0]!.a, t: { x: 1, y: 0 } };
 }
 
 /**
@@ -127,7 +197,7 @@ function drawObject(g: Graphics, object: ObjectView): void {
   }
 }
 
-/** How many crack stages an Object's wear shows: 0 to 3. */
+/** How many crack stages a Piece's or an Object's wear shows: 0 to 3. */
 function crackStage(wear: number): number {
   return CRACK_STAGES.filter((stage) => wear >= stage).length;
 }

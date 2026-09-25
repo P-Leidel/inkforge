@@ -117,7 +117,7 @@ describe('Sandbox world: Lines', () => {
 
     expect(outcome.kind).toBe('line');
     expect(world.lines).toHaveLength(1);
-    expect(world.bodyCount).toBe(2); // Terrain + the Line
+    expect(world.bodyCount).toBe(1 + world.lines[0]!.pieces.length); // Terrain + a body per Piece
   });
 
   it('keeps a Line where it was drawn, even in mid-air, while physics runs', () => {
@@ -179,7 +179,7 @@ describe('Sandbox world: undo and clear', () => {
 
     expect(world.lines).toHaveLength(1);
     expect(world.lines[0]!.segments[0]!.a.y).toBeCloseTo(300);
-    expect(world.bodyCount).toBe(2);
+    expect(world.bodyCount).toBe(1 + world.lines[0]!.pieces.length);
   });
 
   it('undo works while running', () => {

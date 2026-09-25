@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS } from '../materials/colour';
+import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { runFor, sandboxWorlds } from '../sandbox/test-support';
 import {
+  BOULDER_DEMO,
   BOUNCE_DEMO,
   DROP_DEMO,
   GALLERY,
@@ -11,6 +13,12 @@ import {
 } from './gallery';
 
 const createWorld = sandboxWorlds();
+
+/** Where every Object is and what is left of every Line. */
+const played = (world: SandboxWorld) => ({
+  objects: world.objects.map((o) => o.transform),
+  pieces: world.lines.map((l) => l.pieces.map((p) => [p.index, p.durability])),
+});
 
 describe('Colour gallery', () => {
   for (const demo of GALLERY) {
@@ -27,12 +35,12 @@ describe('Colour gallery', () => {
       const world = createWorld();
       demo.build(world);
       runFor(world, 1);
-      const first = world.objects.map((o) => o.transform);
+      const first = played(world);
 
       world.reset();
       runFor(world, 1);
 
-      expect(world.objects.map((o) => o.transform)).toEqual(first);
+      expect(played(world)).toEqual(first);
     });
   }
 
@@ -99,5 +107,20 @@ describe('Colour gallery', () => {
 
     expect(world.objects).toHaveLength(0);
     expect(impacts).toBe(2); // the third impact broke it
+  });
+
+  it('Boulder: breaks the grey Line and falls through; the black Line cracks and holds it', () => {
+    const world = createWorld();
+    BOULDER_DEMO.build(world);
+
+    runFor(world, 2);
+
+    const [grey, black] = world.lines;
+    expect(grey!.pieces.length).toBeLessThan(5);
+    expect(black!.pieces).toHaveLength(5);
+    expect(black!.pieces.some((p) => p.wear > 0.25)).toBe(true);
+    const [fallen, held] = world.objects;
+    expect(fallen!.transform.y).toBeGreaterThan(700);
+    expect(held!.transform.y + 30).toBeCloseTo(616, 0);
   });
 });

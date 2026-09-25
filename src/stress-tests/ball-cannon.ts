@@ -51,7 +51,9 @@ export class BallCannon implements StressTest {
         { x: LINE_X, y: LINE_TOP },
         { x: LINE_X, y: LINE_BOTTOM },
       ]),
-      'grey',
+      // Black, whose Pieces shrug off a ball's hit: the check is whether balls
+      // pass through the Line, not how long a Line lasts.
+      'black',
       { lineThickness: BallCannon.LINE_THICKNESS },
     );
     if (!world.isRunning) world.togglePause();
