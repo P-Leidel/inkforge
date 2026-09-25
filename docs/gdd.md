@@ -1,4 +1,4 @@
-# INKFORGE: Game Design Document v0.3
+# INKFORGE: Game Design Document v0.4
 
 English rewrite of the v0.2 concept, updated with the design decisions made since. Terms in **bold** are defined in [`CONTEXT.md`](../CONTEXT.md); the reasoning behind the larger decisions is in [`docs/adr/`](adr/).
 
@@ -44,7 +44,7 @@ Tagline: *Draw it. Build it. Break physics. Survive the wave.*
 
 - A **Stroke** is one continuous drag in one Colour.
 - If its end returns near its start, it becomes an **Object**; a marker shows the snap while drawing. Otherwise it becomes a **Line**.
-- **Lines** stay fixed exactly where they were drawn, even in mid-air, until pieces break off ([ADR 0002](adr/0002-lines-stay-fixed.md)).
+- **Lines** stay fixed exactly where they were drawn, even in mid-air, until Pieces break off ([ADR 0002](adr/0002-lines-stay-fixed.md)).
 - **Objects** are movable bodies with exactly the drawn shape: circles roll, boxes stack, triangles tip over. Self-crossing closed strokes are rejected with a clear message.
 - Every Colour follows the same drawing rules; only the material differs.
 
@@ -62,43 +62,48 @@ Strokes never join: no welds, hinges or pivots ([ADR 0003](adr/0003-no-joints-in
 ### 6.3 Outline and Fill
 
 - The **Outline** Colour decides how an Object touches the world.
-- The **Fill** Colour decides its weight or effect. Fill by clicking inside a closed Object with a Colour selected; the whole inside fills and costs ink by area.
+- The **Fill** Colour decides its weight or effect. Fill by clicking inside a closed Object with a Colour selected; the whole inside fills and costs ink by area. A click is a press and release that barely moves; anything longer is a Stroke.
+- An Object holds one Fill. Any Outline and Fill Colour can be combined, including the same Colour twice.
 - An unfilled Object is a light, hollow shell that weighs only what its Outline weighs. It still collides as a solid shape: nothing can get inside it.
-- Outline cost scales with length, Fill cost with area, so an Object's weight roughly matches the ink spent on it.
-- **When an Object breaks, its Fill comes out.**
+- An Object weighs what its Outline weighs plus what its Fill weighs, spread evenly over the shape. Outline cost scales with length, Fill cost with area, so an Object's weight roughly matches the ink spent on it.
+- **When an Object breaks, its Fill comes out** with an outward kick, so Spills spread and Rubble is flung (section 7).
 
 ### 6.4 Frozen Objects
 
 Every Object starts **Frozen**, including those drawn during a Wave. It hangs where it was drawn until something hits it or the player **Releases** it with a right-click ([ADR 0004](adr/0004-objects-start-frozen.md)). Frozen Objects have a visible pinned look.
 
-Only a hit from a moving body above a small impact threshold wakes a Frozen Object; resting contact doesn't, and two Frozen Objects touching never wake each other. The waking collision plays out normally.
+Only a hit from a moving body above a small impact threshold wakes a Frozen Object; resting contact doesn't, and two Frozen Objects touching never wake each other. The waking collision plays out normally. A **Blast** that is still strong enough when it arrives wakes a Frozen Object too, and its push plays out; a weaker one only damages it. Droplets never wake a Frozen Object. A Frozen Object can be damaged and break without ever moving.
 
 ## 7. Colours
 
 | Colour | As a Line | As an Object (Outline) | Fill, released on break |
 |---|---|---|---|
-| **Grey** (pebble) | Cheap, flimsy wall or ramp; breaks after a few hits | Light pebble | Pebbles |
+| **Grey** (pebble) | Cheap, flimsy wall or ramp; breaks after a few hits | Light pebble | Pebbles (Rubble) |
 | **Blue** (bouncy) | Trampoline: things bounce off it, harder the faster they hit | Bounces twice, then breaks | Bouncy Spill |
-| **Green** (glue) | Glue floor: enemies on it slow right down | Sticks to the first thing it hits | Glue Spill |
-| **Black** (heavy, rare) | Strongest wall: no bounce, most durability | Heavy, hard shell | Heavy stones |
-| **Red** (explosive, rare) | Mine strip | Bomb | Explosion |
+| **Green** (glue) | Glue floor: anything moving on it slows right down | Sticks to the first thing it hits | Glue Spill |
+| **Black** (heavy, rare) | Strongest wall: no bounce, most durability | Heavy, hard shell | Heavy stones (Rubble) |
+| **Red** (explosive, rare) | Mine strip that burns like a fuse | Bomb | Blast |
 
 Details:
 
 - **Grey** is the cheap, plentiful building material: lowest cost per length and the most common drop.
-- **Blue** bounce is real restitution: Runners fly off it, slow Crawlers barely bounce. Blue is cheap and breaks easily.
-- **Green** slows Heavies less than lighter enemies. A green Object stuck to an enemy weighs it down.
+- **Blue** bounce is real restitution: Runners fly off it, slow Crawlers barely bounce. Blue is cheap and breaks easily. A blue Object bounces twice and breaks on its third hard impact.
+- **Green** glue is a drag on anything moving that touches green ink, not only on enemies ([ADR 0007](adr/0007-glue-drags-every-moving-body.md)). The drag isn't scaled by weight, so Heavies are slowed less than lighter enemies. Green Lines and Patches wear down as their glue slows things.
+- A **green Object** sticks once, to the first new thing it touches after it starts moving. Stuck to Terrain or a Line, it becomes fixed; stuck to a moving body, the two move as one. It falls free if either side breaks and never sticks again. A green Object stuck to an enemy weighs it down.
 - **Black** is expensive and rare. It buys time rather than winning: every wall gets worn down eventually.
-- **Red** goes off when an enemy touches it or when anything hits it hard. Explosions push things, damage enemies, damage the player's own Lines and Objects, and set off other red nearby.
-- **Spills** (blue and green Fills): 5–10 droplets fly out; each sticks to the first enemy or surface it hits and leaves a **Patch**. Patch size matches the amount of ink that was in the Object. A blue Patch on Terrain is a small trampoline; an enemy coated in blue bounces off whatever it hits. A green Patch is glue that slows enemies.
+- **Red** has very low durability and explodes when it is destroyed: by an enemy touching it, or by a hit or another Blast strong enough to break it ([ADR 0008](adr/0008-red-explodes-when-destroyed.md)). A red bomb survives a roll down a ramp or a short drop, so it can still be aimed. A red Line goes off Piece by Piece, like a fuse.
+- The **Blast** is a ring that spreads out from the red ink and weakens with distance. Wherever it is still strong enough when it arrives, it pushes things, damages enemies and the player's own Lines and Objects, wakes Frozen Objects and destroys other red, which chains. Walls don't block it. More red ink makes a bigger Blast; a red Outline with a red Fill makes one combined Blast.
+- **Spills** (blue and green Fills): 10–15 **Droplets** fly out; each sticks to the first enemy or surface it hits and leaves a **Patch**. Patch size matches the amount of ink that was in the Object. A Patch behaves like its Colour and wears down with use: a blue Patch with each bounce it gives, a green Patch as its glue slows things. A blue Patch on Terrain is a small trampoline; an enemy coated in blue bounces off whatever it hits. A green Patch is glue. Droplets deal no damage.
+- **Rubble** (grey and black Fills): a grey Fill releases up to 18 pebbles, a black Fill up to 8 heavier stones, more for a bigger Fill. Their total weight matches the Fill's. Rubble rolls, piles up and damages what it hits, but never breaks.
 
 ## 8. Damage and breaking
 
-- **Enemies** take damage from hits above an impact threshold, scaled by the mass and speed of what hit them, and from explosions. Falling into a pit or off the screen kills instantly.
+- One rule covers every hit: a hit above the receiver's threshold deals damage that grows with its strength, to both sides of the collision. Heavier and faster things hit harder; there is no Colour-versus-Colour table. Resting weight and sliding deal no damage, and neither does physics pushing apart a Line and an Object drawn over each other.
+- **Enemies** take damage from hits above an impact threshold, scaled by the mass and speed of what hit them, and from Blasts. Falling into a pit or off the screen kills instantly.
 - An enemy that reaches the Ink Core deals its damage and disappears, dropping no ink.
-- **Lines** are split into short pieces about one enemy wide. Each piece has durability set by its Colour and cracks visibly as it loses durability.
-- Lines take damage from hard hits, explosions, and enemies pressing against them. Pressing wears a Line down at a rate set by enemy type: slowly for Crawlers, fast for Heavies.
-- A piece at zero durability breaks off as **Debris**; the rest of the Line stays fixed. Debris is purely visual and fades after a few seconds.
+- **Lines** are split into **Pieces** about one enemy wide. Each Piece has durability set by its Colour and cracks visibly as it loses durability.
+- Lines take damage from hard hits, Blasts, and enemies pressing against them. Pressing wears a Line down at a rate set by enemy type: slowly for Crawlers, fast for Heavies. Green Lines also wear down as their glue slows things.
+- A Piece at zero durability breaks off as **Debris**; the rest of the Line stays fixed. Debris is purely visual and fades after a few seconds.
 - **Objects** have durability too and break into Debris; their Fill comes out (section 6.3).
 - There is no repair mechanic. Damage carries over between Waves.
 
@@ -165,7 +170,7 @@ Arenas assembled by a seed from handmade modules, not random geometry.
 ## 15. Roadmap
 
 1. **Physics sandbox** ([spec](specs/m1-physics-sandbox.md)). Stroke-to-physics pipeline (pointer input → sampling → smoothing → simplification → geometry validation → collider → body), Lines and Objects, Frozen state. Includes the engine stress test: fast balls vs thin Lines, stacked boxes, 100 pebbles.
-2. **Colours.** All five, Outline and Fill, Spills, explosions, breaking.
+2. **Colours** ([spec](specs/m2-colours.md)). All five, Outline and Fill, Spills, Blasts, breaking.
 3. **Ink economy.** Tanks, costs, overlap charging, Locked and Wave Ink, drops.
 4. **Enemies and Ink Core.** Walkers, wall pressing, damage, the Core Zone.
 5. **Defence loop.** Build Phase → Wave → Aftermath, three arenas.

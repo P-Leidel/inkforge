@@ -47,7 +47,7 @@ One continuous drag of the pointer in one Colour. Becomes either a Line or an Ob
 _Avoid_: Drawing, path
 
 **Line**:
-A Stroke whose end does not return to its start. Stays fixed exactly where it was drawn, even in mid-air, until pieces of it break.
+A Stroke whose end does not return to its start. Stays fixed exactly where it was drawn, even in mid-air, until its Pieces break.
 _Avoid_: Wall, platform, segment chain
 
 **Object**:
@@ -63,22 +63,41 @@ Ink added inside an Object's Outline. Its Colour decides the Object's weight or 
 _Avoid_: Core, content
 
 **Frozen**:
-The state of an Object that hangs where it was drawn, ignoring gravity, until something hits it or the player releases it.
+The state of an Object that hangs where it was drawn, ignoring gravity, until a hard hit, a strong enough Blast or the player's Release frees it.
 _Avoid_: Pinned, asleep, static
 
 **Release**:
 The player's action of unfreezing an Object during a Wave.
 _Avoid_: Activate, trigger, drop
 
-**Spill**:
-The droplets that fly out when a blue or green-filled Object breaks. Each sticks to the first enemy or surface it hits and leaves a Patch.
+### Breaking
 
-**Patch**:
-The area of spilled ink left on an enemy or surface, sized by the amount of Fill that was spilled.
-_Avoid_: Puddle, stain
+**Piece**:
+One short section of a Line, about one enemy wide, that has its own durability and breaks off as a whole.
+_Avoid_: Segment, chunk
 
 **Debris**:
-The broken-off pieces of Lines and Objects. Purely visual.
+The fragments a broken Piece or Object bursts into. Purely visual.
+_Avoid_: Rubble (which is physical)
+
+**Rubble**:
+The pebbles (grey) or stones (black) a Fill releases when its Object breaks. Real bodies that roll, pile up and hit things, but never break.
+_Avoid_: Shrapnel, Debris
+
+**Spill**:
+The Droplets that fly out when a blue or green-filled Object breaks.
+
+**Droplet**:
+One flying bit of a Spill. It sticks to the first enemy or surface it hits and becomes a Patch there.
+_Avoid_: Drop (reserved for enemy Ink drops), splash
+
+**Patch**:
+The strip of spilled ink a Droplet leaves on an enemy or surface. It behaves like its Colour, is sized by the amount of Fill that was spilled, and wears away as it is used.
+_Avoid_: Puddle, stain
+
+**Blast**:
+The ring of force that spreads out from red ink when it is destroyed, weakening with distance.
+_Avoid_: Shockwave, explosion radius
 
 ### Ink
 
