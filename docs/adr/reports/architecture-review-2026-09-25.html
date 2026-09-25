@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inkforge Architecture Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f1f2f4;
+    --surface: #ffffff;
+    --ink: #15171c;
+    --muted: #5b616e;
+    --rule: #d7dae0;
+    --strong: #1d7f36;
+    --strong-bg: #e1f3e5;
+    --explore: #8c5f0e;
+    --explore-bg: #fbefd6;
+    --spec: #4e5563;
+    --spec-bg: #e6e8ec;
+    --tag-bg: #eceef2;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d2027;
+      --surface: #252933;
+      --ink: #e8e2d0;
+      --muted: #9aa0ad;
+      --rule: #3a404d;
+      --strong: #62d98b;
+      --strong-bg: #1d3a28;
+      --explore: #f0c05a;
+      --explore-bg: #3b321d;
+      --spec: #c0c5cf;
+      --spec-bg: #333845;
+      --tag-bg: #2f3440;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d2027;
+    --surface: #252933;
+    --ink: #e8e2d0;
+    --muted: #9aa0ad;
+    --rule: #3a404d;
+    --strong: #62d98b;
+    --strong-bg: #1d3a28;
+    --explore: #f0c05a;
+    --explore-bg: #3b321d;
+    --spec: #c0c5cf;
+    --spec-bg: #333845;
+    --tag-bg: #2f3440;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  h1, h2 { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+  h1 { font-size: 1.9rem; line-height: 1.15; }
+  h2 { font-size: 1.45rem; line-height: 1.2; }
+  p { margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  code { font-size: .9em; }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+  .muted { color: var(--muted); }
+  .label { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+
+  .page { max-width: 72rem; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  .head { display: flex; flex-direction: column; gap: 16px; }
+  .titlerow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .scope { font-size: 14px; color: var(--muted); max-width: 48rem; }
+  .legend { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .swatch { display: inline-block; width: 24px; height: 16px; }
+  .swatch-seam { display: inline-block; width: 32px; border-top: 1.5px dashed var(--muted); }
+
+  .candidates { display: flex; flex-direction: column; gap: 36px; }
+  .cand { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+  .cand-head { display: flex; flex-direction: column; gap: 8px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+  .b-strong { background: var(--strong-bg); color: var(--strong); }
+  .b-explore { background: var(--explore-bg); color: var(--explore); }
+  .b-spec { background: var(--spec-bg); color: var(--spec); }
+  .b-tag { background: var(--tag-bg); color: var(--muted); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .files { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+  .files .note { opacity: .75; }
+
+  .ba { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .prose3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .prose3 > div { display: flex; flex-direction: column; gap: 4px; }
+  .wins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wins li::before { content: "▪"; color: var(--strong); margin-right: 8px; }
+  .callout { background: var(--explore-bg); border-left: 3px solid var(--explore); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+
+  .top { background: var(--surface); border: 3px solid var(--strong); border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .top .label { color: var(--strong); }
+  .top p { max-width: 48rem; }
+
+  @media (min-width: 640px) {
+    .page { padding-inline: 24px; padding-block: 56px 80px; }
+    h1 { font-size: 2.3rem; }
+    h2 { font-size: 1.6rem; }
+    .cand { padding: 28px; }
+    .top { padding: 32px; }
+  }
+  @media (min-width: 768px) { .prose3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .ba { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Diagram sheets are drafting paper in both themes, so hand-drawn and Mermaid diagrams read the same. */
+  .sheet { background: #fbfbfa; color: #16181d; border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-x: auto; min-width: 0; }
+  .s-muted { color: #6a707c; }
+  .s-label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tiny { font-size: 11px; }
+  .small { font-size: 12px; }
+  .center { text-align: center; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 4px 8px; font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .g2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .g3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .span2 { grid-column: span 2; }
+  .span3 { grid-column: span 3; }
+  .pad { padding: 8px; }
+  .pad-lg { padding: 14px 16px; }
+  .mod { border: 1.5px solid #5b616e; background: #ffffff; border-radius: 4px; }
+  .plan { border: 1.5px dashed #7a808c; background: #ffffff; border-radius: 4px; }
+  .leakbox { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; border-radius: 4px; }
+  /* A deep module is drawn like the game's black ink: a heavy dark core in a pale rim. */
+  .deep { background: #050506; color: #eef0f3; border: 3px solid #8a909e; border-radius: 5px; }
+  .deep .faded { color: #8f96a3; }
+  .deep.planned { border-style: dashed; }
+  .seam { border-top: 1.5px dashed #7a808c; }
+
+  /* Candidate 1: which concerns each body kind has inside the Sandbox world */
+  .file-frame { border: 1.5px dashed #7a808c; border-radius: 4px; padding: 12px; min-width: 360px; display: flex; flex-direction: column; gap: 8px; }
+  .matrix { display: grid; grid-template-columns: 84px repeat(7, 34px); gap: 5px 6px; align-items: center; }
+  .cell { width: 13px; height: 13px; border-radius: 999px; justify-self: center; display: inline-block; }
+  .c-built { background: #16181d; }
+  .c-plan { border: 1.5px dashed #16181d; }
+  .c-later { border: 1.5px solid #b9bec7; }
+  .colhead { font-size: 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; line-height: 1.15; }
+  .rowhead { font-size: 10.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; color: #4a505b; }
+  .key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: #6a707c; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .key span { display: flex; align-items: center; gap: 6px; }
+  .kinds { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; min-width: 360px; }
+  .kind { padding: 10px 2px; text-align: center; }
+  .kind b { display: block; font-size: 11px; font-weight: 600; }
+  .kind span { display: block; font-size: 9.5px; line-height: 1.3; margin-top: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .kind.later { border: 3px solid #b9bec7; border-radius: 5px; color: #6a707c; }
+  .stack { display: flex; flex-direction: column; gap: 12px; min-width: 360px; }
+
+  /* Candidate 6: draw commands per thing */
+  .bars { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 8px 10px; align-items: center; font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .bar { height: 12px; border-radius: 2px; background: #16181d; }
+  .bar-after { height: 12px; border-radius: 2px; background: #1d7f36; width: 3%; min-width: 6px; }
+  .barrow { display: flex; align-items: center; gap: 6px; }
+
+  pre.mermaid { background: transparent; margin: 0; font-size: 13px; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
+</head>
+<body>
+<main class="page">
+
+  <header class="head">
+    <div class="titlerow">
+      <h1>Inkforge architecture review</h1>
+      <span class="mono meta">P-Leidel/inkforge · 1560bd3 (#16 Rubble) · 2026-09-25</span>
+    </div>
+    <p class="scope">Scope: the code through #16 and the handoffs for #17–#21, judged on adding more Colours, more enemy types and many more bodies.</p>
+    <div class="legend">
+      <span class="label">Legend</span>
+      <span class="item"><span class="swatch mod"></span>module</span>
+      <span class="item"><span class="swatch plan"></span>planned in a handoff</span>
+      <span class="item"><span class="swatch-seam"></span>seam</span>
+      <span class="item"><svg width="30" height="10" aria-hidden="true"><line x1="0" y1="5" x2="22" y2="5" stroke="#d23a2e" stroke-width="2" stroke-dasharray="4 3"/><path d="M22 1 L29 5 L22 9 Z" fill="#d23a2e"/></svg>leakage</span>
+      <span class="item"><span class="swatch deep"></span>deep module, drawn like black ink</span>
+    </div>
+  </header>
+
+  <section id="candidates" class="candidates">
+
+    <!-- 1 -->
+    <article id="c1" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 1</span>
+        <h2>Give each body kind its own module</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/sandbox-world.ts <span class="note">(906 lines)</span></li>
+        <li>src/rendering/world-renderer.ts · src/rendering/debug-overlay.ts</li>
+        <li>src/gallery/gallery.test.ts <span class="note">(played)</span></li>
+        <li>docs/handoffs/17–21</li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: one file holds every kind's every concern</span>
+          <div class="file-frame">
+            <span class="s-label">sandbox-world.ts</span>
+            <div class="matrix">
+              <span></span>
+              <span class="colhead">Stroke</span><span class="colhead">Rubble</span><span class="colhead">Bond<br>#17</span><span class="colhead">Drop-<br>let #18</span><span class="colhead">Patch<br>#18</span><span class="colhead">Blast<br>#19</span><span class="colhead">Enemy<br>M4</span>
+
+              <span class="rowhead">record · ids</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-later"></span>
+              <span class="rowhead">view</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-later"></span>
+              <span class="rowhead">snapshot</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-later"></span>
+              <span class="rowhead">rebuild order</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-later"></span>
+              <span class="rowhead">clear</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-later"></span>
+              <span class="rowhead">Party</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell"></span><span class="cell c-later"></span>
+              <span class="rowhead">cap · host gone</span>
+              <span class="cell"></span><span class="cell c-built"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell"></span><span class="cell c-later"></span>
+              <span class="rowhead">table re-apply</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell"></span><span class="cell c-later"></span>
+            </div>
+            <span class="tiny s-muted mono">#16 Rubble: 18 hunks here, 12 source files in all</span>
+          </div>
+          <div class="key">
+            <span><span class="cell c-built"></span>built</span>
+            <span><span class="cell c-plan"></span>planned #17–#19</span>
+            <span><span class="cell c-later"></span>milestone 4</span>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: kinds are modules; the world runs them once</span>
+          <div class="stack">
+            <div class="mod pad center">
+              <div class="s-label">Sandbox world</div>
+              <div class="small s-muted">snapshot · reset · clear · host gone · views: once, over every kind in order</div>
+            </div>
+            <div class="seam"></div>
+            <div class="kinds">
+              <div class="deep kind"><b>Stroke</b><span class="faded">ids<br>save<br>rebuild<br>Party</span></div>
+              <div class="deep kind"><b>Rubble</b><span class="faded">ids<br>save<br>cap<br>Party</span></div>
+              <div class="deep planned kind"><b>Bond</b><span class="faded">save<br>host<br>gone</span></div>
+              <div class="deep planned kind"><b>Droplet</b><span class="faded">save<br>land<br>Party</span></div>
+              <div class="deep planned kind"><b>Patch</b><span class="faded">save<br>cap<br>host</span></div>
+              <div class="deep planned kind"><b>Blast</b><span class="faded">save<br>ring<br>acted</span></div>
+              <div class="kind later"><b>Enemy</b><span>one<br>new<br>module</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>A body kind has no module of its own: Rubble took 18 hunks of the Sandbox world in #16, and #17–#19 thread Bond, Droplet, Patch and Blast through the same eight places.</p></div>
+        <div><span class="label">Solution</span><p>Each kind owns its records, ids, views, snapshot part, rebuild, clear, cap and "host gone" handling; the Sandbox world runs those across all kinds once, in a fixed order.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>locality: all of Rubble in one module</li>
+            <li>leverage: Reset and Clear written once</li>
+            <li>replay test covers every kind</li>
+            <li>"host gone" reaches every dependant</li>
+            <li>an enemy is one new module</li>
+            <li>Sandbox world tests stay the seam</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- 2 -->
+    <article id="c2" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 2</span>
+        <h2>Deepen contact handling into a Contact ledger</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/material-rules.ts <span class="note">(applyStep, settled)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(partyFinder, settledPairs)</span></li>
+        <li>src/physics/physics-world.ts <span class="note">(StepReport)</span></li>
+        <li>docs/handoffs/17, 18 <span class="note">(sticking, glue drag, Droplet landing, Patch wear)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: every rule re-derives who touched whom</span>
+<pre class="mermaid">
+flowchart LR
+  R["StepReport<br/>hits · begins · ends"]:::mod --> D["Damage<br/>(applyStep)"]:::mod
+  R --> K["Sticking #17"]:::plan
+  R --> G["Glue drag #17"]:::plan
+  R --> L["Droplet landing #18"]:::plan
+  R --> W["Patch wear #18"]:::plan
+  D --- F(["Party map · settled<br/>sliding · per Stroke"]):::leak
+  K -. re-derives .-> F
+  G -. re-derives .-> F
+  L -. re-derives .-> F
+  W -. re-derives .-> F
+  linkStyle 6,7,8,9 stroke:#d23a2e,stroke-width:2px
+  classDef mod fill:#ffffff,stroke:#5b616e,color:#16181d
+  classDef plan fill:#ffffff,stroke:#7a808c,stroke-dasharray:4 4,color:#16181d
+  classDef leak fill:#fde8e5,stroke:#d23a2e,color:#8f1f16
+</pre>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one module decides which contacts count</span>
+<pre class="mermaid">
+flowchart LR
+  R["StepReport"]:::mod --> C["Contact ledger<br/>Parties · settled<br/>sliding · touching"]:::deep
+  C --> D["Damage"]:::mod
+  C --> K["Sticking"]:::mod
+  C --> G["Glue drag"]:::mod
+  C --> L["Droplet landing"]:::mod
+  C --> E["Enemy contact · M4"]:::plan
+  classDef mod fill:#ffffff,stroke:#5b616e,color:#16181d
+  classDef plan fill:#ffffff,stroke:#7a808c,stroke-dasharray:4 4,color:#16181d
+  classDef deep fill:#050506,stroke:#8a909e,stroke-width:3px,color:#eef0f3
+</pre>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Whether a contact counts (which Party, settled, sliding, one impact per Stroke) is decided inside the damage loop, and the handoff README tells each later slice to "skip settled pairs the same way" by hand.</p></div>
+        <div><span class="label">Solution</span><p>One module behind the StepReport owns Parties, settled pairs and the touching set, and hands every rule hits, new contacts and touching Parties that already passed those filters.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>locality: settled rule lives once</li>
+            <li>a new rule is a consumer</li>
+            <li>one test: settled never counts</li>
+            <li>numeric Party ids, not strings</li>
+            <li>enemy rules plug in</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- 3 -->
+    <article id="c3" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 3</span>
+        <h2>Rebuild bodies from one body description</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/physics/box2d/box2d-physics-world.ts <span class="note">(916 lines: rebuild, addShapes, setSurface, setMass, frozenInertial, unitMassOf)</span></li>
+        <li>src/physics/physics-world.ts</li>
+        <li>docs/handoffs/17 <span class="note">(bonds)</span>, 18 <span class="note">(Patch shapes, never-wake Droplets)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: each attachment patched into five functions</span>
+          <div class="g2 small">
+            <div class="mod pad span2">
+              <div class="s-label">rebuild()</div>
+              <div class="g3 tiny mono" style="margin-top:6px">
+                <span class="mod chip">copy pose</span>
+                <span class="mod chip">damping by kind</span>
+                <span class="mod chip">addShapes: radius? parts?</span>
+              </div>
+            </div>
+            <div class="mod pad tiny mono">setSurface: every shape</div>
+            <div class="mod pad tiny mono">setMass: every shape</div>
+            <div class="mod pad tiny mono">frozenInertial</div>
+            <div class="mod pad tiny mono">unitMassOf</div>
+            <div class="leakbox pad tiny mono">+ carry Patch shapes #18</div>
+            <div class="leakbox pad tiny mono">+ re-create bonds #17</div>
+            <div class="leakbox pad tiny mono span2">+ never-wake flag, collision group #18 · enemy parts M4</div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one record the adapter rebuilds from</span>
+          <div class="chips">
+            <span class="mod chip">Release</span><span class="mod chip">wake</span><span class="mod chip">slide end</span><span class="mod chip">setMass</span><span class="mod chip">setSurface</span>
+          </div>
+          <div class="center tiny s-muted mono">↓ apply the description ↓</div>
+          <div class="deep pad-lg">
+            <div class="s-label">Body description</div>
+            <div class="g2 small mono faded" style="margin-top:8px">
+              <span>shapes: part · capsule · circle · Patch</span>
+              <span>surface · mass · damping</span>
+              <span>filter · never wakes</span>
+              <span>bonds</span>
+            </div>
+          </div>
+          <div class="tiny s-muted mono">Survives a rebuild because it is the rebuild.</div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Release, waking and the end of a slide destroy and recreate the Box2D body, so every attachment is carried over by hand; the #18 handoff lists five functions to change for Patch shapes, and #17 adds re-creating bonds.</p></div>
+        <div><span class="label">Solution</span><p>The adapter keeps one complete description of each body (shapes and their roles, surface, mass, damping, filters, bonds), and every rebuild, surface change or mass change is applied from it.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>locality: rebuild rules in one record</li>
+            <li>attachments become data</li>
+            <li>one rebuild test, every attachment</li>
+            <li>clearer target for a Rapier adapter</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- 4 -->
+    <article id="c4" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 4</span>
+        <h2>Keep one read model per step</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/sandbox-world.ts <span class="note">(lines, objects, rubble; partyFinder; applyMaterials)</span></li>
+        <li>src/physics/box2d/box2d-physics-world.ts <span class="note">(getTransform, step: snapshotMotion)</span></li>
+        <li>src/rendering/world-renderer.ts · src/rendering/debug-overlay.ts · src/scenes/sandbox-scene.ts</li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: views rebuilt through the adapter on every read</span>
+<pre class="mermaid">
+sequenceDiagram
+  participant R as Renderer + F1
+  participant W as Sandbox world
+  participant P as Box2D adapter
+  loop every step
+    P->>P: copy velocity of every moving body
+    W->>W: rebuild Party map, stringify table
+  end
+  loop every frame, every body
+    R->>W: world.objects / rubble / lines
+    W->>P: getTransform, getVelocity, isFrozen, getMass
+  end
+</pre>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one update per step, from what moved</span>
+<pre class="mermaid">
+sequenceDiagram
+  participant P as Box2D adapter
+  participant W as Sandbox world
+  participant R as Renderer + F1
+  P->>W: step: bodies that moved
+  W->>W: update read model
+  R->>W: read model, once per frame
+</pre>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Work per step and per frame grows with every body, not with what changed: views are rebuilt on each read with several adapter calls per body, and each step copies every moving body's velocity whenever any Frozen Object exists.</p></div>
+        <div><span class="label">Solution</span><p>The Sandbox world keeps one read model, updated once per step from the bodies that actually moved, and the renderer, F1 overlay and scene read that.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>cost follows what moved</li>
+            <li>one read per frame</li>
+            <li>renderer checks read plain data</li>
+            <li>#21 verdict shows the gain</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">Measure first: #21's Demolition timings say whether this is needed before enemies arrive.</div>
+    </article>
+
+    <!-- 5 -->
+    <article id="c5" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 5</span>
+        <h2>Let the Fill release read numbers, not Colour names</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/sandbox-world.ts <span class="note">(breakObject, releaseFill, addRubble, capRubble)</span></li>
+        <li>src/sandbox/rubble.ts · src/materials/material-table.ts</li>
+        <li>docs/handoffs/17–20 <span class="note">(sticking, Spills, Blasts, the fuse)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the plans branch on Colour names</span>
+          <div class="mod pad center mono small">releaseFill(object)</div>
+          <div class="g3 tiny mono">
+            <div class="mod pad">rubbleMax &gt; 0<br><span class="s-muted">→ Rubble · #16</span></div>
+            <div class="leakbox pad">"blue or green"<br>→ Spill · #18</div>
+            <div class="leakbox pad">"red"<br>→ Blast · #19</div>
+          </div>
+          <div class="g2 tiny mono">
+            <div class="leakbox pad">"green Outline" → sticks · #17</div>
+            <div class="leakbox pad">"red Piece" → Blast · #20</div>
+          </div>
+          <div class="tiny s-muted mono">A sixth Colour: hunt every name check.</div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the table row decides</span>
+          <div class="chips">
+            <span class="mod chip">rubbleMax 18</span><span class="mod chip">droplets 0</span><span class="mod chip">blastStrength 0</span><span class="mod chip">sticks 0</span>
+          </div>
+          <div class="center tiny s-muted mono">↓ one Colour's numbers ↓</div>
+          <div class="deep pad-lg center">
+            <div class="s-label">Fill release</div>
+            <div class="faded tiny mono" style="margin-top:4px">pack · kick · Droplet count · Blast size</div>
+          </div>
+          <div class="g3 tiny mono center">
+            <span class="mod chip">Rubble</span><span class="mod chip">Droplets</span><span class="mod chip">Blast</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>No simulation code names a Colour today (Rubble follows <code>rubbleMax</code>), but the plans phrase Spills, Blasts, sticking and the fuse by name, and <code>releaseFill</code> grows one branch per effect.</p></div>
+        <div><span class="label">Solution</span><p>A Fill release module answers "what comes out of this broken Object" from the Colour's numbers alone, with packing, the kick, the Droplet count and the Blast size inside.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>sixth Colour: one table row</li>
+            <li>F2 tunes every effect</li>
+            <li>one interface to test releases</li>
+            <li>ADR 0008 holds: numbers drive red</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- 6 -->
+    <article id="c6" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 6</span>
+        <h2>Bake ink looks into textures</h2>
+        <div class="badges"><span class="badge b-spec"><span class="dot"></span>Speculative</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/rendering/ink.ts <span class="note">(drawInk and fillInk switch on Colour)</span></li>
+        <li>src/rendering/world-renderer.ts <span class="note">(one Graphics per Stroke and per piece of Rubble; two black-crack checks)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: draw commands per thing, kept in its Graphics</span>
+          <div class="bars">
+            <span>60 px grey Fill</span><div class="bar" style="width:100%"></div>
+            <span>400 px grey Line</span><div class="bar" style="width:71%"></div>
+            <span>one pebble</span><div class="bar" style="width:20%"></div>
+            <span>150 pebbles</span><div class="barrow"><div class="bar" style="width:20%"></div><span class="s-muted">× 150 Graphics</span></div>
+          </div>
+          <div class="tiny s-muted mono">≈225 grain specks in a 60 px grey Fill; one every 2.5 px along a grey Line.</div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one texture per look, sprites share it</span>
+          <div class="bars">
+            <span>60 px grey Fill</span><div class="bar-after"></div>
+            <span>400 px grey Line</span><div class="bar-after"></div>
+            <span>one pebble</span><div class="bar-after"></div>
+            <span>150 pebbles</span><div class="barrow"><div class="bar-after"></div><span class="s-muted">one batch</span></div>
+          </div>
+          <div class="deep pad small"><span class="s-label">Ink look</span> <span class="faded mono tiny">· Colour → hue, texture, crack colour</span></div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Every Line, Object and pebble is its own Graphics built from hundreds of tiny draw commands, and each Colour's look is spread over two switch statements and two black-crack checks.</p></div>
+        <div><span class="label">Solution</span><p>An ink look module draws each look once into a cached texture, Rubble, Droplets and Patches become sprites sharing those textures, and each Colour's look is one entry.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>draw cost flat per thing</li>
+            <li>sixth Colour look: one entry</li>
+            <li>sprites batch; Graphics don't</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">Check first: confirm Phaser 4 redraws a Graphics from its command list each frame, and read the #22 frame times.</div>
+    </article>
+  </section>
+
+  <section id="top-recommendation" class="top">
+    <span class="label">Top recommendation</span>
+    <h2><a href="#c1">Give each body kind its own module</a></h2>
+    <p>#17–#19 add four body kinds and milestone 4 adds enemies. Moving just Strokes and Rubble now turns each later slice from 18 hunks in one file into one new module, and the headless Sandbox world tests already sit at the interface that must not change. <a href="#c2">The Contact ledger</a> is the natural second step, before #17 builds sticking on the old loop.</p>
+  </section>
+
+</main>
+</body>
+</html>
