@@ -108,13 +108,14 @@ function pushOut() {
   for (const [draw, height] of shapes) {
     for (const depth of [0.15, 0.3, 0.5, 0.7, 0.85]) {
       withWorld((world) => {
-        world.submitStroke(draw());
+        world.submitStroke(draw(), 'grey');
         const y = 400 + height * depth;
         world.submitStroke(
           dragAlong([
             { x: 250, y },
             { x: 550, y },
           ]),
+          'grey',
         );
         world.togglePause();
         for (let step = 1; step <= 180; step++) {
@@ -142,8 +143,8 @@ function wakeMomentum() {
   const ratios: number[] = [];
   for (const speed of [300, 600, 1200, 3000]) {
     withWorld((world) => {
-      const box = world.submitStroke(dragBox(600, 400, 60, 60));
-      const ball = world.submitStroke(dragCircle({ x: 485, y: 430 }, 15));
+      const box = world.submitStroke(dragBox(600, 400, 60, 60), 'grey');
+      const ball = world.submitStroke(dragCircle({ x: 485, y: 430 }, 15), 'grey');
       if (box.kind !== 'object' || ball.kind !== 'object') throw new Error('set-up failed');
       world.togglePause();
       world.release(ball.id, { x: speed, y: 0 });

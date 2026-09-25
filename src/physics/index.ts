@@ -10,5 +10,6 @@ export type {
   PhysicsWorld,
   PhysicsWorldFactory,
   PhysicsWorldOptions,
+  Surface,
 } from './physics-world';
 export { createBox2dPhysicsWorld as createPhysicsWorld } from './box2d/box2d-physics-world';

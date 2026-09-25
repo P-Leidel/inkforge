@@ -31,6 +31,8 @@ What we learned about Phaser Box2D 1.1.0 along the way (all handled inside `src/
 - It ships no TypeScript types, and its `main` entry points at a missing file. We import `dist/PhaserBox2D.js` and declare the parts we use in `phaser-box2d.d.ts`.
 - `b2DestroyWorld` never frees the world's slot, so a process can only ever create 32 worlds. The adapter recycles worlds instead.
 - `b2Body_SetType` never moves a fixed body into the simulated set (it tests `b2BodyType.staticBody`, which doesn't exist). Releasing a Frozen Object therefore rebuilds it as a dynamic body.
+- `b2Body_GetPosition` and `b2Body_GetRotation` return the body's live transform, which destroying the body can reset. Rebuilding an Object that had slid off a Line from them moved it to the Arena's top-left corner. The push-out numbers above were measured with that bug; after the fix (milestone 2) they come out the same: 0 of 25 stuck, 233 px/s.
+- The default minimum bounce speed (`restitutionThreshold`) is 10 m/s, 500 px/s at our scale, so small drops never bounce. The sandbox sets its own.
 - Box2D pushes each (capsule, convex part) pair apart on its own. A Line deep inside an Object made of several convex parts, or even inside a single triangle, can jam it on the Line for good (11 of 30 cases in a survey). The Sandbox world therefore slides such an Object the shortest way off the Line at Box2D's push-out speed, then hands it back to physics. Rapier resolves contacts pair by pair too, so switching engines would not remove the need for this.
 
 Two findings were about our Stroke pipeline rather than the engine: drawn boxes only stack once smoothing keeps their corners sharp, and small drawn balls must keep their drawn area.

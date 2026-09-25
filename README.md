@@ -31,16 +31,21 @@ CI runs lint, format check, typecheck, tests and build on every push and pull re
 
 ## Playing the sandbox
 
-| Action                                  | Input                         |
-| --------------------------------------- | ----------------------------- |
-| Draw a Line (open Stroke)               | Hold the left button and drag |
-| Draw an Object (end near the start)     | Drag back to the green marker |
-| Run / pause physics                     | Space                         |
-| Release a Frozen Object (while running) | Right-click it                |
-| Undo the last Stroke                    | Ctrl+Z                        |
-| Debug overlay (colliders, bodies, fps)  | F1                            |
+| Action                                        | Input                         |
+| --------------------------------------------- | ----------------------------- |
+| Pick a Colour (grey, blue, green, black, red) | Keys 1–5 or click the palette |
+| Draw a Line (open Stroke)                     | Hold the left button and drag |
+| Draw an Object (end near the start)           | Drag back to the green marker |
+| Run / pause physics                           | Space                         |
+| Release a Frozen Object (while running)       | Right-click it                |
+| Undo the last Stroke                          | Ctrl+Z                        |
+| Debug overlay (colliders, bodies, fps)        | F1                            |
+
+Each Colour is a material with its own hue and texture: grey is grainy, blue glossy, green drippy, black solid and red striped like a fuse. Blue is bouncy and slippery, black grips hardest, and grey is the plain material.
 
 The toolbar clears the Arena and runs the engine stress tests: **Ball cannon** (3000 px/s balls at a 4 px Line), **Box tower** (10 drawn boxes) and **Pebbles** (100 drawn pebbles). Each shows its measurements under the toolbar.
+
+The **Gallery** row below it clears the Arena and plays a ready-made demo of the Colours: **Bounce** drops the same ball onto a Line of each Colour, **Slide** puts the same box on a ramp of each Colour.
 
 ## Project structure
 
@@ -51,10 +56,12 @@ The toolbar clears the Arena and runs the engine stress tests: **Ball cannon** (
 ├── src/
 │   ├── main.ts          Entry point: boots Phaser
 │   ├── geometry/        Pure 2D maths: vectors, polygons, clipping, convex decomposition
+│   ├── materials/       The Colours and the material table (pure data)
 │   ├── stroke/          Stroke pipeline: raw pointer samples → Line, Object or rejection
 │   ├── physics/         Physics module; the only code that talks to the engine (ADR 0001)
 │   ├── sandbox/         Headless Sandbox world: Arena, Strokes, pause, undo, seeded RNG
 │   ├── stress-tests/    Scripted engine stress tests (ball cannon, box tower, pebbles)
+│   ├── gallery/         Colour gallery demos, built through the Sandbox world
 │   ├── scenes/          Phaser scenes: input → Sandbox world commands
 │   └── rendering/       Phaser drawing: world, debug overlay, toolbar, feedback
 ├── scripts/             Developer scripts (engine verdict)
@@ -62,4 +69,4 @@ The toolbar clears the Arena and runs the engine stress tests: **Ball cannon** (
 └── CONTEXT.md           Domain glossary
 ```
 
-`geometry/`, `stroke/`, `physics/` and `sandbox/` have no Phaser dependency and run headless under Vitest. Tests live next to the code they cover as `*.test.ts`.
+`geometry/`, `materials/`, `stroke/`, `physics/`, `sandbox/` and `gallery/` have no Phaser dependency and run headless under Vitest. Tests live next to the code they cover as `*.test.ts`.

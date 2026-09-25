@@ -16,7 +16,7 @@ export class DebugOverlay {
   ) {
     this.colliders = scene.add.graphics().setDepth(100);
     this.stats = scene.add
-      .text(60, 60, '', {
+      .text(60, 130, '', {
         fontFamily: 'monospace',
         fontSize: '22px',
         color: '#39ff88',

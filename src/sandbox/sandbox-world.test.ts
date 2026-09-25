@@ -113,7 +113,7 @@ describe('Sandbox world: Lines', () => {
   it('turns an open Stroke into a fixed Line', () => {
     const world = createWorld();
 
-    const outcome = world.submitStroke(horizontal);
+    const outcome = world.submitStroke(horizontal, 'grey');
 
     expect(outcome.kind).toBe('line');
     expect(world.lines).toHaveLength(1);
@@ -122,7 +122,7 @@ describe('Sandbox world: Lines', () => {
 
   it('keeps a Line where it was drawn, even in mid-air, while physics runs', () => {
     const world = createWorld();
-    world.submitStroke(horizontal);
+    world.submitStroke(horizontal, 'grey');
     const before = world.lines[0]!.segments;
 
     world.togglePause();
@@ -134,8 +134,8 @@ describe('Sandbox world: Lines', () => {
   it('lets Lines cross each other', () => {
     const world = createWorld();
 
-    world.submitStroke(horizontal);
-    const outcome = world.submitStroke(vertical);
+    world.submitStroke(horizontal, 'grey');
+    const outcome = world.submitStroke(vertical, 'grey');
 
     expect(outcome.kind).toBe('line');
     expect(world.lines).toHaveLength(2);
@@ -143,11 +143,11 @@ describe('Sandbox world: Lines', () => {
 
   it('accepts Strokes both while paused and while running', () => {
     const world = createWorld();
-    world.submitStroke(horizontal);
+    world.submitStroke(horizontal, 'grey');
     world.togglePause();
     world.step();
 
-    world.submitStroke(vertical);
+    world.submitStroke(vertical, 'grey');
 
     expect(world.lines).toHaveLength(2);
   });
@@ -155,7 +155,7 @@ describe('Sandbox world: Lines', () => {
   it('ignores a mis-click', () => {
     const world = createWorld();
 
-    const outcome = world.submitStroke([{ x: 300, y: 300 }]);
+    const outcome = world.submitStroke([{ x: 300, y: 300 }], 'grey');
 
     expect(outcome.kind).toBe('dropped');
     expect(world.lines).toHaveLength(0);
@@ -172,8 +172,8 @@ describe('Sandbox world: undo and clear', () => {
 
   it('undo removes the last Stroke', () => {
     const world = createWorld();
-    world.submitStroke(strokeAt(300));
-    world.submitStroke(strokeAt(400));
+    world.submitStroke(strokeAt(300), 'grey');
+    world.submitStroke(strokeAt(400), 'grey');
 
     world.undo();
 
@@ -184,7 +184,7 @@ describe('Sandbox world: undo and clear', () => {
 
   it('undo works while running', () => {
     const world = createWorld();
-    world.submitStroke(strokeAt(300));
+    world.submitStroke(strokeAt(300), 'grey');
     world.togglePause();
 
     world.undo();
@@ -200,8 +200,8 @@ describe('Sandbox world: undo and clear', () => {
 
   it('remove takes out one Stroke by id', () => {
     const world = createWorld();
-    const first = world.submitStroke(strokeAt(300));
-    world.submitStroke(strokeAt(400));
+    const first = world.submitStroke(strokeAt(300), 'grey');
+    world.submitStroke(strokeAt(400), 'grey');
     if (first.kind !== 'line') throw new Error('expected a Line');
 
     world.remove(first.id);
@@ -212,8 +212,8 @@ describe('Sandbox world: undo and clear', () => {
 
   it('clear removes every Stroke but keeps the Terrain', () => {
     const world = createWorld();
-    world.submitStroke(strokeAt(300));
-    world.submitStroke(strokeAt(400));
+    world.submitStroke(strokeAt(300), 'grey');
+    world.submitStroke(strokeAt(400), 'grey');
 
     world.clear();
 
@@ -234,7 +234,7 @@ function objectById(world: SandboxWorld, id: number) {
 }
 
 function drawObject(world: SandboxWorld, samples: Vec2[]): number {
-  const outcome = world.submitStroke(samples);
+  const outcome = world.submitStroke(samples, 'grey');
   if (outcome.kind !== 'object') throw new Error(`expected an Object, got ${outcome.kind}`);
   return outcome.id;
 }
@@ -298,6 +298,7 @@ describe('Sandbox world: Objects', () => {
         { x: 200, y: 500 },
         { x: 600, y: 500 },
       ]),
+      'grey',
     );
     const line = world.lines[0]!.segments;
     const id = drawObject(world, dragBox(380, 400, 40, 40));
@@ -406,6 +407,7 @@ describe('Sandbox world: Frozen Objects wake on hits', () => {
         { x: 600, y: 500 },
         { x: 900, y: 500 },
       ]),
+      'grey',
     );
     const onGround = drawObject(world, dragBox(200, 820, 60, 60));
     const onLine = drawObject(world, dragBox(700, 436, 60, 60)); // bottom touches the Line's top
@@ -458,13 +460,13 @@ describe('Sandbox world: overlap rules', () => {
     world.release(box);
     runFor(world, 2); // falls to the ground at y = 880
 
-    expect(world.submitStroke(dragBox(310, 830, 40, 40)).kind).toBe('rejected');
-    expect(world.submitStroke(dragBox(300, 300, 60, 60)).kind).toBe('object');
+    expect(world.submitStroke(dragBox(310, 830, 40, 40), 'grey').kind).toBe('rejected');
+    expect(world.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
   });
 
   it('lets an Object be drawn over a Line and keeps it Frozen while paused', () => {
     const world = createWorld();
-    world.submitStroke(lineThrough(430));
+    world.submitStroke(lineThrough(430), 'grey');
 
     const box = drawObject(world, dragBox(370, 400, 60, 60));
 
@@ -475,7 +477,7 @@ describe('Sandbox world: overlap rules', () => {
     const world = createWorld();
     const crossed = drawObject(world, dragBox(370, 400, 60, 60));
     const clear = drawObject(world, dragBox(700, 400, 60, 60));
-    world.submitStroke(lineThrough(430));
+    world.submitStroke(lineThrough(430), 'grey');
 
     world.togglePause();
 
@@ -486,7 +488,7 @@ describe('Sandbox world: overlap rules', () => {
   it('squeezes a Released Object off the Line without flinging it', () => {
     const world = createWorld();
     const box = drawObject(world, dragBox(370, 400, 60, 60));
-    world.submitStroke(lineThrough(420)); // 20 px below the box's top edge
+    world.submitStroke(lineThrough(420), 'grey'); // 20 px below the box's top edge
     world.togglePause();
 
     let maxExcess = 0;
@@ -499,6 +501,20 @@ describe('Sandbox world: overlap rules', () => {
 
     expect(maxExcess).toBeLessThan(300);
     expect(overlapsAnyLine(world, box)).toBe(false);
+  });
+
+  it('lands a squeezed Object on the Line it was squeezed off', () => {
+    const world = createWorld();
+    const box = drawObject(world, dragBox(370, 400, 60, 60));
+    world.submitStroke(lineThrough(440), 'grey'); // 40 px down: it slides up and off
+    world.togglePause();
+
+    runFor(world, 2);
+
+    const { transform } = objectById(world, box);
+    expect(transform.x).toBeCloseTo(400, 0);
+    // Its bottom rests on the Line's top surface (y = 440 - 4).
+    expect(transform.y + 30).toBeCloseTo(436, 0);
   });
 
   describe('squeezes any shape off a Line crossing it anywhere', () => {
@@ -536,12 +552,14 @@ describe('Sandbox world: overlap rules', () => {
         it(`${name}, crossed ${depth * 100}% of the way down`, () => {
           const world = createWorld();
           const object = drawObject(world, draw());
-          world.submitStroke(lineThrough(400 + height * depth));
+          world.submitStroke(lineThrough(400 + height * depth), 'grey');
           world.togglePause();
 
           runFor(world, 3);
 
           expect(overlapsAnyLine(world, object)).toBe(false);
+          // It carries on from where its slide ended, near where it was drawn.
+          expect(Math.abs(objectById(world, object).transform.x - 400)).toBeLessThan(150);
         });
       }
     }
@@ -552,7 +570,7 @@ describe('Sandbox world: overlap rules', () => {
     const box = drawObject(world, dragBox(370, 400, 60, 60));
     world.togglePause();
 
-    world.submitStroke(lineThrough(430));
+    world.submitStroke(lineThrough(430), 'grey');
 
     expect(objectById(world, box).frozen).toBe(false);
   });

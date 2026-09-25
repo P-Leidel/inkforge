@@ -4,6 +4,12 @@ import { polygonCentroid, polygonContainsPoint, type Polygon } from '../geometry
 import type { Segment } from '../geometry/segment';
 import { transformPoints, type Transform } from '../geometry/transform';
 import { sub, type Vec2 } from '../geometry/vec2';
+import type { Colour } from '../materials/colour';
+import {
+  createMaterialTable,
+  TERRAIN_SURFACE,
+  type MaterialTable,
+} from '../materials/material-table';
 import {
   createPhysicsWorld,
   type BodyId,
@@ -34,6 +40,7 @@ export type StrokeId = number;
 
 export interface LineView {
   readonly id: StrokeId;
+  readonly colour: Colour;
   /** Capsule centre lines. */
   readonly segments: readonly Segment[];
   readonly thickness: number;
@@ -41,6 +48,8 @@ export interface LineView {
 
 export interface ObjectView {
   readonly id: StrokeId;
+  /** The Colour of its Outline. */
+  readonly colour: Colour;
   /** Outline relative to the body's origin; place it with `transform`. */
   readonly outline: Polygon;
   /** Convex collider parts relative to the body's origin. */
@@ -71,6 +80,7 @@ interface LineStroke extends LineView {
 interface ObjectStroke {
   readonly kind: 'object';
   readonly id: StrokeId;
+  readonly colour: Colour;
   readonly body: BodyId;
   readonly outline: Polygon;
   readonly parts: readonly Polygon[];
@@ -81,16 +91,21 @@ type Stroke = LineStroke | ObjectStroke;
 export interface SandboxWorldOptions {
   readonly seed?: number;
   readonly arena?: Arena;
+  /** The material table to read; defaults to a fresh copy of the defaults. */
+  readonly materials?: MaterialTable;
   readonly createPhysics?: PhysicsWorldFactory;
 }
 
 /**
  * The headless sandbox: the Arena, the Strokes drawn into it, the pause state
  * and undo. It has no rendering dependency, so it is the main testing seam.
+ * Each Stroke is drawn in a Colour given with the command; the world holds no
+ * selected Colour.
  */
 export class SandboxWorld {
   readonly arena: Arena;
   readonly random: Random;
+  readonly materials: MaterialTable;
   private readonly physics: PhysicsWorld;
   /** Strokes in the order they were drawn, for undo. */
   private strokes: Stroke[] = [];
@@ -102,12 +117,14 @@ export class SandboxWorld {
   constructor(options: SandboxWorldOptions = {}) {
     this.arena = options.arena ?? SANDBOX_ARENA;
     this.random = new Random(options.seed ?? 1);
+    this.materials = options.materials ?? createMaterialTable();
     this.physics = (options.createPhysics ?? createPhysicsWorld)({
       gravity: { x: 0, y: GRAVITY },
       timeStep: STEP_SECONDS,
       wakeSpeed: WAKE_SPEED,
+      minBounceSpeed: this.materials.minBounceSpeed,
     });
-    this.physics.addTerrain(this.arena.terrain);
+    this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
   }
 
   /** Whether physics is running (stands in for the Wave) rather than paused (the Build Phase). */
@@ -135,6 +152,7 @@ export class SandboxWorld {
   private viewObject(stroke: ObjectStroke): ObjectView {
     return {
       id: stroke.id,
+      colour: stroke.colour,
       outline: stroke.outline,
       parts: stroke.parts,
       transform: this.physics.getTransform(stroke.body),
@@ -143,16 +161,26 @@ export class SandboxWorld {
     };
   }
 
-  /** Turns one Stroke's raw pointer samples into a Line, an Object, a rejection or nothing. */
-  submitStroke(samples: readonly Vec2[], options: StrokeOptions = {}): StrokeOutcome {
+  /**
+   * Turns one Stroke's raw pointer samples, drawn in `colour`, into a Line,
+   * an Object, a rejection or nothing. Every Colour follows the same drawing
+   * rules; only the material differs.
+   */
+  submitStroke(
+    samples: readonly Vec2[],
+    colour: Colour,
+    options: StrokeOptions = {},
+  ): StrokeOutcome {
     const result = processStroke(samples, this.strokeContext(options));
+    const material = this.materials.colours[colour];
     switch (result.kind) {
       case 'line': {
         const id = this.nextStrokeId++;
-        const body = this.physics.addLine(result.segments, result.thickness);
+        const body = this.physics.addLine(result.segments, result.thickness, material.line);
         this.strokes.push({
           kind: 'line',
           id,
+          colour,
           body,
           segments: result.segments,
           thickness: result.thickness,
@@ -166,8 +194,20 @@ export class SandboxWorld {
         const origin = polygonCentroid(result.outline);
         const local = (polygon: Polygon) => polygon.map((p) => sub(p, origin));
         const parts = result.parts.map(local);
-        const body = this.physics.addObject({ position: origin, parts, frozen: true });
-        this.strokes.push({ kind: 'object', id, body, outline: local(result.outline), parts });
+        const body = this.physics.addObject({
+          position: origin,
+          parts,
+          frozen: true,
+          surface: material.outline,
+        });
+        this.strokes.push({
+          kind: 'object',
+          id,
+          colour,
+          body,
+          outline: local(result.outline),
+          parts,
+        });
         this.releaseObjectsUnderLines();
         return { kind: 'object', id };
       }

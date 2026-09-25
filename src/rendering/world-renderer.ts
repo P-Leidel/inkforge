@@ -1,7 +1,11 @@
 import type Phaser from 'phaser';
 import type { ObjectView, SandboxWorld, StrokeId } from '../sandbox/sandbox-world';
-import { fillCapsule, fillPolygon, strokePolygon } from './draw';
+import { fillPolygon, strokePolygon } from './draw';
+import { drawInk, INK_HUES, segmentRuns } from './ink';
 import { PALETTE } from './palette';
+
+/** Width an Outline is drawn with, centred on the Object's edge. */
+const OUTLINE_WIDTH = 5;
 
 type Graphics = Phaser.GameObjects.Graphics;
 
@@ -42,7 +46,9 @@ export class WorldRenderer {
       current.add(line.id);
       if (this.lines.has(line.id)) continue;
       const g = this.scene.add.graphics();
-      for (const { a, b } of line.segments) fillCapsule(g, a, b, line.thickness, PALETTE.ink);
+      for (const run of segmentRuns(line.segments)) {
+        drawInk(g, line.colour, run, false, line.thickness);
+      }
       this.lines.set(line.id, g);
     }
     removeStale(this.lines, current);
@@ -68,21 +74,27 @@ export class WorldRenderer {
   }
 }
 
-/** Draws an Object in its own coordinates; a Frozen one is tinted and pinned. */
+/**
+ * Draws an Object in its own coordinates: its Outline in its Colour around a
+ * hollow inside. A Frozen one is frosted and pinned.
+ */
 function drawObject(g: Graphics, object: ObjectView): void {
   g.clear();
-  g.fillStyle(object.frozen ? PALETTE.frozenFill : PALETTE.objectFill, 1);
-  g.lineStyle(3, PALETTE.ink, 1);
+  g.fillStyle(INK_HUES[object.colour], 0.2);
   fillPolygon(g, object.outline);
-  strokePolygon(g, object.outline);
   if (object.frozen) {
-    // A push pin at the centroid.
-    g.lineStyle(3, PALETTE.frozenPin, 1);
-    g.lineBetween(0, 0, 7, 7);
+    g.fillStyle(PALETTE.frost, 0.22);
+    fillPolygon(g, object.outline);
+  }
+  drawInk(g, object.colour, object.outline, true, OUTLINE_WIDTH);
+  if (object.frozen) {
+    // A push pin at the centroid, in neutral white so it reads on every Colour.
+    g.lineStyle(3, PALETTE.frozenPinEdge, 1);
+    g.lineBetween(0, 0, 8, 8);
     g.fillStyle(PALETTE.frozenPin, 1);
     g.fillCircle(0, 0, 7);
-    g.fillStyle(0xffffff, 0.6);
-    g.fillCircle(-2, -2, 2.5);
+    g.lineStyle(2, PALETTE.frozenPinEdge, 1);
+    g.strokeCircle(0, 0, 7);
   }
 }
 

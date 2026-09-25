@@ -37,7 +37,7 @@ export class BoxTower implements StressTest {
   constructor(private readonly world: SandboxWorld) {
     for (let k = 0; k < BOXES; k++) {
       const bottom = GROUND_Y - GAP - k * (SIZE + GAP);
-      const outcome = world.submitStroke(dragBox(LEFT, bottom - SIZE, SIZE, SIZE));
+      const outcome = world.submitStroke(dragBox(LEFT, bottom - SIZE, SIZE, SIZE), 'grey');
       if (outcome.kind === 'object') this.ids.push(outcome.id);
     }
     if (!world.isRunning) world.togglePause();

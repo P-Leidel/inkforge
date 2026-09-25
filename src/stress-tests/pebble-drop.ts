@@ -37,7 +37,7 @@ export class PebbleDrop implements StressTest {
     for (let row = 0; row < ROWS; row++) {
       for (let column = 0; column < COLUMNS; column++) {
         const centre = { x: LEFT + column * SPACING, y: TOP + row * SPACING };
-        const outcome = world.submitStroke(dragPolygon(this.pebbleOutline(centre)));
+        const outcome = world.submitStroke(dragPolygon(this.pebbleOutline(centre)), 'grey');
         if (outcome.kind === 'object') this.ids.push(outcome.id);
         else this.refused++;
       }

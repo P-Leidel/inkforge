@@ -18,6 +18,20 @@ export interface PhysicsWorldOptions {
   readonly timeStep: number;
   /** Approach speed (px/s) above which a moving body wakes a Frozen Object it hits. */
   readonly wakeSpeed: number;
+  /** Contacts approaching slower than this (px/s) don't bounce, whatever their restitution. */
+  readonly minBounceSpeed: number;
+}
+
+/**
+ * How a shape's surface meets others. A contact bounces with the larger
+ * restitution of its two surfaces and grips with the geometric mean of their
+ * frictions, so anything bouncy bounces off anything.
+ */
+export interface Surface {
+  /** Coulomb friction coefficient. */
+  readonly friction: number;
+  /** Bounciness, 0 to below 1. */
+  readonly restitution: number;
 }
 
 export interface ObjectBodyDef {
@@ -27,6 +41,8 @@ export interface ObjectBodyDef {
   readonly parts: readonly Polygon[];
   /** Whether the Object starts Frozen: it collides but ignores gravity and doesn't move. */
   readonly frozen: boolean;
+  /** The surface of every part. It stays with the Object when it unfreezes. */
+  readonly surface: Surface;
 }
 
 /** A contact reported by a step, with its impact strength. */
@@ -42,9 +58,9 @@ export interface PhysicsWorld {
   readonly bodyCount: number;
 
   /** Adds fixed Terrain made of convex polygons in world coordinates. */
-  addTerrain(polygons: readonly Polygon[]): BodyId;
+  addTerrain(polygons: readonly Polygon[], surface: Surface): BodyId;
   /** Adds a fixed Line: one capsule of the given thickness per segment, colliding from both sides. */
-  addLine(segments: readonly Segment[], thickness: number): BodyId;
+  addLine(segments: readonly Segment[], thickness: number, surface: Surface): BodyId;
   /** Adds a movable Object. */
   addObject(def: ObjectBodyDef): BodyId;
   removeBody(id: BodyId): void;

@@ -112,6 +112,8 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   export function b2CreateWorld(def: b2WorldDef): b2WorldId;
   export function b2World_Step(worldId: b2WorldId, timeStep: number, subStepCount: number): void;
   export function b2World_SetGravity(worldId: b2WorldId, gravity: b2Vec2): void;
+  /** Contacts approaching slower than this (m/s) don't bounce. */
+  export function b2World_SetRestitutionThreshold(worldId: b2WorldId, value: number): void;
   export function b2World_GetContactEvents(worldId: b2WorldId): b2ContactEvents;
 
   export function b2DefaultBodyDef(): b2BodyDef;
@@ -150,6 +152,7 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     capsule: b2Capsule,
   ): b2ShapeId;
   export function b2Shape_GetBody(shapeId: b2ShapeId): b2BodyId;
+  export function b2Shape_GetRestitution(shapeId: b2ShapeId): number;
   export function b2ComputeHull(points: b2Vec2[], count: number): b2Hull;
   /** Returns null when the hull is invalid. */
   export function b2MakePolygon(hull: b2Hull, radius: number): b2Polygon | null;

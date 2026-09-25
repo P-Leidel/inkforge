@@ -24,11 +24,14 @@ import {
   b2DefaultWorldDef,
   b2DestroyBody,
   b2MakePolygon,
+  b2MakeRot,
   b2Rot_GetAngle,
   b2Shape_GetBody,
+  b2Shape_GetRestitution,
   b2Vec2,
   b2World_GetContactEvents,
   b2World_SetGravity,
+  b2World_SetRestitutionThreshold,
   b2World_Step,
   type b2BodyId,
   type b2Rot,
@@ -45,6 +48,7 @@ import type {
   ObjectBodyDef,
   PhysicsWorld,
   PhysicsWorldOptions,
+  Surface,
 } from '../physics-world';
 
 /**
@@ -57,8 +61,6 @@ const SUB_STEPS = 4;
 const HIT_EVENT_THRESHOLD_PX = 5;
 /** Uniform density of the neutral material, kg/m². */
 const DENSITY = 1;
-const FRICTION = 0.6;
-const RESTITUTION = 0;
 
 const toM = (px: number) => px / PX_PER_METRE;
 const toPx = (m: number) => m * PX_PER_METRE;
@@ -72,6 +74,8 @@ interface BodyRecord {
   frozen: boolean;
   /** An Object's convex parts in body coordinates, to rebuild it on Release. */
   readonly parts: readonly Polygon[];
+  /** The surface of its shapes, kept when it is rebuilt. */
+  readonly surface: Surface;
 }
 
 /*
@@ -81,22 +85,24 @@ interface BodyRecord {
  */
 const idleWorlds: b2WorldId[] = [];
 
-function acquireWorld(gravity: Vec2): b2WorldId {
+function acquireWorld(options: PhysicsWorldOptions): b2WorldId {
   const recycled = idleWorlds.pop();
   if (recycled) {
-    b2World_SetGravity(recycled, toB2(gravity));
+    b2World_SetGravity(recycled, toB2(options.gravity));
+    b2World_SetRestitutionThreshold(recycled, toM(options.minBounceSpeed));
     return recycled;
   }
   b2CreateWorldArray(); // no-op after the first call
   const def = b2DefaultWorldDef();
-  def.gravity = toB2(gravity);
+  def.gravity = toB2(options.gravity);
   def.hitEventThreshold = toM(HIT_EVENT_THRESHOLD_PX);
+  def.restitutionThreshold = toM(options.minBounceSpeed);
   def.enableContinuous = true;
   return b2CreateWorld(def);
 }
 
 export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWorld {
-  const worldId = acquireWorld(options.gravity);
+  const worldId = acquireWorld(options);
   const bodies = new Map<BodyId, BodyRecord>();
   /** Objects sliding out of Lines: seconds of sliding left. */
   const sliding = new Map<BodyId, number>();
@@ -122,31 +128,32 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     kind: BodyKind,
     type: number,
     position: Vec2,
+    surface: Surface,
     frozen = false,
     parts: readonly Polygon[] = [],
   ) {
     const id = nextId++ as BodyId;
     const b2Id = makeB2Body(id, type, toB2(position));
-    bodies.set(id, { b2Id, kind, frozen, parts });
+    bodies.set(id, { b2Id, kind, frozen, parts, surface });
     return { id, b2Id };
   }
 
-  function shapeDef(hitEvents: boolean) {
+  function shapeDef(surface: Surface, hitEvents: boolean) {
     const def = b2DefaultShapeDef();
     def.density = DENSITY;
-    def.friction = FRICTION;
-    def.restitution = RESTITUTION;
+    def.friction = surface.friction;
+    def.restitution = surface.restitution;
     def.enableHitEvents = hitEvents;
     return def;
   }
 
-  function addPolygon(bodyId: b2BodyId, polygon: Polygon, hitEvents: boolean): void {
+  function addPolygon(bodyId: b2BodyId, polygon: Polygon, surface: Surface, hitEvents: boolean) {
     const points = polygon.map(toB2);
     const hull = b2ComputeHull(points, points.length);
     const shape = hull.count >= 3 ? b2MakePolygon(hull, 0) : null;
     // Parts too thin or small for Box2D to represent are skipped; the
     // Stroke pipeline keeps them rare.
-    if (shape) b2CreatePolygonShape(bodyId, shapeDef(hitEvents), shape);
+    if (shape) b2CreatePolygonShape(bodyId, shapeDef(surface, hitEvents), shape);
   }
 
   function bodyIdOfShape(shapeId: b2ShapeId): BodyId {
@@ -180,11 +187,14 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
    */
   function unfreeze(id: BodyId, rec: BodyRecord, type: number = b2BodyType.b2_dynamicBody): void {
     rec.frozen = false;
-    const position = b2Body_GetPosition(rec.b2Id);
-    const rotation = b2Body_GetRotation(rec.b2Id);
+    // The getters return the body's live transform, which destroying the body
+    // may reset, so copy the pose first.
+    const p = b2Body_GetPosition(rec.b2Id);
+    const position = new b2Vec2(p.x, p.y);
+    const rotation = b2MakeRot(b2Rot_GetAngle(b2Body_GetRotation(rec.b2Id)));
     b2DestroyBody(rec.b2Id);
     rec.b2Id = makeB2Body(id, type, position, rotation);
-    for (const part of rec.parts) addPolygon(rec.b2Id, part, true);
+    for (const part of rec.parts) addPolygon(rec.b2Id, part, rec.surface, true);
   }
 
   /** Advances sliding Objects; one that has arrived becomes dynamic, at rest. */
@@ -210,7 +220,8 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
    * Wakes a Frozen Object and replays the hit as a collision between two free
    * bodies. During the step the Frozen Object acted like a wall, so the
    * hitter was stopped; we restore the hitter's velocity from before the step
-   * and apply the impulse a free collision would have produced instead.
+   * and apply the impulse a free collision would have produced instead,
+   * bouncing with the two shapes' restitution as the engine would.
    */
   function wakeByHit(
     frozenId: BodyId,
@@ -218,6 +229,7 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     before: Motion | undefined,
     point: b2Vec2,
     normal: b2Vec2, // from hitter towards the Frozen Object
+    restitution: number,
   ): void {
     const frozen = record(frozenId);
     unfreeze(frozenId, frozen);
@@ -242,7 +254,8 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     const rhn = rh.x * normal.y - rh.y * normal.x;
     const rfn = rf.x * normal.y - rf.y * normal.x;
     const k = invMassH + invMassF + invInertiaH * rhn * rhn + invInertiaF * rfn * rfn;
-    const j = ((1 + RESTITUTION) * approach) / k;
+    const bounce = approach >= toM(options.minBounceSpeed) ? restitution : 0;
+    const j = ((1 + bounce) * approach) / k;
 
     b2Body_ApplyLinearImpulse(hitter.b2Id, new b2Vec2(-j * normal.x, -j * normal.y), point, true);
     b2Body_ApplyLinearImpulse(frozen.b2Id, new b2Vec2(j * normal.x, j * normal.y), point, true);
@@ -253,20 +266,20 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       return bodies.size;
     },
 
-    addTerrain(polygons) {
-      const { id, b2Id } = createBody('terrain', b2BodyType.b2_staticBody, { x: 0, y: 0 });
-      for (const polygon of polygons) addPolygon(b2Id, polygon, false);
+    addTerrain(polygons, surface) {
+      const { id, b2Id } = createBody('terrain', b2BodyType.b2_staticBody, { x: 0, y: 0 }, surface);
+      for (const polygon of polygons) addPolygon(b2Id, polygon, surface, false);
       return id;
     },
 
-    addLine(segments: readonly Segment[], thickness: number) {
-      const { id, b2Id } = createBody('line', b2BodyType.b2_staticBody, { x: 0, y: 0 });
+    addLine(segments: readonly Segment[], thickness: number, surface: Surface) {
+      const { id, b2Id } = createBody('line', b2BodyType.b2_staticBody, { x: 0, y: 0 }, surface);
       for (const segment of segments) {
         const capsule = new b2Capsule();
         capsule.center1 = toB2(segment.a);
         capsule.center2 = toB2(segment.b);
         capsule.radius = toM(thickness / 2);
-        b2CreateCapsuleShape(b2Id, shapeDef(false), capsule);
+        b2CreateCapsuleShape(b2Id, shapeDef(surface, false), capsule);
       }
       return id;
     },
@@ -276,8 +289,15 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       // fixed bodies don't touch each other, so Frozen Objects never wake
       // each other and Lines or Terrain never wake them.
       const type = def.frozen ? b2BodyType.b2_staticBody : b2BodyType.b2_dynamicBody;
-      const { id, b2Id } = createBody('object', type, def.position, def.frozen, def.parts);
-      for (const part of def.parts) addPolygon(b2Id, part, true);
+      const { id, b2Id } = createBody(
+        'object',
+        type,
+        def.position,
+        def.surface,
+        def.frozen,
+        def.parts,
+      );
+      for (const part of def.parts) addPolygon(b2Id, part, def.surface, true);
       return id;
     },
 
@@ -297,7 +317,7 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       const hits: ContactHit[] = [];
       const wakes = new Map<
         BodyId,
-        { hitter: BodyId; point: b2Vec2; normal: b2Vec2; speed: number }
+        { hitter: BodyId; point: b2Vec2; normal: b2Vec2; speed: number; restitution: number }
       >();
       for (const event of b2World_GetContactEvents(worldId).hitEvents) {
         const a = bodyIdOfShape(event.shapeIdA);
@@ -320,11 +340,22 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
           const current = wakes.get(frozenId);
           if (current && current.speed >= speed) continue;
           const normal = new b2Vec2(sign * event.normalX, sign * event.normalY);
-          wakes.set(frozenId, { hitter: hitterId, point, normal, speed });
+          const restitution = Math.max(
+            b2Shape_GetRestitution(event.shapeIdA),
+            b2Shape_GetRestitution(event.shapeIdB),
+          );
+          wakes.set(frozenId, { hitter: hitterId, point, normal, speed, restitution });
         }
       }
       for (const [frozenId, wake] of wakes) {
-        wakeByHit(frozenId, record(wake.hitter), before.get(wake.hitter), wake.point, wake.normal);
+        wakeByHit(
+          frozenId,
+          record(wake.hitter),
+          before.get(wake.hitter),
+          wake.point,
+          wake.normal,
+          wake.restitution,
+        );
       }
       return hits;
     },

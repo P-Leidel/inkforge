@@ -51,6 +51,7 @@ export class BallCannon implements StressTest {
         { x: LINE_X, y: LINE_TOP },
         { x: LINE_X, y: LINE_BOTTOM },
       ]),
+      'grey',
       { lineThickness: BallCannon.LINE_THICKNESS },
     );
     if (!world.isRunning) world.togglePause();
@@ -65,7 +66,7 @@ export class BallCannon implements StressTest {
     const direction = { x: Math.cos(angle), y: Math.sin(angle) };
     const start = { x: target.x - RANGE * direction.x, y: target.y - RANGE * direction.y };
 
-    const outcome = this.world.submitStroke(dragCircle(start, BallCannon.BALL_RADIUS));
+    const outcome = this.world.submitStroke(dragCircle(start, BallCannon.BALL_RADIUS), 'grey');
     if (outcome.kind !== 'object') return;
     const speed = BallCannon.BALL_SPEED;
     this.world.release(outcome.id, { x: speed * direction.x, y: speed * direction.y });
