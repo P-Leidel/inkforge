@@ -55,20 +55,23 @@ Strokes never join: no welds, hinges or pivots ([ADR 0003](adr/0003-no-joints-in
 - Lines may cross each other freely.
 - A Line running into Terrain is cut at the Terrain surface.
 - A Line crossing an enemy or the Ink Core is cut there.
-- An Object may touch anything but overlap nothing (Terrain, Lines, other Objects, enemies, the Ink Core). An overlapping Object shows red and is refused.
-- Ink is only charged for the parts of a Stroke that don't lie on top of existing ink.
+- A Line may cross an Object, and an Object may be drawn over a Line. The overlap stays until physics runs, then the Object is squeezed out. A Frozen Object overlapped by a Line is Released when the Wave starts, so drawing a Line through an Object is a way to shove it.
+- An Object may touch anything but may not overlap Terrain, other Objects, enemies or the Ink Core. An overlapping Object shows red and is refused.
+- Ink is only charged for the parts of a Stroke that don't lie on top of existing ink (section 10).
 
 ### 6.3 Outline and Fill
 
 - The **Outline** Colour decides how an Object touches the world.
 - The **Fill** Colour decides its weight or effect. Fill by clicking inside a closed Object with a Colour selected; the whole inside fills and costs ink by area.
-- An unfilled Object is a light, hollow shell that weighs only what its Outline weighs.
+- An unfilled Object is a light, hollow shell that weighs only what its Outline weighs. It still collides as a solid shape: nothing can get inside it.
 - Outline cost scales with length, Fill cost with area, so an Object's weight roughly matches the ink spent on it.
 - **When an Object breaks, its Fill comes out.**
 
 ### 6.4 Frozen Objects
 
 Every Object starts **Frozen**, including those drawn during a Wave. It hangs where it was drawn until something hits it or the player **Releases** it with a right-click ([ADR 0004](adr/0004-objects-start-frozen.md)). Frozen Objects have a visible pinned look.
+
+Only a hit from a moving body above a small impact threshold wakes a Frozen Object; resting contact doesn't, and two Frozen Objects touching never wake each other. The waking collision plays out normally.
 
 ## 7. Colours
 
@@ -115,6 +118,7 @@ Enemies are physics bodies. They always walk toward the Ink Core over whatever t
 ## 10. Ink economy
 
 - Each Colour has an **Ink Tank** with a maximum. Red and black are the rarest Colours.
+- **Overlap charging:** only the parts of a Line that lie on another Line are free. Where a Line crosses an Object, or an Object is drawn over a Line, it costs full price, since the Object is about to be pushed away.
 - **Build Phase:** draw anywhere at the normal cost. Undo refunds fully. Erasing a Stroke from an earlier Wave gives no ink back.
 - **Wave:** Build Phase leftovers become **Locked Ink**. They stay in the Tank but can't be spent. The player can only spend **Wave Ink** (dropped by kills in this Wave), and only inside the **Core Zone**, a visible circle about a quarter of the screen wide ([ADR 0005](adr/0005-wave-drawing-uses-wave-ink.md)).
 - **Drops:** enemies drop random amounts of every Colour, weighted by enemy type. Drops are picked up automatically on death. Drops that don't fit in the Tank are lost, so saving ink leaves less room for drops.
@@ -160,7 +164,7 @@ Arenas assembled by a seed from handmade modules, not random geometry.
 
 ## 15. Roadmap
 
-1. **Physics sandbox.** Stroke-to-physics pipeline (pointer input → sampling → smoothing → simplification → geometry validation → collider → body), Lines and Objects, Frozen state. Includes the engine stress test: fast balls vs thin Lines, stacked boxes, 100 pebbles.
+1. **Physics sandbox** ([spec](specs/m1-physics-sandbox.md)). Stroke-to-physics pipeline (pointer input → sampling → smoothing → simplification → geometry validation → collider → body), Lines and Objects, Frozen state. Includes the engine stress test: fast balls vs thin Lines, stacked boxes, 100 pebbles.
 2. **Colours.** All five, Outline and Fill, Spills, explosions, breaking.
 3. **Ink economy.** Tanks, costs, overlap charging, Locked and Wave Ink, drops.
 4. **Enemies and Ink Core.** Walkers, wall pressing, damage, the Core Zone.
