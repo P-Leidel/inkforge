@@ -132,3 +132,9 @@ A slow, heavy walker that wears down Lines quickly.
 
 **Siege Walker**:
 The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with physics rather than raw damage.
+
+### Simulation
+
+**Arena contents**:
+Everything the simulation tracks and Reset brings back: Strokes (with their Pieces and Fills), Rubble, and later Droplets, Patches, Bonds, Blasts and enemies. Debris is not part of it.
+_Avoid_: Entities, world state
