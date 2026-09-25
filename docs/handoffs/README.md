@@ -4,6 +4,7 @@ One handoff per remaining agent slice of milestone 2. Each is for a fresh sessio
 
 | Issue | Handoff |
 |---|---|
+| [#24 Arena contents in their own modules](https://github.com/P-Leidel/inkforge/issues/24) | [24-arena-contents.md](24-arena-contents.md) |
 | [#17 Green](https://github.com/P-Leidel/inkforge/issues/17) | [17-green.md](17-green.md) |
 | [#18 Spills and Patches](https://github.com/P-Leidel/inkforge/issues/18) | [18-spills-and-patches.md](18-spills-and-patches.md) |
 | [#19 Red Objects and Blasts](https://github.com/P-Leidel/inkforge/issues/19) | [19-red-objects-and-blasts.md](19-red-objects-and-blasts.md) |
@@ -12,13 +13,13 @@ One handoff per remaining agent slice of milestone 2. Each is for a fresh sessio
 
 [#22](https://github.com/P-Leidel/inkforge/issues/22) (the blind check and the frame rate) is for a person, so it has no handoff.
 
-The issues form a chain: each is blocked by the one before it. Start an issue only once the one before it is closed and CI is green on `main`. To start one, open a session on this repository and say:
+The issues form a chain, in the order of the table: each is blocked by the one before it. #24 is a refactor inserted before #17 by the [architecture review after #16](../adr/reports/architecture-review-2026-09-25.html). Start an issue only once the one before it is closed and CI is green on `main`. To start one, open a session on this repository and say:
 
-> Implement issue #17 of P-Leidel/inkforge. Read `docs/handoffs/README.md`, then `docs/handoffs/17-green.md`, and follow them.
+> Implement issue #24 of P-Leidel/inkforge. Read `docs/handoffs/README.md`, then `docs/handoffs/24-arena-contents.md`, and follow them.
 
 ## How fresh these are
 
-These were written on 2026-09-25 against the code at `1e13bc5`, the commit that closed #15 (Lines break Piece by Piece). Anything they say about code from #16 onwards is a plan, not a fact.
+These were written on 2026-09-25 against the code at `1e13bc5`, the commit that closed #15 (Lines break Piece by Piece). Anything they say about code from #16 onwards is a plan, not a fact. The #24 handoff was written later the same day against `1560bd3`, the commit that closed #16; #17–#21 don't know about #24 yet, and #24 updates them.
 
 - The code on `main` wins where it disagrees with a handoff. So do the commit messages of the slices before yours; each ends with "Decisions the spec left open:". Read those for every slice since #14 (`git log --oneline`), before you design anything.
 - Each handoff's design section is a proposal. Change it when the code argues otherwise, and record why in your commit message.

@@ -1,6 +1,6 @@
 # Handoff: #17 Green
 
-Issue: https://github.com/P-Leidel/inkforge/issues/17 (slice 8 of 13; blocked by #16). Read [README.md](README.md) first: it has the working agreement, the checks and the engine facts every slice needs.
+Issue: https://github.com/P-Leidel/inkforge/issues/17 (slice 8 of 13; blocked by #24, the Arena contents refactor). Read [README.md](README.md) first: it has the working agreement, the checks and the engine facts every slice needs.
 
 Anything moving across a green Line Piece slows right down (heavier things less), and the Piece wears as it works. A green Object sticks once to the first new thing it touches after it starts moving, and falls free for good when either side breaks. Green Patches come with Spills in #18.
 
