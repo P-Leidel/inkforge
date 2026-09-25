@@ -28,7 +28,7 @@ const BLACK_RIM = 0x8a909e;
 const FUSE_STRIPE = 0x7a1a14;
 
 /** A repeatable pseudo-random value in [0, 1) for pattern placement (not simulation). */
-function hash(n: number): number {
+export function hash(n: number): number {
   const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
   return x - Math.floor(x);
 }

@@ -123,7 +123,21 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     approachSpeed: number;
   }
 
+  export class b2ContactBeginTouchEvent {
+    shapeIdA: b2ShapeId;
+    shapeIdB: b2ShapeId;
+    manifold: b2Manifold;
+  }
+
+  export class b2ContactEndTouchEvent {
+    shapeIdA: b2ShapeId;
+    shapeIdB: b2ShapeId;
+  }
+
+  /** The last step's events; the arrays are emptied at the start of every step. */
   export class b2ContactEvents {
+    beginEvents: b2ContactBeginTouchEvent[];
+    endEvents: b2ContactEndTouchEvent[];
     hitEvents: b2ContactHitEvent[];
     hitCount: number;
   }
@@ -185,6 +199,7 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     capsule: b2Capsule,
   ): b2ShapeId;
   export function b2Shape_GetBody(shapeId: b2ShapeId): b2BodyId;
+  export function b2Shape_GetUserData(shapeId: b2ShapeId): unknown;
   export function b2Shape_GetRestitution(shapeId: b2ShapeId): number;
   export function b2Shape_SetDensity(shapeId: b2ShapeId, density: number): void;
   export function b2Shape_SetFriction(shapeId: b2ShapeId, friction: number): void;
@@ -192,6 +207,12 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   /** Fills `contactData` with the shape's touching contacts, up to `capacity`; returns how many. */
   export function b2Shape_GetContactData(
     shapeId: b2ShapeId,
+    contactData: b2ContactData[],
+    capacity: number,
+  ): number;
+  /** Fills `contactData` with the body's touching contacts, up to `capacity`; returns how many. */
+  export function b2Body_GetContactData(
+    bodyId: b2BodyId,
     contactData: b2ContactData[],
     capacity: number,
   ): number;

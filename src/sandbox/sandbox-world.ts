@@ -24,6 +24,8 @@ import {
   type StrokeResult,
 } from '../stroke/stroke-pipeline';
 import { SANDBOX_ARENA, type Arena } from './arena';
+import { Debris, type DebrisParticle } from './debris';
+import { durabilityLeft, MaterialRules, wear, type Party } from './material-rules';
 import { Random } from './random';
 
 /** Fixed physics step: 60 Hz. */
@@ -32,6 +34,13 @@ export const STEP_SECONDS = 1 / 60;
 export const GRAVITY = 1000;
 /** Speed (px/s) at which a Line squeezes an Object off itself; Box2D's push-out cap. */
 export const SLIDE_OUT_SPEED = 250;
+/**
+ * A Line crossing an Object less deeply than this (px) only touches it: a
+ * moving Object resting on a Line sinks into it a little, and isn't squeezed.
+ */
+const SQUEEZE_TOLERANCE = 1;
+/** Seed of the Debris' own random generator, apart from the simulation's. */
+const DEBRIS_SEED = 0x0deb415;
 /** At most this many steps per `advance`, so a long frame can't stall the game. */
 const MAX_STEPS_PER_ADVANCE = 8;
 
@@ -60,6 +69,12 @@ export interface ObjectView {
   /** The Colour of its Fill, or null while it is hollow. */
   readonly fill: Colour | null;
   readonly mass: number;
+  /** Damage it can still take before it breaks. */
+  readonly durability: number;
+  /** Hits above its damage threshold so far (blue breaks on its third). */
+  readonly impacts: number;
+  /** How near it is to breaking, from 0 (whole) to 1: what its cracks show. */
+  readonly wear: number;
 }
 
 /** What a submitted Stroke became. */
@@ -97,6 +112,10 @@ interface ObjectStroke {
   readonly outlineMass: number;
   /** Its Fill's mass, set when it was filled. */
   fillMass: number;
+  /** Damage taken so far. */
+  damage: number;
+  /** Hits above its damage threshold so far. */
+  impacts: number;
 }
 
 type Stroke = LineStroke | ObjectStroke;
@@ -123,6 +142,8 @@ interface Snapshot {
   readonly history: readonly Action[];
   readonly random: number;
   readonly time: number;
+  /** Contacts touching when it was taken: they deal no damage until they separate. */
+  readonly settled: readonly string[];
 }
 
 export interface SandboxWorldOptions {
@@ -144,6 +165,9 @@ export class SandboxWorld {
   readonly random: Random;
   readonly materials: MaterialTable;
   private readonly physics: PhysicsWorld;
+  private readonly rules: MaterialRules;
+  private readonly debris = new Debris(new Random(DEBRIS_SEED), GRAVITY);
+  private terrainBody: BodyId;
   /** Taken whenever physics starts; R returns to it. */
   private snapshot: Snapshot | null = null;
   /** The material table as it was last applied to the physics world. */
@@ -167,7 +191,8 @@ export class SandboxWorld {
       wakeSpeed: this.materials.wakeSpeed,
       minBounceSpeed: this.materials.minBounceSpeed,
     });
-    this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
+    this.terrainBody = this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
+    this.rules = new MaterialRules(this.materials);
   }
 
   /** Whether physics is running (stands in for the Wave) rather than paused (the Build Phase). */
@@ -192,6 +217,11 @@ export class SandboxWorld {
     return this.objectStrokes().map((s) => this.viewObject(s));
   }
 
+  /** Debris particles in flight. */
+  get debrisParticles(): readonly DebrisParticle[] {
+    return this.debris.views;
+  }
+
   private viewObject(stroke: ObjectStroke): ObjectView {
     return {
       id: stroke.id,
@@ -203,6 +233,9 @@ export class SandboxWorld {
       frozen: this.physics.isFrozen(stroke.body),
       fill: stroke.fill,
       mass: this.physics.getMass(stroke.body),
+      durability: durabilityLeft(stroke, this.materials),
+      impacts: stroke.impacts,
+      wear: wear(stroke, this.materials),
     };
   }
 
@@ -222,16 +255,17 @@ export class SandboxWorld {
       case 'line': {
         const id = this.nextStrokeId++;
         const body = this.physics.addLine(result.segments, result.thickness, material.line);
-        this.strokes.push({
+        const line: LineStroke = {
           kind: 'line',
           id,
           colour,
           body,
           segments: result.segments,
           thickness: result.thickness,
-        });
+        };
+        this.strokes.push(line);
         this.history.push({ kind: 'stroke', id });
-        this.releaseObjectsUnderLines();
+        if (this.running) this.squeeze(this.objectStrokes(), [line]);
         return { kind: 'line', id };
       }
       case 'object': {
@@ -249,7 +283,7 @@ export class SandboxWorld {
           surface: material.outline,
           mass,
         });
-        this.strokes.push({
+        const object: ObjectStroke = {
           kind: 'object',
           id,
           colour,
@@ -259,9 +293,12 @@ export class SandboxWorld {
           fill: null,
           outlineMass: mass,
           fillMass: 0,
-        });
+          damage: 0,
+          impacts: 0,
+        };
+        this.strokes.push(object);
         this.history.push({ kind: 'stroke', id });
-        this.releaseObjectsUnderLines();
+        if (this.running) this.squeeze([object], this.lineStrokes());
         return { kind: 'object', id };
       }
       case 'rejected':
@@ -291,6 +328,10 @@ export class SandboxWorld {
     return this.strokes.filter((s): s is ObjectStroke => s.kind === 'object');
   }
 
+  private lineStrokes(): LineStroke[] {
+    return this.strokes.filter((s): s is LineStroke => s.kind === 'line');
+  }
+
   /** An Object's collider parts where the Object is now. */
   private worldParts(stroke: ObjectStroke): Polygon[] {
     const transform = this.physics.getTransform(stroke.body);
@@ -298,25 +339,25 @@ export class SandboxWorld {
   }
 
   /**
-   * While physics runs, a Frozen Object overlapped by a Line is Released and
-   * squeezed out: drawing a Line through an Object shoves it. It slides the
-   * shortest way off the Line at the push-out speed, then physics takes over.
-   * (Box2D's own push-out jams bodies made of several convex parts on a
-   * Line deep inside them, since each part is pushed out on its own.)
+   * Squeezes each of `objects` that one of `lines` crosses off the Lines
+   * crossing it: drawing a Line through an Object, moving or Frozen, shoves
+   * it. It slides the shortest way off at the push-out speed, passing
+   * through Lines and Terrain, and then restarts from rest. (Box2D's own
+   * push-out jams bodies made of several convex parts on a Line deep inside
+   * them, since each part is pushed out on its own.) A sliding Object deals
+   * and takes no damage.
    */
-  private releaseObjectsUnderLines(): void {
-    if (!this.running) return;
-    const lines = this.strokes.filter((s): s is LineStroke => s.kind === 'line');
-    const capsules = lines.flatMap((line) =>
-      line.segments.map((segment) => ({ segment, radius: line.thickness / 2 })),
-    );
-    for (const object of this.objectStrokes()) {
-      if (!this.physics.isFrozen(object.body)) continue;
+  private squeeze(objects: readonly ObjectStroke[], lines: readonly LineStroke[]): void {
+    const capsulesOf = (line: LineStroke) =>
+      line.segments.map((segment) => ({ segment, radius: line.thickness / 2 }));
+    const trigger = lines.flatMap(capsulesOf);
+    const capsules = this.lineStrokes().flatMap(capsulesOf);
+    for (const object of objects) {
       const parts = this.worldParts(object);
-      const crossing = capsules.filter(({ segment: { a, b }, radius }) =>
-        parts.some((part) => capsuleOverlapsPolygon(a, b, radius, part)),
-      );
-      if (crossing.length === 0) continue;
+      const crosses = ({ segment: { a, b }, radius }: (typeof capsules)[number]) =>
+        parts.some((part) => capsuleOverlapsPolygon(a, b, radius - SQUEEZE_TOLERANCE, part));
+      if (!trigger.some(crosses)) continue;
+      const crossing = capsules.filter(crosses);
       const others = this.objectStrokes()
         .filter((o) => o !== object)
         .flatMap((o) => this.worldParts(o));
@@ -396,7 +437,10 @@ export class SandboxWorld {
     this.history = this.history.filter((action) => action.id !== id);
   }
 
-  /** Takes back the most recent Stroke or Fill. */
+  /**
+   * Takes back the most recent Stroke or Fill that still exists. Broken
+   * Objects are gone from the history, so undo skips them.
+   */
   undo(): void {
     const action = this.history.pop();
     if (!action) return;
@@ -408,12 +452,24 @@ export class SandboxWorld {
     if (object) this.setFill(object, null);
   }
 
-  /** Removes every Stroke and Fill; the Terrain stays. R has nothing to go back to. */
+  /**
+   * Removes every Stroke and Fill and the Debris; the Terrain stays. R has
+   * nothing to go back to.
+   */
   clear(): void {
     for (const stroke of this.strokes) this.physics.removeBody(stroke.body);
     this.strokes = [];
     this.history = [];
     this.snapshot = null;
+    this.debris.clear();
+  }
+
+  /** Breaks an Object: its body is removed and Debris bursts from it. */
+  private breakObject(object: ObjectStroke): void {
+    const outline = transformPoints(object.outline, this.physics.getTransform(object.body));
+    const colours = object.fill ? [object.colour, object.fill] : [object.colour];
+    this.debris.burst(outline, this.physics.getVelocity(object.body), colours);
+    this.remove(object.id);
   }
 
   /**
@@ -428,7 +484,7 @@ export class SandboxWorld {
     if (!this.running) return;
     this.snapshot = this.takeSnapshot();
     this.rebuild(this.snapshot);
-    this.releaseObjectsUnderLines();
+    this.squeeze(this.objectStrokes(), this.lineStrokes());
   }
 
   /**
@@ -440,6 +496,7 @@ export class SandboxWorld {
     const snapshot = this.snapshot;
     if (!snapshot) return;
     this.rebuild(snapshot);
+    this.debris.clear();
     this.history = [...snapshot.history];
     this.random.state = snapshot.random;
     this.elapsed = snapshot.time;
@@ -460,6 +517,22 @@ export class SandboxWorld {
       history: [...this.history],
       random: this.random.state,
       time: this.elapsed,
+      settled: this.rules.pairKeys(this.physics.touchingPairs(), this.partyFinder()),
+    };
+  }
+
+  /** Who each body is to the Material rules. */
+  private partyFinder(): (body: BodyId) => Party<ObjectStroke> | null {
+    const byBody = new Map(this.strokes.map((stroke) => [stroke.body, stroke]));
+    return (body) => {
+      if (body === this.terrainBody) return { key: 'terrain', target: null, sliding: false };
+      const stroke = byBody.get(body);
+      if (!stroke) return null;
+      return {
+        key: `stroke ${stroke.id}`,
+        target: stroke.kind === 'object' ? stroke : null,
+        sliding: this.physics.getSlide(body) !== null,
+      };
     };
   }
 
@@ -495,7 +568,8 @@ export class SandboxWorld {
   /** Rebuilds the physics world from a snapshot's Strokes, from a fresh engine state. */
   private rebuild(snapshot: Snapshot): void {
     this.physics.reset();
-    this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
+    this.terrainBody = this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
+    this.rules.settle(snapshot.settled);
     this.strokes = snapshot.strokes.map((saved): Stroke => {
       const material = this.materials.colours[saved.colour];
       if (saved.kind === 'line') {
@@ -524,8 +598,15 @@ export class SandboxWorld {
   step(): void {
     if (!this.running) return;
     this.applyMaterials();
-    this.physics.step();
+    const report = this.physics.step();
     this.elapsed += STEP_SECONDS;
+    this.debris.step(STEP_SECONDS);
+    const broken = this.rules.applyStep(
+      report,
+      () => this.physics.touchingPairs(),
+      this.partyFinder(),
+    );
+    for (const object of broken) this.breakObject(object);
   }
 
   /** Advances by real elapsed time, in whole fixed steps; the remainder carries over. */

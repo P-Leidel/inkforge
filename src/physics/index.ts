@@ -6,10 +6,13 @@
 export type {
   BodyId,
   ContactHit,
+  ContactPair,
   ObjectBodyDef,
   PhysicsWorld,
   PhysicsWorldFactory,
   PhysicsWorldOptions,
+  ShapeId,
+  StepReport,
   Surface,
 } from './physics-world';
 export { createBox2dPhysicsWorld as createPhysicsWorld } from './box2d/box2d-physics-world';

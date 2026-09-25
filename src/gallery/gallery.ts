@@ -115,4 +115,33 @@ export const KNOCK_DEMO: Demo = {
   },
 };
 
-export const GALLERY: readonly Demo[] = [BOUNCE_DEMO, SLIDE_DEMO, KNOCK_DEMO];
+/**
+ * A 60 px box of each Outline Colour dropped from high up: red breaks, grey
+ * and green crack, black barely notices, and blue cracks and bounces until
+ * its third impact breaks it. F1 shows what durability each has left.
+ */
+export const DROP_DEMO: Demo = {
+  name: 'Drop',
+  build(world) {
+    const boxes = COLOURS.map((colour, k) =>
+      drawObject(world, dragBox(90 + 170 * k, 100, 60, 60), colour),
+    );
+    letGo(world, boxes);
+  },
+};
+
+/** A blue ball bouncing on the ground: it cracks on each bounce and breaks on the third. */
+export const THIRD_BOUNCE_DEMO: Demo = {
+  name: 'Third bounce',
+  build(world) {
+    letGo(world, [drawObject(world, dragCircle({ x: 480, y: 250 }, 20), 'blue')]);
+  },
+};
+
+export const GALLERY: readonly Demo[] = [
+  BOUNCE_DEMO,
+  SLIDE_DEMO,
+  KNOCK_DEMO,
+  DROP_DEMO,
+  THIRD_BOUNCE_DEMO,
+];

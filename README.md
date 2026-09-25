@@ -40,19 +40,23 @@ CI runs lint, format check, typecheck, tests and build on every push and pull re
 | Run / pause physics                           | Space                         |
 | Reset to when physics last started            | R                             |
 | Release a Frozen Object (while running)       | Right-click it                |
-| Undo the last Stroke or Fill                  | Ctrl+Z                        |
-| Debug overlay (colliders, bodies, fps)        | F1                            |
+| Undo the last Stroke or Fill still there      | Ctrl+Z                        |
+| Debug overlay (colliders, durability, fps)    | F1                            |
 | Tuning panel (edit the material table live)   | F2                            |
 
 Each Colour is a material with its own hue and texture: grey is grainy, blue glossy, green drippy, black solid and red striped like a fuse. Blue is bouncy and slippery, black grips hardest, and grey is the plain material. An unfilled Object is a light, hollow shell; its Fill adds weight by area, blue half as much as grey and black three times as much. A hit only wakes a Frozen Object that it would really set moving, so a light ball can't wake a heavy box.
 
-Every time physics starts, the sandbox takes a snapshot, and R takes the world back to it and pauses, so you can build, watch it play out and try again. A retry plays out exactly like the first run: every start rebuilds the physics world from its snapshot.
+Hard hits break Objects. An impact whose impulse (how hard the hit stops or throws a body; heavier and faster hits harder) beats an Object's damage threshold wears away its durability, both sides checked against their own Outline Colour. Resting and sliding never do damage, and the Terrain takes none. Objects crack in three stages as they wear, and at zero durability they burst into Debris that falls through everything and fades. Red is the most fragile and black by far the toughest; a blue Object also breaks on its third hard impact. Frozen Objects take damage too, so a hit that is too weak to wake one can still crack or break it. Lines don't break yet. F1 shows the durability each Object has left, and a blue Object's impacts so far (×1/3).
 
-F2 opens a panel with every number of the material table ([`src/materials/material-table.ts`](src/materials/material-table.ts)): friction, bounce and density per Colour and role, and the shared constants. Edits apply from the next physics step (densities to Objects drawn or filled afterwards), survive R and Clear, and are lost on reload; **Copy as JSON** copies the table to paste back over the defaults in the code. Changed values are outlined in yellow, and **Defaults** puts them all back.
+Drawing a Line through an Object, moving or Frozen, squeezes the Object off the Line: it slides the shortest way off, passing through Lines and Terrain, and then restarts from rest. While it slides, it deals and takes no damage.
+
+Every time physics starts, the sandbox takes a snapshot, and R takes the world back to it and pauses, so you can build, watch it play out and try again. A retry plays out exactly like the first run: every start rebuilds the physics world from its snapshot. R brings back broken Objects with the damage they had. Contacts touching when physics starts deal no damage until they come apart, so pressing Space never breaks a build. Undo skips Strokes that have broken, and Clear also sweeps away the Debris.
+
+F2 opens a panel with every number of the material table ([`src/materials/material-table.ts`](src/materials/material-table.ts)): friction, bounce, density, durability, damage threshold and impact limit per Colour and role, and the shared constants such as damage per impulse. Edits apply from the next physics step (densities to Objects drawn or filled afterwards), survive R and Clear, and are lost on reload; **Copy as JSON** copies the table to paste back over the defaults in the code. Changed values are outlined in yellow, and **Defaults** puts them all back.
 
 The toolbar clears the Arena and runs the engine stress tests: **Ball cannon** (3000 px/s balls at a 4 px Line), **Box tower** (10 drawn boxes) and **Pebbles** (100 drawn pebbles). Each shows its measurements under the toolbar.
 
-The **Gallery** row below it clears the Arena and plays a ready-made demo of the Colours: **Bounce** drops the same ball onto a Line of each Colour, **Slide** puts the same box on a ramp of each Colour, and **Knock** throws the same ball at a hollow, a grey-filled and a black-filled box.
+The **Gallery** row below it clears the Arena and plays a ready-made demo of the Colours: **Bounce** drops the same ball onto a Line of each Colour, **Slide** puts the same box on a ramp of each Colour, **Knock** throws the same ball at a hollow, a grey-filled and a black-filled box, **Drop** drops a box of each Colour from high up, and **Third bounce** bounces a blue ball until its third bounce breaks it.
 
 ## Project structure
 

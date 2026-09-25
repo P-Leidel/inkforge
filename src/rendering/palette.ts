@@ -9,6 +9,9 @@ export const PALETTE = {
   selection: 0xf0c05a,
   rejected: 0xff5a5a,
   debug: 0x39ff88,
+  crack: 0x16171b,
+  /** Cracks on black ink, which a dark crack wouldn't show on. */
+  crackOnBlack: 0xc9ced8,
   text: '#e8e2d0',
   textMuted: '#9aa0ad',
   running: '#62d98b',

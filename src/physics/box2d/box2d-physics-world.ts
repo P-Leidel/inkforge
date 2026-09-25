@@ -2,6 +2,7 @@ import {
   b2Body_ApplyLinearImpulse,
   b2Body_ApplyMassFromShapes,
   b2Body_GetAngularVelocity,
+  b2Body_GetContactData,
   b2Body_GetInertiaTensor,
   b2Body_GetLinearVelocity,
   b2Body_GetMass,
@@ -34,6 +35,7 @@ import {
   b2Shape_GetBody,
   b2Shape_GetContactData,
   b2Shape_GetRestitution,
+  b2Shape_GetUserData,
   b2Shape_SetDensity,
   b2Shape_SetFriction,
   b2Shape_SetRestitution,
@@ -55,9 +57,11 @@ import type { Vec2 } from '../../geometry/vec2';
 import type {
   BodyId,
   ContactHit,
+  ContactPair,
   ObjectBodyDef,
   PhysicsWorld,
   PhysicsWorldOptions,
+  ShapeId,
   Surface,
 } from '../physics-world';
 
@@ -90,6 +94,8 @@ const NO_MASS: UnitMass = { area: 0, centre: new b2Vec2(0, 0), inertia: 0 };
 interface BodyRecord {
   b2Id: b2BodyId;
   readonly kind: BodyKind;
+  /** Its shapes' ids: an Object's by part, kept when it is rebuilt. */
+  readonly shapes: readonly ShapeId[];
   frozen: boolean;
   /** An Object's convex parts in body coordinates, to rebuild it on Release. */
   readonly parts: readonly Polygon[];
@@ -149,7 +155,18 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
   const bodies = new Map<BodyId, BodyRecord>();
   /** Objects sliding out of Lines. */
   const sliding = new Map<BodyId, Slide>();
+  /** Shape pairs touching now, by `pairKey`. */
+  const touching = new Map<string, ContactPair>();
+  /** Contacts ended between steps (a body removed), for the next report. */
+  let pendingEnds: ContactPair[] = [];
+  /**
+   * Bodies rebuilt since the last step. The engine forgets their contacts
+   * without an end event and reports them beginning again, so their pairs
+   * are checked against the engine after the next step.
+   */
+  const rebuilt = new Set<BodyId>();
   let nextId = 1;
+  let nextShapeId = 1;
   let destroyed = false;
 
   function record(id: BodyId): BodyRecord {
@@ -167,24 +184,31 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     return b2CreateBody(worldId, def);
   }
 
-  function createBody(
-    kind: BodyKind,
-    type: number,
-    position: Vec2,
-    surface: Surface,
-    frozen = false,
-    parts: readonly Polygon[] = [],
-    unit: UnitMass = NO_MASS,
-    density = 1,
-  ) {
-    const id = nextId++ as BodyId;
-    const b2Id = makeB2Body(id, type, toB2(position));
-    bodies.set(id, { b2Id, kind, frozen, parts, surface, unit, density });
-    return { id, b2Id };
+  /** New ids for `count` shapes. */
+  function newShapeIds(count: number): ShapeId[] {
+    return Array.from({ length: count }, () => nextShapeId++ as ShapeId);
   }
 
-  function shapeDef(surface: Surface, hitEvents: boolean, density = 1) {
+  function createFixedBody(kind: BodyKind, shapeCount: number, surface: Surface) {
+    const id = nextId++ as BodyId;
+    const b2Id = makeB2Body(id, b2BodyType.b2_staticBody, new b2Vec2(0, 0));
+    const shapes = newShapeIds(shapeCount);
+    bodies.set(id, {
+      b2Id,
+      kind,
+      shapes,
+      frozen: false,
+      parts: [],
+      surface,
+      unit: NO_MASS,
+      density: 1,
+    });
+    return { b2Id, id, shapes };
+  }
+
+  function shapeDef(shape: ShapeId, surface: Surface, hitEvents: boolean, density = 1) {
     const def = b2DefaultShapeDef();
+    def.userData = shape;
     def.density = density;
     def.friction = surface.friction;
     def.restitution = surface.restitution;
@@ -204,13 +228,23 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
 
   function addPolygon(
     bodyId: b2BodyId,
+    shape: ShapeId,
     polygon: Polygon,
     surface: Surface,
     hitEvents: boolean,
     density = 1,
   ) {
-    const shape = makePolygon(polygon);
-    if (shape) b2CreatePolygonShape(bodyId, shapeDef(surface, hitEvents, density), shape);
+    const b2Polygon = makePolygon(polygon);
+    if (b2Polygon) {
+      b2CreatePolygonShape(bodyId, shapeDef(shape, surface, hitEvents, density), b2Polygon);
+    }
+  }
+
+  /** Creates an Object's shapes on its (new) body. */
+  function addParts(rec: BodyRecord): void {
+    rec.parts.forEach((part, k) =>
+      addPolygon(rec.b2Id, rec.shapes[k]!, part, rec.surface, true, rec.density),
+    );
   }
 
   function unitMassOf(parts: readonly Polygon[]): UnitMass {
@@ -236,6 +270,69 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
 
   function bodyIdOfShape(shapeId: b2ShapeId): BodyId {
     return b2Body_GetUserData(b2Shape_GetBody(shapeId)) as BodyId;
+  }
+
+  const pairKey = (a: ShapeId, b: ShapeId) => (a < b ? `${a} ${b}` : `${b} ${a}`);
+
+  /** The pair two engine shapes make, ordered as the engine gives them. */
+  function pairOf(shapeIdA: b2ShapeId, shapeIdB: b2ShapeId): ContactPair {
+    return {
+      bodyA: bodyIdOfShape(shapeIdA),
+      bodyB: bodyIdOfShape(shapeIdB),
+      shapeA: b2Shape_GetUserData(shapeIdA) as ShapeId,
+      shapeB: b2Shape_GetUserData(shapeIdB) as ShapeId,
+    };
+  }
+
+  const contactBuffer = Array.from({ length: 64 }, () => new b2ContactData());
+
+  /**
+   * Brings `touching` up to date with the step's begin and end events.
+   * Returns the pairs that really began and ended: a rebuilt body's contacts
+   * begin again in the engine without having ended.
+   */
+  function trackContacts(): { begins: ContactPair[]; ends: ContactPair[] } {
+    const events = b2World_GetContactEvents(worldId);
+    const begins: ContactPair[] = [];
+    const ends = pendingEnds;
+    pendingEnds = [];
+    for (const event of events.endEvents) {
+      const pair = pairOf(event.shapeIdA, event.shapeIdB);
+      const key = pairKey(pair.shapeA, pair.shapeB);
+      if (touching.delete(key)) ends.push(pair);
+    }
+    for (const event of events.beginEvents) {
+      const pair = pairOf(event.shapeIdA, event.shapeIdB);
+      const key = pairKey(pair.shapeA, pair.shapeB);
+      if (touching.has(key)) continue;
+      touching.set(key, pair);
+      begins.push(pair);
+    }
+    if (rebuilt.size > 0) {
+      const still = new Set<string>();
+      for (const id of rebuilt) {
+        const rec = bodies.get(id);
+        if (!rec) continue;
+        const count = b2Body_GetContactData(rec.b2Id, contactBuffer, contactBuffer.length);
+        for (let i = 0; i < count; i++) {
+          const { shapeIdA, shapeIdB } = contactBuffer[i]!;
+          still.add(
+            pairKey(
+              b2Shape_GetUserData(shapeIdA) as ShapeId,
+              b2Shape_GetUserData(shapeIdB) as ShapeId,
+            ),
+          );
+        }
+      }
+      for (const [key, pair] of touching) {
+        if (!rebuilt.has(pair.bodyA) && !rebuilt.has(pair.bodyB)) continue;
+        if (still.has(key)) continue;
+        touching.delete(key);
+        ends.push(pair);
+      }
+      rebuilt.clear();
+    }
+    return { begins, ends };
   }
 
   interface Motion {
@@ -275,10 +372,12 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
    * Phaser Box2D 1.1.0's b2Body_SetType never moves a fixed body into the
    * simulated set (it tests b2BodyType.staticBody, which doesn't exist), so a
    * Frozen Object is unfrozen by replacing its fixed body with a dynamic one
-   * of the same shape and pose.
+   * of the same shape and pose. A slide replaces an Object's body with a
+   * kinematic one the same way, and the new body starts at rest.
    */
-  function unfreeze(id: BodyId, rec: BodyRecord, type: number = b2BodyType.b2_dynamicBody): void {
+  function rebuild(id: BodyId, rec: BodyRecord, type: number = b2BodyType.b2_dynamicBody): void {
     rec.frozen = false;
+    rebuilt.add(id);
     // The getters return the body's live transform, which destroying the body
     // may reset, so copy the pose first.
     const p = b2Body_GetPosition(rec.b2Id);
@@ -286,7 +385,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     const rotation = b2MakeRot(b2Rot_GetAngle(b2Body_GetRotation(rec.b2Id)));
     b2DestroyBody(rec.b2Id);
     rec.b2Id = makeB2Body(id, type, position, rotation);
-    for (const part of rec.parts) addPolygon(rec.b2Id, part, rec.surface, true, rec.density);
+    addParts(rec);
   }
 
   /** Advances sliding Objects; one that has arrived becomes dynamic, at rest. */
@@ -307,7 +406,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
         continue;
       }
       sliding.delete(id);
-      unfreeze(id, rec, b2BodyType.b2_dynamicBody);
+      rebuild(id, rec, b2BodyType.b2_dynamicBody);
     }
   }
 
@@ -352,24 +451,44 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     restitution: number,
   ): number {
     const rh = { x: point.x - hitter.centre.x, y: point.y - hitter.centre.y };
-    const rt = { x: point.x - target.centre.x, y: point.y - target.centre.y };
     // Velocity of the hitter at the contact point.
     const vx = motion.v.x - motion.w * rh.y;
     const vy = motion.v.y + motion.w * rh.x;
     const approach = vx * normal.x + vy * normal.y;
+    return impactImpulse(approach, [hitter, target], point, normal, restitution);
+  }
+
+  /**
+   * The impulse that stops two bodies approaching at `approach` m/s along
+   * `normal` at `point` and bounces them apart with `restitution`: the
+   * approach over the pair's effective inverse mass there. A null side is
+   * immovable.
+   */
+  function impactImpulse(
+    approach: number,
+    sides: readonly (Inertial | null)[],
+    point: b2Vec2,
+    normal: b2Vec2,
+    restitution: number,
+  ): number {
     if (approach <= 0) return 0;
-    const rhn = rh.x * normal.y - rh.y * normal.x;
-    const rtn = rt.x * normal.y - rt.y * normal.x;
-    const k =
-      hitter.invMass +
-      target.invMass +
-      hitter.invInertia * rhn * rhn +
-      target.invInertia * rtn * rtn;
+    let k = 0;
+    for (const side of sides) {
+      if (!side) continue;
+      const rn = (point.x - side.centre.x) * normal.y - (point.y - side.centre.y) * normal.x;
+      k += side.invMass + side.invInertia * rn * rn;
+    }
+    if (k === 0) return 0;
     const bounce = approach >= toM(options.minBounceSpeed) ? restitution : 0;
     return ((1 + bounce) * approach) / k;
   }
 
-  const contactBuffer = Array.from({ length: 64 }, () => new b2ContactData());
+  /** A body's mass properties in a hit, or null if it can't be moved by one. */
+  function hitInertial(rec: BodyRecord): Inertial | null {
+    if (rec.kind !== 'object' || rec.frozen) return null;
+    if (b2Body_GetType(rec.b2Id) !== b2BodyType.b2_dynamicBody) return null; // sliding
+    return movingInertial(rec);
+  }
 
   /**
    * Where the collision between two shapes acted as a whole: their contact
@@ -406,12 +525,22 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
   function wakeByHit(frozenId: BodyId, wake: Wake): void {
     const frozen = record(frozenId);
     const hitter = record(wake.hitter);
-    unfreeze(frozenId, frozen);
+    rebuild(frozenId, frozen);
     b2Body_SetLinearVelocity(hitter.b2Id, wake.motion.v);
     b2Body_SetAngularVelocity(hitter.b2Id, wake.motion.w);
     const { point, normal, j } = wake;
     b2Body_ApplyLinearImpulse(hitter.b2Id, new b2Vec2(-j * normal.x, -j * normal.y), point, true);
     b2Body_ApplyLinearImpulse(frozen.b2Id, new b2Vec2(j * normal.x, j * normal.y), point, true);
+  }
+
+  function bodyIdOf(b2Id: b2BodyId): BodyId {
+    return b2Body_GetUserData(b2Id) as BodyId;
+  }
+
+  function clearContacts(): void {
+    touching.clear();
+    rebuilt.clear();
+    pendingEnds = [];
   }
 
   const world: PhysicsWorld = {
@@ -420,21 +549,21 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     },
 
     addTerrain(polygons, surface) {
-      const { id, b2Id } = createBody('terrain', b2BodyType.b2_staticBody, { x: 0, y: 0 }, surface);
-      for (const polygon of polygons) addPolygon(b2Id, polygon, surface, false);
-      return id;
+      const { b2Id, shapes } = createFixedBody('terrain', polygons.length, surface);
+      polygons.forEach((polygon, k) => addPolygon(b2Id, shapes[k]!, polygon, surface, false));
+      return bodyIdOf(b2Id);
     },
 
     addLine(segments: readonly Segment[], thickness: number, surface: Surface) {
-      const { id, b2Id } = createBody('line', b2BodyType.b2_staticBody, { x: 0, y: 0 }, surface);
-      for (const segment of segments) {
+      const { b2Id, shapes } = createFixedBody('line', segments.length, surface);
+      segments.forEach((segment, k) => {
         const capsule = new b2Capsule();
         capsule.center1 = toB2(segment.a);
         capsule.center2 = toB2(segment.b);
         capsule.radius = toM(thickness / 2);
-        b2CreateCapsuleShape(b2Id, shapeDef(surface, false), capsule);
-      }
-      return id;
+        b2CreateCapsuleShape(b2Id, shapeDef(shapes[k]!, surface, false), capsule);
+      });
+      return bodyIdOf(b2Id);
     },
 
     addObject(def: ObjectBodyDef) {
@@ -446,16 +575,18 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       const density = unit.area > 0 ? def.mass / unit.area : 0;
       const id = nextId++ as BodyId;
       const b2Id = makeB2Body(id, type, toB2(def.position), b2MakeRot(def.angle ?? 0));
-      bodies.set(id, {
+      const rec: BodyRecord = {
         b2Id,
         kind: 'object',
+        shapes: newShapeIds(def.parts.length),
         frozen: def.frozen,
         parts: def.parts,
         surface: def.surface,
         unit,
         density,
-      });
-      for (const part of def.parts) addPolygon(b2Id, part, def.surface, true, density);
+      };
+      bodies.set(id, rec);
+      addParts(rec);
       if (!def.frozen) {
         if (def.velocity) b2Body_SetLinearVelocity(b2Id, toB2(def.velocity));
         if (def.angularVelocity) b2Body_SetAngularVelocity(b2Id, def.angularVelocity);
@@ -464,9 +595,17 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     },
 
     removeBody(id) {
-      b2DestroyBody(record(id).b2Id);
+      const rec = record(id);
+      b2DestroyBody(rec.b2Id);
       bodies.delete(id);
       sliding.delete(id);
+      rebuilt.delete(id);
+      // The engine's end events for these are lost at the next step's start.
+      for (const [key, pair] of touching) {
+        if (pair.bodyA !== id && pair.bodyB !== id) continue;
+        touching.delete(key);
+        pendingEnds.push(pair);
+      }
     },
 
     step() {
@@ -475,57 +614,82 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
 
       advanceSlides();
       b2World_Step(worldId, options.timeStep, SUB_STEPS);
+      const { begins, ends } = trackContacts();
 
       const hits: ContactHit[] = [];
       const wakes = new Map<BodyId, Wake>();
       for (const event of b2World_GetContactEvents(worldId).hitEvents) {
-        const a = bodyIdOfShape(event.shapeIdA);
-        const b = bodyIdOfShape(event.shapeIdB);
-        const speed = toPx(event.approachSpeed);
+        const pair = pairOf(event.shapeIdA, event.shapeIdB);
+        const a = pair.bodyA;
+        const b = pair.bodyB;
+        const recA = record(a);
+        const recB = record(b);
         const hitPoint = new b2Vec2(event.pointX, event.pointY);
+        const point = contactCentre(event.shapeIdA, event.shapeIdB, hitPoint);
+        // The manifold normal points from A to B.
+        const normal = new b2Vec2(event.normalX, event.normalY);
+        const restitution = Math.max(
+          b2Shape_GetRestitution(event.shapeIdA),
+          b2Shape_GetRestitution(event.shapeIdB),
+        );
+        const impulse = impactImpulse(
+          event.approachSpeed,
+          [hitInertial(recA), hitInertial(recB)],
+          point,
+          normal,
+          restitution,
+        );
         hits.push({
-          bodyA: a,
-          bodyB: b,
-          point: { x: toPx(hitPoint.x), y: toPx(hitPoint.y) },
-          speed,
+          ...pair,
+          point: { x: toPx(point.x), y: toPx(point.y) },
+          normal: { x: normal.x, y: normal.y },
+          speed: toPx(event.approachSpeed),
+          impulse: toPx(impulse),
         });
 
-        // The manifold normal points from A to B.
-        const pairs: [BodyId, BodyId, number][] = [
+        const sides: [BodyId, BodyId, number][] = [
           [b, a, 1],
           [a, b, -1],
         ];
-        for (const [frozenId, hitterId, sign] of pairs) {
+        for (const [frozenId, hitterId, sign] of sides) {
           const frozen = bodies.get(frozenId);
           const hitter = bodies.get(hitterId);
           if (!frozen?.frozen || !hitter) continue;
           if (b2Body_GetType(hitter.b2Id) !== b2BodyType.b2_dynamicBody) continue;
           const motion = before.get(hitterId);
           if (!motion) continue;
-          const point = contactCentre(event.shapeIdA, event.shapeIdB, hitPoint);
-          const normal = new b2Vec2(sign * event.normalX, sign * event.normalY);
-          const restitution = Math.max(
-            b2Shape_GetRestitution(event.shapeIdA),
-            b2Shape_GetRestitution(event.shapeIdB),
-          );
+          const towards = new b2Vec2(sign * normal.x, sign * normal.y);
           const target = frozenInertial(frozen);
           const j = collisionImpulse(
             movingInertial(hitter),
             motion,
             target,
             point,
-            normal,
+            towards,
             restitution,
           );
           const push = j * target.invMass;
           if (toPx(push) <= options.wakeSpeed) continue;
           const current = wakes.get(frozenId);
           if (current && current.push >= push) continue;
-          wakes.set(frozenId, { hitter: hitterId, motion, point, normal, j, push });
+          wakes.set(frozenId, { hitter: hitterId, motion, point, normal: towards, j, push });
         }
       }
-      for (const [frozenId, wake] of wakes) wakeByHit(frozenId, wake);
-      return hits;
+      for (const [frozenId, wake] of wakes) {
+        wakeByHit(frozenId, wake);
+        // The hit that woke it played out between two free bodies.
+        const k = hits.findIndex(
+          (hit) =>
+            (hit.bodyA === frozenId && hit.bodyB === wake.hitter) ||
+            (hit.bodyB === frozenId && hit.bodyA === wake.hitter),
+        );
+        if (k >= 0) hits[k] = { ...hits[k]!, impulse: toPx(wake.j) };
+      }
+      return { hits, begins, ends };
+    },
+
+    touchingPairs() {
+      return [...touching.values()];
     },
 
     isFrozen(id) {
@@ -534,19 +698,19 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
 
     release(id) {
       const rec = record(id);
-      if (rec.frozen) unfreeze(id, rec);
+      if (rec.frozen) rebuild(id, rec);
     },
 
     slideOut(id, displacement, speed) {
       const rec = record(id);
-      if (!rec.frozen) return;
       const distance = Math.hypot(displacement.x, displacement.y);
+      sliding.delete(id);
       if (distance === 0 || speed <= 0) {
-        unfreeze(id, rec);
+        rebuild(id, rec);
         return;
       }
       // A kinematic body moves at a set velocity and passes through fixed bodies.
-      unfreeze(id, rec, b2BodyType.b2_kinematicBody);
+      rebuild(id, rec, b2BodyType.b2_kinematicBody);
       const k = speed / distance;
       const velocity = toB2({ x: displacement.x * k, y: displacement.y * k });
       b2Body_SetLinearVelocity(rec.b2Id, velocity);
@@ -619,7 +783,9 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       worldId = createB2World(options);
       bodies.clear();
       sliding.clear();
+      clearContacts();
       nextId = 1;
+      nextShapeId = 1;
     },
 
     destroy() {
@@ -627,6 +793,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       destroyed = true;
       bodies.clear();
       sliding.clear();
+      clearContacts();
       destroyB2World(worldId);
     },
   };

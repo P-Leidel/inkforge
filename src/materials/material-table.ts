@@ -16,6 +16,12 @@ export interface SurfaceMaterial {
 export interface OutlineMaterial extends SurfaceMaterial {
   /** Weight of its ink (length × Line thickness) relative to plain ink. */
   density: number;
+  /** Damage an Object takes before it breaks. */
+  durability: number;
+  /** Hits with a smaller impulse (mass × px/s) than this don't damage the Object. */
+  damageThreshold: number;
+  /** An Object breaks on this many hits above its damage threshold; 0 for no limit. */
+  impactLimit: number;
 }
 
 export interface FillMaterial {
@@ -40,6 +46,8 @@ export interface MaterialTable {
    * 1.44 / (4 × 60 px × 8 px).
    */
   inkMass: number;
+  /** Damage per unit of impulse above the receiver's damage threshold. */
+  damagePerImpulse: number;
   /** Contacts approaching slower than this (px/s) don't bounce, whatever their restitution. */
   minBounceSpeed: number;
   /**
@@ -58,31 +66,67 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   colours: {
     grey: {
       line: { friction: 0.6, restitution: 0.1 },
-      outline: { friction: 0.6, restitution: 0.1, density: 1 },
+      outline: {
+        friction: 0.6,
+        restitution: 0.1,
+        density: 1,
+        durability: 2400,
+        damageThreshold: 400,
+        impactLimit: 0,
+      },
       fill: { density: 1 },
     },
     blue: {
       line: { friction: 0.1, restitution: 0.9 },
-      outline: { friction: 0.1, restitution: 0.9, density: 0.5 },
+      outline: {
+        friction: 0.1,
+        restitution: 0.9,
+        density: 0.5,
+        durability: 2000,
+        damageThreshold: 200,
+        impactLimit: 3,
+      },
       fill: { density: 0.5 },
     },
     green: {
       line: { friction: 0.6, restitution: 0 },
-      outline: { friction: 0.6, restitution: 0, density: 1 },
+      outline: {
+        friction: 0.6,
+        restitution: 0,
+        density: 1,
+        durability: 2400,
+        damageThreshold: 400,
+        impactLimit: 0,
+      },
       fill: { density: 1 },
     },
     black: {
       line: { friction: 1, restitution: 0 },
-      outline: { friction: 1, restitution: 0, density: 3 },
+      outline: {
+        friction: 1,
+        restitution: 0,
+        density: 3,
+        durability: 20000,
+        damageThreshold: 2000,
+        impactLimit: 0,
+      },
       fill: { density: 3 },
     },
     red: {
       line: { friction: 0.6, restitution: 0.1 },
-      outline: { friction: 0.6, restitution: 0.1, density: 1 },
+      outline: {
+        friction: 0.6,
+        restitution: 0.1,
+        density: 1,
+        durability: 250,
+        damageThreshold: 300,
+        impactLimit: 0,
+      },
       fill: { density: 1 },
     },
   },
   inkMass: 0.00075,
+  damagePerImpulse: 1,
   minBounceSpeed: 50,
   wakeSpeed: 82.5,
 };

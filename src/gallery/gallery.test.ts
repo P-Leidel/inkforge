@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS } from '../materials/colour';
 import { runFor, sandboxWorlds } from '../sandbox/test-support';
-import { BOUNCE_DEMO, GALLERY, KNOCK_DEMO, SLIDE_DEMO } from './gallery';
+import {
+  BOUNCE_DEMO,
+  DROP_DEMO,
+  GALLERY,
+  KNOCK_DEMO,
+  SLIDE_DEMO,
+  THIRD_BOUNCE_DEMO,
+} from './gallery';
 
 const createWorld = sandboxWorlds();
 
@@ -63,5 +70,34 @@ describe('Colour gallery', () => {
     expect(hollow!.velocity.x).toBeGreaterThan(1.5 * grey!.velocity.x);
     expect(grey!.frozen).toBe(false);
     expect(black!.frozen).toBe(true);
+  });
+
+  it('Drop: red breaks, grey, blue and green crack, black is barely scratched', () => {
+    const world = createWorld();
+    DROP_DEMO.build(world);
+
+    runFor(world, 3);
+
+    const wear = Object.fromEntries(world.objects.map((o) => [o.colour, o.wear]));
+    expect(Object.keys(wear)).toEqual(['grey', 'blue', 'green', 'black']);
+    for (const colour of ['grey', 'blue', 'green'] as const) {
+      expect(wear[colour]).toBeGreaterThan(0.25); // cracked
+      expect(wear[colour]).toBeLessThan(1);
+    }
+    expect(wear.black).toBeLessThan(0.25);
+  });
+
+  it('Third bounce: the blue ball breaks on its third bounce', () => {
+    const world = createWorld();
+    THIRD_BOUNCE_DEMO.build(world);
+    let impacts = 0;
+
+    for (let step = 0; step < 600 && world.objects.length > 0; step++) {
+      impacts = world.objects[0]!.impacts;
+      world.step();
+    }
+
+    expect(world.objects).toHaveLength(0);
+    expect(impacts).toBe(2); // the third impact broke it
   });
 });

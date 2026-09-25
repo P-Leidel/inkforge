@@ -58,13 +58,46 @@ export interface ObjectBodyDef {
   readonly angularVelocity?: number;
 }
 
-/** A contact reported by a step, with its impact strength. */
-export interface ContactHit {
+/**
+ * Opaque handle to one shape of a body: a part of an Object, a capsule of a
+ * Line, a polygon of the Terrain. It stays the same when an Object's body is
+ * rebuilt (Release, waking, slide-out).
+ */
+export type ShapeId = number & { readonly __brand: 'ShapeId' };
+
+/** Two shapes touching, and the bodies they belong to. */
+export interface ContactPair {
   readonly bodyA: BodyId;
   readonly bodyB: BodyId;
+  readonly shapeA: ShapeId;
+  readonly shapeB: ShapeId;
+}
+
+/** A hit reported by a step: two shapes meeting at speed. */
+export interface ContactHit extends ContactPair {
+  /** Where the collision acted as a whole. */
   readonly point: Vec2;
-  /** Approach speed along the contact normal, px/s. */
+  /** Unit contact normal, from A towards B. */
+  readonly normal: Vec2;
+  /** Approach speed along the normal, px/s. */
   readonly speed: number;
+  /**
+   * The impact impulse (mass × px/s): the collision played out between the
+   * two bodies at `point`, with their bounce, as the Frozen wake plays it.
+   * Fixed and sliding bodies, and Frozen Objects the hit doesn't wake, count
+   * as immovable; a Frozen Object it wakes counts with its mass.
+   */
+  readonly impulse: number;
+}
+
+/** What one step did to contacts. */
+export interface StepReport {
+  /** Every hit between shapes of which at least one belongs to an Object. */
+  readonly hits: readonly ContactHit[];
+  /** Pairs of shapes that started touching. */
+  readonly begins: readonly ContactPair[];
+  /** Pairs of shapes that stopped touching, also because a body was removed. */
+  readonly ends: readonly ContactPair[];
 }
 
 export interface PhysicsWorld {
@@ -81,17 +114,22 @@ export interface PhysicsWorld {
   /**
    * Advances the simulation by one fixed step. A Frozen Object hit hard
    * enough by a moving body (see `wakeSpeed`) wakes, and the hit plays out as
-   * if it had been free. Returns the step's contacts involving Objects.
+   * if it had been free. Reports the step's hits and the contacts that
+   * began and ended.
    */
-  step(): readonly ContactHit[];
+  step(): StepReport;
+
+  /** Every pair of shapes touching now. */
+  touchingPairs(): readonly ContactPair[];
 
   isFrozen(id: BodyId): boolean;
   /** Unfreezes an Object so it falls and moves freely. */
   release(id: BodyId): void;
   /**
-   * Unfreezes an Object by sliding it `displacement` px in a straight line at
-   * `speed` px/s, passing through fixed bodies (Terrain, Lines) but pushing
-   * moving ones, then lets it move freely from rest.
+   * Slides an Object, Frozen or moving, `displacement` px in a straight line
+   * at `speed` px/s, passing through fixed bodies (Terrain, Lines) but
+   * pushing moving ones, then lets it move freely from rest. A Frozen Object
+   * is unfrozen.
    */
   slideOut(id: BodyId, displacement: Vec2, speed: number): void;
 
