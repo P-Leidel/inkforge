@@ -98,6 +98,8 @@ function acquireWorld(gravity: Vec2): b2WorldId {
 export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWorld {
   const worldId = acquireWorld(options.gravity);
   const bodies = new Map<BodyId, BodyRecord>();
+  /** Objects sliding out of Lines: seconds of sliding left. */
+  const sliding = new Map<BodyId, number>();
   let nextId = 1;
   let destroyed = false;
 
@@ -176,13 +178,32 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
    * Frozen Object is unfrozen by replacing its fixed body with a dynamic one
    * of the same shape and pose.
    */
-  function unfreeze(id: BodyId, rec: BodyRecord): void {
+  function unfreeze(id: BodyId, rec: BodyRecord, type: number = b2BodyType.b2_dynamicBody): void {
     rec.frozen = false;
     const position = b2Body_GetPosition(rec.b2Id);
     const rotation = b2Body_GetRotation(rec.b2Id);
     b2DestroyBody(rec.b2Id);
-    rec.b2Id = makeB2Body(id, b2BodyType.b2_dynamicBody, position, rotation);
+    rec.b2Id = makeB2Body(id, type, position, rotation);
     for (const part of rec.parts) addPolygon(rec.b2Id, part, true);
+  }
+
+  /** Advances sliding Objects; one that has arrived becomes dynamic, at rest. */
+  function advanceSlides(): void {
+    for (const [id, remaining] of sliding) {
+      const rec = record(id);
+      if (remaining > 1e-9) {
+        if (remaining < options.timeStep) {
+          // Shorten the last step so the slide ends exactly where it should.
+          const v = b2Body_GetLinearVelocity(rec.b2Id);
+          const k = remaining / options.timeStep;
+          b2Body_SetLinearVelocity(rec.b2Id, new b2Vec2(v.x * k, v.y * k));
+        }
+        sliding.set(id, remaining - options.timeStep);
+        continue;
+      }
+      sliding.delete(id);
+      unfreeze(id, rec, b2BodyType.b2_dynamicBody);
+    }
   }
 
   /**
@@ -263,12 +284,14 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     removeBody(id) {
       b2DestroyBody(record(id).b2Id);
       bodies.delete(id);
+      sliding.delete(id);
     },
 
     step() {
       const hasFrozen = [...bodies.values()].some((rec) => rec.frozen);
       const before = hasFrozen ? snapshotMotion() : new Map<BodyId, Motion>();
 
+      advanceSlides();
       b2World_Step(worldId, options.timeStep, SUB_STEPS);
 
       const hits: ContactHit[] = [];
@@ -313,6 +336,21 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     release(id) {
       const rec = record(id);
       if (rec.frozen) unfreeze(id, rec);
+    },
+
+    slideOut(id, displacement, speed) {
+      const rec = record(id);
+      if (!rec.frozen) return;
+      const distance = Math.hypot(displacement.x, displacement.y);
+      if (distance === 0 || speed <= 0) {
+        unfreeze(id, rec);
+        return;
+      }
+      // A kinematic body moves at a set velocity and passes through fixed bodies.
+      unfreeze(id, rec, b2BodyType.b2_kinematicBody);
+      const k = speed / distance;
+      b2Body_SetLinearVelocity(rec.b2Id, toB2({ x: displacement.x * k, y: displacement.y * k }));
+      sliding.set(id, distance / speed);
     },
 
     getTransform(id): Transform {

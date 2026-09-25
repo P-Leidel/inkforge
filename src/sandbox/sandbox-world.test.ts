@@ -3,7 +3,7 @@ import { polygonArea, polygonContainsPoint } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import { capsuleOverlapsPolygon } from '../geometry/overlap';
 import { transformPoints } from '../geometry/transform';
-import { dragAlong, dragBox, dragCircle } from '../stroke/pointer-paths';
+import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
 import { GRAVITY, SandboxWorld } from './sandbox-world';
 
 const worlds: SandboxWorld[] = [];
@@ -487,6 +487,52 @@ describe('Sandbox world: overlap rules', () => {
 
     expect(maxExcess).toBeLessThan(300);
     expect(overlapsAnyLine(world, box)).toBe(false);
+  });
+
+  describe('squeezes any shape off a Line crossing it anywhere', () => {
+    const shapes: [string, () => Vec2[], number][] = [
+      ['a box', () => dragBox(370, 400, 60, 60), 60],
+      ['a wide box', () => dragBox(340, 400, 120, 40), 40],
+      ['a ball', () => dragCircle({ x: 400, y: 430 }, 30), 60],
+      ['a big ball', () => dragCircle({ x: 400, y: 460 }, 60), 120],
+      [
+        'a triangle',
+        () =>
+          dragPolygon([
+            { x: 350, y: 480 },
+            { x: 450, y: 480 },
+            { x: 400, y: 400 },
+          ]),
+        80,
+      ],
+      [
+        'an L',
+        () =>
+          dragPolygon([
+            { x: 360, y: 400 },
+            { x: 390, y: 400 },
+            { x: 390, y: 450 },
+            { x: 440, y: 450 },
+            { x: 440, y: 480 },
+            { x: 360, y: 480 },
+          ]),
+        80,
+      ],
+    ];
+    for (const [name, draw, height] of shapes) {
+      for (const depth of [0.15, 0.3, 0.5, 0.7, 0.85]) {
+        it(`${name}, crossed ${depth * 100}% of the way down`, () => {
+          const world = createWorld();
+          const object = drawObject(world, draw());
+          world.submitStroke(lineThrough(400 + height * depth));
+          world.togglePause();
+
+          runFor(world, 3);
+
+          expect(overlapsAnyLine(world, object)).toBe(false);
+        });
+      }
+    }
   });
 
   it('Releases a Frozen Object at once when a Line is drawn through it while running', () => {

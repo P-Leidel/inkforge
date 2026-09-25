@@ -59,6 +59,12 @@ export interface PhysicsWorld {
   isFrozen(id: BodyId): boolean;
   /** Unfreezes an Object so it falls and moves freely. */
   release(id: BodyId): void;
+  /**
+   * Unfreezes an Object by sliding it `displacement` px in a straight line at
+   * `speed` px/s, passing through fixed bodies (Terrain, Lines) but pushing
+   * moving ones, then lets it move freely from rest.
+   */
+  slideOut(id: BodyId, displacement: Vec2, speed: number): void;
 
   getTransform(id: BodyId): Transform;
   getVelocity(id: BodyId): Vec2;

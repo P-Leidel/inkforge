@@ -1,4 +1,5 @@
 import { capsuleOverlapsPolygon } from '../geometry/overlap';
+import { capsulePolygon, shortestWayOut } from '../geometry/separation';
 import { polygonCentroid, polygonContainsPoint, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import { transformPoints, type Transform } from '../geometry/transform';
@@ -24,6 +25,8 @@ export const STEP_SECONDS = 1 / 60;
 export const GRAVITY = 1000;
 /** Approach speed (px/s) above which a moving body wakes a Frozen Object. Tuned by feel. */
 export const WAKE_SPEED = 150;
+/** Speed (px/s) at which a Line squeezes an Object off itself; Box2D's push-out cap. */
+export const SLIDE_OUT_SPEED = 250;
 /** At most this many steps per `advance`, so a long frame can't stall the game. */
 const MAX_STEPS_PER_ADVANCE = 8;
 
@@ -202,21 +205,38 @@ export class SandboxWorld {
   }
 
   /**
-   * While physics runs, a Frozen Object overlapped by a Line is Released so
-   * physics can squeeze it out: drawing a Line through an Object shoves it.
+   * While physics runs, a Frozen Object overlapped by a Line is Released and
+   * squeezed out: drawing a Line through an Object shoves it. It slides the
+   * shortest way off the Line at the push-out speed, then physics takes over.
+   * (Box2D's own push-out jams bodies made of several convex parts on a
+   * Line deep inside them, since each part is pushed out on its own.)
    */
   private releaseObjectsUnderLines(): void {
     if (!this.running) return;
     const lines = this.strokes.filter((s): s is LineStroke => s.kind === 'line');
+    const capsules = lines.flatMap((line) =>
+      line.segments.map((segment) => ({ segment, radius: line.thickness / 2 })),
+    );
     for (const object of this.objectStrokes()) {
       if (!this.physics.isFrozen(object.body)) continue;
       const parts = this.worldParts(object);
-      const crossed = lines.some((line) =>
-        line.segments.some((s) =>
-          parts.some((part) => capsuleOverlapsPolygon(s.a, s.b, line.thickness / 2, part)),
-        ),
+      const crossing = capsules.filter(({ segment: { a, b }, radius }) =>
+        parts.some((part) => capsuleOverlapsPolygon(a, b, radius, part)),
       );
-      if (crossed) this.physics.release(object.body);
+      if (crossing.length === 0) continue;
+      const others = this.objectStrokes()
+        .filter((o) => o !== object)
+        .flatMap((o) => this.worldParts(o));
+      const clearOf = capsules
+        .filter((c) => !crossing.includes(c))
+        .map((c) => capsulePolygon(c.segment, c.radius));
+      const move = shortestWayOut(
+        parts,
+        crossing.map((c) => capsulePolygon(c.segment, c.radius)),
+        [...this.arena.terrain, ...others, ...clearOf],
+      );
+      if (move) this.physics.slideOut(object.body, move, SLIDE_OUT_SPEED);
+      else this.physics.release(object.body);
     }
   }
 
