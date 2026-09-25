@@ -4,6 +4,7 @@ One handoff per remaining agent slice of milestone 2. Each is for a fresh sessio
 
 | Issue | Handoff |
 |---|---|
+| [#27 Contact ledger](https://github.com/P-Leidel/inkforge/issues/27) | [27-contact-ledger.md](27-contact-ledger.md) |
 | [#17 Green](https://github.com/P-Leidel/inkforge/issues/17) | [17-green.md](17-green.md) |
 | [#18 Spills and Patches](https://github.com/P-Leidel/inkforge/issues/18) | [18-spills-and-patches.md](18-spills-and-patches.md) |
 | [#19 Red Objects and Blasts](https://github.com/P-Leidel/inkforge/issues/19) | [19-red-objects-and-blasts.md](19-red-objects-and-blasts.md) |
@@ -12,13 +13,13 @@ One handoff per remaining agent slice of milestone 2. Each is for a fresh sessio
 
 [#22](https://github.com/P-Leidel/inkforge/issues/22) (the blind check and the frame rate) is for a person, so it has no handoff.
 
-The issues form a chain, in the order of the table: each is blocked by the one before it. The [architecture review after #16](../adr/reports/architecture-review-2026-09-25.html) inserted refactors before #17: #24 (Arena contents in their own modules) is done, and the Contact ledger (its candidate 2) may come next, once it is worked through with the user. Start an issue only once the one before it is closed and CI is green on `main`. To start one, open a session on this repository and say:
+The issues form a chain, in the order of the table: each is blocked by the one before it. The [architecture review after #16](../adr/reports/architecture-review-2026-09-25.html) inserted refactors before #17: #24 (Arena contents in their own modules, its candidate 1) is done, and #27 (the Contact ledger, its candidate 2) comes next. Start an issue only once the one before it is closed and CI is green on `main`. To start one, open a session on this repository and say:
 
-> Implement issue #17 of P-Leidel/inkforge. Read `docs/handoffs/README.md`, then `docs/handoffs/17-green.md`, and follow them.
+> Implement issue #27 of P-Leidel/inkforge. Read `docs/handoffs/README.md`, then `docs/handoffs/27-contact-ledger.md`, and follow them.
 
 ## How fresh these are
 
-These were written on 2026-09-25 against the code at `1e13bc5`, the commit that closed #15 (Lines break Piece by Piece). Anything they say about code from #16 onwards is a plan, not a fact. #16 and #24 updated them to the code they left behind: #24 moved each kind of Arena contents into a module of its own, so every name below from `sandbox-world.ts` was checked against the code after #24.
+These were written on 2026-09-25 against the code at `1e13bc5`, the commit that closed #15 (Lines break Piece by Piece). Anything they say about code from #16 onwards is a plan, not a fact. #16 and #24 updated them to the code they left behind: #24 moved each kind of Arena contents into a module of its own, so every name below from `sandbox-world.ts` was checked against the code after #24. #27's handoff was written against that code (`b245ec7`). The handoffs for #17–#19 were rewritten with it to read contacts from the Contact ledger it plans, so their ledger names are a plan until #27 lands.
 
 - The code on `main` wins where it disagrees with a handoff. So do the commit messages of the slices before yours; each ends with "Decisions the spec left open:". Read those for every slice since #14 (`git log --oneline`), before you design anything.
 - Each handoff's design section is a proposal. Change it when the code argues otherwise, and record why in your commit message.
@@ -49,7 +50,7 @@ These were written on 2026-09-25 against the code at `1e13bc5`, the commit that 
 
 ### Decisions the user made for later slices (2026-09-25)
 
-- **#17.** A green Object never sticks while it slides off a Line. The end of the slide counts as it starting to move, and contacts touching at that moment (usually the Line it slid off) don't count. So it sticks to the next thing it touches.
+- **#27 and #17.** A green Object never sticks while it slides off a Line. The end of the slide counts as it starting to move, and contacts touching at that moment (usually the Line it slid off) don't count. So it sticks to the next thing it touches. The Contact ledger (#27) carries the contact half of this for every rule: a Squeezed Object is out of every channel while it slides, and what it touches in the step its slide ends counts as already touching.
 - **#18.** A hit on a Patch damages the Patch's host by the normal rule. The Patch itself takes no damage, and a blue Patch wears by the impulse of the bounce.
 
 ## Checks and environment

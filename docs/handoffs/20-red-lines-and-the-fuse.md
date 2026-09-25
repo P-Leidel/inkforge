@@ -14,7 +14,7 @@ A red Line burns from end to end like a fuse. Each red Piece explodes with a sma
 
 - **Red Pieces** (#15) break by the normal rule with the red Line values in the table (durability 250, threshold 300 at `1e13bc5`), releasing Debris through `strokes.break` (the world's `breakTarget`). Nothing explodes yet.
 - **Blasts** (#19) are a kind of Arena contents (#24), with size from red ink, the ring, action on arrival, chains through destroyed red, the snapshot, and drawing plus F1.
-- **Squeeze and settled pairs** (#14):
+- **Squeeze and Settled pairs** (#14; `CONTEXT.md`). The Contact ledger (#27) applies both to every rule:
   - An Object drawn over a Line is squeezed off at start. It slides as a kinematic body that touches no fixed body, and deals and takes no damage.
   - Contacts touching at the start deal no damage until they come apart.
 
