@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { polygonContainsPoint } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
-import { dragAlong } from '../stroke/pointer-paths';
+import { dragAlong, dragBox, dragCircle } from '../stroke/pointer-paths';
 import { SandboxWorld } from './sandbox-world';
 
 const worlds: SandboxWorld[] = [];
@@ -204,6 +204,123 @@ describe('Sandbox world: undo and clear', () => {
     world.clear();
 
     expect(world.lines).toHaveLength(0);
+    expect(world.bodyCount).toBe(1);
+  });
+});
+
+function runFor(world: SandboxWorld, seconds: number): void {
+  if (!world.isRunning) world.togglePause();
+  for (let t = 0; t < seconds * 60; t++) world.step();
+}
+
+function objectById(world: SandboxWorld, id: number) {
+  const object = world.objects.find((o) => o.id === id);
+  if (!object) throw new Error(`no Object ${id}`);
+  return object;
+}
+
+function drawObject(world: SandboxWorld, samples: Vec2[]): number {
+  const outcome = world.submitStroke(samples);
+  if (outcome.kind !== 'object') throw new Error(`expected an Object, got ${outcome.kind}`);
+  return outcome.id;
+}
+
+describe('Sandbox world: Objects', () => {
+  it('turns a closed Stroke into a Frozen Object', () => {
+    const world = createWorld();
+
+    const id = drawObject(world, dragBox(300, 300, 60, 60));
+
+    expect(world.objects).toHaveLength(1);
+    expect(objectById(world, id).frozen).toBe(true);
+    expect(world.bodyCount).toBe(2);
+  });
+
+  it('keeps a Frozen Object where it was drawn while physics runs', () => {
+    const world = createWorld();
+    const id = drawObject(world, dragBox(300, 300, 60, 60));
+    const before = objectById(world, id).transform;
+
+    runFor(world, 1);
+
+    expect(objectById(world, id).transform).toEqual(before);
+    expect(objectById(world, id).frozen).toBe(true);
+  });
+
+  it('Releases a Frozen Object under the pointer while running, and it falls', () => {
+    const world = createWorld();
+    const id = drawObject(world, dragBox(300, 300, 60, 60));
+    world.togglePause();
+
+    const released = world.releaseAt({ x: 330, y: 330 });
+    runFor(world, 0.5);
+
+    expect(released).toBe(true);
+    expect(objectById(world, id).frozen).toBe(false);
+    expect(objectById(world, id).transform.y).toBeGreaterThan(330 + 50);
+  });
+
+  it('does not Release while paused', () => {
+    const world = createWorld();
+    const id = drawObject(world, dragBox(300, 300, 60, 60));
+
+    expect(world.releaseAt({ x: 330, y: 330 })).toBe(false);
+    expect(objectById(world, id).frozen).toBe(true);
+  });
+
+  it('does not Release anything when the pointer misses', () => {
+    const world = createWorld();
+    const id = drawObject(world, dragBox(300, 300, 60, 60));
+    world.togglePause();
+
+    expect(world.releaseAt({ x: 500, y: 330 })).toBe(false);
+    expect(objectById(world, id).frozen).toBe(true);
+  });
+
+  it('lands a dropped Object on a Line, which stays put', () => {
+    const world = createWorld();
+    world.submitStroke(
+      dragAlong([
+        { x: 200, y: 500 },
+        { x: 600, y: 500 },
+      ]),
+    );
+    const line = world.lines[0]!.segments;
+    const id = drawObject(world, dragBox(380, 400, 40, 40));
+    world.togglePause();
+    world.releaseAt({ x: 400, y: 420 });
+
+    runFor(world, 2);
+
+    const box = objectById(world, id);
+    // The box's bottom rests on the Line's top surface (y = 500 - 4).
+    expect(box.transform.y + 20).toBeCloseTo(496, 0);
+    expect(world.lines[0]!.segments).toEqual(line);
+  });
+
+  it('collides as a solid shape: a ball rests on a drawn square outline, not inside it', () => {
+    const world = createWorld();
+    drawObject(world, dragBox(320, 520, 160, 160));
+    // A gentle drop (5 px), too soft to wake the Frozen square.
+    const ball = drawObject(world, dragCircle({ x: 400, y: 500 }, 15));
+    world.togglePause();
+    world.releaseAt({ x: 400, y: 500 });
+
+    runFor(world, 1);
+
+    expect(objectById(world, ball).transform.y).toBeCloseTo(520 - 15, -1);
+  });
+
+  it('undo and clear remove Objects too', () => {
+    const world = createWorld();
+    drawObject(world, dragBox(300, 300, 60, 60));
+    drawObject(world, dragBox(500, 300, 60, 60));
+
+    world.undo();
+    expect(world.objects).toHaveLength(1);
+
+    world.clear();
+    expect(world.objects).toHaveLength(0);
     expect(world.bodyCount).toBe(1);
   });
 });

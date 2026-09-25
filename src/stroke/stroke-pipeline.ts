@@ -1,15 +1,19 @@
 import { cutPolylineOutside } from '../geometry/clip';
-import type { Polygon } from '../geometry/polygon';
+import { decomposeConvex } from '../geometry/convex-decomposition';
+import { isSelfIntersecting, polygonArea, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import { distance, lerp, pathLength, type Vec2 } from '../geometry/vec2';
-import { resample } from './sampling';
-import { flattenSpikesOpen, simplifyCapped } from './simplification';
+import { closeRing, isClosingStroke } from './close-detection';
+import { resample, resampleClosed } from './sampling';
+import { flattenSpikesClosed, flattenSpikesOpen, simplifyCapped } from './simplification';
 import { smooth } from './smoothing';
 import {
   LINE_THICKNESS,
   MAX_LINE_SEGMENT_LENGTH,
+  MAX_PIECE_VERTICES,
   MAX_STROKE_POINTS,
   MIN_LINE_LENGTH,
+  MIN_OBJECT_AREA,
   PRESMOOTHING_SIGMA,
   SAMPLE_SPACING,
   SIMPLIFY_TOLERANCE,
@@ -56,7 +60,28 @@ export type StrokeResult =
  */
 export function processStroke(samples: readonly Vec2[], context: StrokeContext): StrokeResult {
   if (samples.length < 2 || pathLength(samples) < MIN_LINE_LENGTH) return { kind: 'dropped' };
-  return processOpenStroke(samples, context);
+  return isClosingStroke(samples)
+    ? processClosedStroke(samples)
+    : processOpenStroke(samples, context);
+}
+
+function processClosedStroke(samples: readonly Vec2[]): StrokeResult {
+  const even = resampleClosed(closeRing(samples), SAMPLE_SPACING);
+  const presmoothed = smooth(even, SAMPLE_SPACING, PRESMOOTHING_SIGMA, true);
+  const flattened = resampleClosed(
+    flattenSpikesClosed(presmoothed, LINE_THICKNESS),
+    SAMPLE_SPACING,
+  );
+  const smoothed = smooth(flattened, SAMPLE_SPACING, SMOOTHING_SIGMA, true);
+  const outline = simplifyCapped(smoothed, SIMPLIFY_TOLERANCE, MAX_STROKE_POINTS, true);
+
+  if (outline.length < 3 || isSelfIntersecting(outline)) {
+    return { kind: 'rejected', reason: 'self-crossing', path: samples };
+  }
+  if (polygonArea(outline) < MIN_OBJECT_AREA) {
+    return { kind: 'rejected', reason: 'too-small', path: samples };
+  }
+  return { kind: 'object', outline, pieces: decomposeConvex(outline, MAX_PIECE_VERTICES) };
 }
 
 function processOpenStroke(samples: readonly Vec2[], context: StrokeContext): StrokeResult {

@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import { transformPoints } from '../geometry/transform';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { strokeCapsule, strokePolygon } from './draw';
 import { PALETTE } from './palette';
@@ -44,6 +45,9 @@ export class DebugOverlay {
     for (const polygon of this.world.arena.terrain) strokePolygon(g, polygon);
     for (const line of this.world.lines) {
       for (const { a, b } of line.segments) strokeCapsule(g, a, b, line.thickness);
+    }
+    for (const object of this.world.objects) {
+      for (const piece of object.pieces) strokePolygon(g, transformPoints(piece, object.transform));
     }
 
     const fps = this.scene.game.loop.actualFps;

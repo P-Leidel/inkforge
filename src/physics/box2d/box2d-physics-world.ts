@@ -10,9 +10,7 @@ import {
   b2Body_GetUserData,
   b2Body_GetWorldCenterOfMass,
   b2Body_SetAngularVelocity,
-  b2Body_SetAwake,
   b2Body_SetLinearVelocity,
-  b2Body_SetType,
   b2BodyType,
   b2Capsule,
   b2ComputeHull,
@@ -33,6 +31,7 @@ import {
   b2World_SetGravity,
   b2World_Step,
   type b2BodyId,
+  type b2Rot,
   type b2ShapeId,
   type b2WorldId,
 } from 'phaser-box2d/dist/PhaserBox2D.js';
@@ -68,9 +67,11 @@ const toB2 = (p: Vec2) => new b2Vec2(toM(p.x), toM(p.y));
 type BodyKind = 'terrain' | 'line' | 'object';
 
 interface BodyRecord {
-  readonly b2Id: b2BodyId;
+  b2Id: b2BodyId;
   readonly kind: BodyKind;
   frozen: boolean;
+  /** An Object's convex pieces in body coordinates, to rebuild it on Release. */
+  readonly pieces: readonly Polygon[];
 }
 
 /*
@@ -106,14 +107,25 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     return rec;
   }
 
-  function createBody(kind: BodyKind, type: number, position: Vec2, frozen: boolean) {
-    const id = nextId++ as BodyId;
+  function makeB2Body(id: BodyId, type: number, position: b2Vec2, rotation?: b2Rot): b2BodyId {
     const def = b2DefaultBodyDef();
     def.type = type;
-    def.position = toB2(position);
+    def.position = position;
+    if (rotation) def.rotation = rotation;
     def.userData = id;
-    const b2Id = b2CreateBody(worldId, def);
-    bodies.set(id, { b2Id, kind, frozen });
+    return b2CreateBody(worldId, def);
+  }
+
+  function createBody(
+    kind: BodyKind,
+    type: number,
+    position: Vec2,
+    frozen = false,
+    pieces: readonly Polygon[] = [],
+  ) {
+    const id = nextId++ as BodyId;
+    const b2Id = makeB2Body(id, type, toB2(position));
+    bodies.set(id, { b2Id, kind, frozen, pieces });
     return { id, b2Id };
   }
 
@@ -158,10 +170,19 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     return motion;
   }
 
-  function unfreeze(rec: BodyRecord): void {
+  /*
+   * Phaser Box2D 1.1.0's b2Body_SetType never moves a fixed body into the
+   * simulated set (it tests b2BodyType.staticBody, which doesn't exist), so a
+   * Frozen Object is unfrozen by replacing its fixed body with a dynamic one
+   * of the same shape and pose.
+   */
+  function unfreeze(id: BodyId, rec: BodyRecord): void {
     rec.frozen = false;
-    b2Body_SetType(rec.b2Id, b2BodyType.b2_dynamicBody);
-    b2Body_SetAwake(rec.b2Id, true);
+    const position = b2Body_GetPosition(rec.b2Id);
+    const rotation = b2Body_GetRotation(rec.b2Id);
+    b2DestroyBody(rec.b2Id);
+    rec.b2Id = makeB2Body(id, b2BodyType.b2_dynamicBody, position, rotation);
+    for (const piece of rec.pieces) addPolygon(rec.b2Id, piece, true);
   }
 
   /**
@@ -171,13 +192,14 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
    * and apply the impulse a free collision would have produced instead.
    */
   function wakeByHit(
-    frozen: BodyRecord,
+    frozenId: BodyId,
     hitter: BodyRecord,
     before: Motion | undefined,
     point: b2Vec2,
     normal: b2Vec2, // from hitter towards the Frozen Object
   ): void {
-    unfreeze(frozen);
+    const frozen = record(frozenId);
+    unfreeze(frozenId, frozen);
     if (!before) return;
     b2Body_SetLinearVelocity(hitter.b2Id, before.v);
     b2Body_SetAngularVelocity(hitter.b2Id, before.w);
@@ -211,13 +233,13 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     },
 
     addTerrain(polygons) {
-      const { id, b2Id } = createBody('terrain', b2BodyType.b2_staticBody, { x: 0, y: 0 }, false);
+      const { id, b2Id } = createBody('terrain', b2BodyType.b2_staticBody, { x: 0, y: 0 });
       for (const polygon of polygons) addPolygon(b2Id, polygon, false);
       return id;
     },
 
     addLine(segments: readonly Segment[], thickness: number) {
-      const { id, b2Id } = createBody('line', b2BodyType.b2_staticBody, { x: 0, y: 0 }, false);
+      const { id, b2Id } = createBody('line', b2BodyType.b2_staticBody, { x: 0, y: 0 });
       for (const segment of segments) {
         const capsule = new b2Capsule();
         capsule.center1 = toB2(segment.a);
@@ -233,7 +255,7 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       // fixed bodies don't touch each other, so Frozen Objects never wake
       // each other and Lines or Terrain never wake them.
       const type = def.frozen ? b2BodyType.b2_staticBody : b2BodyType.b2_dynamicBody;
-      const { id, b2Id } = createBody('object', type, def.position, def.frozen);
+      const { id, b2Id } = createBody('object', type, def.position, def.frozen, def.pieces);
       for (const piece of def.pieces) addPolygon(b2Id, piece, true);
       return id;
     },
@@ -279,13 +301,7 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
         }
       }
       for (const [frozenId, wake] of wakes) {
-        wakeByHit(
-          record(frozenId),
-          record(wake.hitter),
-          before.get(wake.hitter),
-          wake.point,
-          wake.normal,
-        );
+        wakeByHit(frozenId, record(wake.hitter), before.get(wake.hitter), wake.point, wake.normal);
       }
       return hits;
     },
@@ -296,7 +312,7 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
 
     release(id) {
       const rec = record(id);
-      if (rec.frozen) unfreeze(rec);
+      if (rec.frozen) unfreeze(id, rec);
     },
 
     getTransform(id): Transform {

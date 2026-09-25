@@ -1,5 +1,7 @@
+import { polygonCentroid, polygonContainsPoint, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
-import type { Vec2 } from '../geometry/vec2';
+import { transformPoints, type Transform } from '../geometry/transform';
+import { sub, type Vec2 } from '../geometry/vec2';
 import {
   createPhysicsWorld,
   type BodyId,
@@ -28,9 +30,20 @@ export interface LineView {
   readonly thickness: number;
 }
 
+export interface ObjectView {
+  readonly id: StrokeId;
+  /** Outline relative to the body's origin; place it with `transform`. */
+  readonly outline: Polygon;
+  /** Convex collider pieces relative to the body's origin. */
+  readonly pieces: readonly Polygon[];
+  readonly transform: Transform;
+  readonly frozen: boolean;
+}
+
 /** What a submitted Stroke became. */
 export type StrokeOutcome =
   | { readonly kind: 'line'; readonly id: StrokeId }
+  | { readonly kind: 'object'; readonly id: StrokeId }
   | { readonly kind: 'rejected'; readonly reason: RejectionReason; readonly path: readonly Vec2[] }
   | { readonly kind: 'dropped' };
 
@@ -44,7 +57,15 @@ interface LineStroke extends LineView {
   readonly body: BodyId;
 }
 
-type Stroke = LineStroke;
+interface ObjectStroke {
+  readonly kind: 'object';
+  readonly id: StrokeId;
+  readonly body: BodyId;
+  readonly outline: Polygon;
+  readonly pieces: readonly Polygon[];
+}
+
+type Stroke = LineStroke | ObjectStroke;
 
 export interface SandboxWorldOptions {
   readonly seed?: number;
@@ -96,6 +117,22 @@ export class SandboxWorld {
     return this.strokes.filter((s): s is LineStroke => s.kind === 'line');
   }
 
+  get objects(): readonly ObjectView[] {
+    return this.strokes
+      .filter((s): s is ObjectStroke => s.kind === 'object')
+      .map((s) => this.viewObject(s));
+  }
+
+  private viewObject(stroke: ObjectStroke): ObjectView {
+    return {
+      id: stroke.id,
+      outline: stroke.outline,
+      pieces: stroke.pieces,
+      transform: this.physics.getTransform(stroke.body),
+      frozen: this.physics.isFrozen(stroke.body),
+    };
+  }
+
   /** Turns one Stroke's raw pointer samples into a Line, an Object, a rejection or nothing. */
   submitStroke(samples: readonly Vec2[], options: StrokeOptions = {}): StrokeOutcome {
     const result = processStroke(samples, this.strokeContext(options));
@@ -112,9 +149,16 @@ export class SandboxWorld {
         });
         return { kind: 'line', id };
       }
-      case 'object':
-        // Objects arrive with the next slice; until then a closed Stroke is dropped.
-        return { kind: 'dropped' };
+      case 'object': {
+        const id = this.nextStrokeId++;
+        // The body's origin is the outline's centroid; shapes are stored relative to it.
+        const origin = polygonCentroid(result.outline);
+        const local = (polygon: Polygon) => polygon.map((p) => sub(p, origin));
+        const pieces = result.pieces.map(local);
+        const body = this.physics.addObject({ position: origin, pieces, frozen: true });
+        this.strokes.push({ kind: 'object', id, body, outline: local(result.outline), pieces });
+        return { kind: 'object', id };
+      }
       case 'rejected':
         return { kind: 'rejected', reason: result.reason, path: result.path };
       case 'dropped':
@@ -128,6 +172,24 @@ export class SandboxWorld {
       objects: [],
       ...(options.lineThickness !== undefined && { lineThickness: options.lineThickness }),
     };
+  }
+
+  /**
+   * Releases the Frozen Object under `point`, if physics is running. Returns
+   * whether an Object was Released.
+   */
+  releaseAt(point: Vec2): boolean {
+    if (!this.running) return false;
+    // The most recently drawn Object is on top.
+    for (let i = this.strokes.length - 1; i >= 0; i--) {
+      const stroke = this.strokes[i]!;
+      if (stroke.kind !== 'object' || !this.physics.isFrozen(stroke.body)) continue;
+      const outline = transformPoints(stroke.outline, this.physics.getTransform(stroke.body));
+      if (!polygonContainsPoint(outline, point)) continue;
+      this.physics.release(stroke.body);
+      return true;
+    }
+    return false;
   }
 
   /** Removes the most recent Stroke. */

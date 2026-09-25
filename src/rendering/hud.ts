@@ -2,7 +2,8 @@ import type Phaser from 'phaser';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { FONT_FAMILY, PALETTE } from './palette';
 
-const HELP_TEXT = 'Drag: draw    Space: run / pause    Ctrl+Z: undo    F1: debug overlay';
+const HELP_TEXT =
+  'Drag: draw    Right-click: release    Space: run / pause    Ctrl+Z: undo    F1: debug overlay';
 
 /** Pause / running indicator and control hints. */
 export class Hud {

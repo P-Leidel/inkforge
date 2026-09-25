@@ -28,3 +28,12 @@ export function resample(points: readonly Vec2[], spacing: number): Vec2[] {
   else out[out.length - 1] = last;
   return out;
 }
+
+/** Resamples a closed ring at even spacing, including along the closing edge. */
+export function resampleClosed(ring: readonly Vec2[], spacing: number): Vec2[] {
+  const first = ring[0];
+  if (!first) return [];
+  const out = resample([...ring, first], spacing);
+  out.pop(); // the repeated first point
+  return out;
+}

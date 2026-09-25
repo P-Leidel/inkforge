@@ -24,8 +24,9 @@ function measureExcursions(points: readonly Vec2[]) {
 
 /**
  * Whether the path from i to j is a thin spike: it returns to within
- * `thickness` of where it left, and on average it is thinner than
- * `thickness` (a loop or bulge is wider and is kept).
+ * `thickness` of where it left, it is long for its width, and the region it
+ * encloses is clearly thinner than `thickness`. A loop or a small blob is
+ * wider and is kept.
  */
 function isSpike(
   points: readonly Vec2[],
@@ -34,11 +35,13 @@ function isSpike(
   thickness: number,
   measure: ReturnType<typeof measureExcursions>,
 ): boolean {
-  if (distance(points[i]!, points[j]!) >= thickness) return false;
+  const chord = distance(points[i]!, points[j]!);
+  if (chord >= thickness) return false;
   const { length, doubleArea } = measure(i, j);
-  if (length < 2 * thickness) return false; // a small wiggle, not a spike
-  // Enclosed area / half the path length is the excursion's average width.
-  return doubleArea / length < thickness;
+  if (length < 4 * thickness) return false;
+  // 2 · area / perimeter is between half and all of the region's widest
+  // point, so below thickness / 2 the spike is thinner than a Line.
+  return doubleArea / (length + chord) < thickness / 2;
 }
 
 /**

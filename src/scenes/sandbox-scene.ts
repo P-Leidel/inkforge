@@ -57,7 +57,9 @@ export class SandboxScene extends Phaser.Scene {
       Phaser.Input.Events.POINTER_DOWN,
       (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
         if (over.length > 0) return; // a toolbar button
-        if (pointer.leftButtonDown()) this.stroke = [{ x: pointer.worldX, y: pointer.worldY }];
+        const point = { x: pointer.worldX, y: pointer.worldY };
+        if (pointer.leftButtonDown()) this.stroke = [point];
+        else if (pointer.rightButtonDown()) this.world.releaseAt(point);
       },
     );
     this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
