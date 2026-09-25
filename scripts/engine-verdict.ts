@@ -9,7 +9,6 @@
  */
 import os from 'node:os';
 import { capsuleOverlapsPolygon } from '../src/geometry/overlap';
-import { polygonArea } from '../src/geometry/polygon';
 import { transformPoints } from '../src/geometry/transform';
 import type { Vec2 } from '../src/geometry/vec2';
 import { GRAVITY, SandboxWorld, STEP_SECONDS } from '../src/sandbox/sandbox-world';
@@ -150,9 +149,7 @@ function wakeMomentum() {
       world.release(ball.id, { x: speed, y: 0 });
       for (let step = 0; step < 18; step++) world.step();
       const [b, c] = [box.id, ball.id].map((id) => world.objects.find((o) => o.id === id)!);
-      const mBox = polygonArea(b!.outline);
-      const mBall = polygonArea(c!.outline);
-      ratios.push((mBall * c!.velocity.x + mBox * b!.velocity.x) / (mBall * speed));
+      ratios.push((c!.mass * c!.velocity.x + b!.mass * b!.velocity.x) / (c!.mass * speed));
     });
   }
   return ratios;

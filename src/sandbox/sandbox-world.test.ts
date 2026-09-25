@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { polygonArea, polygonContainsPoint } from '../geometry/polygon';
+import { polygonContainsPoint } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import { capsuleOverlapsPolygon } from '../geometry/overlap';
 import { transformPoints } from '../geometry/transform';
@@ -381,11 +381,9 @@ describe('Sandbox world: Frozen Objects wake on hits', () => {
     expect(b.velocity.x).toBeGreaterThan(0);
     // The ball carries on forwards rather than stopping dead as at a wall.
     expect(c.velocity.x).toBeGreaterThan(0);
-    // Uniform density: mass is proportional to area. Momentum is conserved.
-    const massBall = polygonArea(c.outline);
-    const massBox = polygonArea(b.outline);
-    const after = massBall * c.velocity.x + massBox * b.velocity.x;
-    expect(after / (massBall * speed)).toBeCloseTo(1, 1);
+    // Momentum is conserved.
+    const after = c.mass * c.velocity.x + b.mass * b.velocity.x;
+    expect(after / (c.mass * speed)).toBeCloseTo(1, 1);
   });
 
   it('stays Frozen under resting contact', () => {

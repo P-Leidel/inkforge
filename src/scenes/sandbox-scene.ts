@@ -3,7 +3,7 @@ import type { Vec2 } from '../geometry/vec2';
 import { GALLERY, type Demo } from '../gallery/gallery';
 import { COLOURS, type Colour } from '../materials/colour';
 import { DebugOverlay } from '../rendering/debug-overlay';
-import { flashRejection } from '../rendering/rejection-flash';
+import { flashRejection, REJECTION_MESSAGES } from '../rendering/rejection-flash';
 import { Hud } from '../rendering/hud';
 import { PaletteBar } from '../rendering/palette-bar';
 import { StrokePreview } from '../rendering/stroke-preview';
@@ -15,6 +15,8 @@ import { BoxTower } from '../stress-tests/box-tower';
 import { PebbleDrop } from '../stress-tests/pebble-drop';
 import type { StressTest } from '../stress-tests/stress-test';
 import { isClosingStroke } from '../stroke/close-detection';
+import { isFillClick } from '../stroke/fill-click';
+import { transformPoints } from '../geometry/transform';
 
 /** Top edge of the gallery's row of buttons, under the stress-test row. */
 const GALLERY_ROW_TOP = 118;
@@ -126,13 +128,23 @@ export class SandboxScene extends Phaser.Scene {
     this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, finish);
   }
 
+  /** A press and release: a click fills the Object under it, anything longer is a Stroke. */
   private finishStroke(): void {
     const stroke = this.stroke;
     if (!stroke) return;
     this.stroke = null;
+    const pointer = stroke[stroke.length - 1]!;
+    if (isFillClick(stroke)) {
+      const outcome = this.world.fillAt(stroke[0]!, this.colour);
+      if (outcome.kind !== 'already-filled') return;
+      const object = this.world.objects.find((o) => o.id === outcome.id)!;
+      const outline = transformPoints(object.outline, object.transform);
+      flashRejection(this, [...outline, outline[0]!], 'Already filled', pointer);
+      return;
+    }
     const outcome = this.world.submitStroke(stroke, this.colour);
     if (outcome.kind === 'rejected') {
-      flashRejection(this, outcome.path, outcome.reason, stroke[stroke.length - 1]!);
+      flashRejection(this, outcome.path, REJECTION_MESSAGES[outcome.reason], pointer);
     }
   }
 

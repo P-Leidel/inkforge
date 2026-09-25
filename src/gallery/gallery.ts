@@ -1,7 +1,7 @@
 import { add, scale, type Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
 import type { SandboxWorld, StrokeId } from '../sandbox/sandbox-world';
-import { dragAlong, dragCircle, dragPolygon } from '../stroke/pointer-paths';
+import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
 
 /**
  * The Colour gallery: ready-made demos that show each Colour's behaviour
@@ -84,4 +84,24 @@ export const SLIDE_DEMO: Demo = {
   },
 };
 
-export const GALLERY: readonly Demo[] = [BOUNCE_DEMO, SLIDE_DEMO];
+/**
+ * The same ball thrown at a Frozen hollow box, a grey-filled one and a
+ * black-filled one: the heavier the Fill, the less the box moves, and the
+ * black-filled one is too heavy for the ball to wake.
+ */
+export const KNOCK_DEMO: Demo = {
+  name: 'Knock',
+  build(world) {
+    const balls = ([null, 'grey', 'black'] as const).map((fill, k) => {
+      const x = 250 + 450 * k;
+      drawObject(world, dragBox(x, 560, 60, 60), 'grey');
+      if (fill) world.fillAt({ x: x + 30, y: 590 }, fill);
+      // Aimed a little high: it drops 8 px on its way to the box.
+      return drawObject(world, dragCircle({ x: x - 80, y: 582 }, 20), 'grey');
+    });
+    if (!world.isRunning) world.togglePause();
+    for (const ball of balls) world.release(ball, { x: 600, y: 0 });
+  },
+};
+
+export const GALLERY: readonly Demo[] = [BOUNCE_DEMO, SLIDE_DEMO, KNOCK_DEMO];

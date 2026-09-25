@@ -5,6 +5,7 @@ import type { Segment } from '../geometry/segment';
 import { transformPoints, type Transform } from '../geometry/transform';
 import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import { objectMass } from '../materials/mass';
 import {
   createMaterialTable,
   TERRAIN_SURFACE,
@@ -29,8 +30,6 @@ import { Random } from './random';
 export const STEP_SECONDS = 1 / 60;
 /** Gravity, px/s². */
 export const GRAVITY = 1000;
-/** Approach speed (px/s) above which a moving body wakes a Frozen Object. Tuned by feel. */
-export const WAKE_SPEED = 150;
 /** Speed (px/s) at which a Line squeezes an Object off itself; Box2D's push-out cap. */
 export const SLIDE_OUT_SPEED = 250;
 /** At most this many steps per `advance`, so a long frame can't stall the game. */
@@ -58,6 +57,9 @@ export interface ObjectView {
   /** Linear velocity, px/s. */
   readonly velocity: Vec2;
   readonly frozen: boolean;
+  /** The Colour of its Fill, or null while it is hollow. */
+  readonly fill: Colour | null;
+  readonly mass: number;
 }
 
 /** What a submitted Stroke became. */
@@ -66,6 +68,12 @@ export type StrokeOutcome =
   | { readonly kind: 'object'; readonly id: StrokeId }
   | { readonly kind: 'rejected'; readonly reason: RejectionReason; readonly path: readonly Vec2[] }
   | { readonly kind: 'dropped' };
+
+/** What a Fill click did. */
+export type FillOutcome =
+  | { readonly kind: 'filled'; readonly id: StrokeId }
+  | { readonly kind: 'already-filled'; readonly id: StrokeId }
+  | { readonly kind: 'missed' };
 
 export interface StrokeOptions {
   /** Overrides the Line thickness (the stress tests use a thinner Line). */
@@ -84,9 +92,13 @@ interface ObjectStroke {
   readonly body: BodyId;
   readonly outline: Polygon;
   readonly parts: readonly Polygon[];
+  fill: Colour | null;
 }
 
 type Stroke = LineStroke | ObjectStroke;
+
+/** One undo step: a Stroke, or the Fill of an Object. */
+type Action = { readonly kind: 'stroke' | 'fill'; readonly id: StrokeId };
 
 export interface SandboxWorldOptions {
   readonly seed?: number;
@@ -107,8 +119,10 @@ export class SandboxWorld {
   readonly random: Random;
   readonly materials: MaterialTable;
   private readonly physics: PhysicsWorld;
-  /** Strokes in the order they were drawn, for undo. */
+  /** Strokes in the order they were drawn. */
   private strokes: Stroke[] = [];
+  /** Strokes and Fills in the order they were made, for undo. */
+  private history: Action[] = [];
   private nextStrokeId = 1;
   private running = false;
   private accumulator = 0;
@@ -121,7 +135,7 @@ export class SandboxWorld {
     this.physics = (options.createPhysics ?? createPhysicsWorld)({
       gravity: { x: 0, y: GRAVITY },
       timeStep: STEP_SECONDS,
-      wakeSpeed: WAKE_SPEED,
+      wakeSpeed: this.materials.wakeSpeed,
       minBounceSpeed: this.materials.minBounceSpeed,
     });
     this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
@@ -158,6 +172,8 @@ export class SandboxWorld {
       transform: this.physics.getTransform(stroke.body),
       velocity: this.physics.getVelocity(stroke.body),
       frozen: this.physics.isFrozen(stroke.body),
+      fill: stroke.fill,
+      mass: this.physics.getMass(stroke.body),
     };
   }
 
@@ -185,6 +201,7 @@ export class SandboxWorld {
           segments: result.segments,
           thickness: result.thickness,
         });
+        this.history.push({ kind: 'stroke', id });
         this.releaseObjectsUnderLines();
         return { kind: 'line', id };
       }
@@ -193,21 +210,17 @@ export class SandboxWorld {
         // The body's origin is the outline's centroid; shapes are stored relative to it.
         const origin = polygonCentroid(result.outline);
         const local = (polygon: Polygon) => polygon.map((p) => sub(p, origin));
+        const outline = local(result.outline);
         const parts = result.parts.map(local);
         const body = this.physics.addObject({
           position: origin,
           parts,
           frozen: true,
           surface: material.outline,
+          mass: objectMass(outline, colour, null, this.materials),
         });
-        this.strokes.push({
-          kind: 'object',
-          id,
-          colour,
-          body,
-          outline: local(result.outline),
-          parts,
-        });
+        this.strokes.push({ kind: 'object', id, colour, body, outline, parts, fill: null });
+        this.history.push({ kind: 'stroke', id });
         this.releaseObjectsUnderLines();
         return { kind: 'object', id };
       }
@@ -280,20 +293,47 @@ export class SandboxWorld {
     }
   }
 
+  /** The topmost (most recently drawn) Object under `point` where it is now, if any. */
+  private objectAt(point: Vec2, accept: (stroke: ObjectStroke) => boolean = () => true) {
+    for (let i = this.strokes.length - 1; i >= 0; i--) {
+      const stroke = this.strokes[i]!;
+      if (stroke.kind !== 'object' || !accept(stroke)) continue;
+      const outline = transformPoints(stroke.outline, this.physics.getTransform(stroke.body));
+      if (polygonContainsPoint(outline, point)) return stroke;
+    }
+    return null;
+  }
+
   /**
    * Releases the Frozen Object under `point`, if physics is running. Returns
    * whether an Object was Released.
    */
   releaseAt(point: Vec2): boolean {
     if (!this.running) return false;
-    // The most recently drawn Object is on top.
-    for (let i = this.strokes.length - 1; i >= 0; i--) {
-      const stroke = this.strokes[i]!;
-      if (stroke.kind !== 'object' || !this.physics.isFrozen(stroke.body)) continue;
-      const outline = transformPoints(stroke.outline, this.physics.getTransform(stroke.body));
-      if (polygonContainsPoint(outline, point)) return this.release(stroke.id);
-    }
-    return false;
+    const object = this.objectAt(point, (s) => this.physics.isFrozen(s.body));
+    return object ? this.release(object.id) : false;
+  }
+
+  /**
+   * Fills the Object under `point` with `colour`: its mass becomes its
+   * Outline's plus its Fill's. Works paused and running, on Frozen and moving
+   * Objects, and never wakes a Frozen one. An Object holds one Fill.
+   */
+  fillAt(point: Vec2, colour: Colour): FillOutcome {
+    const object = this.objectAt(point);
+    if (!object) return { kind: 'missed' };
+    if (object.fill) return { kind: 'already-filled', id: object.id };
+    this.setFill(object, colour);
+    this.history.push({ kind: 'fill', id: object.id });
+    return { kind: 'filled', id: object.id };
+  }
+
+  private setFill(object: ObjectStroke, fill: Colour | null): void {
+    object.fill = fill;
+    this.physics.setMass(
+      object.body,
+      objectMass(object.outline, object.colour, fill, this.materials),
+    );
   }
 
   /**
@@ -309,24 +349,32 @@ export class SandboxWorld {
     return true;
   }
 
-  /** Removes one Stroke, e.g. a spent stress-test ball. */
+  /** Removes one Stroke with its Fill, e.g. a spent stress-test ball. */
   remove(id: StrokeId): void {
     const index = this.strokes.findIndex((s) => s.id === id);
     if (index < 0) return;
     const [stroke] = this.strokes.splice(index, 1);
     this.physics.removeBody(stroke!.body);
+    this.history = this.history.filter((action) => action.id !== id);
   }
 
-  /** Removes the most recent Stroke. */
+  /** Takes back the most recent Stroke or Fill. */
   undo(): void {
-    const stroke = this.strokes.pop();
-    if (stroke) this.physics.removeBody(stroke.body);
+    const action = this.history.pop();
+    if (!action) return;
+    if (action.kind === 'stroke') {
+      this.remove(action.id);
+      return;
+    }
+    const object = this.objectStrokes().find((s) => s.id === action.id);
+    if (object) this.setFill(object, null);
   }
 
-  /** Removes every Stroke; the Terrain stays. */
+  /** Removes every Stroke and Fill; the Terrain stays. */
   clear(): void {
     for (const stroke of this.strokes) this.physics.removeBody(stroke.body);
     this.strokes = [];
+    this.history = [];
   }
 
   togglePause(): void {

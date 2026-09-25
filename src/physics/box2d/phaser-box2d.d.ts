@@ -79,6 +79,33 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     radius: number;
   }
 
+  export class b2MassData {
+    mass: number;
+    /** Centre of mass relative to the body origin. */
+    center: b2Vec2;
+    /** Rotational inertia about the body origin. */
+    rotationalInertia: number;
+  }
+
+  export class b2ManifoldPoint {
+    /** World coordinates. */
+    pointX: number;
+    pointY: number;
+    /** The largest normal impulse applied at this point during the step. */
+    maxNormalImpulse: number;
+  }
+
+  export class b2Manifold {
+    points: b2ManifoldPoint[];
+    pointCount: number;
+  }
+
+  export class b2ContactData {
+    shapeIdA: b2ShapeId;
+    shapeIdB: b2ShapeId;
+    manifold: b2Manifold;
+  }
+
   export class b2Capsule {
     center1: b2Vec2 | null;
     center2: b2Vec2 | null;
@@ -133,6 +160,9 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   /** Rotational inertia about the centre of mass. */
   export function b2Body_GetInertiaTensor(bodyId: b2BodyId): number;
   export function b2Body_GetWorldCenterOfMass(bodyId: b2BodyId): b2Vec2;
+  /** Fills `shapeArray` with the body's shapes; returns how many. */
+  export function b2Body_GetShapes(bodyId: b2BodyId, shapeArray: b2ShapeId[]): number;
+  export function b2Body_ApplyMassFromShapes(bodyId: b2BodyId): void;
   export function b2Body_ApplyLinearImpulse(
     bodyId: b2BodyId,
     impulse: b2Vec2,
@@ -153,6 +183,14 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   ): b2ShapeId;
   export function b2Shape_GetBody(shapeId: b2ShapeId): b2BodyId;
   export function b2Shape_GetRestitution(shapeId: b2ShapeId): number;
+  export function b2Shape_SetDensity(shapeId: b2ShapeId, density: number): void;
+  /** Fills `contactData` with the shape's touching contacts, up to `capacity`; returns how many. */
+  export function b2Shape_GetContactData(
+    shapeId: b2ShapeId,
+    contactData: b2ContactData[],
+    capacity: number,
+  ): number;
+  export function b2ComputePolygonMass(polygon: b2Polygon, density: number): b2MassData;
   export function b2ComputeHull(points: b2Vec2[], count: number): b2Hull;
   /** Returns null when the hull is invalid. */
   export function b2MakePolygon(hull: b2Hull, radius: number): b2Polygon | null;

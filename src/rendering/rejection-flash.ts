@@ -5,7 +5,8 @@ import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { strokePolyline } from './draw';
 import { FONT_FAMILY, PALETTE } from './palette';
 
-const MESSAGES: Record<RejectionReason, string> = {
+/** What a flash says about a refused Stroke. */
+export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
   'too-small': 'Too small',
   'self-crossing': 'Shape crosses itself',
   overlaps: 'Overlaps Terrain or an Object',
@@ -13,18 +14,21 @@ const MESSAGES: Record<RejectionReason, string> = {
 
 const FADE_MS = 900;
 
-/** A rejected Stroke flashes red and fades out, with a short message at the pointer. */
+/**
+ * Something refused (a Stroke, a Fill) flashes red along `path` and fades
+ * out, with a short message at the pointer.
+ */
 export function flashRejection(
   scene: Phaser.Scene,
   path: readonly Vec2[],
-  reason: RejectionReason,
+  message: string,
   pointer: Vec2,
 ): void {
   const g = scene.add.graphics().setDepth(20);
   g.lineStyle(LINE_THICKNESS, PALETTE.rejected, 1);
   strokePolyline(g, path);
   const label = scene.add
-    .text(pointer.x + 18, pointer.y - 18, MESSAGES[reason], {
+    .text(pointer.x + 18, pointer.y - 18, message, {
       fontFamily: FONT_FAMILY,
       fontSize: '24px',
       fontStyle: 'bold',

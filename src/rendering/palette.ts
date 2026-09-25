@@ -3,7 +3,6 @@ export const PALETTE = {
   background: 0x1d2027,
   terrainFill: 0x343944,
   terrainEdge: 0x4f5666,
-  frost: 0xdfe9f5,
   frozenPin: 0xf2f2f2,
   frozenPinEdge: 0x1d2027,
   closeMarker: 0x62d98b,

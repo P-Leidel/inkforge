@@ -27,6 +27,15 @@ export function polygonArea(polygon: Polygon): number {
   return Math.abs(signedArea(polygon));
 }
 
+/** Length of the closed polygon's edge. */
+export function polygonPerimeter(polygon: Polygon): number {
+  let total = 0;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    total += Math.hypot(polygon[i]!.x - polygon[j]!.x, polygon[i]!.y - polygon[j]!.y);
+  }
+  return total;
+}
+
 /** The polygon with its vertices ordered so that its signed area is positive. */
 export function withPositiveArea(polygon: Polygon): Vec2[] {
   return signedArea(polygon) < 0 ? [...polygon].reverse() : [...polygon];

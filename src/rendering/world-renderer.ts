@@ -1,7 +1,7 @@
 import type Phaser from 'phaser';
 import type { ObjectView, SandboxWorld, StrokeId } from '../sandbox/sandbox-world';
 import { fillPolygon, strokePolygon } from './draw';
-import { drawInk, INK_HUES, segmentRuns } from './ink';
+import { drawInk, fillInk, INK_HUES, segmentRuns } from './ink';
 import { PALETTE } from './palette';
 
 /** Width an Outline is drawn with, centred on the Object's edge. */
@@ -16,8 +16,8 @@ type Graphics = Phaser.GameObjects.Graphics;
 export class WorldRenderer {
   private readonly lines = new Map<StrokeId, Graphics>();
   private readonly objects = new Map<StrokeId, Graphics>();
-  /** Frozen state each Object was last drawn with. */
-  private readonly drawnFrozen = new Map<StrokeId, boolean>();
+  /** The Frozen state and Fill each Object was last drawn with. */
+  private readonly drawnLook = new Map<StrokeId, string>();
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -63,27 +63,28 @@ export class WorldRenderer {
         g = this.scene.add.graphics();
         this.objects.set(object.id, g);
       }
-      if (this.drawnFrozen.get(object.id) !== object.frozen) {
+      const look = `${object.frozen} ${object.fill}`;
+      if (this.drawnLook.get(object.id) !== look) {
         drawObject(g, object);
-        this.drawnFrozen.set(object.id, object.frozen);
+        this.drawnLook.set(object.id, look);
       }
       g.setPosition(object.transform.x, object.transform.y).setRotation(object.transform.angle);
     }
     removeStale(this.objects, current);
-    for (const id of this.drawnFrozen.keys()) if (!current.has(id)) this.drawnFrozen.delete(id);
+    for (const id of this.drawnLook.keys()) if (!current.has(id)) this.drawnLook.delete(id);
   }
 }
 
 /**
- * Draws an Object in its own coordinates: its Outline in its Colour around a
- * hollow inside. A Frozen one is frosted and pinned.
+ * Draws an Object in its own coordinates: its Outline in its Colour around
+ * its Fill, or around a faintly tinted, hollow inside. A Frozen one is pinned.
  */
 function drawObject(g: Graphics, object: ObjectView): void {
   g.clear();
-  g.fillStyle(INK_HUES[object.colour], 0.2);
-  fillPolygon(g, object.outline);
-  if (object.frozen) {
-    g.fillStyle(PALETTE.frost, 0.22);
+  if (object.fill) {
+    fillInk(g, object.fill, object.outline);
+  } else {
+    g.fillStyle(INK_HUES[object.colour], 0.1);
     fillPolygon(g, object.outline);
   }
   drawInk(g, object.colour, object.outline, true, OUTLINE_WIDTH);

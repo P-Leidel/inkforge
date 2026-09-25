@@ -5,7 +5,8 @@ import type { Vec2 } from '../geometry/vec2';
 
 /**
  * The engine-neutral physics interface (ADR 0001). All units are Arena units:
- * pixels, y pointing down, seconds and radians. Engine adapters convert.
+ * pixels, y pointing down, seconds and radians; masses are in the material
+ * table's mass unit. Engine adapters convert.
  */
 
 /** Opaque handle to a body in a PhysicsWorld. */
@@ -16,7 +17,11 @@ export interface PhysicsWorldOptions {
   readonly gravity: Vec2;
   /** Fixed step length in seconds. */
   readonly timeStep: number;
-  /** Approach speed (px/s) above which a moving body wakes a Frozen Object it hits. */
+  /**
+   * A hit wakes a Frozen Object when the collision, played out as if the
+   * Object had been free, would set it moving faster than this (px/s): the
+   * impulse it receives divided by its mass.
+   */
   readonly wakeSpeed: number;
   /** Contacts approaching slower than this (px/s) don't bounce, whatever their restitution. */
   readonly minBounceSpeed: number;
@@ -43,6 +48,8 @@ export interface ObjectBodyDef {
   readonly frozen: boolean;
   /** The surface of every part. It stays with the Object when it unfreezes. */
   readonly surface: Surface;
+  /** Its mass, spread evenly over the parts. It stays with the Object when it unfreezes. */
+  readonly mass: number;
 }
 
 /** A contact reported by a step, with its impact strength. */
@@ -66,9 +73,9 @@ export interface PhysicsWorld {
   removeBody(id: BodyId): void;
 
   /**
-   * Advances the simulation by one fixed step. A Frozen Object hit by a moving
-   * body faster than `wakeSpeed` wakes, and the hit plays out as if it had
-   * been free. Returns the step's contacts involving Objects.
+   * Advances the simulation by one fixed step. A Frozen Object hit hard
+   * enough by a moving body (see `wakeSpeed`) wakes, and the hit plays out as
+   * if it had been free. Returns the step's contacts involving Objects.
    */
   step(): readonly ContactHit[];
 
@@ -81,6 +88,11 @@ export interface PhysicsWorld {
    * moving ones, then lets it move freely from rest.
    */
   slideOut(id: BodyId, displacement: Vec2, speed: number): void;
+
+  /** An Object's mass. */
+  getMass(id: BodyId): number;
+  /** Sets an Object's mass, spread evenly over its shape. Never wakes a Frozen Object. */
+  setMass(id: BodyId, mass: number): void;
 
   getTransform(id: BodyId): Transform;
   getVelocity(id: BodyId): Vec2;

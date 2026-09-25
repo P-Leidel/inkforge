@@ -117,13 +117,6 @@ describe('Colours: Objects', () => {
   const unfreezings: [string, (world: SandboxWorld, box: number) => void][] = [
     ['Released', (world, box) => world.release(box)],
     [
-      'woken by a hit',
-      (world) => {
-        const ball = drawObject(world, dragCircle({ x: 360, y: 500 }, 15));
-        world.release(ball, { x: 300, y: 0 });
-      },
-    ],
-    [
       'squeezed off a Line',
       (world) =>
         drawLine(world, [
@@ -151,19 +144,48 @@ describe('Colours: Objects', () => {
     });
   }
 
+  it('keeps its bounce after it is woken by a hit', () => {
+    /** Knocked sideways into a grey wall: how fast it comes back, relative to how fast it hit. */
+    const bounceOffWall = (colour: Colour) => {
+      const world = createWorld();
+      const box = drawObject(world, dragBox(380, 480, 40, 40), colour);
+      const ball = drawObject(world, dragCircle({ x: 360, y: 500 }, 15));
+      drawLine(world, [
+        { x: 520, y: 300 },
+        { x: 520, y: 860 },
+      ]);
+      world.togglePause();
+      world.release(ball, { x: 300, y: 0 });
+      let hit = 0;
+      let back = 0;
+      for (let step = 0; step < 90; step++) {
+        world.step();
+        const vx = objectById(world, box).velocity.x;
+        hit = Math.max(hit, vx);
+        back = Math.max(back, -vx);
+      }
+      return back / hit;
+    };
+
+    // The hit leaves it spinning a little, so it meets the wall corner first.
+    expect(bounceOffWall('blue')).toBeGreaterThan(0.6);
+    expect(bounceOffWall('grey')).toBeLessThan(0.2);
+  });
+
   it('bounces the waking hit off a Frozen blue Object', () => {
-    const speedAfterHit = (colour: Colour) => {
+    /** How fast the two part after the hit, relative to how fast they met. */
+    const restitution = (colour: Colour) => {
       const world = createWorld();
       const box = drawObject(world, dragBox(380, 480, 40, 40), colour);
       const ball = drawObject(world, dragCircle({ x: 360, y: 500 }, 15));
       world.togglePause();
       world.release(ball, { x: 300, y: 0 });
       runFor(world, 3 / 60);
-      return objectById(world, box).velocity.x;
+      return (objectById(world, box).velocity.x - objectById(world, ball).velocity.x) / 300;
     };
 
-    // A free collision with restitution 0.9 instead of 0.1: (1 + 0.9) / (1 + 0.1).
-    expect(speedAfterHit('blue') / speedAfterHit('grey')).toBeCloseTo(1.9 / 1.1, 1);
+    expect(restitution('blue')).toBeCloseTo(0.9, 1);
+    expect(restitution('grey')).toBeCloseTo(0.1, 1);
   });
 });
 

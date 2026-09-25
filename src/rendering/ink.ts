@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import { polygonBounds, polygonContainsPoint, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
@@ -152,6 +153,63 @@ export function drawInk(
           p.y - n.y * s + t.y * s,
         );
       }
+      break;
+  }
+}
+
+/** Points on a grid of the given spacing that lie inside the polygon, with a stable index each. */
+function gridInside(polygon: Polygon, spacing: number): { p: Vec2; index: number }[] {
+  const bounds = polygonBounds(polygon);
+  const out: { p: Vec2; index: number }[] = [];
+  let row = 0;
+  for (let y = bounds.minY + spacing / 2; y < bounds.maxY; y += spacing, row++) {
+    let column = 0;
+    for (let x = bounds.minX + spacing / 2; x < bounds.maxX; x += spacing, column++) {
+      const index = row * 1000 + column;
+      const p = {
+        x: x + (hash(index) - 0.5) * spacing * 0.6,
+        y: y + (hash(index + 0.1) - 0.5) * spacing * 0.6,
+      };
+      if (polygonContainsPoint(polygon, p)) out.push({ p, index });
+    }
+  }
+  return out;
+}
+
+/** Fills a polygon with ink in its Colour's hue and texture: how a Fill looks. */
+export function fillInk(g: Graphics, colour: Colour, polygon: Polygon, alpha = 1): void {
+  g.fillStyle(INK_HUES[colour], alpha);
+  g.beginPath();
+  g.moveTo(polygon[0]!.x, polygon[0]!.y);
+  for (const p of polygon.slice(1)) g.lineTo(p.x, p.y);
+  g.closePath();
+  g.fillPath();
+  switch (colour) {
+    case 'grey':
+      for (const { p, index } of gridInside(polygon, 4)) {
+        g.fillStyle(hash(index + 0.5) < 0.5 ? GRAIN_LIGHT : GRAIN_DARK, alpha);
+        g.fillCircle(p.x, p.y, 0.9);
+      }
+      break;
+    case 'blue':
+      g.lineStyle(2, GLOSS, 0.6 * alpha);
+      for (const { p, index } of gridInside(polygon, 14)) {
+        if (hash(index + 0.3) < 0.5) continue;
+        g.lineBetween(p.x - 4, p.y + 4, p.x + 4, p.y - 4);
+      }
+      break;
+    case 'green':
+      for (const { p, index } of gridInside(polygon, 9)) {
+        g.fillStyle(DRIP, alpha);
+        g.fillCircle(p.x, p.y, 1.2 + 1.6 * hash(index + 0.6));
+      }
+      break;
+    case 'black':
+      break; // solid
+    case 'red':
+      g.lineStyle(1.5, FUSE_STRIPE, alpha);
+      for (const { p } of gridInside(polygon, 7))
+        g.lineBetween(p.x - 2.5, p.y + 2.5, p.x + 2.5, p.y - 2.5);
       break;
   }
 }

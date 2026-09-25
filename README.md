@@ -36,16 +36,17 @@ CI runs lint, format check, typecheck, tests and build on every push and pull re
 | Pick a Colour (grey, blue, green, black, red) | Keys 1–5 or click the palette |
 | Draw a Line (open Stroke)                     | Hold the left button and drag |
 | Draw an Object (end near the start)           | Drag back to the green marker |
+| Fill an Object with the picked Colour         | Click inside it (no drag)     |
 | Run / pause physics                           | Space                         |
 | Release a Frozen Object (while running)       | Right-click it                |
-| Undo the last Stroke                          | Ctrl+Z                        |
+| Undo the last Stroke or Fill                  | Ctrl+Z                        |
 | Debug overlay (colliders, bodies, fps)        | F1                            |
 
-Each Colour is a material with its own hue and texture: grey is grainy, blue glossy, green drippy, black solid and red striped like a fuse. Blue is bouncy and slippery, black grips hardest, and grey is the plain material.
+Each Colour is a material with its own hue and texture: grey is grainy, blue glossy, green drippy, black solid and red striped like a fuse. Blue is bouncy and slippery, black grips hardest, and grey is the plain material. An unfilled Object is a light, hollow shell; its Fill adds weight by area, blue half as much as grey and black three times as much. A hit only wakes a Frozen Object that it would really set moving, so a light ball can't wake a heavy box.
 
 The toolbar clears the Arena and runs the engine stress tests: **Ball cannon** (3000 px/s balls at a 4 px Line), **Box tower** (10 drawn boxes) and **Pebbles** (100 drawn pebbles). Each shows its measurements under the toolbar.
 
-The **Gallery** row below it clears the Arena and plays a ready-made demo of the Colours: **Bounce** drops the same ball onto a Line of each Colour, **Slide** puts the same box on a ramp of each Colour.
+The **Gallery** row below it clears the Arena and plays a ready-made demo of the Colours: **Bounce** drops the same ball onto a Line of each Colour, **Slide** puts the same box on a ramp of each Colour, and **Knock** throws the same ball at a hollow, a grey-filled and a black-filled box.
 
 ## Project structure
 

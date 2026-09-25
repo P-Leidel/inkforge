@@ -1,11 +1,13 @@
 import {
   b2Body_ApplyLinearImpulse,
+  b2Body_ApplyMassFromShapes,
   b2Body_GetAngularVelocity,
   b2Body_GetInertiaTensor,
   b2Body_GetLinearVelocity,
   b2Body_GetMass,
   b2Body_GetPosition,
   b2Body_GetRotation,
+  b2Body_GetShapes,
   b2Body_GetType,
   b2Body_GetUserData,
   b2Body_GetWorldCenterOfMass,
@@ -14,6 +16,8 @@ import {
   b2BodyType,
   b2Capsule,
   b2ComputeHull,
+  b2ComputePolygonMass,
+  b2ContactData,
   b2CreateBody,
   b2CreateCapsuleShape,
   b2CreatePolygonShape,
@@ -27,13 +31,16 @@ import {
   b2MakeRot,
   b2Rot_GetAngle,
   b2Shape_GetBody,
+  b2Shape_GetContactData,
   b2Shape_GetRestitution,
+  b2Shape_SetDensity,
   b2Vec2,
   b2World_GetContactEvents,
   b2World_SetGravity,
   b2World_SetRestitutionThreshold,
   b2World_Step,
   type b2BodyId,
+  type b2Polygon,
   type b2Rot,
   type b2ShapeId,
   type b2WorldId,
@@ -57,16 +64,25 @@ import type {
  */
 const PX_PER_METRE = 50;
 const SUB_STEPS = 4;
-/** Hit events are reported above this speed; we filter by `wakeSpeed` ourselves. */
+/** Hit events are reported above this speed; we decide about waking ourselves. */
 const HIT_EVENT_THRESHOLD_PX = 5;
-/** Uniform density of the neutral material, kg/m². */
-const DENSITY = 1;
 
 const toM = (px: number) => px / PX_PER_METRE;
 const toPx = (m: number) => m * PX_PER_METRE;
 const toB2 = (p: Vec2) => new b2Vec2(toM(p.x), toM(p.y));
 
 type BodyKind = 'terrain' | 'line' | 'object';
+
+/** The mass of a body's shapes at density 1, in metres: what its density scales. */
+interface UnitMass {
+  readonly area: number;
+  /** Centre of mass in body coordinates. */
+  readonly centre: b2Vec2;
+  /** Rotational inertia about the centre of mass. */
+  readonly inertia: number;
+}
+
+const NO_MASS: UnitMass = { area: 0, centre: new b2Vec2(0, 0), inertia: 0 };
 
 interface BodyRecord {
   b2Id: b2BodyId;
@@ -76,6 +92,17 @@ interface BodyRecord {
   readonly parts: readonly Polygon[];
   /** The surface of its shapes, kept when it is rebuilt. */
   readonly surface: Surface;
+  /** Mass per m², the same over all shapes; kept when it is rebuilt. */
+  density: number;
+  readonly unit: UnitMass;
+}
+
+/** Mass properties of a body taking part in a collision, in metres. */
+interface Inertial {
+  readonly invMass: number;
+  readonly invInertia: number;
+  /** Centre of mass in world coordinates. */
+  readonly centre: b2Vec2;
 }
 
 /*
@@ -131,29 +158,64 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     surface: Surface,
     frozen = false,
     parts: readonly Polygon[] = [],
+    unit: UnitMass = NO_MASS,
+    density = 1,
   ) {
     const id = nextId++ as BodyId;
     const b2Id = makeB2Body(id, type, toB2(position));
-    bodies.set(id, { b2Id, kind, frozen, parts, surface });
+    bodies.set(id, { b2Id, kind, frozen, parts, surface, unit, density });
     return { id, b2Id };
   }
 
-  function shapeDef(surface: Surface, hitEvents: boolean) {
+  function shapeDef(surface: Surface, hitEvents: boolean, density = 1) {
     const def = b2DefaultShapeDef();
-    def.density = DENSITY;
+    def.density = density;
     def.friction = surface.friction;
     def.restitution = surface.restitution;
     def.enableHitEvents = hitEvents;
     return def;
   }
 
-  function addPolygon(bodyId: b2BodyId, polygon: Polygon, surface: Surface, hitEvents: boolean) {
+  /**
+   * A convex part as a Box2D polygon, or null if it is too thin or small for
+   * Box2D to represent; the Stroke pipeline keeps those rare.
+   */
+  function makePolygon(polygon: Polygon): b2Polygon | null {
     const points = polygon.map(toB2);
     const hull = b2ComputeHull(points, points.length);
-    const shape = hull.count >= 3 ? b2MakePolygon(hull, 0) : null;
-    // Parts too thin or small for Box2D to represent are skipped; the
-    // Stroke pipeline keeps them rare.
-    if (shape) b2CreatePolygonShape(bodyId, shapeDef(surface, hitEvents), shape);
+    return hull.count >= 3 ? b2MakePolygon(hull, 0) : null;
+  }
+
+  function addPolygon(
+    bodyId: b2BodyId,
+    polygon: Polygon,
+    surface: Surface,
+    hitEvents: boolean,
+    density = 1,
+  ) {
+    const shape = makePolygon(polygon);
+    if (shape) b2CreatePolygonShape(bodyId, shapeDef(surface, hitEvents, density), shape);
+  }
+
+  function unitMassOf(parts: readonly Polygon[]): UnitMass {
+    let area = 0;
+    let cx = 0;
+    let cy = 0;
+    let inertiaAboutOrigin = 0;
+    for (const part of parts) {
+      const shape = makePolygon(part);
+      if (!shape) continue;
+      const mass = b2ComputePolygonMass(shape, 1);
+      area += mass.mass;
+      cx += mass.mass * mass.center.x;
+      cy += mass.mass * mass.center.y;
+      inertiaAboutOrigin += mass.rotationalInertia;
+    }
+    if (area === 0) return NO_MASS;
+    cx /= area;
+    cy /= area;
+    const inertia = inertiaAboutOrigin - area * (cx * cx + cy * cy);
+    return { area, centre: new b2Vec2(cx, cy), inertia };
   }
 
   function bodyIdOfShape(shapeId: b2ShapeId): BodyId {
@@ -163,6 +225,20 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
   interface Motion {
     readonly v: b2Vec2;
     readonly w: number;
+  }
+
+  /** A hit that wakes a Frozen Object, to be replayed after the step. */
+  interface Wake {
+    readonly hitter: BodyId;
+    /** The hitter's motion before the step. */
+    readonly motion: Motion;
+    readonly point: b2Vec2;
+    /** From the hitter towards the Frozen Object. */
+    readonly normal: b2Vec2;
+    /** Impulse of the free collision. */
+    readonly j: number;
+    /** Speed (m/s) the collision sets the Frozen Object moving at. */
+    readonly push: number;
   }
 
   /** Velocities of moving Objects before the step, to replay a waking hit. */
@@ -194,7 +270,7 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     const rotation = b2MakeRot(b2Rot_GetAngle(b2Body_GetRotation(rec.b2Id)));
     b2DestroyBody(rec.b2Id);
     rec.b2Id = makeB2Body(id, type, position, rotation);
-    for (const part of rec.parts) addPolygon(rec.b2Id, part, rec.surface, true);
+    for (const part of rec.parts) addPolygon(rec.b2Id, part, rec.surface, true, rec.density);
   }
 
   /** Advances sliding Objects; one that has arrived becomes dynamic, at rest. */
@@ -216,47 +292,105 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
     }
   }
 
+  function massOf(rec: BodyRecord): number {
+    return rec.density * rec.unit.area;
+  }
+
+  /** A moving body's mass properties, from the engine. */
+  function movingInertial(rec: BodyRecord): Inertial {
+    return {
+      invMass: 1 / b2Body_GetMass(rec.b2Id),
+      invInertia: 1 / b2Body_GetInertiaTensor(rec.b2Id),
+      centre: b2Body_GetWorldCenterOfMass(rec.b2Id),
+    };
+  }
+
+  /**
+   * A Frozen Object's mass properties as a free body. The engine gives a fixed
+   * body none, so they come from its shapes and density.
+   */
+  function frozenInertial(rec: BodyRecord): Inertial {
+    const p = b2Body_GetPosition(rec.b2Id);
+    const q = b2Body_GetRotation(rec.b2Id);
+    const c = rec.unit.centre;
+    return {
+      invMass: 1 / massOf(rec),
+      invInertia: 1 / (rec.density * rec.unit.inertia),
+      centre: new b2Vec2(p.x + q.c * c.x - q.s * c.y, p.y + q.s * c.x + q.c * c.y),
+    };
+  }
+
+  /**
+   * The impulse (along `normal`) of a collision between a moving body and a
+   * body at rest, both free, bouncing with `restitution` as the engine would.
+   */
+  function collisionImpulse(
+    hitter: Inertial,
+    motion: Motion,
+    target: Inertial,
+    point: b2Vec2,
+    normal: b2Vec2, // from the hitter towards the target
+    restitution: number,
+  ): number {
+    const rh = { x: point.x - hitter.centre.x, y: point.y - hitter.centre.y };
+    const rt = { x: point.x - target.centre.x, y: point.y - target.centre.y };
+    // Velocity of the hitter at the contact point.
+    const vx = motion.v.x - motion.w * rh.y;
+    const vy = motion.v.y + motion.w * rh.x;
+    const approach = vx * normal.x + vy * normal.y;
+    if (approach <= 0) return 0;
+    const rhn = rh.x * normal.y - rh.y * normal.x;
+    const rtn = rt.x * normal.y - rt.y * normal.x;
+    const k =
+      hitter.invMass +
+      target.invMass +
+      hitter.invInertia * rhn * rhn +
+      target.invInertia * rtn * rtn;
+    const bounce = approach >= toM(options.minBounceSpeed) ? restitution : 0;
+    return ((1 + bounce) * approach) / k;
+  }
+
+  const contactBuffer = Array.from({ length: 64 }, () => new b2ContactData());
+
+  /**
+   * Where the collision between two shapes acted as a whole: their contact
+   * points weighted by the impulse each took. A box hitting another face-on
+   * touches at two corners and acts at the middle of the face, not at one
+   * corner.
+   */
+  function contactCentre(shapeA: b2ShapeId, shapeB: b2ShapeId, fallback: b2Vec2): b2Vec2 {
+    const count = b2Shape_GetContactData(shapeA, contactBuffer, contactBuffer.length);
+    for (let i = 0; i < count; i++) {
+      const { shapeIdA, shapeIdB, manifold } = contactBuffer[i]!;
+      const other = shapeIdA.index1 === shapeA.index1 ? shapeIdB : shapeIdA;
+      if (other.index1 !== shapeB.index1) continue;
+      let x = 0;
+      let y = 0;
+      let total = 0;
+      for (let k = 0; k < manifold.pointCount; k++) {
+        const point = manifold.points[k]!;
+        x += point.maxNormalImpulse * point.pointX;
+        y += point.maxNormalImpulse * point.pointY;
+        total += point.maxNormalImpulse;
+      }
+      return total > 0 ? new b2Vec2(x / total, y / total) : fallback;
+    }
+    return fallback;
+  }
+
   /**
    * Wakes a Frozen Object and replays the hit as a collision between two free
    * bodies. During the step the Frozen Object acted like a wall, so the
    * hitter was stopped; we restore the hitter's velocity from before the step
-   * and apply the impulse a free collision would have produced instead,
-   * bouncing with the two shapes' restitution as the engine would.
+   * and apply the impulse `j` a free collision produces instead.
    */
-  function wakeByHit(
-    frozenId: BodyId,
-    hitter: BodyRecord,
-    before: Motion | undefined,
-    point: b2Vec2,
-    normal: b2Vec2, // from hitter towards the Frozen Object
-    restitution: number,
-  ): void {
+  function wakeByHit(frozenId: BodyId, wake: Wake): void {
     const frozen = record(frozenId);
+    const hitter = record(wake.hitter);
     unfreeze(frozenId, frozen);
-    if (!before) return;
-    b2Body_SetLinearVelocity(hitter.b2Id, before.v);
-    b2Body_SetAngularVelocity(hitter.b2Id, before.w);
-
-    const hc = b2Body_GetWorldCenterOfMass(hitter.b2Id);
-    const fc = b2Body_GetWorldCenterOfMass(frozen.b2Id);
-    const rh = { x: point.x - hc.x, y: point.y - hc.y };
-    const rf = { x: point.x - fc.x, y: point.y - fc.y };
-    // Velocity of the hitter at the contact point (the Frozen Object is at rest).
-    const vx = before.v.x - before.w * rh.y;
-    const vy = before.v.y + before.w * rh.x;
-    const approach = vx * normal.x + vy * normal.y;
-    if (approach <= 0) return;
-
-    const invMassH = 1 / b2Body_GetMass(hitter.b2Id);
-    const invMassF = 1 / b2Body_GetMass(frozen.b2Id);
-    const invInertiaH = 1 / b2Body_GetInertiaTensor(hitter.b2Id);
-    const invInertiaF = 1 / b2Body_GetInertiaTensor(frozen.b2Id);
-    const rhn = rh.x * normal.y - rh.y * normal.x;
-    const rfn = rf.x * normal.y - rf.y * normal.x;
-    const k = invMassH + invMassF + invInertiaH * rhn * rhn + invInertiaF * rfn * rfn;
-    const bounce = approach >= toM(options.minBounceSpeed) ? restitution : 0;
-    const j = ((1 + bounce) * approach) / k;
-
+    b2Body_SetLinearVelocity(hitter.b2Id, wake.motion.v);
+    b2Body_SetAngularVelocity(hitter.b2Id, wake.motion.w);
+    const { point, normal, j } = wake;
     b2Body_ApplyLinearImpulse(hitter.b2Id, new b2Vec2(-j * normal.x, -j * normal.y), point, true);
     b2Body_ApplyLinearImpulse(frozen.b2Id, new b2Vec2(j * normal.x, j * normal.y), point, true);
   }
@@ -289,6 +423,8 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       // fixed bodies don't touch each other, so Frozen Objects never wake
       // each other and Lines or Terrain never wake them.
       const type = def.frozen ? b2BodyType.b2_staticBody : b2BodyType.b2_dynamicBody;
+      const unit = unitMassOf(def.parts);
+      const density = unit.area > 0 ? def.mass / unit.area : 0;
       const { id, b2Id } = createBody(
         'object',
         type,
@@ -296,8 +432,10 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
         def.surface,
         def.frozen,
         def.parts,
+        unit,
+        density,
       );
-      for (const part of def.parts) addPolygon(b2Id, part, def.surface, true);
+      for (const part of def.parts) addPolygon(b2Id, part, def.surface, true, density);
       return id;
     },
 
@@ -315,17 +453,18 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       b2World_Step(worldId, options.timeStep, SUB_STEPS);
 
       const hits: ContactHit[] = [];
-      const wakes = new Map<
-        BodyId,
-        { hitter: BodyId; point: b2Vec2; normal: b2Vec2; speed: number; restitution: number }
-      >();
+      const wakes = new Map<BodyId, Wake>();
       for (const event of b2World_GetContactEvents(worldId).hitEvents) {
         const a = bodyIdOfShape(event.shapeIdA);
         const b = bodyIdOfShape(event.shapeIdB);
         const speed = toPx(event.approachSpeed);
-        const point = new b2Vec2(event.pointX, event.pointY);
-        hits.push({ bodyA: a, bodyB: b, point: { x: toPx(point.x), y: toPx(point.y) }, speed });
-        if (speed < options.wakeSpeed) continue;
+        const hitPoint = new b2Vec2(event.pointX, event.pointY);
+        hits.push({
+          bodyA: a,
+          bodyB: b,
+          point: { x: toPx(hitPoint.x), y: toPx(hitPoint.y) },
+          speed,
+        });
 
         // The manifold normal points from A to B.
         const pairs: [BodyId, BodyId, number][] = [
@@ -337,26 +476,31 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
           const hitter = bodies.get(hitterId);
           if (!frozen?.frozen || !hitter) continue;
           if (b2Body_GetType(hitter.b2Id) !== b2BodyType.b2_dynamicBody) continue;
-          const current = wakes.get(frozenId);
-          if (current && current.speed >= speed) continue;
+          const motion = before.get(hitterId);
+          if (!motion) continue;
+          const point = contactCentre(event.shapeIdA, event.shapeIdB, hitPoint);
           const normal = new b2Vec2(sign * event.normalX, sign * event.normalY);
           const restitution = Math.max(
             b2Shape_GetRestitution(event.shapeIdA),
             b2Shape_GetRestitution(event.shapeIdB),
           );
-          wakes.set(frozenId, { hitter: hitterId, point, normal, speed, restitution });
+          const target = frozenInertial(frozen);
+          const j = collisionImpulse(
+            movingInertial(hitter),
+            motion,
+            target,
+            point,
+            normal,
+            restitution,
+          );
+          const push = j * target.invMass;
+          if (toPx(push) <= options.wakeSpeed) continue;
+          const current = wakes.get(frozenId);
+          if (current && current.push >= push) continue;
+          wakes.set(frozenId, { hitter: hitterId, motion, point, normal, j, push });
         }
       }
-      for (const [frozenId, wake] of wakes) {
-        wakeByHit(
-          frozenId,
-          record(wake.hitter),
-          before.get(wake.hitter),
-          wake.point,
-          wake.normal,
-          wake.restitution,
-        );
-      }
+      for (const [frozenId, wake] of wakes) wakeByHit(frozenId, wake);
       return hits;
     },
 
@@ -382,6 +526,21 @@ export function createBox2dPhysicsWorld(options: PhysicsWorldOptions): PhysicsWo
       const k = speed / distance;
       b2Body_SetLinearVelocity(rec.b2Id, toB2({ x: displacement.x * k, y: displacement.y * k }));
       sliding.set(id, distance / speed);
+    },
+
+    getMass(id) {
+      return massOf(record(id));
+    },
+
+    setMass(id, mass) {
+      const rec = record(id);
+      rec.density = rec.unit.area > 0 ? mass / rec.unit.area : 0;
+      // A fixed body has no mass; a Frozen Object gets its density when it unfreezes.
+      if (rec.frozen) return;
+      const shapes: b2ShapeId[] = [];
+      const count = b2Body_GetShapes(rec.b2Id, shapes);
+      for (let i = 0; i < count; i++) b2Shape_SetDensity(shapes[i]!, rec.density);
+      b2Body_ApplyMassFromShapes(rec.b2Id);
     },
 
     getTransform(id): Transform {

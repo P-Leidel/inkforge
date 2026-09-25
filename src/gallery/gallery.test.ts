@@ -1,20 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS } from '../materials/colour';
 import { runFor, sandboxWorlds } from '../sandbox/test-support';
-import { BOUNCE_DEMO, GALLERY, SLIDE_DEMO } from './gallery';
+import { BOUNCE_DEMO, GALLERY, KNOCK_DEMO, SLIDE_DEMO } from './gallery';
 
 const createWorld = sandboxWorlds();
 
 describe('Colour gallery', () => {
   for (const demo of GALLERY) {
-    it(`${demo.name}: builds through the Sandbox world, starts physics and lets its Objects go`, () => {
+    it(`${demo.name}: builds through the Sandbox world and starts physics`, () => {
       const world = createWorld();
 
       demo.build(world); // throws if any of its Strokes is refused
 
       expect(world.isRunning).toBe(true);
-      expect(world.objects.length).toBeGreaterThan(0);
-      expect(world.objects.every((o) => !o.frozen)).toBe(true);
+      expect(world.objects.some((o) => !o.frozen)).toBe(true);
     });
   }
 
@@ -38,5 +37,19 @@ describe('Colour gallery', () => {
     const [grey, blue, , black] = moved;
     expect(blue).toBeGreaterThan(2 * grey!);
     expect(black).toBeLessThan(3);
+  });
+
+  it('Knock: the hollow box flies, the grey-filled one is nudged, the black-filled one holds', () => {
+    const world = createWorld();
+    KNOCK_DEMO.build(world);
+
+    runFor(world, 0.3);
+
+    const boxes = world.objects.filter((o) => o.mass > 1); // the balls weigh 0.75
+    const [hollow, grey, black] = boxes;
+    expect(boxes.map((b) => b.fill)).toEqual([null, 'grey', 'black']);
+    expect(hollow!.velocity.x).toBeGreaterThan(1.5 * grey!.velocity.x);
+    expect(grey!.frozen).toBe(false);
+    expect(black!.frozen).toBe(true);
   });
 });
