@@ -215,6 +215,9 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   export function b2Body_GetAngularVelocity(bodyId: b2BodyId): number;
   export function b2Body_SetAngularVelocity(bodyId: b2BodyId, velocity: number): void;
   export function b2Body_GetMass(bodyId: b2BodyId): number;
+  export function b2Body_GetAngularDamping(bodyId: b2BodyId): number;
+  export function b2Body_IsBullet(bodyId: b2BodyId): boolean;
+  export function b2Body_GetJointCount(bodyId: b2BodyId): number;
   /** Rotational inertia about the centre of mass. */
   export function b2Body_GetInertiaTensor(bodyId: b2BodyId): number;
   export function b2Body_GetWorldCenterOfMass(bodyId: b2BodyId): b2Vec2;
@@ -290,6 +293,10 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   ): void;
   export function b2Shape_GetUserData(shapeId: b2ShapeId): unknown;
   export function b2Shape_GetRestitution(shapeId: b2ShapeId): number;
+  export function b2Shape_GetFriction(shapeId: b2ShapeId): number;
+  export function b2Shape_GetDensity(shapeId: b2ShapeId): number;
+  export function b2Shape_GetFilter(shapeId: b2ShapeId): b2Filter;
+  export function b2Shape_AreHitEventsEnabled(shapeId: b2ShapeId): boolean;
   export function b2Shape_SetDensity(shapeId: b2ShapeId, density: number): void;
   export function b2Shape_SetFriction(shapeId: b2ShapeId, friction: number): void;
   export function b2Shape_SetRestitution(shapeId: b2ShapeId, restitution: number): void;
