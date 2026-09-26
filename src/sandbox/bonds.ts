@@ -114,6 +114,9 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
     });
   }
 
+  /** A bond goes only with what it holds. */
+  erase(): void {}
+
   /** Bonds take no room of their own. */
   solids(): Solids {
     return { polygons: [], circles: [] };

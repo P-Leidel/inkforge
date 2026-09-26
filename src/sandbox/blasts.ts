@@ -183,6 +183,9 @@ export class Blasts<T> implements Kind<'blasts', readonly SavedBlast[], readonly
     for (const { acted } of this.blasts) for (const party of parties) acted.delete(party);
   }
 
+  /** A Blast still spreading can't be erased. */
+  erase(): void {}
+
   dropVisuals(): void {}
 
   clear(): void {

@@ -323,6 +323,25 @@ export class SandboxWorld {
   }
 
   /**
+   * The Eraser, a testing tool of the sandbox: removes everything closer
+   * than `radius` px to `path` (a drag, or a click's one point): whole
+   * Objects with their Fills, the Pieces of Lines, Rubble, Droplets and
+   * Patches. Erasing is not breaking: nothing bursts, releases its Fill or
+   * sets off a Blast. What was attached to what went goes as when it
+   * breaks: a green Object stuck to it falls free. Works paused and running;
+   * erased Strokes are gone from the undo history.
+   */
+  eraseAlong(path: readonly Vec2[], radius: number): void {
+    if (path.length === 0) return;
+    const brush = { path, radius };
+    // Hosts before what lies on them: a Patch whose host went goes with it.
+    for (const kind of this.kinds) {
+      kind.erase(brush);
+      this.passOnGone();
+    }
+  }
+
+  /**
    * Takes back the most recent Stroke or Fill that still exists: what's left
    * of a Line goes as a whole. Broken Objects, and Lines whose every Piece
    * broke, are gone from the history, so undo skips them.

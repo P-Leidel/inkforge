@@ -16,6 +16,7 @@ import type { BodyId, PhysicsWorld } from '../physics';
 import { pieceCentre } from '../stroke/pieces';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
 import type { Arena } from './arena';
+import { brushTouchesCapsules, brushTouchesPolygon, type Brush } from './brush';
 import { motionOf, type HostSurface, type Kind, type Motion, type Solids } from './arena-contents';
 import type { PartyId, PartyIndex } from './contact-ledger';
 import { durabilityLeft, wear, type Breakable } from './material-rules';
@@ -491,6 +492,26 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     const [stroke] = this.strokes.splice(index, 1);
     for (const body of this.bodiesOf(stroke!)) this.removeBody(body);
     this.history = this.history.filter((action) => action.id !== id);
+  }
+
+  /**
+   * Removes the Objects the brush touches, with their Fills, and the Pieces
+   * of Lines it touches; the rest of a Line stays fixed where it is, and the
+   * Line goes with its last Piece. Erased Strokes are gone from the history.
+   */
+  erase(brush: Brush): void {
+    for (const object of this.objectStrokes()) {
+      const outline = transformPoints(object.outline, this.physics.getTransform(object.body));
+      if (brushTouchesPolygon(brush, outline)) this.remove(object.id);
+    }
+    for (const line of this.lineStrokes()) {
+      const radius = line.thickness / 2;
+      const erased = line.pieces.filter((p) => brushTouchesCapsules(brush, p.segments, radius));
+      if (erased.length === 0) continue;
+      for (const piece of erased) this.removeBody(piece.body);
+      line.pieces = line.pieces.filter((piece) => !erased.includes(piece));
+      if (line.pieces.length === 0) this.remove(line.id);
+    }
   }
 
   /**

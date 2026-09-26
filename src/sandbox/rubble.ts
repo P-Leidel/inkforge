@@ -12,6 +12,7 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import { motionOf, type HostSurface, type Kind, type Motion, type Solids } from './arena-contents';
+import { brushTouchesCircle, type Brush } from './brush';
 import type { PartyId, PartyIndex } from './contact-ledger';
 import type { Random } from './random';
 
@@ -328,6 +329,16 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
 
   /** Nothing of it is attached to anything else. */
   gone(): void {}
+
+  /** Erased Rubble goes at once, leaving no ghost. */
+  erase(brush: Brush): void {
+    this.rubble = this.rubble.filter(({ body, radius }) => {
+      const { x, y } = this.physics.getTransform(body);
+      if (!brushTouchesCircle(brush, { x, y }, radius)) return true;
+      this.removeBody(body);
+      return false;
+    });
+  }
 
   dropVisuals(): void {
     this.fading = [];

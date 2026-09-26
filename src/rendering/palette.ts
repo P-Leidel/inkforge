@@ -7,6 +7,8 @@ export const PALETTE = {
   frozenPinEdge: 0x1d2027,
   closeMarker: 0x62d98b,
   selection: 0xf0c05a,
+  /** The Eraser's brush. */
+  eraser: 0xe8e2d0,
   rejected: 0xff5a5a,
   debug: 0x39ff88,
   crack: 0x16171b,

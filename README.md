@@ -41,9 +41,12 @@ CI runs lint, format check, typecheck, tests and build on every push and pull re
 | Reset to when physics last started                        | R                             |
 | Release a Frozen Object (while running)                   | Right-click it                |
 | Undo the last Stroke or Fill still there                  | Ctrl+Z                        |
+| Erase what the brush passes over (for testing)            | E or the palette, then drag   |
 | Stats; press again for colliders, durability, Blast rings | F1                            |
 | Copy the stats, with browser and GPU                      | F3                            |
 | Tuning panel (edit the material table live)               | F2                            |
+
+The Eraser is a testing tool of the sandbox, not part of the game. It removes whatever its brush (12 px) touches: a whole Object with its Fill, the Pieces of a Line it crosses (the rest stays), Rubble, Droplets and Patches. Erasing isn't breaking: no Debris, no Fill comes out and red doesn't explode, but a green Object stuck to what was erased falls free. It works paused and running; R brings back what was erased while running, and erased Strokes are gone from undo. Keys 1–5 go back to drawing.
 
 Each Colour is a material with its own hue and texture: grey is grainy, blue glossy, green drippy, black solid and red striped like a fuse. Blue is bouncy and slippery, black grips hardest, and grey is the plain material. An unfilled Object is a light, hollow shell; its Fill adds weight by area, blue half as much as grey and black three times as much. A hit only wakes a Frozen Object that it would really set moving, so a light ball can't wake a heavy box.
 
