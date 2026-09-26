@@ -4,10 +4,6 @@
 
 Do not add Claude as a co-author. Leave `Co-Authored-By: Claude ...` trailers (and any other Claude co-author attribution) out of commit messages.
 
-## Milestone 2 handoffs
-
-Issue #21 has a handoff in `docs/handoffs/`. Before starting it, read `docs/handoffs/README.md` and its handoff.
-
 ## Agent skills
 
 ### Issue tracker

@@ -2,12 +2,14 @@ import type Phaser from 'phaser';
 import { transformPoints } from '../geometry/transform';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { strokeCapsule, strokePolygon } from './draw';
+import type { FrameTimes } from './frame-times';
 import { PALETTE } from './palette';
 
 /**
  * F1 overlay: collider outlines, each Piece's and Object's durability, Blast
  * rings with their full reach, body count and fps. Rubble never breaks, so
- * it gets no label.
+ * it gets no label. While the Demolition scene runs, also the average fps and
+ * the longest frame since it started.
  */
 export class DebugOverlay {
   private readonly colliders: Phaser.GameObjects.Graphics;
@@ -21,8 +23,9 @@ export class DebugOverlay {
     private readonly world: SandboxWorld,
   ) {
     this.colliders = scene.add.graphics().setDepth(100);
+    // Under the gallery row of buttons.
     this.stats = scene.add
-      .text(60, 130, '', {
+      .text(60, 180, '', {
         fontFamily: 'monospace',
         fontSize: '22px',
         color: '#39ff88',
@@ -62,7 +65,8 @@ export class DebugOverlay {
     return label;
   }
 
-  draw(): void {
+  /** Draws the overlay, with the frame times since the scene started if given. */
+  draw(frames: FrameTimes | null = null): void {
     if (!this.shown) return;
     const g = this.colliders;
     g.clear();
@@ -110,6 +114,14 @@ export class DebugOverlay {
     for (; k < this.labels.length; k++) this.labels[k]!.setVisible(false);
 
     const fps = this.scene.game.loop.actualFps;
-    this.stats.setText(`fps    ${fps.toFixed(0)}\nbodies ${this.world.bodyCount}`);
+    let stats = `fps    ${fps.toFixed(0)}\nbodies ${this.world.bodyCount}`;
+    if (frames) {
+      const { averageFps: average, longestMs: longest } = frames;
+      stats +=
+        `\nsince start (${frames.frames} frames)` +
+        `\navg fps ${average === null ? '-' : average.toFixed(1)}` +
+        `\nlongest ${longest === null ? '-' : `${longest.toFixed(1)} ms`}`;
+    }
+    this.stats.setText(stats);
   }
 }
