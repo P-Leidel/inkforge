@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inkforge Architecture Review 3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f1f2f4;
+    --surface: #ffffff;
+    --ink: #15171c;
+    --muted: #5b616e;
+    --rule: #d7dae0;
+    --strong: #1d7f36;
+    --strong-bg: #e1f3e5;
+    --explore: #8c5f0e;
+    --explore-bg: #fbefd6;
+    --spec: #4e5563;
+    --spec-bg: #e6e8ec;
+    --tag-bg: #eceef2;
+    --note-bg: #eef0f4;
+    --leak: #b8322a;
+    --leak-bg: #fbe6e3;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d2027;
+      --surface: #252933;
+      --ink: #e8e2d0;
+      --muted: #9aa0ad;
+      --rule: #3a404d;
+      --strong: #62d98b;
+      --strong-bg: #1d3a28;
+      --explore: #f0c05a;
+      --explore-bg: #3b321d;
+      --spec: #c0c5cf;
+      --spec-bg: #333845;
+      --tag-bg: #2f3440;
+      --note-bg: #2c313c;
+      --leak: #f07a6e;
+      --leak-bg: #3d2524;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d2027;
+    --surface: #252933;
+    --ink: #e8e2d0;
+    --muted: #9aa0ad;
+    --rule: #3a404d;
+    --strong: #62d98b;
+    --strong-bg: #1d3a28;
+    --explore: #f0c05a;
+    --explore-bg: #3b321d;
+    --spec: #c0c5cf;
+    --spec-bg: #333845;
+    --tag-bg: #2f3440;
+    --note-bg: #2c313c;
+    --leak: #f07a6e;
+    --leak-bg: #3d2524;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+  h1 { font-size: 1.9rem; line-height: 1.15; }
+  h2 { font-size: 1.45rem; line-height: 1.2; }
+  h3 { font-size: 1.05rem; line-height: 1.25; }
+  p { margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  code { font-size: .9em; }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+  .muted { color: var(--muted); }
+  .label { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+
+  .page { max-width: 72rem; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  .head { display: flex; flex-direction: column; gap: 16px; }
+  .titlerow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .scope { font-size: 14px; color: var(--muted); max-width: 52rem; }
+  .legend { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .swatch { display: inline-block; width: 24px; height: 16px; }
+  .swatch-seam { display: inline-block; width: 32px; border-top: 1.5px dashed var(--muted); }
+
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* What the performance work changed */
+  .figs { display: grid; grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); gap: 8px; }
+  .fig { border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .fig .v { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .fig .k { font-size: 13px; color: var(--muted); line-height: 1.35; }
+  .points { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 60rem; }
+
+  /* The queue, today */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 8px; }
+  .tile { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); gap: 0 6px; font-size: 13px; line-height: 1.35; }
+  .tile .n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--muted); }
+  .tile .st { grid-column: 2; font-size: 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tile.keep .st { color: var(--strong); }
+  .tile.fold .st { color: var(--explore); }
+  .tile.park { background: var(--note-bg); border-color: transparent; }
+  .tile.park .st { color: var(--muted); }
+  .tile .st a { font-weight: 600; }
+
+  .candidates { display: flex; flex-direction: column; gap: 36px; }
+  .cand { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 16px; }
+  .cand-head { display: flex; flex-direction: column; gap: 8px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+  .b-strong { background: var(--strong-bg); color: var(--strong); }
+  .b-explore { background: var(--explore-bg); color: var(--explore); }
+  .b-spec { background: var(--spec-bg); color: var(--spec); }
+  .b-tag { background: var(--tag-bg); color: var(--muted); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .files { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+  .files .note { opacity: .75; }
+
+  .ba { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .prose3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .prose3 > div { display: flex; flex-direction: column; gap: 4px; }
+  .wins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wins li::before { content: "▪"; color: var(--strong); margin-right: 8px; }
+  .callout { background: var(--explore-bg); border-left: 3px solid var(--explore); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+  .evidence { background: var(--note-bg); border-left: 3px solid var(--muted); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+
+  .parked { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .park-card { background: var(--surface); border: 1px dashed var(--rule); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+
+  /* The queue, restructured */
+  .tablewrap { overflow-x: auto; }
+  table.queue { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14px; }
+  table.queue th { text-align: left; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+  table.queue td { padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  table.queue td.ord { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; font-variant-numeric: tabular-nums; width: 2.5rem; }
+  table.queue tr.out td { color: var(--muted); }
+  .act { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .a-new { background: var(--strong-bg); color: var(--strong); }
+  .a-keep { background: var(--tag-bg); color: var(--ink); }
+  .a-rewrite { background: var(--explore-bg); color: var(--explore); }
+  .a-close { background: var(--spec-bg); color: var(--spec); }
+  .a-move { background: var(--note-bg); color: var(--muted); }
+
+  .also ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+
+  .top { background: var(--surface); border: 3px solid var(--strong); border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .top .label { color: var(--strong); }
+  .top p { max-width: 52rem; }
+
+  @media (min-width: 640px) {
+    .page { padding-inline: 24px; padding-block: 56px 80px; }
+    h1 { font-size: 2.3rem; }
+    h2 { font-size: 1.6rem; }
+    .cand { padding: 28px; }
+    .panel { padding: 20px; }
+    .top { padding: 32px; }
+  }
+  @media (min-width: 768px) {
+    .prose3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .parked { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1024px) { .ba { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Diagram sheets are drafting paper in both themes, so hand-drawn and Mermaid diagrams read the same. */
+  .sheet { background: #fbfbfa; color: #16181d; border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-x: auto; min-width: 0; }
+  .s-muted { color: #6a707c; }
+  .s-label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tiny { font-size: 11px; }
+  .small { font-size: 12px; }
+  .center { text-align: center; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 3px 8px; font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .pad { padding: 8px; }
+  .pad-lg { padding: 14px 16px; }
+  .mod { border: 1.5px solid #5b616e; background: #ffffff; border-radius: 4px; }
+  .plan { border: 1.5px dashed #7a808c; background: #ffffff; border-radius: 4px; color: #4a505b; }
+  .leakbox { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; border-radius: 4px; }
+  .okbox { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; border-radius: 4px; }
+  /* A deep module is drawn like the game's black ink: a heavy dark core in a pale rim. */
+  .deep { background: #050506; color: #eef0f3; border: 3px solid #8a909e; border-radius: 5px; }
+  .deep .faded { color: #8f96a3; }
+  .deep .chip { border: 1px solid #3c414c; color: #d6d9df; border-radius: 3px; }
+  .mod .chip, .plan .chip { border: 1px solid #c9cdd4; border-radius: 3px; background: #ffffff; }
+  .seam { border-top: 1.5px dashed #7a808c; }
+  .arrow { text-align: center; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: #6a707c; }
+  .stack { display: flex; flex-direction: column; gap: 12px; min-width: 330px; }
+  .row { display: grid; gap: 8px; }
+  .row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .row-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .frame { border: 1.5px dashed #7a808c; border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+  /* C1: the renderer's bookkeeping */
+  .ledger { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; }
+  .ledger .f { color: #2c3038; }
+  .ledger .t { color: #8f1f16; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* C2: Kind members, per kind */
+  .slots { display: grid; grid-template-columns: minmax(6.8rem, auto) repeat(6, 2.9rem) 3.4rem; gap: 5px 2px; align-items: center; min-width: 470px; }
+  .colhead { font-size: 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; line-height: 1.15; color: #4a505b; }
+  .rowhead { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; color: #2c3038; line-height: 1.25; }
+  .cell { width: 13px; height: 13px; border-radius: 999px; justify-self: center; display: inline-block; }
+  .c-built { background: #16181d; }
+  .c-empty { border: 1.5px solid #c9cdd4; }
+  .goes { font-size: 10.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; font-weight: 600; color: #1d7f36; }
+  .goes.stay { color: #8c929e; font-weight: 500; }
+  .key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: #6a707c; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .key span { display: flex; align-items: center; gap: 6px; }
+  .ways { display: flex; flex-direction: column; gap: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; }
+  .ways .w { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 8px; }
+  .ways .w span:first-child { color: #2c3038; }
+  .ways .w span:last-child { color: #8f1f16; }
+
+  /* C3: questions about place */
+  .qrows { display: flex; flex-direction: column; gap: 6px; min-width: 330px; }
+  .qrow { padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .qrow b { font-size: 12.5px; font-weight: 600; }
+  .qrow span { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .newtag { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; background: #d23a2e; color: #ffffff; border-radius: 2px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
+
+  /* C4: rebuild's checklist */
+  .check { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; }
+  .check li { display: grid; grid-template-columns: 1.2rem minmax(0, 1fr); gap: 6px; }
+  .check .y { color: #1d7f36; font-weight: 600; }
+  .check .x { color: #d23a2e; font-weight: 600; }
+  .check .q { color: #8c929e; }
+  .check .bad { color: #8f1f16; }
+  .check .meh { color: #6a707c; }
+
+  pre.mermaid { background: transparent; margin: 0; font-size: 13px; }
+  /* Mermaid names its node labels .label too: keep the page's label style off them. */
+  pre.mermaid .label { text-transform: none; letter-spacing: normal; font-size: inherit; font-weight: inherit; color: inherit; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
+</head>
+<body>
+<main class="page">
+
+  <header class="head">
+    <div class="titlerow">
+      <h1>Inkforge architecture review</h1>
+      <span class="mono meta">P-Leidel/inkforge · 4998feb (#47) · 2026-09-26</span>
+    </div>
+    <p class="scope">Scope: the code through #47. That covers the fuse (#20), the Demolition scene (#21), the performance work (#45 to #47: baked textures, the F1 panel, the render budget, cheaper colliders) and the Eraser (#46). It is judged on milestone 3 (the ink economy) and milestone 4 (enemies). It follows the review after #19, and it restructures the refactor queue #34 to #40.</p>
+    <div class="legend">
+      <span class="label">Legend</span>
+      <span class="item"><span class="swatch mod"></span>module</span>
+      <span class="item"><span class="swatch plan"></span>planned or later</span>
+      <span class="item"><span class="swatch-seam"></span>seam</span>
+      <span class="item"><svg width="30" height="10" aria-hidden="true"><line x1="0" y1="5" x2="22" y2="5" stroke="#d23a2e" stroke-width="2" stroke-dasharray="4 3"/><path d="M22 1 L29 5 L22 9 Z" fill="#d23a2e"/></svg>leakage</span>
+      <span class="item"><span class="swatch deep"></span>deep module, drawn like black ink</span>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="perf-h">
+    <span id="perf-h" class="label">What the performance work changed for the architecture</span>
+    <div class="figs">
+      <div class="fig"><span class="v">0.41 ms</span><span class="k">Sandbox world step, Demolition, mean (<code>npm run verdict</code>, today)</span></div>
+      <div class="fig"><span class="v">0.075 ms</span><span class="k">one read of every view, per frame (331 items, 1.6 ms max)</span></div>
+      <div class="fig"><span class="v">1,500</span><span class="k">drawing calls a frame, the render budget <code>world-renderer.test.ts</code> holds</span></div>
+      <div class="fig"><span class="v">144 fps</span><span class="k">Pebbles on the baseline machine (GTX 980, 144 Hz, Firefox 143), longest frame 7 ms</span></div>
+    </div>
+    <ul class="points">
+      <li>Drawing is now retained. Each Stroke is baked into textures and each piece of Rubble and each Patch is an Image, so the renderer keeps one Phaser object per id and has to know when a look changes and when an id goes.</li>
+      <li>The world's read side still only answers "everything, now". It is cheap (0.075 ms), so the case for changing it is locality, not frame time.</li>
+      <li>The Eraser added a seventh way for a body to go and a sixth question about place. Both repeat patterns #36 and #40 already named.</li>
+      <li>At 144 Hz, falling Objects don't look smooth: the world steps at 60 Hz and the renderer draws only the latest pose. That goes into C1.</li>
+      <li>Every candidate below keeps the render budget test and the gallery replay tests passing unchanged. All 463 tests pass on 4998feb.</li>
+    </ul>
+  </section>
+
+  <section class="panel" aria-labelledby="queue-now-h">
+    <span id="queue-now-h" class="label">The queue #34 to #40, today</span>
+    <div class="tiles">
+      <div class="tile keep"><span class="n">#34</span><span>Rebuild bodies from one body description</span><span class="st">still true: <code>bullet</code> still skips rebuild → <a href="#c4">C4</a></span></div>
+      <div class="tile park"><span class="n">#35</span><span>One Frozen wake rule</span><span class="st">code unchanged, nothing ahead needs it → <a href="#parked">park</a></span></div>
+      <div class="tile fold"><span class="n">#36</span><span>One Arena query module</span><span class="st">stronger: Eraser and preview ask too → <a href="#c3">C3</a></span></div>
+      <div class="tile park"><span class="n">#37</span><span>A Materials module</span><span class="st">smaller since #33; splits three ways → <a href="#parked">split</a></span></div>
+      <div class="tile park"><span class="n">#38</span><span>Undo and Ink cost in the Build Phase</span><span class="st">an M3 decision, not a refactor → <a href="#parked">M3 spec</a></span></div>
+      <div class="tile fold"><span class="n">#39</span><span>Geometry tests and repeated walks</span><span class="st">test through C3's interface → <a href="#c3">C3</a></span></div>
+      <div class="tile fold"><span class="n">#40</span><span>Kinds' body lifecycle, split strokes.ts</span><span class="st">the Eraser repeated the pairs → <a href="#c2">C2</a></span></div>
+    </div>
+  </section>
+
+  <section id="candidates" class="candidates">
+
+    <!-- C1 -->
+    <article id="c1" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 1 · new</span>
+        <h2>Let the Sandbox world say what happened</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">replaces the old read-model candidate</span><span class="badge b-tag">visible at 144 Hz</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/rendering/world-renderer.ts <span class="note">(6 id maps 69–80, look keys 252 and 279, removeStale 188, 207, 258, 287; drawDroplets 211, drawDebris 223)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(10 view getters 205–251, Debris 122, puff 379, step 483–500)</span></li>
+        <li>src/sandbox/debris.ts · src/sandbox/rubble.ts <span class="note">(fadingViews, dropVisuals)</span> · src/sandbox/patches.ts <span class="note">(Puff, removeUsedUp)</span></li>
+        <li>src/sandbox/arena-contents.ts <span class="note">(Kind.dropVisuals 55)</span> · src/rendering/debug-overlay.ts <span class="note">(readings)</span> · src/scenes/sandbox-scene.ts <span class="note">(217)</span></li>
+        <li>scripts/engine-verdict.ts <span class="note">(id sets 230–232)</span> · src/gallery/gallery.test.ts <span class="note">(id sets 251–253)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: every reader works out what changed</span>
+<pre class="mermaid">
+%%{init: {"theme": "neutral"}}%%
+flowchart LR
+  W["Sandbox world<br/>10 view getters<br/>each read rebuilds every view"]
+  subgraph VIS["visual only, inside the headless world"]
+    D["Debris<br/>stepped with physics"]
+    G["Rubble ghosts<br/>Kind.dropVisuals"]
+    P["Patch puffs"]
+  end
+  W --- VIS
+  W -->|"9 reads a frame"| R["World renderer<br/>6 id maps · 2 look keys<br/>4 sweeps · latest pose only"]
+  W -->|"reads again"| F["F1 overlay"]
+  W -->|"polls"| T["verdict · gallery test<br/>3 id sets each"]
+  W -->|"polls"| S["stress tests"]
+  classDef leak fill:#fde8e5,stroke:#d23a2e,stroke-width:2px,stroke-dasharray:4 3,color:#8f1f16
+  classDef hot fill:#ffffff,stroke:#d23a2e,stroke-width:2px,color:#16181d
+  class D,G,P leak
+  class R,T hot
+</pre>
+          <div class="frame">
+            <span class="s-label">the renderer's own bookkeeping, every frame</span>
+            <div class="ledger">
+              <span class="f">world.lines, world.objects rebuilt (4 engine reads per Object)</span><span class="t">9 reads</span>
+              <span class="f">look key per Line: every Piece's index and crack stage, as a string</span><span class="t">1 per Line</span>
+              <span class="f">look key per Object: frozen, Fill, crack stage</span><span class="t">1 per Object</span>
+              <span class="f">maps by id: Line tiles, Object drawings, Rubble, Patches, 2 looks</span><span class="t">6</span>
+              <span class="f">sweeps for ids no longer in the world</span><span class="t">4</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: one list per step; readers listen</span>
+          <div class="stack">
+            <div class="deep pad-lg" style="display:flex;flex-direction:column;gap:8px">
+              <span class="s-label">Sandbox world</span>
+              <span class="small faded">steps and commands; simulation only; each moving body's pose at the last two steps</span>
+            </div>
+            <div class="arrow">↓ each step and command appends ↓</div>
+            <div class="mod pad-lg" style="display:flex;flex-direction:column;gap:8px">
+              <span class="s-label">what happened</span>
+              <div class="chips">
+                <span class="chip">added</span><span class="chip">went: broke · undone · erased · capped · landed · left</span><span class="chip">cracked</span><span class="chip">filled</span><span class="chip">Released</span><span class="chip">burst</span><span class="chip">exploded</span><span class="chip">stuck</span>
+              </div>
+            </div>
+            <div class="arrow">↓ read once a frame ↓</div>
+            <div class="row row-3">
+              <div class="okbox pad small">World renderer: bakes, frees, bursts Debris; draws what moves between its last two poses</div>
+              <div class="mod pad small">F1 · verdict · tests count what happened</div>
+              <div class="plan pad small">M4: a kill and its ink drop, one entry each</div>
+            </div>
+            <div class="seam"></div>
+            <span class="tiny s-muted mono">Debris, Rubble ghosts and Patch puffs move to the renderer · Kind loses dropVisuals</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>On the baseline's 144 Hz screen, falling Objects don't look smooth: the world moves in 60 Hz steps and the renderer draws only the latest pose, so each pose shows for two or three frames in an uneven rhythm. The world only answers "everything, now", so the renderer also rebuilds every view each frame and works out what changed itself, with six id maps, two look keys and four sweeps. The verdict and the gallery test each collect the same three id sets. Debris, ghosts and puffs are visual only, yet run in the headless world.</p></div>
+        <div><span class="label">Solution</span><p>Each step and each command appends what happened to a list: what was added, what went and why, what cracked, filled, was Released, burst or exploded. The renderer bakes, frees and bursts Debris from that list, and draws each moving body between its poses at the last two steps. Debris, the ghosts and the puffs move to the renderer.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>smooth motion at 144 Hz</li>
+            <li>locality: "what changed" decided once</li>
+            <li>renderer drops look keys, sweeps</li>
+            <li>headless world: simulation only</li>
+            <li>Kind loses dropVisuals</li>
+            <li>tests count events, not ids</li>
+            <li>perf R4's pooled Debris starts here</li>
+            <li>M4 kills, drops: one entry each</li>
+          </ul>
+        </div>
+      </div>
+      <div class="evidence">Seen on the baseline machine: falling Objects don't look smooth at 144 Hz. Reads cost 0.075 ms a frame (Demolition, 331 items), so the rest is for locality, not speed. Replays are safe: drawing between poses never feeds back into the simulation, and Debris draws from its own generator (<code>DEBRIS_SEED</code>), never the simulation's. The render budget test must pass unchanged.</div>
+      <div class="callout">For grilling: drawing between the last two poses shows the world up to one step (16.7 ms) late; decide whether that is fine or whether to extrapolate. A body that is rebuilt, Squeezed or appears mid-step needs one pose, not two. Debris now steps with physics and stops while paused; in the renderer it needs a clock of its own. R, Clear and loading a demo need a "start over" entry.</div>
+    </article>
+
+    <!-- C2 -->
+    <article id="c2" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 2 · rewrites #40</span>
+        <h2>Add and remove every body through one module</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/arena-contents.ts <span class="note">(Kind: 11 members)</span></li>
+        <li>src/sandbox/strokes.ts <span class="note">(addPiece, registerObject, removeBody 363–366, slideOut 369–372, erase 502)</span></li>
+        <li>src/sandbox/rubble.ts · droplets.ts · patches.ts · bonds.ts <span class="note">(addBody or attach, removeBody, erase, applySurfaces)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(passOnGone after remove 322, after each kind's erase 340, after undo 351, in step 499; applyMaterials 456)</span></li>
+        <li>src/sandbox/contact-ledger.ts <span class="note">(PartyIndex: newId, register, unregister, squeezed)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: Kind grows with every feature</span>
+          <div class="frame">
+            <span class="s-label">Kind members, per kind (views, save, restore and clear are real in all six)</span>
+            <div class="slots" role="img" aria-label="Which kinds implement each optional Kind member, and which candidate removes it">
+              <span></span>
+              <span class="colhead">Strokes</span><span class="colhead">Rubble</span><span class="colhead">Bonds</span><span class="colhead">Drop-<br>lets</span><span class="colhead">Patches</span><span class="colhead">Blasts</span><span class="colhead">goes<br>with</span>
+
+              <span class="rowhead">dropVisuals</span>
+              <span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="goes">C1</span>
+              <span class="rowhead">applySurfaces</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="goes">C2</span>
+              <span class="rowhead">solids</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="goes">C3</span>
+              <span class="rowhead">surfaceOf</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="goes">C3</span>
+              <span class="rowhead">erase (#46)</span>
+              <span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="goes">C3</span>
+              <span class="rowhead">gone</span>
+              <span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-built"></span><span class="goes stay">stays</span>
+              <span class="rowhead">step</span>
+              <span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="goes stay">stays</span>
+            </div>
+            <div class="key">
+              <span><span class="cell c-built"></span>real</span>
+              <span><span class="cell c-empty"></span>empty</span>
+              <span>24 of 66 methods empty</span>
+            </div>
+          </div>
+          <div class="frame">
+            <span class="s-label">every way a body goes pairs two calls by hand</span>
+            <div class="ways">
+              <div class="w"><span>break, undo, remove</span><span>strokes: removeBody + unregister</span></div>
+              <div class="w"><span>erase (#46)</span><span>4 kinds, then passOnGone after each</span></div>
+              <div class="w"><span>Rubble cap</span><span>rubble: removeBody + unregister</span></div>
+              <div class="w"><span>Droplet lands, leaves</span><span>droplets: removeBody + unregister</span></div>
+              <div class="w"><span>Squeeze</span><span>strokes: slideOut + squeezed</span></div>
+            </div>
+            <span class="tiny s-muted mono">a removal drops bonds and Patch capsules at once; Bonds and Patches hear at the next passOnGone</span>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: one module owns a body's coming and going</span>
+          <div class="stack">
+            <div class="row row-4">
+              <div class="mod pad small center">Strokes</div>
+              <div class="mod pad small center">Rubble</div>
+              <div class="mod pad small center">Droplets · Patches</div>
+              <div class="plan pad small center">M4 enemies</div>
+            </div>
+            <div class="arrow">↓ add · slide · remove ↓</div>
+            <div class="deep pad-lg" style="display:flex;flex-direction:column;gap:10px">
+              <span class="s-label">Arena bodies</span>
+              <div class="chips">
+                <span class="chip">add + register its Party</span>
+                <span class="chip">slide + mark Squeezed</span>
+                <span class="chip">remove + unregister</span>
+                <span class="chip">"gone" passed on at once</span>
+                <span class="chip">each Party's Colour and role</span>
+                <span class="chip">surfaces re-applied on an edit</span>
+              </div>
+              <span class="tiny faded">tests: removal order and "gone" at one interface, on a stub physics module</span>
+            </div>
+            <div class="arrow">↓ ↓</div>
+            <div class="row" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+              <div class="mod pad small center">physics module</div>
+              <div class="mod pad small center">Contact ledger</div>
+            </div>
+            <div class="seam"></div>
+            <span class="tiny s-muted mono">Kind after C1 to C3: views · save · restore · clear · gone · step</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Each kind pairs <code>physics.add…</code> with <code>contacts.register</code>, <code>removeBody</code> with <code>unregister</code> and <code>slideOut</code> with <code>squeezed</code> by hand. The Eraser added a seventh way to go and had to call <code>passOnGone</code> after every kind's turn to stay out of the window after a removal. Kind now has 11 members; 24 of its 66 methods are empty.</p></div>
+        <div><span class="label">Solution</span><p>Kinds add, slide and remove their bodies through one Arena bodies module. It registers and unregisters each Party, marks a sliding Object Squeezed and passes "gone" on as soon as a body goes. It knows each Party's Colour and role, so it re-applies surfaces after a table edit itself. strokes.ts loses its lifecycle code.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>pairs can't come apart</li>
+            <li>no window after a removal</li>
+            <li>enemy kind: one module to call</li>
+            <li>Kind loses applySurfaces</li>
+            <li>strokes.ts sheds its lifecycle</li>
+            <li>removal order tested once</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">Registration and removal order are part of replay order: keep them. Kinds still never call each other. The rest of #40's strokes.ts split falls out of other tickets: the Squeeze goes with C3, the undo history with #38.</div>
+    </article>
+
+    <!-- C3 -->
+    <article id="c3" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 3 · rewrites #36, takes in #39</span>
+        <h2>Answer "what is here" in one Arena query module</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">after C2</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/stroke/stroke-pipeline.ts <span class="note">(StrokeContext, overlapsSolid)</span> · src/scenes/sandbox-scene.ts <span class="note">(updateRefusal 229)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(strokeContext, previewStroke, surfaceOf, eraseAlong)</span></li>
+        <li>src/sandbox/strokes.ts <span class="note">(squeeze 412, objectAt 443, erase 502, solids 645, surfaceOf 650)</span> · rubble.ts · droplets.ts · patches.ts <span class="note">(erase)</span> · brush.ts</li>
+        <li>src/sandbox/blasts.ts <span class="note">(reach)</span> · src/physics/box2d/box2d-physics-world.ts <span class="note">(bodiesWithin)</span></li>
+        <li>src/geometry/ <span class="note">(separation, overlap, clip: no tests of their own, #39)</span> · docs/gdd.md §10 <span class="note">(overlap charging)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: six questions, six ways, three Kind members to feed them</span>
+          <div class="qrows">
+            <div class="qrow leakbox"><b>May this Object go here?</b><span>overlapsSolid over every kind's solids() · every draw, and each frame an Object is drawn · all parts × every solid</span></div>
+            <div class="qrow leakbox"><b>Which Object is under the pointer?</b><span>Strokes.objectAt · Fill, Release · every Outline to world space</span></div>
+            <div class="qrow leakbox"><b>Which Objects does a new Line cross?</b><span>Strokes.squeeze · 48 directions × every other Object</span></div>
+            <div class="qrow leakbox"><b>What does the brush touch?<span class="newtag">#46</span></b><span>erase in 4 kinds, 3 brush checks · every body to world space, each frame the button is held</span></div>
+            <div class="qrow leakbox"><b>Where does a Droplet's Patch lie?</b><span>world.surfaceOf → every kind's surfaceOf · a scan of every Stroke and Piece</span></div>
+            <div class="qrow okbox"><b>What does a Blast reach?</b><span>Blasts.reach → bodiesWithin · the engine's broadphase: already indexed</span></div>
+            <div class="qrow plan"><b>Which parts of this Line lie on a Line?</b><span>M3 overlap charging · not built</span></div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: one interface, one index</span>
+          <div class="stack">
+            <div class="chips">
+              <span class="chip mod">drawing · preview</span><span class="chip mod">Fill · Release</span><span class="chip mod">Squeeze</span><span class="chip mod">Eraser</span><span class="chip mod">Blasts</span><span class="chip mod">Droplet landing</span><span class="chip plan">M3 overlap charging</span>
+            </div>
+            <div class="arrow">↓ ask ↓</div>
+            <div class="deep pad-lg" style="display:flex;flex-direction:column;gap:10px">
+              <span class="s-label">Arena queries</span>
+              <div class="chips">
+                <span class="chip">point</span><span class="chip">overlap</span><span class="chip">crossing</span><span class="chip">brush</span><span class="chip">within radius</span><span class="chip">surface of a Party</span>
+              </div>
+              <span class="tiny faded">every Party's shapes, known from Arena bodies (C2) · the engine's broadphase as index · the Squeeze lives here</span>
+            </div>
+            <div class="seam"></div>
+            <span class="tiny s-muted mono">Kind loses solids, surfaceOf and erase · src/geometry is tested through this interface</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Six questions about place are answered six ways, and the Eraser added one. Four of them move every body into world space and scan them all, and the Object preview does it again each time a closing Stroke grows. Kind carries <code>solids</code>, <code>surfaceOf</code> and <code>erase</code> only to answer them. <code>src/geometry</code> has no tests of its own.</p></div>
+        <div><span class="label">Solution</span><p>One module answers point, overlap, crossing, brush, radius and surface questions over every Party's shapes, with the engine's broadphase as its index, as <code>bodiesWithin</code> already does. The Squeeze moves here from strokes.ts, and M3's overlap charging is one more query.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>leverage: one query, seven callers</li>
+            <li>Kind loses solids, surfaceOf, erase</li>
+            <li>Squeeze leaves strokes.ts</li>
+            <li>M3 overlap charging is a query</li>
+            <li>geometry tested at one interface</li>
+            <li>cost follows the neighbourhood</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">Squeeze results are part of replay order, so world shapes must come out bit-identical. <code>b2World_OverlapCircle</code> is broken in Phaser Box2D 1.1.0: use <code>OverlapAABB</code>, then <code>b2Shape_GetClosestPoint</code>. Strong once the M3 spec includes overlap charging.</div>
+    </article>
+
+    <!-- C4 -->
+    <article id="c4" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 4 · #34, takes part of #37</span>
+        <h2>Rebuild bodies from one body description</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">inside src/physics/</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/physics/box2d/box2d-physics-world.ts <span class="note">(BodyRecord 124, addShapes 340, rebuild 529–547, reweld, removeBody, clearContacts, ownShapes; surfaces kept by reference 831, 859)</span></li>
+        <li>src/physics/physics-world.ts <span class="note">(ObjectBodyDef, CircleBodyDef)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(applyMaterials 456)</span> · src/rendering/tuning-panel.ts <span class="note">(F2)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: rebuild copies every attachment by hand</span>
+          <div class="frame">
+            <span class="s-label">rebuild(id) · adapter 529–547</span>
+            <ul class="check">
+              <li><span class="y">✓</span><span>pose, copied before the body is destroyed</span></li>
+              <li><span class="y">✓</span><span>damping, decided again by kind</span></li>
+              <li><span class="y">✓</span><span>own shapes · density · group</span></li>
+              <li><span class="y">✓</span><span>Patch capsules, made again one by one</span></li>
+              <li><span class="y">✓</span><span>bonds, welded again</span></li>
+              <li><span class="x">✗</span><span class="bad">bullet: line 539 never passes it</span></li>
+              <li><span class="x">✗</span><span class="bad">surface: the table's own object, so an F2 edit reaches a rebuilt body a step early (#37)</span></li>
+              <li><span class="q">~</span><span class="meh">placed: survives because the pose copy is exact</span></li>
+            </ul>
+          </div>
+          <span class="tiny s-muted mono">adapter 1,176 lines · one new attachment ≈ 8 edits</span>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: every change applies one record</span>
+          <div class="stack">
+            <div class="chips">
+              <span class="chip mod">create</span><span class="chip mod">Release</span><span class="chip mod">wake</span><span class="chip mod">slide end</span><span class="chip mod">setSurface</span><span class="chip mod">setMass</span>
+            </div>
+            <div class="arrow">↓ apply the description ↓</div>
+            <div class="deep pad-lg" style="display:flex;flex-direction:column;gap:10px">
+              <span class="s-label">Body description</span>
+              <div class="chips">
+                <span class="chip">shapes</span><span class="chip">added capsules</span><span class="chip">its own copy of the surface</span><span class="chip">density</span><span class="chip">damping</span><span class="chip">group</span><span class="chip">bullet</span><span class="chip">never wakes</span><span class="chip">bonds</span>
+              </div>
+              <span class="tiny faded">nothing to carry over: a rebuild reads the record</span>
+            </div>
+            <div class="seam"></div>
+            <span class="tiny s-muted mono">PhysicsWorld interface unchanged · M4: an enemy body's options are one field each</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Box2D can't unfreeze a fixed body, so Release, a wake and the end of a slide rebuild it, and every attachment is carried over by hand. <code>bullet</code> still never reaches <code>rebuild</code>. Surfaces are the table's own objects, so an F2 edit reaches a body rebuilt before the next step early.</p></div>
+        <div><span class="label">Solution</span><p>The adapter keeps one complete description per body: shapes and added capsules with their own surfaces, density, damping, group, bullet, the never-wake flag and bonds. Creating, rebuilding, <code>setSurface</code> and <code>setMass</code> all apply it.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>locality: one record per body</li>
+            <li>drift like bullet can't recur</li>
+            <li>F2 edits apply on the step</li>
+            <li>one rebuild test, every attachment</li>
+            <li>enemy body options land once</li>
+            <li>PhysicsWorld interface unchanged</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">The order of engine calls in a rebuild (destroy, create, shapes, added shapes, rewelds) is part of replay order. ADR 0001's verdict checks 1, 2 and 4 must read the same.</div>
+    </article>
+
+  </section>
+
+  <section id="parked" class="panel" aria-labelledby="parked-h">
+    <span id="parked-h" class="label">Out of the refactor queue</span>
+    <div class="parked">
+      <div class="park-card">
+        <div class="badges"><span class="badge b-spec"><span class="dot"></span>Speculative</span><span class="badge b-tag">#35</span></div>
+        <h3>One Frozen wake rule</h3>
+        <p>The adapter's wake loop hasn't changed since #35 was filed; #47 only made contacts stiffer. ADR 0001's verdict and #22 both pass, so no engine swap is planned, and M4's enemies wake Frozen Objects by the same hit rule. Close as not planned, with a pointer here. Reopen on an engine swap, or if enemies need a measure of their own.</p>
+      </div>
+      <div class="park-card">
+        <div class="badges"><span class="badge b-spec"><span class="dot"></span>Speculative</span><span class="badge b-tag">#37</span></div>
+        <h3>A Materials module</h3>
+        <p>Since #33, the Material rules make 7 of the 29 raw reads of the table; many of the rest are kinds reading surfaces, which C2 takes. Split it: the surface aliasing goes to C4 (#34), the whole-table <code>JSON.stringify</code> every step becomes a revision number riding with C1, and the edit-timing table goes into the README's F2 section. Revisit the module when M3 adds ink costs per Colour.</p>
+      </div>
+      <div class="park-card">
+        <div class="badges"><span class="badge b-tag">#38</span><span class="badge b-tag">milestone 3</span></div>
+        <h3>Undo and Ink cost in the Build Phase</h3>
+        <p>A decision for the M3 spec, not a refactor. Keep it open and take it out of this queue. Add two notes: the Stroke undo history in strokes.ts moves to wherever the phase lands, and the Eraser is sandbox-only (<code>CONTEXT.md</code>), so it stays outside the ink rules.</p>
+      </div>
+      <div class="park-card">
+        <div class="badges"><span class="badge b-tag">#39</span></div>
+        <h3>Geometry tests and repeated walks</h3>
+        <p>Folded into C3: the Arena query's interface is where separation and overlap get tested. The repeated arc-length walks change floating-point results that replays depend on, for no leverage, so fold them only when a ticket already touches that code.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="queue-new-h">
+    <span id="queue-new-h" class="label">The queue, restructured: 7 open tickets become 4</span>
+    <div class="tablewrap">
+      <table class="queue">
+        <thead><tr><th>Order</th><th>Ticket</th><th>Action</th><th>Blocked by</th></tr></thead>
+        <tbody>
+          <tr><td class="ord">1</td><td><a href="#c1">Let the Sandbox world say what happened</a> (C1)</td><td><span class="act a-new">file new</span> with #37's revision number</td><td>none</td></tr>
+          <tr><td class="ord">2</td><td>#34 <a href="#c4">Rebuild bodies from one body description</a> (C4)</td><td><span class="act a-keep">keep</span> add #37's surface copies</td><td>none; can run beside 1</td></tr>
+          <tr><td class="ord">3</td><td>#40 → <a href="#c2">Add and remove every body through one module</a> (C2)</td><td><span class="act a-rewrite">rewrite</span> title and body</td><td>none</td></tr>
+          <tr><td class="ord">4</td><td>#36 → <a href="#c3">Answer "what is here" in one Arena query module</a> (C3)</td><td><span class="act a-rewrite">rewrite</span> add Eraser, preview, surfaceOf, geometry tests</td><td>#40</td></tr>
+          <tr class="out"><td class="ord">·</td><td>#38 M3: undo and Ink cost</td><td><span class="act a-move">move</span> to the M3 spec</td><td></td></tr>
+          <tr class="out"><td class="ord">·</td><td>#35 One Frozen wake rule</td><td><span class="act a-close">close</span> not planned</td><td></td></tr>
+          <tr class="out"><td class="ord">·</td><td>#37 A Materials module</td><td><span class="act a-close">close</span> split into #34, C1, README</td><td></td></tr>
+          <tr class="out"><td class="ord">·</td><td>#39 Geometry tests and walks</td><td><span class="act a-close">close</span> folded into #36</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel also" aria-labelledby="also-h">
+    <span id="also-h" class="label">Also noticed, not candidates</span>
+    <ul>
+      <li>The Object preview runs the whole Stroke pipeline, with every kind's solids, whenever the drawn Stroke grows (sandbox-scene.ts 229–240). Its cost grows with Rubble; C3's index answers it.</li>
+      <li>Perf R4 (Debris and Droplets redrawn as Graphics every frame) and R5 (the Stroke preview redraws its whole path) are still open. Both wait on a Demolition reading on the baseline machine with F1 at stats; if it shows no frame over 20 ms, close both.</li>
+      <li>Each Object is baked into a texture of its own, so 100 pebbles are 100 textures (7.2 MB) and, with <code>maxTextures: 1</code>, 100 draw calls. On the baseline that is part of a 2.1 ms render (read with the debug view on). An atlas for Object looks would batch them; do it only if a reading asks.</li>
+            <li><code>bakedTextureUse()</code> counts in module-level state (baked-textures.ts 20), shared by every scene and every test in a worker. A renderer that isn't destroyed leaks into the next reading.</li>
+      <li>"Already filled" rebuilds every Object view to flash one Outline (sandbox-scene.ts 217). A Fill outcome that carries the Outline, or C1's list, avoids it.</li>
+      <li>strokes.ts is 672 lines with nine concerns now (views, drawing, breaking, the snapshot, the Squeeze, the undo history, Fill, Release, erase). C2, C3 and #38 each take one.</li>
+    </ul>
+  </section>
+
+  <section id="top-recommendation" class="top" aria-labelledby="top-h">
+    <span class="label">Top recommendation</span>
+    <h2 id="top-h"><a href="#c1">Let the Sandbox world say what happened</a></h2>
+    <p>It is the one candidate a player sees: on the 144 Hz baseline, falling Objects don't look smooth until the renderer can draw between steps. The performance work also made the renderer retained, but the world's read side didn't follow, so the renderer now does the world's bookkeeping. This is the most-changed code in the repo, the change is replay-safe, it opens R4 if #22's Chrome reading asks for it, and it gives M4's kills and ink drops their hook. C4 (#34) is the contained second: it stays inside <code>src/physics/</code>, closes a drift that has already happened, and can run beside it.</p>
+  </section>
+
+</main>
+</body>
+</html>

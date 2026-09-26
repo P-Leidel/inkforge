@@ -100,6 +100,27 @@ describe('Recent frames', () => {
     expect(summary.renderMs.max).toBe(30);
   });
 
+  it('counts the steps over the whole second, however few each frame takes', () => {
+    const recent = new RecentFrames(240);
+    // 144 fps with 60 Hz physics: most frames take no step.
+    for (let k = 0; k < 144; k++) {
+      const steps = Math.floor(((k + 1) * 60) / 144) - Math.floor((k * 60) / 144);
+      recent.push({ ms: 1000 / 144, physicsMs: 1.2 * steps, steps, drawMs: 0, renderMs: 0 });
+    }
+
+    const summary = recent.summary()!;
+
+    expect(summary.steps).toBe(60);
+    expect(summary.msPerStep).toBeCloseTo(1.2);
+  });
+
+  it('has no time per step without a step', () => {
+    const recent = new RecentFrames(10);
+    recent.push({ ms: 16, physicsMs: 0, steps: 0, drawMs: 0, renderMs: 0 });
+
+    expect(recent.summary()!.msPerStep).toBeNull();
+  });
+
   it('has nothing to sum up before the first frame', () => {
     expect(new RecentFrames(10).summary()).toBeNull();
   });

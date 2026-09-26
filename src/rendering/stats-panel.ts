@@ -99,6 +99,11 @@ export class StatsPanel {
     this.shown = false;
   }
 
+  /** Everything the panel puts on the display list. */
+  get objects(): readonly Phaser.GameObjects.GameObject[] {
+    return this.parts;
+  }
+
   set shown(shown: boolean) {
     for (const part of this.parts)
       (part as unknown as Phaser.GameObjects.Components.Visible).setVisible(shown);

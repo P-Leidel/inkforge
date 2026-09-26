@@ -291,7 +291,7 @@ Milestone 2 is done when all three hold:
 
 1. **Feature-complete** as specified here.
 2. **Blind check.** A playtester who hasn't read the GDD plays the sandbox, gallery included, for 10 minutes. Afterwards they can describe what each Colour does as a Line, an Outline and a Fill.
-3. **Performance.** The Demolition scene averages at least 60 fps in Chrome on a mid-range laptop, with no frame over 33 ms during the chain.
+3. **Performance.** The Demolition scene averages at least 60 fps on the baseline machine (see the README), with no frame over 33 ms during the chain.
 
 ### Delivery order
 
@@ -309,7 +309,7 @@ Vertical slices, one GitHub issue each, linking to this spec. The slices form on
 10. **Red Objects and Blasts.** Destroyed means explode, Blast size, the ring, what it does on arrival, chains, Blasts waking Frozen Objects and throwing the released Fill, Blast rings in the F1 overlay.
 11. **Red Lines and the fuse.** Red Pieces exploding, the fuse.
 12. **Demolition scene.** The scene, a headless check that its chain plays out, its physics step times in `npm run verdict`.
-13. **Blind check and frame rate** (for a person, not an agent). The blind check and the Demolition frame rate on a mid-range laptop.
+13. **Blind check and frame rate** (for a person, not an agent). The blind check and the Demolition frame rate on the baseline machine.
 
 ## Testing Decisions
 

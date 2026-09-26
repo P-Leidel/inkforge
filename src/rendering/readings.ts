@@ -14,9 +14,14 @@ export interface BodyCounts {
   readonly debris: number;
 }
 
-/** What the renderer has to draw each frame. */
+/** What the game has the renderer draw each frame; the F1 overlay's own objects are left out. */
 export interface RenderLoad {
-  /** Visible Graphics objects, and the commands they replay every frame. */
+  /**
+   * Visible Graphics objects, and the entries in their command buffers,
+   * which Phaser replays every frame. An entry is a command or one of its
+   * arguments (a circle is ten), so these aren't the render budget's
+   * drawing calls.
+   */
   readonly graphics: number;
   readonly commands: number;
   /** Visible Text objects: each its own texture. */
@@ -63,7 +68,13 @@ export function readingLines({ recent, sinceStart, bodies, render }: Readings): 
       'ms, last 1 s',
       recent ? `physics ${phase(recent.physicsMs)}   draw ${phase(recent.drawMs)}` : '-',
     ),
-    row('', recent ? `render ${phase(recent.renderMs)}   steps ${recent.steps}` : ''),
+    row(
+      '',
+      recent
+        ? `render ${phase(recent.renderMs)}   steps ${recent.steps}` +
+            (recent.msPerStep === null ? '' : ` · ${recent.msPerStep.toFixed(1)} ms each`)
+        : '',
+    ),
     row(
       'bodies',
       `${number(bodies.total)}: Pieces ${bodies.pieces}   Objects ${bodies.objects}   Rubble ${bodies.rubble}`,
