@@ -384,6 +384,7 @@ render     Graphics 31 · 6,212 commands
           <div><dt>Costs</dt><dd>A re-bake when cracks appear (one-off, during the chain). Texture memory of about 4 bytes per pixel of bounds (a 400 × 40 Line is 64 KB). Textures must be freed on remove, Clear and R.</dd></div>
           <div><dt>Watch</dt><dd>Bounds must include the drips below green ink and the Outline width. Object textures rotate about the body's origin, not the texture's centre.</dd></div>
         </dl>
+        <p class="callout"><b>Done</b>, for Lines, Objects, Patches and the palette. Each is drawn into a Graphics that is baked (WebGL, at 2× like Rubble) and thrown away, and baked again only when its look changes. A Line is baked in tiles of up to 256 px, keeping only the tiles its ink reaches, so a long diagonal Line takes a strip of tiles instead of a texture the size of the screen; the tiles sit unrotated on whole pixels, so they meet without a seam. An Object gets one texture, which turns about the body's origin. Patches share looks in the Rubble atlas, by Colour, whole px of length and half px of thickness. The palette is one texture, baked again when the pick changes. Bounds come from a new <code>inkReach</code> per Colour, which a test checks against everything <code>drawInk</code> draws, green's drips included. Textures are freed when a Stroke goes (break, undo, Clear, R) and when the scene shuts down; F1 now shows the baked textures and their memory (Demolition: 15 textures, 5.2 MB). The Terrain stays a Graphics: it is a few polygons, cheaper to fill than to sample. Measured on the Demolition chain, same session and harness: Phaser's render JS 22.1 → 5.1 ms a frame, the longest frame 278 → 115 ms, 4.0 → 4.85 s of the 5 s simulated (the chain nearly keeps real time), and no frame over 100 ms when textures are made mid-chain. After the chain, paused: visible Graphics 38 → 8, render JS 4.4 → 1.0 ms. Under software GL the frame is still about 70 ms of CPU pixel fill, which a GPU does in well under a millisecond. What is left is Debris (4,300 commands after a chain) and Droplets: R4.</p>
         <p class="files mono">src/rendering/world-renderer.ts · src/rendering/palette-bar.ts · the texture cache from R2</p>
       </article>
 
@@ -416,6 +417,7 @@ render     Graphics 31 · 6,212 commands
         <div class="rec-head"><span class="id">A1</span><h3>Specks as quads, not circles</h3></div>
         <div class="badges"><span class="badge p1b"><span class="dot"></span>P1 only if R3 slips</span><span class="badge rs">Blast radius S</span></div>
         <p>A grain speck of radius 0.9 px is drawn as a 100-step arc, then triangulated. At 1080p a 2 × 2 <code>fillRect</code> looks the same and is one quad. Apply it to grey grain in Lines and Fills and to the smallest green dots. It's a stopgap: once R3 lands, specks are baked anyway.</p>
+        <p class="callout"><b>Not needed.</b> R3 landed: grain specks are baked with the rest of each look.</p>
         <p class="files mono">src/rendering/ink.ts</p>
       </article>
 

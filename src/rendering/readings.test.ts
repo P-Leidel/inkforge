@@ -13,7 +13,15 @@ describe('Readings', () => {
     blasts: 1,
     debris: 40,
   };
-  const render = { graphics: 31, commands: 6212, texts: 29, objects: 150 };
+  const render = {
+    graphics: 31,
+    commands: 6212,
+    texts: 29,
+    images: 88,
+    bakedTextures: 12,
+    bakedBytes: 7.5 * 2 ** 20,
+    objects: 150,
+  };
 
   it('shows the last second, the time since the start, the bodies and the render load', () => {
     const recent = new RecentFrames(240);
@@ -35,6 +43,7 @@ describe('Readings', () => {
       'bodies       83: Pieces 24   Objects 7   Rubble 62',
       '             Droplets 3   Patches 23   Blasts 1   Debris 40',
       'render       Graphics 31 · 6,212 commands   Text 29   objects 150',
+      '             Images 88   baked 12 textures · 7.5 MB',
     ]);
   });
 

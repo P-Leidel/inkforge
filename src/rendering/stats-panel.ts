@@ -8,7 +8,7 @@ const PADDING = 12;
 const FONT_SIZE = 16;
 const LINE_HEIGHT = 20;
 /** Room for this many lines of readings. */
-const MAX_LINES = 8;
+const MAX_LINES = 9;
 const GRAPH_HEIGHT = 90;
 /** The graph's height covers frames up to this long; longer ones get a red cap. */
 const GRAPH_MAX_MS = 50;

@@ -73,6 +73,8 @@ export class SandboxScene extends Phaser.Scene {
       this.game.events.off(Phaser.Core.Events.PRE_RENDER, beforeRender);
       this.game.events.off(Phaser.Core.Events.POST_RENDER, afterRender);
       this.overlay.destroy();
+      this.worldView.destroy();
+      this.palette.destroy();
       this.tuning.destroy();
       this.world.dispose();
     });
