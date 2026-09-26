@@ -5,8 +5,9 @@ import { strokeCapsule, strokePolygon } from './draw';
 import { PALETTE } from './palette';
 
 /**
- * F1 overlay: collider outlines, each Piece's and Object's durability, body
- * count and fps. Rubble never breaks, so it gets no label.
+ * F1 overlay: collider outlines, each Piece's and Object's durability, Blast
+ * rings with their full reach, body count and fps. Rubble never breaks, so
+ * it gets no label.
  */
 export class DebugOverlay {
   private readonly colliders: Phaser.GameObjects.Graphics;
@@ -74,6 +75,14 @@ export class DebugOverlay {
       g.strokeCircle(t.x, t.y, radius);
       // A spoke, to show it rolling.
       g.lineBetween(t.x, t.y, t.x + radius * Math.cos(t.angle), t.y + radius * Math.sin(t.angle));
+    }
+    g.fillStyle(PALETTE.debug, 1);
+    for (const { centre, radius, reach } of this.world.blasts) {
+      g.strokeCircle(centre.x, centre.y, radius);
+      // Its reach, dotted.
+      for (let a = 0; a < 2 * Math.PI; a += Math.PI / 24) {
+        g.fillCircle(centre.x + reach * Math.cos(a), centre.y + reach * Math.sin(a), 1.5);
+      }
     }
     let k = 0;
     for (const line of this.world.lines) {

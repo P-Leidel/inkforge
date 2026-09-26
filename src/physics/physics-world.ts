@@ -133,6 +133,15 @@ export interface ContactHit extends ContactPair {
   readonly impulse: number;
 }
 
+/** A body near a point, measured to the nearest of its own shapes. */
+export interface NearBody {
+  readonly body: BodyId;
+  /** Its point nearest the query's centre, px; the centre itself if that is inside it. */
+  readonly point: Vec2;
+  /** How far `point` is from the centre, px: 0 if the centre is inside it. */
+  readonly distance: number;
+}
+
 /** What one step did to contacts. */
 export interface StepReport {
   /** Every hit between shapes of which at least one belongs to an Object or a circle. */
@@ -186,6 +195,12 @@ export interface PhysicsWorld {
 
   /** Every pair of shapes touching now. */
   touchingPairs(): readonly ContactPair[];
+  /**
+   * Every body, of any kind, with one of its own shapes (not those
+   * `addCapsule` added) within `radius` px of `centre`, measured to that
+   * shape's nearest point. In no particular order.
+   */
+  bodiesWithin(centre: Vec2, radius: number): NearBody[];
   /**
    * Where two shapes that began touching in the last step touched as it
    * ended: the middle of their contact points. Null for any other pair.

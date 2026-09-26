@@ -1,4 +1,5 @@
 import {
+  b2AABB,
   b2Body_ApplyAngularImpulse,
   b2Body_ApplyLinearImpulse,
   b2Body_ApplyLinearImpulseToCenter,
@@ -30,6 +31,7 @@ import {
   b2CreateWorld,
   b2CreateWorldArray,
   b2DefaultBodyDef,
+  b2DefaultQueryFilter,
   b2DefaultShapeDef,
   b2DefaultWeldJointDef,
   b2DefaultWorldDef,
@@ -41,6 +43,7 @@ import {
   b2MakeRot,
   b2Rot_GetAngle,
   b2Shape_GetBody,
+  b2Shape_GetClosestPoint,
   b2Shape_GetContactData,
   b2Shape_GetRestitution,
   b2Shape_GetUserData,
@@ -50,6 +53,7 @@ import {
   b2Vec2,
   b2World_GetContactEvents,
   b2World_IsValid,
+  b2World_OverlapAABB,
   b2World_SetRestitutionThreshold,
   b2World_Step,
   type b2BodyId,
@@ -70,6 +74,7 @@ import type {
   CircleBodyDef,
   ContactHit,
   ContactPair,
+  NearBody,
   ObjectBodyDef,
   PhysicsWorld,
   PhysicsWorldOptions,
@@ -986,6 +991,34 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
 
     touchingPairs() {
       return [...touching.values()];
+    },
+
+    bodiesWithin(centre, radius) {
+      const c = toB2(centre);
+      const r = toM(radius);
+      const nearest = new Map<BodyId, NearBody>();
+      // The query tests fat bounding boxes only; the distance is measured
+      // to each shape.
+      const box = new b2AABB(c.x - r, c.y - r, c.x + r, c.y + r);
+      b2World_OverlapAABB(
+        worldId,
+        box,
+        b2DefaultQueryFilter(),
+        (shape) => {
+          if (added.has(b2Shape_GetUserData(shape) as ShapeId)) return true;
+          const p = b2Shape_GetClosestPoint(shape, c);
+          const distance = toPx(Math.hypot(p.x - c.x, p.y - c.y));
+          if (distance > radius) return true;
+          const body = bodyIdOfShape(shape);
+          const current = nearest.get(body);
+          if (!current || distance < current.distance) {
+            nearest.set(body, { body, point: { x: toPx(p.x), y: toPx(p.y) }, distance });
+          }
+          return true;
+        },
+        null,
+      );
+      return [...nearest.values()];
     },
 
     touchPoint(pair) {

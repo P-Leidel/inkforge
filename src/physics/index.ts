@@ -10,6 +10,7 @@ export type {
   CircleBodyDef,
   ContactHit,
   ContactPair,
+  NearBody,
   ObjectBodyDef,
   PhysicsWorld,
   PhysicsWorldFactory,

@@ -1,6 +1,11 @@
 import { capsuleOverlapsPolygon } from '../geometry/overlap';
 import { bandPolygon, capsulePolygon, shortestWayOut } from '../geometry/separation';
-import { polygonCentroid, polygonContainsPoint, type Polygon } from '../geometry/polygon';
+import {
+  polygonCentroid,
+  polygonContainsPoint,
+  polygonPerimeter,
+  type Polygon,
+} from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import { transformPoints, type Transform } from '../geometry/transform';
 import { sub, type Vec2 } from '../geometry/vec2';
@@ -166,6 +171,15 @@ export interface ReleasedFill {
   readonly from: Motion;
 }
 
+/** A broken Object's Outline, which explodes if its Colour does. */
+export interface BrokenOutline {
+  readonly colour: Colour;
+  /** Its length, px. */
+  readonly length: number;
+  /** The Object's centre (its body's origin) as it broke. */
+  readonly centre: Vec2;
+}
+
 /** What breaking a Piece or an Object lets out, for the Sandbox world to pass on. */
 export interface Broken {
   /** What Debris bursts from: an Outline or band in world coordinates, moving and coloured so. */
@@ -176,6 +190,8 @@ export interface Broken {
   };
   /** A broken Object's Fill; null for a Piece or a hollow Object. */
   readonly fill: ReleasedFill | null;
+  /** A broken Object's Outline; null for a Piece. */
+  readonly outline: BrokenOutline | null;
 }
 
 /**
@@ -495,6 +511,11 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     return {
       debris: { outline, velocity: from.velocity, colours },
       fill: fill && { colour: fill, mass: fillMass, outline: local, from },
+      outline: {
+        colour: object.colour,
+        length: polygonPerimeter(local),
+        centre: { x: from.transform.x, y: from.transform.y },
+      },
     };
   }
 
@@ -511,6 +532,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
         colours: [line.colour],
       },
       fill: null,
+      outline: null,
     };
   }
 

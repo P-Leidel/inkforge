@@ -23,6 +23,13 @@ type Graphics = Phaser.GameObjects.Graphics;
 const CRACK_STAGES = [0.25, 0.5, 0.75];
 const CRACK_WIDTH = 2;
 const DEBRIS_DEPTH = 5;
+/** Blast rings show over everything else in the Arena. */
+const BLAST_DEPTH = 6;
+/** Width of a Blast's ring at full strength, and as it dies out. */
+const BLAST_RING_WIDTH = 10;
+const BLAST_RING_MIN_WIDTH = 2;
+/** The hot flash inside a fresh Blast ring. */
+const BLAST_FLASH = 0xffc15a;
 /** Bond blobs show over the Objects they hold. */
 const BOND_DEPTH = 4;
 /** Patches show over what they lie on, and Droplets over them. */
@@ -40,11 +47,11 @@ const RUBBLE_RIM = 2;
 
 /**
  * Draws the Sandbox world's state: Terrain, Lines, Objects, Rubble, Patches,
- * Droplets, bonds and Debris. Each Stroke gets its own Graphics, drawn again
+ * Droplets, bonds, Debris and Blast rings. Each Stroke gets its own Graphics, drawn again
  * only when its look changes; moving Objects only update its transform. So
  * does each piece of Rubble and each Patch, which never change their look;
- * a Patch fades as it wears. Droplets, bonds and Debris are redrawn every
- * frame.
+ * a Patch fades as it wears. Droplets, bonds, Debris and Blast rings are
+ * redrawn every frame.
  */
 export class WorldRenderer {
   private readonly lines = new Map<StrokeId, Graphics>();
@@ -60,6 +67,7 @@ export class WorldRenderer {
   private readonly droplets: Graphics;
   private readonly debris: Graphics;
   private readonly bonds: Graphics;
+  private readonly blasts: Graphics;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -69,6 +77,7 @@ export class WorldRenderer {
     this.debris = scene.add.graphics().setDepth(DEBRIS_DEPTH);
     this.bonds = scene.add.graphics().setDepth(BOND_DEPTH);
     this.droplets = scene.add.graphics().setDepth(PATCH_DEPTH);
+    this.blasts = scene.add.graphics().setDepth(BLAST_DEPTH);
   }
 
   private drawTerrain(g: Graphics): void {
@@ -88,6 +97,26 @@ export class WorldRenderer {
     this.drawDroplets();
     this.drawBonds();
     this.drawDebris();
+    this.drawBlasts();
+  }
+
+  /**
+   * Each Blast as its ring spreading out, fading and thinning as it weakens
+   * the way its strength does, (1 − d/R)², around a hot flash that fades
+   * faster.
+   */
+  private drawBlasts(): void {
+    const g = this.blasts;
+    g.clear();
+    for (const { centre, radius, reach } of this.world.blasts) {
+      const left = 1 - radius / reach;
+      const strength = left * left;
+      g.fillStyle(BLAST_FLASH, 0.35 * strength * strength);
+      g.fillCircle(centre.x, centre.y, radius);
+      const width = BLAST_RING_MIN_WIDTH + (BLAST_RING_WIDTH - BLAST_RING_MIN_WIDTH) * strength;
+      g.lineStyle(width, INK_HUES.red, 0.2 + 0.8 * strength);
+      g.strokeCircle(centre.x, centre.y, radius);
+    }
   }
 
   /** A blob of green glue where each stuck Object is held, so it's clear why it hangs. */
