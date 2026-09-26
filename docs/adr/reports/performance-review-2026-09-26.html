@@ -297,7 +297,7 @@
     <div class="panel">
       <ol class="steps">
         <li><span><b>R1 + R6</b>, one small PR. It removes a texture upload from every frame. No change to the look or the simulation. <b>Done</b>, with A2's thinner grey grain (see below).</span></li>
-        <li><span><b>M1</b>, the new F1 overlay. Everything after this is measured with it, and it is the tool #22 reads.</span></li>
+        <li><span><b>M1</b>, the new F1 overlay. Everything after this is measured with it, and it is the tool #22 reads. <b>Done</b> (see below).</span></li>
         <li><span><b>R2</b>, Rubble as shared textures. It removes the largest single cost (80% of commands after the chain). It also proves the baking approach on the simplest case: Rubble never changes its look.</span></li>
         <li><span><b>T1</b>, the Eraser. It makes testing fast: clear a wall, re-run a chain.</span></li>
         <li><span><b>R3</b>, bake Strokes, Patches and the static UI (candidate 7 of the review after #19, now justified by these measurements). A1 is only needed if R3 slips.</span></li>
@@ -333,6 +333,7 @@ bodies     Pieces 24  Objects 7  Rubble 62  Droplets 3  Patches 23  Blasts 1
 render     Graphics 31 · 6,212 commands
 <span class="dim">▁▁▂▁▁▁▃▁▁▁▁▂▁▁▁▁▁▅▁▁▁▁▁▁▂▁▁▁▁▁▁▁▁▁▁▂▁▁  ─ 16.7 ─ 33 ms</span>
 [Copy readings]  F1: stats → debug → off</div>
+        <p class="callout"><b>Done.</b> As sketched, with three changes. The second count is frames over <b>20 ms</b>, not 16.7: at 60 Hz, vsync jitter puts about half of all good frames just over 16.7 ms. Draw time covers the scene's drawing code; the rest of each frame (GPU wait, browser, idle) shows as "other" in the graph. In the debug view, each Piece is outlined as one band instead of one capsule per segment. Measured on the same harness, fps, F1 off → stats → debug: Demolition 28 → 27 → 25 (the old F1 was 17), busy Arena 17.6 → 16.2 → 12.6 (the old F1 was 10.3). The stats panel's own work is about 0.2 ms a frame; the rest of its difference is within run-to-run noise, once its graph uses a CPU-backed 2D canvas (a GPU-backed one cost 3 fps under software GL).</p>
         <p class="files mono">src/rendering/debug-overlay.ts · src/rendering/frame-times.ts (rolling window, 1% low) · src/scenes/sandbox-scene.ts (timing around advance / draw, render events) · index.html (panel styles)</p>
       </article>
 

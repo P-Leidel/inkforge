@@ -39,19 +39,16 @@ export function fillCapsule(g: Graphics, a: Vec2, b: Vec2, thickness: number, co
   g.fillCircle(b.x, b.y, thickness / 2);
 }
 
-/** Outlines a capsule (for the debug overlay). */
-export function strokeCapsule(g: Graphics, a: Vec2, b: Vec2, thickness: number): void {
-  const r = thickness / 2;
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = (-dy / len) * r;
-  const ny = (dx / len) * r;
-  const angle = Math.atan2(dy, dx);
+/** Outlines a circle as a polygon of `sides` (for the debug overlay): no arc to tessellate. */
+export function strokeRing(g: Graphics, centre: Vec2, radius: number, sides: number): void {
   g.beginPath();
-  g.arc(a.x, a.y, r, angle + Math.PI / 2, angle + (3 * Math.PI) / 2);
-  g.lineTo(b.x - nx, b.y - ny);
-  g.arc(b.x, b.y, r, angle - Math.PI / 2, angle + Math.PI / 2);
-  g.lineTo(a.x + nx, a.y + ny);
+  for (let k = 0; k <= sides; k++) {
+    const turn = (2 * Math.PI * k) / sides;
+    const x = centre.x + radius * Math.cos(turn);
+    const y = centre.y + radius * Math.sin(turn);
+    if (k === 0) g.moveTo(x, y);
+    else g.lineTo(x, y);
+  }
+  g.closePath();
   g.strokePath();
 }

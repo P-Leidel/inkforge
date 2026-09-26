@@ -113,6 +113,71 @@
       .tuning-panel input.invalid {
         border-color: #ff5a5a;
       }
+      /* The F1 stats panel (src/rendering/stats-panel.ts). */
+      .stats-panel {
+        position: fixed;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.72);
+        color: #39ff88;
+        font:
+          12px ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+        z-index: 9;
+      }
+      .stats-panel[hidden] {
+        display: none;
+      }
+      .stats-text {
+        margin: 0 0 6px;
+        font: inherit;
+        white-space: pre;
+      }
+      .stats-graph {
+        display: block;
+        width: 480px;
+        height: 80px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+      .stats-legend {
+        margin-top: 4px;
+        color: #9aa0ad;
+        white-space: pre;
+      }
+      .stats-key {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        margin: 0 4px 0 10px;
+      }
+      .stats-key:first-child {
+        margin-left: 0;
+      }
+      .stats-footer {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 6px;
+      }
+      .stats-panel button {
+        font: inherit;
+        color: #e8e2d0;
+        background: #2c313b;
+        border: 1px solid #4f5666;
+        border-radius: 4px;
+        padding: 3px 8px;
+        cursor: pointer;
+      }
+      .stats-status {
+        min-width: 5em;
+      }
+      .stats-hint {
+        margin-left: auto;
+        color: #9aa0ad;
+      }
     </style>
   </head>
   <body>

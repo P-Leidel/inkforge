@@ -1,6 +1,7 @@
 import { COLOURS } from '../materials/colour';
 import { DEFAULT_MATERIAL_TABLE, type MaterialTable } from '../materials/material-table';
 import { numberPaths, readPath, writePath } from '../materials/table-paths';
+import { element } from './dom';
 
 /**
  * The F2 tuning panel: every number of the material table, editable while
@@ -147,15 +148,4 @@ export class TuningPanel {
       if (this.status.textContent === message) this.status.textContent = '';
     }, 1500);
   }
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className = '',
-  text = '',
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text) node.textContent = text;
-  return node;
 }
