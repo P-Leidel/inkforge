@@ -2,7 +2,7 @@ import type Phaser from 'phaser';
 import { FONT_FAMILY, PALETTE } from './palette';
 
 const MARGIN = 60;
-const GAP = 14;
+const GAP = 10;
 
 /** A row of text buttons along the top-right corner, laid out from the right. */
 export class Toolbar {
@@ -23,7 +23,7 @@ export class Toolbar {
         fontSize: '22px',
         color: PALETTE.text,
         backgroundColor: '#2c313b',
-        padding: { x: 16, y: 10 },
+        padding: { x: 12, y: 10 },
       })
       .setOrigin(1, 0)
       .setDepth(60)

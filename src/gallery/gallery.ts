@@ -430,6 +430,59 @@ export const MINES_DEMO: Demo = {
   },
 };
 
+/**
+ * A big bomb: a Frozen 60 px red ball filled with red, centred at `centre`.
+ * Its Outline and Fill make one Blast reaching 250 px at strength 2500,
+ * which sets off another big bomb up to about 180 px away, centre to centre.
+ */
+function bigBomb(world: SandboxWorld, centre: Vec2): StrokeId {
+  const id = drawObject(world, dragCircle(centre, 30), 'red');
+  world.fillAt(centre, 'red');
+  return id;
+}
+
+/**
+ * The worst case for performance: a chain of five big bombs along the
+ * ground, set off by the first dropped at its end, tearing through three
+ * grey-filled boxes and a black-filled one (each resting on a bomb), a
+ * blue- and a green-filled Object and a wall of grey, blue, green and black
+ * Lines. The chain goes off in well under a second and leaves about 60
+ * Rubble, 30 Droplets turning into Patches and five Blasts. While it runs,
+ * F1 shows the average fps and the longest frame since it started.
+ */
+export const DEMOLITION_DEMO: Demo = {
+  name: 'Demolition',
+  build(world) {
+    const fills = ['grey', 'grey', 'grey', 'black'] as const;
+    fills.forEach((fill, k) => {
+      const x = 320 + 170 * k;
+      bigBomb(world, { x, y: 850 });
+      // Grey Outlines, 2 px above the bomb: a 70 px box of grey, a 60 px one of black.
+      const size = fill === 'grey' ? 70 : 60;
+      drawObject(world, dragBox(x - size / 2, 818 - size, size, size), 'grey');
+      world.fillAt({ x, y: 818 - size / 2 }, fill);
+    });
+    // The Spills: blue Outlines, which the Blasts break with ease.
+    drawObject(world, dragCircle({ x: 235, y: 853 }, 25), 'blue');
+    world.fillAt({ x: 235, y: 853 }, 'blue');
+    drawObject(world, dragBox(720, 826, 50, 50), 'blue');
+    world.fillAt({ x: 745, y: 851 }, 'green');
+    // The wall, between the second and the third box. No red: that would add Blasts.
+    (['grey', 'blue', 'green', 'black'] as const).forEach((colour, k) => {
+      const x = 552 + 16 * k;
+      drawLine(
+        world,
+        [
+          { x, y: 600 },
+          { x, y: 860 },
+        ],
+        colour,
+      );
+    });
+    letGo(world, [bigBomb(world, { x: 150, y: 400 })]);
+  },
+};
+
 export const GALLERY: readonly Demo[] = [
   BOUNCE_DEMO,
   SLIDE_DEMO,
@@ -445,4 +498,5 @@ export const GALLERY: readonly Demo[] = [
   SHRAPNEL_DEMO,
   FUSE_DEMO,
   MINES_DEMO,
+  DEMOLITION_DEMO,
 ];

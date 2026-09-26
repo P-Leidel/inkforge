@@ -12,6 +12,7 @@ import os from 'node:os';
 import { capsuleOverlapsPolygon } from '../src/geometry/overlap';
 import { transformPoints } from '../src/geometry/transform';
 import type { Vec2 } from '../src/geometry/vec2';
+import { DEMOLITION_DEMO } from '../src/gallery/gallery';
 import type { Colour } from '../src/materials/colour';
 import { GRAVITY, SandboxWorld, STEP_SECONDS } from '../src/sandbox/sandbox-world';
 import { BallCannon } from '../src/stress-tests/ball-cannon';
@@ -20,6 +21,16 @@ import { PebbleDrop } from '../src/stress-tests/pebble-drop';
 import { dragAlong, dragBox, dragCircle, dragPolygon } from '../src/stroke/pointer-paths';
 
 const SEED = 2026;
+
+/** Mean, p99 and max of a run of times, ms. */
+function summarise(times: number[]) {
+  const sorted = [...times].sort((a, b) => a - b);
+  return {
+    mean: sorted.reduce((s, t) => s + t, 0) / sorted.length,
+    p99: sorted[Math.floor(sorted.length * 0.99)]!,
+    max: sorted[sorted.length - 1]!,
+  };
+}
 
 function withWorld<T>(run: (world: SandboxWorld) => T): T {
   const world = new SandboxWorld({ seed: SEED });
@@ -71,14 +82,10 @@ function pebbles() {
       stepTimes.push(performance.now() - t0);
       drop.update();
     }
-    stepTimes.sort((a, b) => a - b);
-    const mean = stepTimes.reduce((s, t) => s + t, 0) / stepTimes.length;
     return {
       pebbles: world.objects.length,
       bodies: world.bodyCount,
-      meanStepMs: mean,
-      p99StepMs: stepTimes[Math.floor(stepTimes.length * 0.99)]!,
-      maxStepMs: stepTimes[stepTimes.length - 1]!,
+      step: summarise(stepTimes),
       settleTime: drop.settleTime,
       maxSpeed: drop.maxSpeed,
       freeFallSpeed: drop.freeFallSpeed,
@@ -201,15 +208,70 @@ function restingPile() {
       world.step();
       stepTimes.push(performance.now() - t0);
     }
-    stepTimes.sort((a, b) => a - b);
-    const mean = stepTimes.reduce((s, t) => s + t, 0) / stepTimes.length;
     return {
       rubble: world.rubble.length,
       objects: world.objects.length,
       bodies: world.bodyCount,
-      meanStepMs: mean,
-      p99StepMs: stepTimes[Math.floor(stepTimes.length * 0.99)]!,
-      maxStepMs: stepTimes[stepTimes.length - 1]!,
+      step: summarise(stepTimes),
+    };
+  });
+}
+
+/**
+ * The Demolition scene (the gallery demo): a chain of five red bombs through
+ * filled boxes, two Spills and a wall of Lines. Times the whole Sandbox world
+ * step for 5 s from the drop, and apart from it one read of every view per
+ * step, as a frame's renderer and F1 overlay make. Counts what the chain set
+ * off by distinct ids.
+ */
+function demolition() {
+  return withWorld((world) => {
+    DEMOLITION_DEMO.build(world);
+    const blasts = new Set<number>();
+    const rubble = new Set<number>();
+    const droplets = new Set<number>();
+    const stepTimes: number[] = [];
+    const readTimes: number[] = [];
+    let chainStart: number | null = null;
+    let chainEnd = 0;
+    let bodies = 0;
+    let items = 0;
+    for (let step = 0; step < Math.round(5 / STEP_SECONDS); step++) {
+      const t0 = performance.now();
+      world.step();
+      const t1 = performance.now();
+      const read =
+        world.lines.length +
+        world.objects.length +
+        world.rubble.length +
+        world.fadingRubble.length +
+        world.bonds.length +
+        world.droplets.length +
+        world.patches.length +
+        world.blasts.length +
+        world.debrisParticles.length;
+      readTimes.push(performance.now() - t1);
+      stepTimes.push(t1 - t0);
+      items = Math.max(items, read);
+      for (const { id } of world.blasts) blasts.add(id);
+      for (const { id } of world.rubble) rubble.add(id);
+      for (const { id } of world.droplets) droplets.add(id);
+      if (world.blasts.length > 0) {
+        chainStart ??= step;
+        chainEnd = step + 1;
+      }
+      bodies = Math.max(bodies, world.bodyCount);
+    }
+    return {
+      blasts: blasts.size,
+      rubble: rubble.size,
+      droplets: droplets.size,
+      bodies,
+      items,
+      chainSeconds: (chainEnd - (chainStart ?? 0)) * STEP_SECONDS,
+      step: summarise(stepTimes),
+      chain: summarise(stepTimes.slice(chainStart ?? 0, chainEnd)),
+      read: summarise(readTimes),
     };
   });
 }
@@ -220,6 +282,7 @@ const p = pebbles();
 const push = pushOut();
 const wake = wakeMomentum();
 const rest = restingPile();
+const demo = demolition();
 
 const f = (n: number | null, digits = 2) => (n === null ? 'never' : n.toFixed(digits));
 console.log(`Engine verdict measurements (Phaser Box2D, headless, seed ${SEED})`);
@@ -235,8 +298,8 @@ console.log(
 );
 console.log('3. Performance (100 drawn pebbles, 10 s simulated; physics step only)');
 console.log(
-  `   ${p.pebbles} pebbles, ${p.bodies} bodies; step ${f(p.meanStepMs)} ms mean, ` +
-    `${f(p.p99StepMs)} ms p99, ${f(p.maxStepMs)} ms max (budget at 60 fps: 16.7 ms per frame)\n`,
+  `   ${p.pebbles} pebbles, ${p.bodies} bodies; step ${f(p.step.mean)} ms mean, ` +
+    `${f(p.step.p99)} ms p99, ${f(p.step.max)} ms max (budget at 60 fps: 16.7 ms per frame)\n`,
 );
 console.log('4. Stability');
 console.log(
@@ -251,6 +314,18 @@ console.log(
 );
 console.log('5. Contacts at rest (Rubble pile at the cap, restarted; whole Sandbox world step)');
 console.log(
-  `   ${rest.rubble} Rubble, ${rest.objects} Objects, ${rest.bodies} bodies; step ${f(rest.meanStepMs, 3)} ms mean, ` +
-    `${f(rest.p99StepMs, 3)} ms p99, ${f(rest.maxStepMs, 3)} ms max`,
+  `   ${rest.rubble} Rubble, ${rest.objects} Objects, ${rest.bodies} bodies; step ${f(rest.step.mean, 3)} ms mean, ` +
+    `${f(rest.step.p99, 3)} ms p99, ${f(rest.step.max, 3)} ms max\n`,
+);
+console.log('6. Demolition scene (gallery demo, 5 s simulated; whole Sandbox world step)');
+console.log(
+  `   ${demo.blasts} Blasts, ${demo.rubble} Rubble, ${demo.droplets} Droplets; up to ${demo.bodies} bodies; ` +
+    `Blasts spreading for ${f(demo.chainSeconds)} s`,
+);
+const times = (t: { mean: number; p99: number; max: number }) =>
+  `${f(t.mean, 3)} ms mean, ${f(t.p99, 3)} ms p99, ${f(t.max, 3)} ms max`;
+console.log(`   step, whole run:        ${times(demo.step)}`);
+console.log(`   step, during the chain: ${times(demo.chain)}`);
+console.log(
+  `   one read of every view: ${times(demo.read)} (up to ${demo.items} items; per frame, apart from the step)`,
 );

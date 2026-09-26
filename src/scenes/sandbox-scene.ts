@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
-import { GALLERY, type Demo } from '../gallery/gallery';
+import { DEMOLITION_DEMO, GALLERY, type Demo } from '../gallery/gallery';
 import { COLOURS, type Colour } from '../materials/colour';
 import { DebugOverlay } from '../rendering/debug-overlay';
+import { FrameTimes } from '../rendering/frame-times';
 import { flashRejection, REJECTION_MESSAGES } from '../rendering/rejection-flash';
 import { Hud } from '../rendering/hud';
 import { PaletteBar } from '../rendering/palette-bar';
@@ -49,6 +50,8 @@ export class SandboxScene extends Phaser.Scene {
   /** Sample count the refusal was last checked at. */
   private checkedSamples = 0;
   private stressTest: StressTest | null = null;
+  /** Frame times while the Demolition demo is loaded, for F1; null otherwise. */
+  private demolitionFrames: FrameTimes | null = null;
 
   constructor() {
     super('sandbox');
@@ -86,6 +89,7 @@ export class SandboxScene extends Phaser.Scene {
   private startStressTest(create: ((world: SandboxWorld) => StressTest) | null): void {
     this.world.clear();
     this.stressTest = create ? create(this.world) : null;
+    this.demolitionFrames = null;
   }
 
   /** Clears the Arena and sets up a gallery demo on it. */
@@ -93,6 +97,13 @@ export class SandboxScene extends Phaser.Scene {
     this.world.clear();
     this.stressTest = null;
     demo.build(this.world);
+    this.demolitionFrames = demo === DEMOLITION_DEMO ? new FrameTimes() : null;
+  }
+
+  /** Takes the world back to the last start; a Demolition replay is timed on its own. */
+  private reset(): void {
+    this.world.reset();
+    this.demolitionFrames?.restart();
   }
 
   private bindKeys(): void {
@@ -106,7 +117,7 @@ export class SandboxScene extends Phaser.Scene {
       .on('down', () => this.world.togglePause());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.toggle());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F2).on('down', () => this.tuning.toggle());
-    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R).on('down', () => this.world.reset());
+    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R).on('down', () => this.reset());
     keyboard.on('keydown-Z', (event: KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
@@ -171,6 +182,8 @@ export class SandboxScene extends Phaser.Scene {
   }
 
   override update(_time: number, deltaMs: number): void {
+    // Phaser smooths `deltaMs` over several frames, which would hide a long one.
+    if (this.world.isRunning) this.demolitionFrames?.frame(this.game.loop.rawDelta);
     this.world.advance(deltaMs / 1000);
     this.stressTest?.update();
     this.worldView.draw();
@@ -183,7 +196,7 @@ export class SandboxScene extends Phaser.Scene {
       this.pointerInside ? { x: pointer.worldX, y: pointer.worldY } : null,
     );
     this.palette.show(this.colour);
-    this.overlay.draw();
+    this.overlay.draw(this.demolitionFrames);
     this.hud.draw(this.stressTest?.status());
   }
 }

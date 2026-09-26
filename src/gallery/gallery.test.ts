@@ -6,6 +6,7 @@ import {
   BOULDER_DEMO,
   BOUNCE_DEMO,
   CHAIN_DEMO,
+  DEMOLITION_DEMO,
   DROP_DEMO,
   GALLERY,
   GLUE_DEMO,
@@ -240,5 +241,32 @@ describe('Colour gallery', () => {
     const posts = world.objects.filter((o) => o.colour === 'grey');
     expect(posts).toHaveLength(2);
     expect(posts.every((o) => !o.frozen)).toBe(true);
+  });
+
+  it('Demolition: the chain plays out, with 5 Blasts, about 60 Rubble and about 30 Droplets', () => {
+    const world = createWorld();
+    DEMOLITION_DEMO.build(world);
+    const { rubbleCap } = world.materials;
+    // By distinct ids: a Droplet turns into a Patch as it lands, and ids are never reused.
+    const blasts = new Set<number>();
+    const rubble = new Set<number>();
+    const droplets = new Set<number>();
+
+    for (let step = 0; step < 300; step++) {
+      world.step();
+      const { contents } = world;
+      for (const { id } of contents.blasts) blasts.add(id);
+      for (const { id } of contents.rubble) rubble.add(id);
+      for (const { id } of contents.droplets) droplets.add(id);
+      expect(contents.rubble.length).toBeLessThan(rubbleCap);
+    }
+
+    expect(blasts.size).toBe(5);
+    expect(world.blasts).toHaveLength(0);
+    expect(rubble.size).toBeGreaterThanOrEqual(55);
+    expect(rubble.size).toBeLessThanOrEqual(65);
+    expect(droplets.size).toBeGreaterThanOrEqual(20); // two Spills of 10 to 15
+    expect(droplets.size).toBeLessThanOrEqual(30);
+    expect(world.objects).toHaveLength(0); // every bomb, box and Spill went
   });
 });
