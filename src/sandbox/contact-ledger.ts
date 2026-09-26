@@ -156,6 +156,11 @@ export class ContactLedger<T> {
     this.byId.set(party.id, party);
   }
 
+  /** The Party of a registered body. */
+  partyOf(body: BodyId): Party<T> | undefined {
+    return this.parties.get(body);
+  }
+
   /** The registered Party with this id: a body there now. */
   party(id: PartyId): Party<T> | undefined {
     return this.byId.get(id);

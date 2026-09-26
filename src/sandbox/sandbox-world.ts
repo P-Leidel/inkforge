@@ -1,11 +1,17 @@
-import type { Vec2 } from '../geometry/vec2';
+import { polygonArea } from '../geometry/polygon';
+import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import {
   createMaterialTable,
   TERRAIN_SURFACE,
   type MaterialTable,
 } from '../materials/material-table';
-import { createPhysicsWorld, type PhysicsWorld, type PhysicsWorldFactory } from '../physics';
+import {
+  createPhysicsWorld,
+  type BodyId,
+  type PhysicsWorld,
+  type PhysicsWorldFactory,
+} from '../physics';
 import {
   processStroke,
   type RejectionReason,
@@ -14,6 +20,7 @@ import {
 } from '../stroke/stroke-pipeline';
 import { SANDBOX_ARENA, type Arena } from './arena';
 import type { HostSurface, Kind } from './arena-contents';
+import { blastInk, Blasts, type BlastView, type Reach } from './blasts';
 import { Bonds, type BondView } from './bonds';
 import { ContactLedger, TERRAIN_PARTY, type Party, type SavedContacts } from './contact-ledger';
 import { Debris, type DebrisParticle } from './debris';
@@ -26,6 +33,7 @@ import { launchRubble, packRubble, Rubble, type FadingRubbleView, type RubbleVie
 import { Sticking } from './sticking';
 import {
   Strokes,
+  type BrokenOutline,
   type FillOutcome,
   type LineView,
   type ObjectView,
@@ -35,6 +43,7 @@ import {
   type StrokeTarget,
 } from './strokes';
 
+export type { BlastView } from './blasts';
 export type { BondView } from './bonds';
 export type { DropletView } from './droplets';
 export type { PatchView } from './patches';
@@ -71,10 +80,10 @@ export interface StrokeOptions {
 
 /**
  * Every kind of Arena contents, in the fixed order they are rebuilt in:
- * Strokes, Rubble, Bonds, Droplets, then Patches. A kind that lives on
- * another comes after it.
+ * Strokes, Rubble, Bonds, Droplets, Patches, then Blasts. A kind that lives
+ * on another, or acts on it, comes after it.
  */
-type Kinds = readonly [Strokes, Rubble, Bonds, Droplets, Patches];
+type Kinds = readonly [Strokes, Rubble, Bonds, Droplets, Patches, Blasts<StrokeTarget>];
 
 /** What glues: green Pieces and green Patches. */
 type Gluing = Piece | PatchRecord;
@@ -109,8 +118,8 @@ export interface SandboxWorldOptions {
  * The headless sandbox: the Arena and its contents, the pause state, and
  * Reset. It has no rendering dependency, so it is the main testing seam.
  * Each kind of Arena contents is a module of its own (`Strokes`, `Rubble`,
- * `Bonds`, `Droplets`, `Patches`); the world runs them all, in a fixed
- * order, and passes on what one reports to the next. The Contact ledger
+ * `Bonds`, `Droplets`, `Patches`, `Blasts`); the world runs them all, in a
+ * fixed order, and passes on what one reports to the next. The Contact ledger
  * decides which contacts count, and the Material rules read it. Each Stroke is drawn in a Colour given with the
  * command; the world holds no selected Colour.
  */
@@ -129,6 +138,7 @@ export class SandboxWorld {
   private readonly bondsKind: Bonds;
   private readonly dropletsKind: Droplets;
   private readonly patchesKind: Patches;
+  private readonly blastsKind: Blasts<StrokeTarget>;
   /** Every kind, in rebuild order. */
   private readonly kinds: readonly AnyKind[];
   /** Taken whenever physics starts; R returns to it. */
@@ -156,12 +166,14 @@ export class SandboxWorld {
     this.bondsKind = new Bonds(this.physics, this.contacts);
     this.dropletsKind = new Droplets(this.physics, this.materials, this.arena, this.contacts);
     this.patchesKind = new Patches(this.physics, this.materials, this.contacts);
+    this.blastsKind = new Blasts(this.physics, this.materials, this.contacts);
     const kinds: Kinds = [
       this.strokes,
       this.rubbleKind,
       this.bondsKind,
       this.dropletsKind,
       this.patchesKind,
+      this.blastsKind,
     ];
     this.kinds = kinds;
     this.rules = new MaterialRules(this.materials);
@@ -226,6 +238,11 @@ export class SandboxWorld {
   /** Patches, oldest first. */
   get patches(): readonly PatchView[] {
     return this.patchesKind.views;
+  }
+
+  /** Blast rings still spreading, oldest first. */
+  get blasts(): readonly BlastView[] {
+    return this.blastsKind.views;
   }
 
   /**
@@ -312,8 +329,8 @@ export class SandboxWorld {
   }
 
   /**
-   * Removes every Stroke and Fill, the Rubble, Droplets, Patches and the
-   * Debris; the Terrain stays. R has nothing to go back to. Nothing is left
+   * Removes every Stroke and Fill, the Rubble, Droplets, Patches, Blasts and
+   * the Debris; the Terrain stays. R has nothing to go back to. Nothing is left
    * touching or Settled, since every kind unregisters its bodies.
    */
   clear(): void {
@@ -336,8 +353,9 @@ export class SandboxWorld {
   }
 
   /**
-   * Breaks what the Material rules broke: an Object or a Piece goes, Debris
-   * bursts from it, and a broken Object's Fill comes out.
+   * Breaks what the Material rules or a Blast broke: an Object or a Piece
+   * goes, Debris bursts from it, a broken Object's Fill comes out, and then
+   * red explodes, so its Blast acts on what the Fill released.
    */
   private breakTarget(target: StrokeTarget): void {
     const broken = this.strokes.break(target);
@@ -345,6 +363,62 @@ export class SandboxWorld {
     const { outline, velocity, colours } = broken.debris;
     this.debris.burst(outline, velocity, colours);
     if (broken.fill) this.releaseFill(broken.fill);
+    if (broken.outline) this.explode(broken.outline, broken.fill);
+  }
+
+  /**
+   * Starts a Blast at a broken Object's centre if its Outline or Fill is
+   * red: one Blast of all its red ink.
+   */
+  private explode(outline: BrokenOutline, fill: ReleasedFill | null): void {
+    const ink = blastInk(
+      outline,
+      fill && { colour: fill.colour, area: polygonArea(fill.outline) },
+      this.materials,
+    );
+    if (ink > 0) this.blastsKind.add(outline.centre, ink);
+  }
+
+  /**
+   * What a Blast does to each body its ring reached, at the strength it has
+   * there. It damages a Piece or an Object that isn't sliding off a Line,
+   * when the strength beats its threshold. It wakes a Frozen Object when the
+   * push over its mass beats the wake speed. It pushes every moving body
+   * (an Object, Rubble or a Droplet) outward from its centre, never faster
+   * than `maxPushSpeed`. What it broke then breaks, and red explodes in turn.
+   */
+  private readonly blastReached = (reached: readonly Reach<StrokeTarget>[]): void => {
+    const { blast, wakeSpeed } = this.materials;
+    const broken: StrokeTarget[] = [];
+    for (const { party, centre, point, strength } of reached) {
+      const { body, target } = party;
+      if (target && this.physics.getSlide(body) === null) {
+        if (this.rules.applyBlast(target, strength)) {
+          broken.push(target);
+          continue;
+        }
+      }
+      if (target?.kind === 'piece') continue; // fixed, so only damaged
+      const mass = this.physics.getMass(body);
+      const impulse = Math.min(blast.push * strength, mass * blast.maxPushSpeed);
+      if (this.physics.isFrozen(body) && impulse / mass > wakeSpeed) this.physics.release(body);
+      if (!this.physics.isFree(body)) continue;
+      this.physics.applyImpulse(body, this.outward(body, centre, point, impulse));
+    }
+    for (const target of broken) this.breakTarget(target);
+  };
+
+  /**
+   * An impulse of `size` pointing from a Blast's centre to where it reached
+   * a body: `point`, or the body's centre if the Blast started inside it, or
+   * straight up if that is the Blast's centre too.
+   */
+  private outward(body: BodyId, centre: Vec2, point: Vec2, size: number): Vec2 {
+    let away = sub(point, centre);
+    if (Math.hypot(away.x, away.y) < 1e-6) away = sub(this.physics.getTransform(body), centre);
+    const length = Math.hypot(away.x, away.y);
+    if (length < 1e-6) return { x: 0, y: -size };
+    return { x: (away.x * size) / length, y: (away.y * size) / length };
   }
 
   /** Bursts a puff of Debris where each used-up Patch was. */
@@ -538,6 +612,7 @@ export class SandboxWorld {
     )) {
       if (worn.kind === 'piece') this.breakTarget(worn);
     }
+    this.blastsKind.spread(STEP_SECONDS, this.blastReached);
     this.passOnGone();
     this.puff(this.patchesKind.removeUsedUp());
     for (const kind of this.kinds) kind.step(STEP_SECONDS);

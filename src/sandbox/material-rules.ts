@@ -6,7 +6,7 @@ import { pairKey, type Party, type PartyHit } from './contact-ledger';
  * Material rules: everything Colour-specific that happens when things touch.
  * Headless and part of the Sandbox world; it reads the contacts that count
  * from the Contact ledger and never the engine. For now: impact damage,
- * durability and the blue impact counter.
+ * Blast damage, durability and the blue impact counter.
  */
 
 /**
@@ -80,6 +80,17 @@ export class MaterialRules {
       if (this.receive(target, impulse) && !broken.includes(target)) broken.push(target);
     }
     return broken;
+  }
+
+  /**
+   * Damages a target by a Blast that reached it at `strength`, against its
+   * own threshold as an impact would. A Blast isn't an impact: it doesn't
+   * count towards blue's impact limit. Returns whether the target is broken.
+   */
+  applyBlast(target: Breakable, strength: number): boolean {
+    const { damageThreshold } = numbersOf(target, this.materials);
+    target.damage += impactDamage(strength, damageThreshold, this.materials.damagePerImpulse);
+    return wear(target, this.materials) >= 1;
   }
 
   /** Damages a target by an impact; returns whether it is broken. */

@@ -21,17 +21,17 @@ A worst-case scene for performance: a chain of red bombs tearing through filled 
 
 **The scene.** Build it as a Demolition demo in the gallery (the issue asks for a gallery button), through the Sandbox world, with:
 
-- **a chain of 5 red bombs,** spaced so each Blast sets off the next. The chain rule from #19 depends only on distance and strength.
+- **a chain of 5 red bombs,** spaced so each Blast sets off the next. The chain rule from #19 depends only on distance and strength. The gallery's Chain demo (`CHAIN_DEMO`) is a working layout: unfilled 40 px red balls 60 px apart, centre to centre. Such a bomb's Blast reaches 120 px and destroys unfilled red out to about 52 px from its centre (strength 1205, and red Outlines break at 250 + 140); a filled or bigger bomb reaches further, up to the table's `blast.radiusMax`.
 - **3 grey-filled boxes and 1 black-filled box,** big enough that each releases the maximum Rubble: 3 × 18 + 8 = 62, "about 60". Check the Rubble cap of 150 isn't hit. With #16's numbers a 70 px grey-filled box gives 18 pebbles and a 60 px black-filled one 8 stones (`rubbleArea`, `rubbleRadius` and `rubbleMax` in the table). With the cap full of Rubble, a headless step took 0.46 ms on average at #16.
 - **one blue- and one green-filled Object** that the chain breaks: 10–15 Droplets each, "about 30".
 - **a wall of mixed-Colour Lines** in the Blasts' way.
 - **a trigger,** e.g. the first bomb dropped from a height, or a ball Released at it.
 
-Don't make the boxes red: the scene has exactly 5 Blasts. The boxes break from Blasts, from Rubble, or from falls after a Blast wakes them. Tune the layout until the chain reliably plays out.
+Don't make the boxes red, or fill anything red: the scene has exactly 5 Blasts. The boxes break from Blasts, from Rubble, or from falls after a Blast wakes them. A grey Outline takes Blast damage only above 400 of strength and has 2400 of durability, so a Blast alone rarely breaks a grey box; the Shrapnel demo (`SHRAPNEL_DEMO`) shows a bomb's pebbles knocking things loose beyond its reach. Tune the layout until the chain reliably plays out.
 
 **Headless test.** The chain plays out: all 5 Blasts go off, about 60 Rubble and about 30 Droplets.
 
-- Count distinct ids seen in `world.contents` each step (Blasts, Rubble, Droplets), since each Droplet turns into a Patch as soon as it lands (most within a second or so of the Spill). Ids are never reused within a run, so each id is one thing.
+- Count distinct ids seen in `world.contents` each step (`contents.blasts`, `contents.rubble`, `contents.droplets`), since each Droplet turns into a Patch as soon as it lands (most within a second or so of the Spill). Ids are never reused within a run, so each id is one thing.
 - Use tolerances that match "about".
 - The gallery replay test also covers the new demo.
 
@@ -48,7 +48,7 @@ Don't make the boxes red: the scene has exactly 5 Blasts. The boxes break from B
 ## Watch out for
 
 - **Headless step times.** If p99 is over 16.7 ms (a 60 fps frame), look at what #16–#20 do per step before blaming the engine:
-  - Blast queries over all bodies;
+  - Blast queries: one `physics.bodiesWithin` per spreading Blast per step (a bounding-box query, then the nearest point of each shape in it);
   - the glue drag loop;
   - Rubble piles and the 64-entry contact buffer;
   - Patch bookkeeping.

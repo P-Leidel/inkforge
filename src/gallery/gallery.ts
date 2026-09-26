@@ -116,15 +116,16 @@ export const KNOCK_DEMO: Demo = {
 };
 
 /**
- * A 60 px box of each Outline Colour dropped from high up: red breaks, grey
- * and green crack, black barely notices, and blue cracks and bounces until
- * its third impact breaks it. F1 shows what durability each has left.
+ * A 60 px box of each Outline Colour dropped from high up: red explodes,
+ * grey and green crack, black barely notices, and blue cracks and bounces
+ * until its third impact breaks it. The red one lands across the pit, out
+ * of the others' way. F1 shows what durability each has left.
  */
 export const DROP_DEMO: Demo = {
   name: 'Drop',
   build(world) {
     const boxes = COLOURS.map((colour, k) =>
-      drawObject(world, dragBox(90 + 170 * k, 100, 60, 60), colour),
+      drawObject(world, dragBox(colour === 'red' ? 1220 : 90 + 170 * k, 100, 60, 60), colour),
     );
     letGo(world, boxes);
   },
@@ -308,6 +309,68 @@ export const SPILL_DEMO: Demo = {
   },
 };
 
+/** A Frozen 40 px red ball, a bomb, centred at `centre`. */
+function bomb(world: SandboxWorld, centre: Vec2): StrokeId {
+  return drawObject(world, dragCircle(centre, 20), 'red');
+}
+
+/**
+ * A chain of Frozen red bombs along the ground and up into the air, set
+ * off by a bomb dropped at its end: each Blast's ring reaches the next bomb
+ * and destroys it, so the chain goes off one by one, at the ring's speed,
+ * and straight through a black Line. The last Blasts knock two Frozen
+ * boxes loose. A bomb hanging above the chain, beyond every ring's reach,
+ * stays.
+ */
+export const CHAIN_DEMO: Demo = {
+  name: 'Chain',
+  build(world) {
+    for (const x of [200, 260, 320, 380, 440, 500]) bomb(world, { x, y: 858 });
+    for (const centre of [
+      { x: 552, y: 830 },
+      { x: 590, y: 785 },
+      { x: 612, y: 730 },
+      { x: 620, y: 670 },
+    ])
+      bomb(world, centre);
+    drawLine(
+      world,
+      [
+        { x: 350, y: 790 },
+        { x: 350, y: 876 },
+      ],
+      'black',
+    );
+    drawObject(world, dragBox(650, 560, 60, 60), 'grey');
+    drawObject(world, dragBox(540, 540, 50, 50), 'grey');
+    bomb(world, { x: 230, y: 690 });
+    letGo(world, [bomb(world, { x: 140, y: 300 })]);
+  },
+};
+
+/**
+ * A grey-filled red box dropped onto a black anvil: it explodes, and its
+ * Blast throws the pebbles its Fill releases as shrapnel. They knock loose
+ * two Frozen posts that the Blast itself can't reach.
+ */
+export const SHRAPNEL_DEMO: Demo = {
+  name: 'Shrapnel',
+  build(world) {
+    drawLine(
+      world,
+      [
+        { x: 615, y: 500 },
+        { x: 665, y: 500 },
+      ],
+      'black',
+    );
+    for (const x of [380, 860]) drawObject(world, dragBox(x, 400, 40, 160), 'grey');
+    const box = drawObject(world, dragBox(600, 150, 80, 80), 'red');
+    world.fillAt({ x: 640, y: 190 }, 'grey');
+    letGo(world, [box]);
+  },
+};
+
 export const GALLERY: readonly Demo[] = [
   BOUNCE_DEMO,
   SLIDE_DEMO,
@@ -319,4 +382,6 @@ export const GALLERY: readonly Demo[] = [
   GLUE_DEMO,
   STICK_DEMO,
   SPILL_DEMO,
+  CHAIN_DEMO,
+  SHRAPNEL_DEMO,
 ];

@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS } from '../materials/colour';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
-import { runFor, sandboxWorlds } from '../sandbox/test-support';
+import { objectById, runFor, sandboxWorlds } from '../sandbox/test-support';
 import {
   BOULDER_DEMO,
   BOUNCE_DEMO,
+  CHAIN_DEMO,
   DROP_DEMO,
   GALLERY,
   GLUE_DEMO,
   KNOCK_DEMO,
   RUBBLE_DEMO,
+  SHRAPNEL_DEMO,
   SLIDE_DEMO,
   STICK_DEMO,
   THIRD_BOUNCE_DEMO,
@@ -111,7 +113,7 @@ describe('Colour gallery', () => {
     expect(black!.frozen).toBe(true);
   });
 
-  it('Drop: red breaks, grey, blue and green crack, black is barely scratched', () => {
+  it('Drop: red explodes, grey, blue and green crack, black is barely scratched', () => {
     const world = createWorld();
     DROP_DEMO.build(world);
 
@@ -200,5 +202,43 @@ describe('Colour gallery', () => {
     expect(hanger!.transform.y).toBeLessThan(340); // hanging under the Line
     const knocked = world.objects.find((o) => o.colour === 'grey')!;
     expect(knocked.frozen).toBe(false);
+  });
+
+  it('Chain: the bombs go off one by one; the one beyond reach stays', () => {
+    const world = createWorld();
+    CHAIN_DEMO.build(world);
+    const bombs = world.objects.filter((o) => o.colour === 'red');
+    const lone = bombs.find((o) => Math.abs(o.transform.x - 230) < 1); // hanging above the chain
+
+    let most = 0;
+    for (let step = 0; step < 180; step++) {
+      world.step();
+      most = Math.max(most, world.blasts.length);
+    }
+
+    expect(world.objects.filter((o) => o.colour === 'red').map((o) => o.id)).toEqual([lone!.id]);
+    expect(objectById(world, lone!.id)).toMatchObject({ frozen: true, wear: 0 });
+    expect(most).toBeGreaterThan(1); // rings spreading at once, each started later
+    expect(most).toBeLessThan(bombs.length - 1);
+    expect(world.objects.filter((o) => o.colour === 'grey').every((o) => !o.frozen)).toBe(true);
+  });
+
+  it('Shrapnel: the Blast throws the pebbles, which knock loose posts it can’t reach', () => {
+    const world = createWorld();
+    SHRAPNEL_DEMO.build(world);
+
+    let fastest = 0;
+    for (let step = 0; step < 90; step++) {
+      world.step();
+      for (const { velocity } of world.rubble) {
+        fastest = Math.max(fastest, Math.hypot(velocity.x, velocity.y));
+      }
+    }
+
+    expect(world.rubble.length).toBeGreaterThan(10);
+    expect(fastest).toBeGreaterThan(1000); // the Fill's kick alone is 200 px/s
+    const posts = world.objects.filter((o) => o.colour === 'grey');
+    expect(posts).toHaveLength(2);
+    expect(posts.every((o) => !o.frozen)).toBe(true);
   });
 });

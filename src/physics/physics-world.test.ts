@@ -614,3 +614,51 @@ describe('Touch points', () => {
     expect(world.touchPoint(pair!)).toBeNull();
   });
 });
+
+describe('Bodies within a radius', () => {
+  it('are measured to their nearest point, of any kind, leaving out added capsules', () => {
+    const world = createWorld();
+    const ground = world.addTerrain([GROUND], DEAD);
+    const line = world.addLine(
+      [
+        { a: { x: 100, y: 300 }, b: { x: 200, y: 300 } },
+        { a: { x: 200, y: 300 }, b: { x: 300, y: 300 } },
+      ],
+      8,
+      DEAD,
+    );
+    const frozen = world.addObject({
+      position: { x: 500, y: 300 },
+      parts: [square(20)],
+      frozen: true,
+      surface: DEAD,
+      mass: 1,
+    });
+    const pebble = world.addCircle({
+      position: { x: 400, y: 200 },
+      radius: 5,
+      surface: DEAD,
+      mass: 1,
+    });
+    // A capsule added to the Terrain, reaching up near the centre: not the Terrain's own.
+    world.addCapsule(ground, { a: { x: 300, y: 480 }, b: { x: 300, y: 380 } }, 2, DEAD);
+
+    const near = (radius: number) =>
+      new Map(world.bodiesWithin({ x: 300, y: 300 }, radius).map((b) => [b.body, b]));
+
+    const within = near(210);
+    expect([...within.keys()].sort()).toEqual([ground, line, frozen, pebble].sort());
+    // Inside the Line's capsule: the centre itself, at 0.
+    expect(within.get(line)!.distance).toBe(0);
+    expect(within.get(line)!.point).toEqual({ x: 300, y: 300 });
+    // The Frozen box's nearest point is its left edge.
+    expect(within.get(frozen)!.distance).toBeCloseTo(180, 3);
+    expect(within.get(frozen)!.point.x).toBeCloseTo(480, 3);
+    expect(within.get(frozen)!.point.y).toBeCloseTo(300, 3);
+    expect(within.get(pebble)!.distance).toBeCloseTo(Math.hypot(100, 100) - 5, 3);
+    // The Terrain by its own surface at y = 500, not by the capsule at y = 378.
+    expect(within.get(ground)!.distance).toBeCloseTo(200, 3);
+
+    expect([...near(179).keys()].sort()).toEqual([line, pebble].sort());
+  });
+});

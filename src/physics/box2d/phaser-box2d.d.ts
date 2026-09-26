@@ -266,6 +266,28 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   /** Destroys the shape's contacts too, waking the bodies they touched. */
   export function b2DestroyShape(shapeId: b2ShapeId): void;
   export function b2Shape_GetBody(shapeId: b2ShapeId): b2BodyId;
+  /** The shape's point nearest `target`, or `target` itself if it is inside the shape. */
+  export function b2Shape_GetClosestPoint(shapeId: b2ShapeId, target: b2Vec2): b2Vec2;
+
+  export class b2AABB {
+    constructor(lowerx?: number, lowery?: number, upperx?: number, uppery?: number);
+  }
+  export class b2QueryFilter {
+    categoryBits: number;
+    maskBits: number;
+  }
+  export function b2DefaultQueryFilter(): b2QueryFilter;
+  /**
+   * Calls `fcn` with every shape whose fat bounding box overlaps `aabb`;
+   * `fcn` returns false to stop. (b2World_OverlapCircle throws in this port.)
+   */
+  export function b2World_OverlapAABB(
+    worldId: b2WorldId,
+    aabb: b2AABB,
+    filter: b2QueryFilter,
+    fcn: (shapeId: b2ShapeId, context: unknown) => boolean,
+    context: unknown,
+  ): void;
   export function b2Shape_GetUserData(shapeId: b2ShapeId): unknown;
   export function b2Shape_GetRestitution(shapeId: b2ShapeId): number;
   export function b2Shape_SetDensity(shapeId: b2ShapeId, density: number): void;

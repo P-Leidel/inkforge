@@ -12,8 +12,11 @@ A red Line burns from end to end like a fuse. Each red Piece explodes with a sma
 
 ## What already exists
 
-- **Red Pieces** (#15) break by the normal rule with the red Line values in the table (durability 250, threshold 300 at `1e13bc5`), releasing Debris through `strokes.break` (the world's `breakTarget`). Nothing explodes yet.
-- **Blasts** (#19) are a kind of Arena contents (#24), with size from red ink, the ring, action on arrival, chains through destroyed red, the snapshot, and drawing plus F1.
+- **Red Pieces** (#15) break by the normal rule with the red Line values in the table (durability 250, threshold 300; #19 left them alone and retuned only red Outlines, to 140 and 250), releasing Debris through `strokes.break` (the world's `breakTarget`). Nothing explodes yet.
+- **Blasts** (#19) are the `Blasts` kind in `src/sandbox/blasts.ts`, last in the world's list of kinds, with the pure `blastInk`, `blastSize` (R and S from red ink, clamped) and `blastStrength` (S × (1 − d/R)²) next to it. The table's shared `blast` block holds `speed`, `radiusPerRootInk`, `radiusMin`, `radiusMax`, `strengthPerRootInk`, `strengthMin`, `strengthMax`, `push` and `maxPushSpeed`. Whether ink explodes is a table number, `explodes`, under every Colour's `outline` and `fill` (1 for red), so no rule names a Colour; add it under `line` too.
+  - **The break path.** `Broken` has an `outline` (`BrokenOutline`: Colour, length and centre) for a broken Object, null for a Piece. The world's `breakTarget` bursts the Debris, releases the Fill, then calls `explode(outline, fill)`, which sums the red ink (`blastInk`) and starts a Blast with `blasts.add(centre, ink)`. A Piece's Blast has a fixed size rather than one from ink: give `Broken` what a Piece's Blast needs, and let `add` take a size (`BlastSize`) as well as ink, or add a second entry point.
+  - **The ring.** `blasts.spread(dt, act)` runs in the step after glue and before host gone: each Blast in creation order grows by `speed × dt`, finds what it reached with `physics.bodiesWithin(centre, radius)` (Terrain and added capsules, so Patches, left out), sorts the new ones by Party id, marks them acted on and hands them to the world's `blastReached`. That damages Pieces and Objects through `MaterialRules.applyBlast` (not an impact: no blue count), wakes Frozen Objects whose push over mass beats `wakeSpeed`, pushes free bodies outward (capped at `maxPushSpeed` of speed change), and breaks what broke with `breakTarget`. A Blast started during `spread` (a chain) grows in the same call, after the others, so every Blast first grows in the step it starts. A Blast is dropped once its radius reaches R. Sliding Objects are neither pushed nor damaged.
+  - **Pieces** are already damaged by Blasts (they are Parties with a `target`), so a red Piece a Blast destroys already breaks through `breakTarget`; it only has to explode.
 - **Squeeze and Settled pairs** (#14; `CONTEXT.md`). The Contact ledger (#27) applies both to every rule:
   - An Object drawn over a Line is squeezed off at start. It slides as a kinematic body that touches no fixed body, and deals and takes no damage.
   - Contacts touching at the start deal no damage until they come apart.
@@ -22,7 +25,7 @@ A red Line burns from end to end like a fuse. Each red Piece explodes with a sma
 
 **Table.** Add the fixed size of a Piece's Blast, e.g. `blast.pieceRadius` and `blast.pieceStrength`, and give red Lines very low durability and threshold if #15 didn't already.
 
-**A red Piece destroyed** by an impact or a Blast explodes: a Blast of that fixed size at the Piece's centre, the midpoint along it. Reuse #19's break path: `strokes.break` reports a broken Piece too, so have it report what the Blast needs. Red ink doesn't scale a Piece's Blast.
+**A red Piece destroyed** by an impact or a Blast explodes: a Blast of that fixed size at the Piece's centre, the midpoint along it. Reuse #19's break path: `strokes.break` reports a broken Piece too (`breakPiece`), so have it report what the Blast needs. Red ink doesn't scale a Piece's Blast.
 
 **The fuse rule, as a pure function tested against `DEFAULT_MATERIAL_TABLE`.** A red Piece's Blast, measured 48 px from its centre, must destroy a red Piece:
 
@@ -41,6 +44,7 @@ That way a tuning change that breaks the fuse fails CI (spec, Testing Decisions)
 
 ## Watch out for
 
+- **Distance is to the nearest point.** `bodiesWithin` measures to a Piece's capsules, so a straight neighbour's nearest point is about 24 px from a Piece's centre, minus half the Line's thickness.
 - **Existing demos have red Lines that will now explode:**
   - **Bounce** drops a grey ball onto a Line of each Colour, and the ball's landing already breaks a red Piece since #15.
   - **Slide** puts a grey box on a ramp of each Colour.

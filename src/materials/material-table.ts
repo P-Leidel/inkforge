@@ -43,6 +43,11 @@ export interface OutlineMaterial extends SurfaceMaterial {
    * starts moving (green); 0 if it never sticks.
    */
   sticks: number;
+  /**
+   * 1 if an Object's Outline explodes when the Object breaks (red): its ink,
+   * its length × the Line thickness, goes into a Blast. 0 if it doesn't.
+   */
+  explodes: number;
 }
 
 export interface FillMaterial {
@@ -68,6 +73,40 @@ export interface FillMaterial {
    * wears it by the Line's `glueWear`.
    */
   patchHitWear: number;
+  /**
+   * 1 if a Fill explodes when its Object breaks, however that happens (red):
+   * its ink, the Object's area, goes into a Blast. 0 if it doesn't.
+   */
+  explodes: number;
+}
+
+/**
+ * Blasts (ADR 0008): a ring spreading out from destroyed red ink, whose
+ * reach R and strength S grow with the square root of the red ink (px²).
+ * At distance d it acts at S × (1 − d/R)².
+ */
+export interface BlastMaterial {
+  /** How fast the ring spreads (px/s). */
+  speed: number;
+  /** R per √ink. */
+  radiusPerRootInk: number;
+  radiusMin: number;
+  radiusMax: number;
+  /** S per √ink. */
+  strengthPerRootInk: number;
+  strengthMin: number;
+  strengthMax: number;
+  /**
+   * The impulse (mass × px/s) a moving body gets per unit of strength,
+   * outward from the Blast's centre. It also decides whether a Frozen
+   * Object wakes: when this impulse over its mass beats the wake speed.
+   */
+  push: number;
+  /**
+   * A push never changes a body's speed by more than this (px/s), so light
+   * pebbles and Droplets fly fast but don't vanish.
+   */
+  maxPushSpeed: number;
 }
 
 export interface ColourMaterial {
@@ -122,6 +161,7 @@ export interface MaterialTable {
   patchCapacity: number;
   /** Most Patches at once; a new one over it removes the oldest. */
   patchCap: number;
+  blast: BlastMaterial;
 }
 
 /**
@@ -147,6 +187,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 400,
         impactLimit: 0,
         sticks: 0,
+        explodes: 0,
       },
       fill: {
         density: 1,
@@ -156,6 +197,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         rubbleArea: 250,
         spills: 0,
         patchHitWear: 0,
+        explodes: 0,
       },
     },
     blue: {
@@ -175,6 +217,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 200,
         impactLimit: 3,
         sticks: 0,
+        explodes: 0,
       },
       fill: {
         density: 0.5,
@@ -184,6 +227,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         rubbleArea: 0,
         spills: 1,
         patchHitWear: 1,
+        explodes: 0,
       },
     },
     green: {
@@ -203,6 +247,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 400,
         impactLimit: 0,
         sticks: 1,
+        explodes: 0,
       },
       fill: {
         density: 1,
@@ -212,6 +257,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         rubbleArea: 0,
         spills: 1,
         patchHitWear: 0,
+        explodes: 0,
       },
     },
     black: {
@@ -231,6 +277,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 2000,
         impactLimit: 0,
         sticks: 0,
+        explodes: 0,
       },
       fill: {
         density: 3,
@@ -240,6 +287,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         rubbleArea: 450,
         spills: 0,
         patchHitWear: 0,
+        explodes: 0,
       },
     },
     red: {
@@ -255,10 +303,11 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         friction: 0.6,
         restitution: 0.1,
         density: 1,
-        durability: 250,
-        damageThreshold: 300,
+        durability: 140,
+        damageThreshold: 250,
         impactLimit: 0,
         sticks: 0,
+        explodes: 1,
       },
       fill: {
         density: 1,
@@ -268,6 +317,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         rubbleArea: 0,
         spills: 0,
         patchHitWear: 0,
+        explodes: 1,
       },
     },
   },
@@ -286,6 +336,17 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   patchThickness: 3,
   patchCapacity: 250,
   patchCap: 200,
+  blast: {
+    speed: 800,
+    radiusPerRootInk: 3.8,
+    radiusMin: 40,
+    radiusMax: 300,
+    strengthPerRootInk: 38,
+    strengthMin: 400,
+    strengthMax: 3000,
+    push: 1,
+    maxPushSpeed: 1200,
+  },
 };
 
 /** A fresh, editable copy of the default table. */
