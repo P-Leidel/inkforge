@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inkforge Architecture Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f1f2f4;
+    --surface: #ffffff;
+    --ink: #15171c;
+    --muted: #5b616e;
+    --rule: #d7dae0;
+    --strong: #1d7f36;
+    --strong-bg: #e1f3e5;
+    --explore: #8c5f0e;
+    --explore-bg: #fbefd6;
+    --spec: #4e5563;
+    --spec-bg: #e6e8ec;
+    --tag-bg: #eceef2;
+    --note-bg: #eef0f4;
+    --leak: #b8322a;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d2027;
+      --surface: #252933;
+      --ink: #e8e2d0;
+      --muted: #9aa0ad;
+      --rule: #3a404d;
+      --strong: #62d98b;
+      --strong-bg: #1d3a28;
+      --explore: #f0c05a;
+      --explore-bg: #3b321d;
+      --spec: #c0c5cf;
+      --spec-bg: #333845;
+      --tag-bg: #2f3440;
+      --note-bg: #2c313c;
+      --leak: #f07a6e;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d2027;
+    --surface: #252933;
+    --ink: #e8e2d0;
+    --muted: #9aa0ad;
+    --rule: #3a404d;
+    --strong: #62d98b;
+    --strong-bg: #1d3a28;
+    --explore: #f0c05a;
+    --explore-bg: #3b321d;
+    --spec: #c0c5cf;
+    --spec-bg: #333845;
+    --tag-bg: #2f3440;
+    --note-bg: #2c313c;
+    --leak: #f07a6e;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+  h1 { font-size: 1.9rem; line-height: 1.15; }
+  h2 { font-size: 1.45rem; line-height: 1.2; }
+  h3 { font-size: 1.1rem; line-height: 1.25; }
+  p { margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  code { font-size: .9em; }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+  .muted { color: var(--muted); }
+  .label { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+
+  .page { max-width: 72rem; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  .head { display: flex; flex-direction: column; gap: 16px; }
+  .titlerow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .scope { font-size: 14px; color: var(--muted); max-width: 52rem; }
+  .legend { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .swatch { display: inline-block; width: 24px; height: 16px; }
+  .swatch-seam { display: inline-block; width: 32px; border-top: 1.5px dashed var(--muted); }
+
+  /* The last review's candidates */
+  .since { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 8px; }
+  .tile { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 1.6rem minmax(0, 1fr); gap: 0 6px; font-size: 13px; line-height: 1.35; }
+  .tile .n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--muted); }
+  .tile .st { grid-column: 2; font-size: 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tile.done { background: var(--strong-bg); border-color: transparent; }
+  .tile.done .st { color: var(--strong); }
+  .tile.open .st { color: var(--explore); }
+  .tile .st a { font-weight: 600; }
+
+  .candidates { display: flex; flex-direction: column; gap: 36px; }
+  .cand { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 16px; }
+  .cand-head { display: flex; flex-direction: column; gap: 8px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+  .b-strong { background: var(--strong-bg); color: var(--strong); }
+  .b-explore { background: var(--explore-bg); color: var(--explore); }
+  .b-spec { background: var(--spec-bg); color: var(--spec); }
+  .b-tag { background: var(--tag-bg); color: var(--muted); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .files { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+  .files .note { opacity: .75; }
+
+  .ba { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .prose3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .prose3 > div { display: flex; flex-direction: column; gap: 4px; }
+  .wins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wins li::before { content: "▪"; color: var(--strong); margin-right: 8px; }
+  .callout { background: var(--explore-bg); border-left: 3px solid var(--explore); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+  .evidence { background: var(--note-bg); border-left: 3px solid var(--muted); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+
+  .also { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+  .also ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+
+  .top { background: var(--surface); border: 3px solid var(--strong); border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .top .label { color: var(--strong); }
+  .top p { max-width: 52rem; }
+
+  @media (min-width: 640px) {
+    .page { padding-inline: 24px; padding-block: 56px 80px; }
+    h1 { font-size: 2.3rem; }
+    h2 { font-size: 1.6rem; }
+    .cand { padding: 28px; }
+    .top { padding: 32px; }
+  }
+  @media (min-width: 768px) { .prose3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .ba { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Diagram sheets are drafting paper in both themes, so hand-drawn and Mermaid diagrams read the same. */
+  .sheet { background: #fbfbfa; color: #16181d; border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-x: auto; min-width: 0; }
+  .s-muted { color: #6a707c; }
+  .s-label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tiny { font-size: 11px; }
+  .small { font-size: 12px; }
+  .center { text-align: center; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 3px 8px; font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .pad { padding: 8px; }
+  .pad-lg { padding: 14px 16px; }
+  .mod { border: 1.5px solid #5b616e; background: #ffffff; border-radius: 4px; }
+  .plan { border: 1.5px dashed #7a808c; background: #ffffff; border-radius: 4px; color: #4a505b; }
+  .leakbox { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; border-radius: 4px; }
+  .okbox { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; border-radius: 4px; }
+  /* A deep module is drawn like the game's black ink: a heavy dark core in a pale rim. */
+  .deep { background: #050506; color: #eef0f3; border: 3px solid #8a909e; border-radius: 5px; }
+  .deep .faded { color: #8f96a3; }
+  .deep .chip { border: 1px solid #3c414c; color: #d6d9df; border-radius: 3px; }
+  .seam { border-top: 1.5px dashed #7a808c; }
+  .arrow { text-align: center; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: #6a707c; }
+  .stack { display: flex; flex-direction: column; gap: 12px; min-width: 330px; }
+  .frame { border: 1.5px dashed #7a808c; border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+  /* C1: the Sandbox world's length, slice by slice */
+  .growth { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; align-items: end; height: 118px; min-width: 330px; }
+  .gcol { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .gcol .v { font-size: 10.5px; color: #4a505b; }
+  .gcol .bar { width: 100%; max-width: 44px; border-radius: 2px 2px 0 0; }
+  .gcol .k { font-size: 10px; color: #6a707c; }
+  .g-old { background: #b9bec7; }
+  .g-ok { background: #16181d; }
+  .g-grow { background: #d23a2e; }
+
+  /* C1: where each rule lives */
+  .rules { display: grid; grid-template-columns: minmax(10.5rem, 1fr) repeat(5, 3.2rem); gap: 5px 4px; align-items: center; min-width: 440px; }
+  .colhead { font-size: 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; line-height: 1.15; color: #4a505b; }
+  .colhead.hot { color: #b8322a; font-weight: 600; }
+  .rowhead { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; color: #2c3038; line-height: 1.25; }
+  .cell { width: 13px; height: 13px; border-radius: 999px; justify-self: center; display: inline-block; }
+  .c-built { background: #16181d; }
+  .c-leak { background: #d23a2e; }
+  .c-empty { border: 1.5px solid #c9cdd4; }
+  .c-vis { background: linear-gradient(90deg, #16181d 50%, #ffffff 50%); border: 1.5px solid #16181d; }
+  .key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: #6a707c; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .key span { display: flex; align-items: center; gap: 6px; }
+
+  /* C2: rebuild's checklist */
+  .check { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; }
+  .check li { display: grid; grid-template-columns: 1.2rem minmax(0, 1fr); gap: 6px; }
+  .check .y { color: #1d7f36; font-weight: 600; }
+  .check .x { color: #d23a2e; font-weight: 600; }
+  .check .q { color: #8c929e; }
+  .check .bad { color: #8f1f16; }
+  .check .meh { color: #6a707c; }
+
+  /* C5: questions about place */
+  .qrows { display: flex; flex-direction: column; gap: 6px; min-width: 330px; }
+  .qrow { padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .qrow b { font-size: 12.5px; font-weight: 600; }
+  .qrow span { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .slots { display: grid; grid-template-columns: minmax(6.6rem, auto) repeat(6, 2.9rem); gap: 4px 2px; align-items: center; }
+  .slots .rowhead.hot { color: #b8322a; font-weight: 600; }
+
+  /* C6: when an edit applies */
+  .when { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 3px 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; }
+  .when .f { color: #2c3038; }
+  .when .t { color: #6a707c; }
+  .when .t.odd { color: #8f1f16; }
+  .reads { display: flex; flex-wrap: wrap; gap: 4px; }
+  .reads .chip { border: 1px solid #c9cdd4; background: #ffffff; border-radius: 3px; }
+
+  /* C7: a Colour's look */
+  .looks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 330px; }
+
+  pre.mermaid { background: transparent; margin: 0; font-size: 13px; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
+</head>
+<body>
+<main class="page">
+
+  <header class="head">
+    <div class="titlerow">
+      <h1>Inkforge architecture review</h1>
+      <span class="mono meta">P-Leidel/inkforge · 958b7c3 (#19 Blasts) · 2026-09-26</span>
+    </div>
+    <p class="scope">Scope: the code through #19, judged on #20's fuse, #21's Demolition scene and milestones 3–4 (the ink economy, enemies). It follows the review of 2026-09-25.</p>
+    <div class="legend">
+      <span class="label">Legend</span>
+      <span class="item"><span class="swatch mod"></span>module</span>
+      <span class="item"><span class="swatch plan"></span>planned or later</span>
+      <span class="item"><span class="swatch-seam"></span>seam</span>
+      <span class="item"><svg width="30" height="10" aria-hidden="true"><line x1="0" y1="5" x2="22" y2="5" stroke="#d23a2e" stroke-width="2" stroke-dasharray="4 3"/><path d="M22 1 L29 5 L22 9 Z" fill="#d23a2e"/></svg>leakage</span>
+      <span class="item"><span class="swatch deep"></span>deep module, drawn like black ink</span>
+    </div>
+  </header>
+
+  <section class="since" aria-labelledby="since-h">
+    <span id="since-h" class="label">The 2026-09-25 candidates, today</span>
+    <div class="tiles">
+      <div class="tile done"><span class="n">1</span><span>Each body kind its own module</span><span class="st">done · #24</span></div>
+      <div class="tile done"><span class="n">2</span><span>Contact ledger</span><span class="st">done · #27</span></div>
+      <div class="tile open"><span class="n">3</span><span>One body description</span><span class="st">open, 3 attachments on → <a href="#c2">C2</a></span></div>
+      <div class="tile open"><span class="n">4</span><span>One read model per step</span><span class="st">open → <a href="#c4">C4</a></span></div>
+      <div class="tile open"><span class="n">5</span><span>Fill release reads numbers</span><span class="st">numbers yes, one module no → <a href="#c1">C1</a></span></div>
+      <div class="tile open"><span class="n">6</span><span>Ink looks as textures</span><span class="st">open → <a href="#c7">C7</a></span></div>
+      <div class="tile open"><span class="n">7</span><span>One Frozen wake rule</span><span class="st">the split landed in #19 → <a href="#c3">C3</a></span></div>
+      <div class="tile open"><span class="n">8</span><span>One Arena query module</span><span class="st">open → <a href="#c5">C5</a></span></div>
+    </div>
+  </section>
+
+  <section id="candidates" class="candidates">
+
+    <!-- 1 -->
+    <article id="c1" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 1</span>
+        <h2>Make the Material rules the module the spec describes</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/sandbox-world.ts <span class="note">(breakTarget, explode, blastReached, outward, releaseFill, releaseSpill, releaseRubble, wearGluer, layPatches; step 587–619)</span></li>
+        <li>src/sandbox/material-rules.ts <span class="note">(applyStep, applyBlast, wear, durabilityLeft)</span></li>
+        <li>src/sandbox/glue.ts · src/sandbox/sticking.ts</li>
+        <li>src/sandbox/strokes.ts <span class="note">(break, Broken)</span> · src/sandbox/blasts.ts <span class="note">(blastInk, spread)</span> · src/sandbox/patches.ts <span class="note">(wearByHits)</span></li>
+        <li>docs/specs/m2-colours.md:141 · docs/handoffs/20-red-lines-and-the-fuse.md</li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the world regrows, and it holds the rules</span>
+          <div class="frame">
+            <span class="s-label">sandbox-world.ts, lines</span>
+            <div class="growth" role="img" aria-label="sandbox-world.ts: 906 lines at #16, 440 after #24, 428 after #27, 472 after #17, 571 after #18, 646 after #19">
+              <div class="gcol"><span class="v">906</span><div class="bar g-old" style="height:100%"></div><span class="k">#16</span></div>
+              <div class="gcol"><span class="v">440</span><div class="bar g-ok" style="height:48.6%"></div><span class="k">#24</span></div>
+              <div class="gcol"><span class="v">428</span><div class="bar g-ok" style="height:47.2%"></div><span class="k">#27</span></div>
+              <div class="gcol"><span class="v">472</span><div class="bar g-grow" style="height:52.1%"></div><span class="k">#17</span></div>
+              <div class="gcol"><span class="v">571</span><div class="bar g-grow" style="height:63%"></div><span class="k">#18</span></div>
+              <div class="gcol"><span class="v">646</span><div class="bar g-grow" style="height:71.3%"></div><span class="k">#19</span></div>
+            </div>
+            <span class="tiny s-muted mono">private methods since #27: 7 → 8 → 13 → 16</span>
+          </div>
+          <div class="frame">
+            <span class="s-label">where each Material rule is decided</span>
+            <div class="rules">
+              <span></span>
+              <span class="colhead">Material<br>Rules</span><span class="colhead">Glue</span><span class="colhead">Sticking</span><span class="colhead hot">Sandbox<br>world</span><span class="colhead">kinds</span>
+
+              <span class="rowhead">impact damage · blue counter</span>
+              <span class="cell c-built"></span><span></span><span></span><span></span><span></span>
+              <span class="rowhead">Blast damage</span>
+              <span class="cell c-built"></span><span></span><span></span><span class="cell c-leak"></span><span></span>
+              <span class="rowhead">Blast push · wake</span>
+              <span></span><span></span><span></span><span class="cell c-leak"></span><span></span>
+              <span class="rowhead">glue drag</span>
+              <span></span><span class="cell c-built"></span><span></span><span></span><span></span>
+              <span class="rowhead">glue wears a Piece</span>
+              <span></span><span></span><span></span><span class="cell c-leak"></span><span></span>
+              <span class="rowhead">Patch wear</span>
+              <span></span><span></span><span></span><span class="cell c-leak"></span><span class="cell c-built"></span>
+              <span class="rowhead">sticking, then a Bond</span>
+              <span></span><span></span><span class="cell c-built"></span><span class="cell c-leak"></span><span></span>
+              <span class="rowhead">break order: Debris, Fill, Blast</span>
+              <span></span><span></span><span></span><span class="cell c-leak"></span><span class="cell c-built"></span>
+              <span class="rowhead">Spill or Rubble · kick · draws</span>
+              <span></span><span></span><span></span><span class="cell c-leak"></span><span class="cell c-built"></span>
+              <span class="rowhead">Blast size from red ink</span>
+              <span></span><span></span><span></span><span class="cell c-leak"></span><span class="cell c-built"></span>
+              <span class="rowhead">harmless never counts</span>
+              <span class="cell c-built"></span><span></span><span class="cell c-built"></span><span></span><span class="cell c-built"></span>
+            </div>
+            <div class="key">
+              <span><span class="cell c-built"></span>decided in a module</span>
+              <span><span class="cell c-leak"></span>decided in the world's wiring</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: one module decides; the world runs the order</span>
+          <div class="stack">
+            <div class="mod pad center">
+              <div class="s-label">Sandbox world</div>
+              <div class="small s-muted">step order · hands each decision to the kinds and the physics module</div>
+            </div>
+            <div class="seam"></div>
+            <div class="chips" style="justify-content:center">
+              <span class="chip mod">hits</span><span class="chip mod">new contacts</span><span class="chip mod">touching glue</span><span class="chip mod">Blast arrivals</span>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="deep pad-lg center" style="display:flex;flex-direction:column;gap:10px">
+              <div class="s-label">Material rules</div>
+              <div class="chips" style="justify-content:center">
+                <span class="chip">damage, any cause</span><span class="chip">blue counter</span><span class="chip">glue drag and wear</span><span class="chip">Patch wear</span><span class="chip">sticking</span><span class="chip">what a break releases</span><span class="chip">Blast size and push</span><span class="chip">harmless</span>
+              </div>
+              <div class="tiny faded mono">tests: hand-made Parties and hits, no engine, like contact-ledger.test.ts</div>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="chips" style="justify-content:center">
+              <span class="chip mod">damage</span><span class="chip mod">breaks</span><span class="chip mod">releases</span><span class="chip mod">pushes</span><span class="chip mod">Bonds</span>
+            </div>
+            <div class="plan pad center small">M4: pressing wear · enemy damage · kill drops: one rule each</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The spec gives the Material rules one module (m2-colours.md:141), but they are spread over MaterialRules, Glue, Sticking, five kinds and the Sandbox world. Since #27 the world has regrown from 428 to 646 lines, and it now holds Blast arrival, glue wear and Fill release where only whole-world tests on Box2D reach them.</p></div>
+        <div><span class="label">Solution</span><p>One Material rules module takes each step's hits, new contacts, touching glue and Blast arrivals, and decides every consequence: damage from any cause, what breaks, what a break releases, what a Blast pushes. The world keeps the step order and hands those decisions to the kinds and the physics module.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>locality: damage decided in one place</li>
+            <li>#20's Piece Blast: one rule</li>
+            <li>rules tested without the engine</li>
+            <li>world shrinks to the step order</li>
+            <li>M4 enemy damage plugs in</li>
+            <li>spec and code agree</li>
+          </ul>
+        </div>
+      </div>
+      <div class="evidence">Damage is added in three places and "broken" is decided three times (material-rules.ts 92, 103 · sandbox-world.ts 624–625). 11 of the 17 test files in src/sandbox build the whole world on Box2D. Sticking, <code>blastReached</code> and the release order have no test of their own, and glue.test.ts copies <code>wearGluer</code> to test glue.</div>
+    </article>
+
+    <!-- 2 -->
+    <article id="c2" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 2</span>
+        <h2>Rebuild bodies from one body description</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/physics/box2d/box2d-physics-world.ts <span class="note">(BodyRecord 117–140, makeB2Body 256–272, addShapes 332–342, rebuild 521–539, reweld 570–587, clearContacts 774–782, removeBody, ownShapes)</span></li>
+        <li>src/physics/physics-world.ts <span class="note">(ObjectBodyDef, CircleBodyDef)</span></li>
+        <li>docs/handoffs/README.md <span class="note">(the carry-over list, kept in prose)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: rebuild copies every attachment by hand</span>
+          <div class="stack">
+            <div class="frame">
+              <span class="s-label">rebuild(id) · adapter 521–539</span>
+              <ul class="check">
+                <li><span class="y">✓</span><span>pose, copied before the body is destroyed</span></li>
+                <li><span class="y">✓</span><span>damping by kind <span class="meh">(decided again at 842)</span></span></li>
+                <li><span class="y">✓</span><span>own shapes · surface · density · group</span></li>
+                <li><span class="y">✓</span><span>Patch capsules <span class="meh">(#18)</span></span></li>
+                <li><span class="y">✓</span><span>bonds, welded again <span class="meh">(#17)</span></span></li>
+                <li><span class="x">✗</span><span class="bad">bullet: never reaches rebuild (531)</span></li>
+                <li><span class="q">~</span><span class="meh">placed: survives because the pose copy is exact</span></li>
+              </ul>
+            </div>
+            <div class="frame">
+              <span class="s-label">one new attachment ≈ 8 edits</span>
+              <div class="chips">
+                <span class="chip leakbox">record type</span><span class="chip leakbox">map + counter</span><span class="chip leakbox">BodyRecord + 3 literals</span><span class="chip leakbox">rebuild</span><span class="chip leakbox">removeBody</span><span class="chip leakbox">end-contacts loop</span><span class="chip leakbox">clearContacts</span><span class="chip leakbox">own-shape filters</span>
+              </div>
+            </div>
+            <span class="tiny s-muted mono">adapter 916 → 1169 lines and interface 202 → 294 over #17–#19</span>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: every change applies one record</span>
+          <div class="stack">
+            <div class="chips" style="justify-content:center">
+              <span class="chip mod">create</span><span class="chip mod">Release</span><span class="chip mod">wake</span><span class="chip mod">slide end</span><span class="chip mod">setSurface</span><span class="chip mod">setMass</span>
+            </div>
+            <div class="arrow">↓ apply the description ↓</div>
+            <div class="deep pad-lg center" style="display:flex;flex-direction:column;gap:10px">
+              <div class="s-label">Body description</div>
+              <div class="chips" style="justify-content:center">
+                <span class="chip">shapes</span><span class="chip">added capsules</span><span class="chip">surface</span><span class="chip">density</span><span class="chip">damping</span><span class="chip">group</span><span class="chip">bullet</span><span class="chip">never wakes</span><span class="chip">bonds</span>
+              </div>
+              <div class="tiny faded mono">nothing to carry over: the rebuild reads the record</div>
+            </div>
+            <div class="seam"></div>
+            <div class="mod pad center small">PhysicsWorld interface: unchanged</div>
+            <div class="plan pad center small">M4: an enemy body's options are one field each</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Box2D can't unfreeze a fixed body, so Release, a wake and the end of a slide rebuild it, and every attachment is carried over by hand. Bonds and Patch capsules each took about eight edits across the adapter. <code>bullet</code> never reached <code>rebuild</code>, so a rebuilt circle would lose continuous collision. That is latent today, since only Objects are rebuilt.</p></div>
+        <div><span class="label">Solution</span><p>The adapter keeps one complete description of each body: its shapes and added capsules with their surfaces, density, damping, group, bullet, wake flag and bonds. Creating, rebuilding, <code>setSurface</code> and <code>setMass</code> all apply that description.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>locality: one record per body</li>
+            <li>drift like bullet can't recur</li>
+            <li>one rebuild test, every attachment</li>
+            <li>enemy body options land once</li>
+            <li>PhysicsWorld interface unchanged</li>
+            <li>a Rapier adapter reads one record</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- 3 -->
+    <article id="c3" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 3</span>
+        <h2>Put the Frozen wake rule in one place</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/physics/box2d/box2d-physics-world.ts <span class="note">(step 912–990: wake loop 951–977, impulse patch 979–988; frozenInertial 628–637; impactImpulse 665–682; wakeByHit 727–736)</span></li>
+        <li>src/physics/physics-world.ts <span class="note">(wakeSpeed option, CircleBodyDef.wakes)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(blastReached 402–404, applyMaterials 569)</span></li>
+        <li>src/sandbox/droplets.ts <span class="note">(wakes: false)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: one rule, two homes, two measures</span>
+<pre class="mermaid">
+flowchart LR
+  H["hit"]:::mod --> A["Box2D adapter<br/>free-collision impulse<br/>replay, then patch the hit"]:::mod
+  D["Droplet"]:::mod -.->|never-wake flag| A
+  B["Blast"]:::mod --> W["Sandbox world<br/>capped push over mass"]:::mod
+  W -.->|release| A
+  T[("material table<br/>wakeSpeed")]:::mod -.->|copied on edit| A
+  T --> W
+  linkStyle 1,3,4 stroke:#d23a2e,stroke-width:2px
+  classDef mod fill:#ffffff,stroke:#5b616e,color:#16181d
+</pre>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: every wake asks one rule</span>
+<pre class="mermaid">
+flowchart LR
+  H["hit<br/>free-collision impulse"]:::mod --> R["Frozen wake rule<br/>push over mass beats wakeSpeed<br/>Parties that never wake things"]:::deep
+  B["Blast<br/>push at its strength"]:::mod --> R
+  R --> A["Box2D adapter<br/>rebuild · replay"]:::mod
+  classDef mod fill:#ffffff,stroke:#5b616e,color:#16181d
+  classDef deep fill:#050506,stroke:#8a909e,stroke-width:3px,color:#eef0f3
+</pre>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>A Frozen Object waits for "a hard hit, a strong enough Blast or the player's Release" (CONTEXT.md). The first two are measured differently in two homes. Hits are judged inside the Box2D adapter, by a free-collision impulse that is then replayed. Blasts are judged in the Sandbox world, by a capped push over mass. Droplets opt out through an adapter flag.</p></div>
+        <div><span class="label">Solution</span><p>For each hit on a Frozen Object, the adapter reports the impulse a free collision would give, and it replays the wakes it is handed. One engine-neutral wake rule decides for hits and Blasts, and says which Parties never wake anything.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>locality: one wake rule</li>
+            <li>hits and Blasts agree by construction</li>
+            <li>adapter keeps no game rule</li>
+            <li>ADR 0001's Rapier swap cheaper</li>
+            <li>wakeSpeed read live, not copied</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">Found on the way (plausible, not reproduced): after a wake, the adapter rewrites the impulse of the <em>first</em> hit between the two bodies (982–987), not the shape pair that woke the Object. A multi-part hit keeps a wall-sized impulse on its other pairs, and the damage rule takes the strongest. The replay must also stay inside the same step, because exact replays depend on that order. <strong>Since reproduced and fixed</strong> (<code>10a0616</code>): every hit between a woken Object and its hitter now reports its own free-collision impulse.</div>
+    </article>
+
+    <!-- 4 -->
+    <article id="c4" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 4</span>
+        <h2>Give the Sandbox world one read side, updated per step</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/sandbox-world.ts <span class="note">(13 getters 187–246, contents 201–203, Debris 135, puff 425–428, applyMaterials 565–572)</span></li>
+        <li>src/sandbox/strokes.ts <span class="note">(views 223–257)</span> · src/sandbox/rubble.ts <span class="note">(fading ghosts)</span> · src/sandbox/arena-contents.ts <span class="note">(dropVisuals)</span></li>
+        <li>src/physics/box2d/box2d-physics-world.ts <span class="note">(getTransform, getVelocity 1095–1107; engineState 738–750)</span></li>
+        <li>src/rendering/world-renderer.ts · src/rendering/debug-overlay.ts</li>
+        <li>src/gallery/gallery.test.ts · docs/handoffs/21-demolition-scene.md</li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: every reader rebuilds, nobody is told</span>
+<pre class="mermaid">
+sequenceDiagram
+  participant R as Renderer · F1 · stress tests
+  participant W as Sandbox world
+  participant P as Box2D adapter
+  loop every step
+    W->>W: stringify the whole material table
+    W->>W: step Debris, fading ghosts, puffs
+  end
+  loop every frame, per reader, per Object
+    R->>W: world.objects
+    W->>P: getTransform, getVelocity, getMass
+    P-->>W: up to 10 engine calls
+  end
+  Note over R: tests poll contents and count new ids
+</pre>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one update per step, and a list of what happened</span>
+<pre class="mermaid">
+sequenceDiagram
+  participant P as Box2D adapter
+  participant W as Sandbox world
+  participant R as Renderer · F1 · tests
+  P->>W: step: the bodies that moved
+  W->>W: update the read model
+  W-->>R: what happened: broke, exploded, spilled, landed, stuck, capped
+  R->>W: read model, once per frame
+  Note over R: Debris starts from "broke"
+</pre>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Every read of <code>world.objects</code> rebuilds each view with up to ten engine calls per Object, and the renderer, F1 and the stress tests each read every frame. The step reports nothing, so tests and #21 poll <code>contents</code> and count new ids. Visual-only Debris, fading ghosts and Patch puffs run inside the headless world.</p></div>
+        <div><span class="label">Solution</span><p>Each step updates one read model from the bodies that moved, plus a list of what happened: broke, exploded, spilled, landed, stuck, capped. The renderer, F1, tests and the verdict read those. Debris moves to the renderer and starts from that list.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>cost follows what moved</li>
+            <li>#21 counts events, not ids</li>
+            <li>8 pass-through getters go</li>
+            <li>Kind loses dropVisuals</li>
+            <li>headless world: simulation only</li>
+            <li>M4's ink drops hook on kills</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">Measure first: #21's Demolition step times show whether the read model is needed before enemies arrive. The list of what happened pays off either way.</div>
+    </article>
+
+    <!-- 5 -->
+    <article id="c5" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 5</span>
+        <h2>Answer "what is here" in one Arena query module</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/stroke/stroke-pipeline.ts <span class="note">(overlapsSolid 126–134, StrokeContext 32–45)</span></li>
+        <li>src/sandbox/strokes.ts <span class="note">(objectAt 424–432, squeeze 394–421, solids, surfaceOf)</span> · src/sandbox/rubble.ts <span class="note">(solids, surfaceOf)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(strokeContext 279–288, surfaceOf 546–553)</span></li>
+        <li>src/sandbox/blasts.ts <span class="note">(reach 147–160)</span> · src/geometry/separation.ts <span class="note">(shortestWayOut)</span></li>
+        <li>src/sandbox/arena-contents.ts <span class="note">(Solids, HostSurface)</span> · docs/gdd.md §10 <span class="note">(overlap charging)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: four questions, four ways, two Kind members to feed them</span>
+          <div class="stack">
+            <div class="qrows">
+              <div class="qrow mod"><b>May this Object go here?</b><span class="s-muted">overlapsSolid · every draw and preview · all parts × every solid</span></div>
+              <div class="qrow mod"><b>Which Object is under the pointer?</b><span class="s-muted">Strokes.objectAt · Fill, Release · every Outline moved to world space</span></div>
+              <div class="qrow leakbox"><b>Which Objects does a new Line cross?</b><span>Strokes.squeeze · every start · 48 directions × every other Object</span></div>
+              <div class="qrow okbox"><b>What does a Blast reach?</b><span>Blasts.reach → bodiesWithin · the engine's broadphase: already indexed</span></div>
+              <div class="qrow plan"><b>Which parts of this Line lie on a Line?</b><span>M3 overlap charging · not built</span></div>
+            </div>
+            <div class="frame">
+              <span class="s-label">Kind members, per kind</span>
+              <div class="slots">
+                <span></span><span class="colhead">Strokes</span><span class="colhead">Rubble</span><span class="colhead">Bonds</span><span class="colhead">Drop-<br>lets</span><span class="colhead">Patches</span><span class="colhead">Blasts</span>
+                <span class="rowhead">views · save · clear</span><span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-built"></span>
+                <span class="rowhead">applySurfaces</span><span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-empty"></span>
+                <span class="rowhead">gone</span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-built"></span>
+                <span class="rowhead">step</span><span class="cell c-empty"></span><span class="cell c-vis"></span><span class="cell c-empty"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-empty"></span>
+                <span class="rowhead">dropVisuals</span><span class="cell c-empty"></span><span class="cell c-vis"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span>
+                <span class="rowhead hot">solids</span><span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span>
+                <span class="rowhead hot">surfaceOf</span><span class="cell c-built"></span><span class="cell c-built"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span><span class="cell c-empty"></span>
+              </div>
+              <div class="key">
+                <span><span class="cell c-built"></span>real</span>
+                <span><span class="cell c-vis"></span>visual only</span>
+                <span><span class="cell c-empty"></span>empty</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: one question, one index</span>
+          <div class="stack">
+            <div class="chips" style="justify-content:center">
+              <span class="chip mod">drawing</span><span class="chip mod">Fill · Release</span><span class="chip mod">Squeeze</span><span class="chip mod">Blasts</span><span class="chip mod">Droplet landing</span><span class="chip plan">M3 overlap charging</span>
+            </div>
+            <div class="arrow">↓ ask ↓</div>
+            <div class="deep pad-lg center" style="display:flex;flex-direction:column;gap:10px">
+              <div class="s-label">Arena queries</div>
+              <div class="chips" style="justify-content:center">
+                <span class="chip">point</span><span class="chip">overlap</span><span class="chip">crossing</span><span class="chip">within radius</span><span class="chip">surface of a Party</span>
+              </div>
+              <div class="tiny faded mono">every Party's shapes in world space, current per step · the engine's broadphase as index</div>
+            </div>
+            <div class="seam"></div>
+            <div class="mod pad center small">Kind: <code>solids</code> and <code>surfaceOf</code> go</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Four questions about place are answered four ways: may this Object go here, which Object is under the pointer, which Objects does a new Line cross, and what does a Blast reach. Three of them move every body into world space and scan them all. The Kind interface carries <code>solids</code> and <code>surfaceOf</code> only to feed them, and only 2 of the 6 kinds answer.</p></div>
+        <div><span class="label">Solution</span><p>One module keeps every Party's shapes in world space, current each step, with the engine's broadphase as its index. It answers point, overlap, crossing, radius and surface questions for every caller, M3's overlap charging included.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>leverage: one query, five callers</li>
+            <li>Kind drops solids and surfaceOf</li>
+            <li>M3 overlap charging is a query</li>
+            <li>cost follows the neighbourhood</li>
+            <li>geometry tested at one interface</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- 6 -->
+    <article id="c6" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 6</span>
+        <h2>Let a Materials module own the numbers and their edits</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/materials/material-table.ts <span class="note">(134 numbers)</span> · src/materials/table-paths.ts · src/rendering/tuning-panel.ts <span class="note">(F2)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(applyMaterials 565–572)</span> · src/sandbox/material-rules.ts <span class="note">(numbersOf 33–36)</span></li>
+        <li>every kind's applySurfaces · src/physics/box2d/box2d-physics-world.ts <span class="note">(surfaces kept by reference: BodyRecord.surface, addShapes)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: read raw everywhere, polled every step</span>
+          <div class="stack">
+            <div class="frame">
+              <span class="s-label">26 raw reads of colours[…] in 13 files</span>
+              <div class="reads">
+                <span class="chip">strokes 4</span><span class="chip">sandbox-world 3</span><span class="chip">rubble 3</span><span class="chip">patches 3</span><span class="chip">droplets 2</span><span class="chip">blasts 2</span><span class="chip">glue 2</span><span class="chip">mass 2</span><span class="chip">sticking 1</span><span class="chip">material-rules 1</span><span class="chip">debris 1</span><span class="chip">debug-overlay 1</span><span class="chip">tuning-panel 1</span>
+              </div>
+            </div>
+            <div class="frame">
+              <span class="s-label">an F2 edit</span>
+              <div class="chips">
+                <span class="chip mod">F2 writes the table</span><span class="chip mod">every step: JSON.stringify, compare</span><span class="chip mod">every kind: applySurfaces to all</span>
+              </div>
+              <div class="chips"><span class="chip leakbox">unseen: the adapter holds the table's surface objects, so a rebuilt body takes an edit early</span></div>
+            </div>
+            <div class="frame">
+              <span class="s-label">when an edit takes effect</span>
+              <div class="when">
+                <span class="f">surfaces, wakeSpeed</span><span class="t">next step</span>
+                <span class="f">density</span><span class="t">next draw or Fill</span>
+                <span class="f">Blast reach, strength</span><span class="t">next Blast</span>
+                <span class="f">blast.speed</span><span class="t">at once</span>
+                <span class="f">rubbleCap, patchCap</span><span class="t">next add</span>
+                <span class="f">patchCapacity</span><span class="t odd">at once; rescales worn Patches</span>
+              </div>
+              <span class="tiny s-muted mono">written down only for density (sandbox-world.ts 561–564)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: ask for numbers, hear about edits</span>
+          <div class="stack">
+            <div class="chips" style="justify-content:center">
+              <span class="chip mod">kinds</span><span class="chip mod">Material rules</span><span class="chip mod">renderer</span><span class="chip mod">F2</span>
+            </div>
+            <div class="arrow">↓ numbers for this Colour in this role ↓</div>
+            <div class="deep pad-lg center" style="display:flex;flex-direction:column;gap:10px">
+              <div class="s-label">Materials</div>
+              <div class="chips" style="justify-content:center">
+                <span class="chip">role mapping</span><span class="chip">checks each edit</span><span class="chip">when each edit applies</span>
+              </div>
+              <div class="tiny faded mono">restitution stays below 1 · every Colour has every field</div>
+            </div>
+            <div class="arrow">↓ once per edit ↓</div>
+            <div class="chips" style="justify-content:center">
+              <span class="chip mod">physics module</span><span class="chip mod">kinds</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The table's 134 numbers are read raw in 26 places across 13 files. F2 edits reach the engine through a <code>JSON.stringify</code> of the whole table every step, and unseen through surface objects the adapter shares with the table. When an edit takes effect differs by field, and that is written down only for density.</p></div>
+        <div><span class="label">Solution</span><p>A Materials module answers "the numbers for this Colour in this role", checks each edit and decides when it applies. It tells the physics module and the kinds once per edit instead of being polled.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>no stringify every step</li>
+            <li>locality: edit timing in one place</li>
+            <li>role mapping in one place</li>
+            <li>F2 edits checked at the seam</li>
+            <li>new numbers: one entry each</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
+    <!-- 7 -->
+    <article id="c7" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 7</span>
+        <h2>Bake ink looks into textures</h2>
+        <div class="badges"><span class="badge b-spec"><span class="dot"></span>Speculative</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/rendering/ink.ts <span class="note">(drawInk 97–157, fillInk 187–214)</span></li>
+        <li>src/rendering/world-renderer.ts <span class="note">(a Graphics per Line, Object, Rubble and Patch; drawBlasts 108–120, drawBonds 123–132; crack checks 264, 365)</span></li>
+        <li>index.html <span class="note">(palette CSS 85–100)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: a Colour's look in six places; draw commands per thing</span>
+          <div class="looks">
+            <div class="frame">
+              <span class="s-label">one Graphics each</span>
+              <div class="chips"><span class="chip mod">Line</span><span class="chip mod">Object</span><span class="chip mod">Rubble</span><span class="chip mod">Patch (#18)</span></div>
+              <span class="s-label">redrawn every frame</span>
+              <div class="chips"><span class="chip mod">Droplets</span><span class="chip mod">Blasts</span><span class="chip mod">Bonds</span></div>
+            </div>
+            <div class="frame">
+              <span class="s-label">a Colour's look</span>
+              <div class="chips">
+                <span class="chip mod">INK_HUES</span><span class="chip leakbox">drawInk switch, no default</span><span class="chip leakbox">fillInk switch, no default</span><span class="chip mod">2 crack checks</span><span class="chip leakbox">CSS black ≠ INK_HUES</span><span class="chip leakbox">Bonds green, Blasts red</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one texture per look, sprites share it</span>
+          <div class="stack">
+            <div class="deep pad-lg center" style="display:flex;flex-direction:column;gap:10px">
+              <div class="s-label">Ink look</div>
+              <div class="chips" style="justify-content:center"><span class="chip">Colour → hue</span><span class="chip">texture</span><span class="chip">crack colour</span></div>
+              <div class="tiny faded mono">each Colour: one entry</div>
+            </div>
+            <div class="arrow">↓ drawn once into a texture ↓</div>
+            <div class="chips" style="justify-content:center"><span class="chip mod">Rubble</span><span class="chip mod">Droplets</span><span class="chip mod">Patches</span><span class="chip mod">sprites, one batch</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Every Line, Object, piece of Rubble and now every Patch is its own Graphics made of many draw commands, and Droplets and Blasts are redrawn every frame. A Colour's look is spread over two switches with no default, two crack checks and CSS whose black differs from <code>INK_HUES</code>. The hues of Bonds (green) and Blasts (red) are hard-coded.</p></div>
+        <div><span class="label">Solution</span><p>An ink look module draws each look once into a cached texture, which Rubble, Droplets and Patches share as sprites. Each Colour's look is one entry.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>draw cost flat per thing</li>
+            <li>sixth Colour look: one entry</li>
+            <li>sprites batch; Graphics don't</li>
+            <li>no Colour names standing in for rules</li>
+          </ul>
+        </div>
+      </div>
+      <div class="callout">Check first: whether Phaser 4 replays a Graphics' command list every frame, and #22's frame times.</div>
+    </article>
+
+  </section>
+
+  <section class="also" aria-labelledby="also-h">
+    <h3 id="also-h">Also noticed, not candidates</h3>
+    <ul>
+      <li>Every kind pairs <code>physics.add…</code> with <code>contacts.register</code>, <code>removeBody</code> with <code>unregister</code>, and <code>slideOut</code> with <code>squeezed</code> (strokes.ts 330–354, rubble.ts 288–314, droplets.ts 145–168). An enemy kind would repeat that.</li>
+      <li><code>removeBody</code> drops a body's bond and Patch capsules at once, but Bonds and Patches only hear about it at <code>passOnGone</code>. Only call order keeps their views safe in between.</li>
+      <li>strokes.ts (631 lines) holds eight concerns: views, drawing, breaking, snapshot, Squeeze, undo history, Fill and Release.</li>
+      <li><code>running</code> stands in for the Wave. Undo works while running, and a test asserts it (sandbox-world.test.ts 185–193), while the GDD says Build Phase only. Commands carry no Ink cost and undo returns nothing, so M3 needs a home for both.</li>
+      <li>Geometry repeats itself: arc-length walks ×4, joining segments ×3, polygon projection ×2. src/geometry has no tests.</li>
+      <li>sandbox-world.ts 433–434 still says red Fills release nothing.</li>
+    </ul>
+  </section>
+
+  <section id="top-recommendation" class="top">
+    <span class="label">Top recommendation</span>
+    <h2><a href="#c1">Make the Material rules the module the spec describes</a></h2>
+    <p>#20's fuse lands in the break path this gathers (<code>strokes.break</code> → <code>breakTarget</code> → <code>explode</code> → <code>blasts.add</code>). Milestone 4 brings pressing wear, enemy damage and kill drops. Since #27, each Colour slice has added one to five private methods to the Sandbox world. #24 and #27 went in before #17, and this fits before #20 the same way. It also gives sticking, Blast arrival, glue wear and Fill release tests of their own. <a href="#c2">Candidate 2</a> is the contained second: it stays inside <code>src/physics/</code> and closes a drift that has already happened.</p>
+  </section>
+
+</main>
+</body>
+</html>

@@ -431,7 +431,7 @@ export class SandboxWorld {
    * Lets out a broken Object's Fill, in the same step, from where the Object
    * was and moving as it moved, kicked outward from its centre: grey and
    * black Fills release Rubble, blue and green ones a Spill of Droplets.
-   * Red Fills release nothing yet.
+   * Red Fills release nothing here; their Blast starts in `explode`.
    */
   private releaseFill(released: ReleasedFill): void {
     if (this.materials.colours[released.colour].fill.spills > 0) this.releaseSpill(released);
