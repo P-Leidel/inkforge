@@ -59,6 +59,29 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     isBullet: boolean;
   }
 
+  export class b2JointId {
+    index1: number;
+    world0: number;
+    revision: number;
+  }
+
+  export class b2WeldJointDef {
+    bodyIdA: b2BodyId | null;
+    bodyIdB: b2BodyId | null;
+    /** In each body's own coordinates, metres. */
+    localAnchorA: b2Vec2;
+    localAnchorB: b2Vec2;
+    /** B's angle minus A's, radians. */
+    referenceAngle: number;
+    /** 0 for a rigid joint. */
+    linearHertz: number;
+    angularHertz: number;
+    linearDampingRatio: number;
+    angularDampingRatio: number;
+    collideConnected: boolean;
+    userData: unknown;
+  }
+
   export interface b2ShapeDef {
     userData: unknown;
     friction: number;
@@ -169,6 +192,7 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
 
   export function b2DefaultBodyDef(): b2BodyDef;
   export function b2CreateBody(worldId: b2WorldId, def: b2BodyDef): b2BodyId;
+  /** Destroys its shapes and joints too. */
   export function b2DestroyBody(bodyId: b2BodyId): void;
   export function b2Body_GetType(bodyId: b2BodyId): number;
   export function b2Body_SetType(bodyId: b2BodyId, type: number): void;
@@ -193,6 +217,25 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     point: b2Vec2,
     wake: boolean,
   ): void;
+
+  export function b2Body_ApplyLinearImpulseToCenter(
+    bodyId: b2BodyId,
+    impulse: b2Vec2,
+    wake: boolean,
+  ): void;
+  export function b2Body_ApplyAngularImpulse(
+    bodyId: b2BodyId,
+    impulse: number,
+    wake: boolean,
+  ): void;
+
+  export function b2DefaultWeldJointDef(): b2WeldJointDef;
+  /**
+   * Without `collideConnected`, destroys the contacts between the two bodies;
+   * their end events are lost at the next step's start.
+   */
+  export function b2CreateWeldJoint(worldId: b2WorldId, def: b2WeldJointDef): b2JointId;
+  export function b2DestroyJoint(jointId: b2JointId): void;
 
   export function b2DefaultShapeDef(): b2ShapeDef;
   export function b2CreatePolygonShape(

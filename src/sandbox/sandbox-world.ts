@@ -14,11 +14,14 @@ import {
 } from '../stroke/stroke-pipeline';
 import { SANDBOX_ARENA, type Arena } from './arena';
 import type { Kind } from './arena-contents';
+import { Bonds, type BondView } from './bonds';
 import { ContactLedger, TERRAIN_PARTY, type SavedContacts } from './contact-ledger';
 import { Debris, type DebrisParticle } from './debris';
+import { Glue } from './glue';
 import { MaterialRules } from './material-rules';
 import { Random } from './random';
 import { launchRubble, packRubble, Rubble, type FadingRubbleView, type RubbleView } from './rubble';
+import { Sticking } from './sticking';
 import {
   Strokes,
   type FillOutcome,
@@ -29,6 +32,7 @@ import {
   type StrokeTarget,
 } from './strokes';
 
+export type { BondView } from './bonds';
 export type { FadingRubbleView, RubbleView } from './rubble';
 export {
   SLIDE_OUT_SPEED,
@@ -62,9 +66,10 @@ export interface StrokeOptions {
 
 /**
  * Every kind of Arena contents, in the fixed order they are rebuilt in:
- * Strokes, then Rubble. A kind that lives on another comes after it.
+ * Strokes, then Rubble, then Bonds. A kind that lives on another comes after
+ * it.
  */
-type Kinds = readonly [Strokes, Rubble];
+type Kinds = readonly [Strokes, Rubble, Bonds];
 
 /** A kind as the Sandbox world runs it, over every kind alike. */
 type AnyKind = Kind<string, unknown, unknown>;
@@ -108,9 +113,12 @@ export class SandboxWorld {
   private readonly physics: PhysicsWorld;
   private readonly contacts: ContactLedger<StrokeTarget>;
   private readonly rules: MaterialRules;
+  private readonly glue: Glue;
+  private readonly sticking: Sticking;
   private readonly debris = new Debris(new Random(DEBRIS_SEED), GRAVITY);
   private readonly strokes: Strokes;
   private readonly rubbleKind: Rubble;
+  private readonly bondsKind: Bonds;
   /** Every kind, in rebuild order. */
   private readonly kinds: readonly AnyKind[];
   /** Taken whenever physics starts; R returns to it. */
@@ -134,9 +142,12 @@ export class SandboxWorld {
     this.contacts = new ContactLedger(this.physics);
     this.addTerrain();
     this.rules = new MaterialRules(this.materials);
+    this.glue = new Glue(this.materials, this.physics, this.contacts);
+    this.sticking = new Sticking(this.materials, this.physics, this.contacts);
     this.strokes = new Strokes(this.physics, this.materials, this.arena, this.contacts);
     this.rubbleKind = new Rubble(this.physics, this.materials, this.contacts);
-    const kinds: Kinds = [this.strokes, this.rubbleKind];
+    this.bondsKind = new Bonds(this.physics, this.contacts);
+    const kinds: Kinds = [this.strokes, this.rubbleKind, this.bondsKind];
     this.kinds = kinds;
   }
 
@@ -180,6 +191,11 @@ export class SandboxWorld {
   /** Rubble the cap removed, fading out. */
   get fadingRubble(): readonly FadingRubbleView[] {
     return this.rubbleKind.fadingViews;
+  }
+
+  /** Green Objects stuck to what they touched. */
+  get bonds(): readonly BondView[] {
+    return this.bondsKind.views;
   }
 
   /**
@@ -252,6 +268,7 @@ export class SandboxWorld {
   /** Removes one Stroke with its Fill, e.g. a spent stress-test ball. */
   remove(id: StrokeId): void {
     this.strokes.remove(id);
+    this.passOnGone();
   }
 
   /**
@@ -261,6 +278,7 @@ export class SandboxWorld {
    */
   undo(): void {
     this.strokes.undo();
+    this.passOnGone();
   }
 
   /**
@@ -270,8 +288,21 @@ export class SandboxWorld {
    */
   clear(): void {
     for (const kind of this.kinds) kind.clear();
+    this.contacts.takeGone();
     this.snapshot = null;
     this.debris.clear();
+  }
+
+  /**
+   * Tells every kind, in kind order, what the last step or command removed,
+   * so that what was attached to it goes too: a bond whose host broke or was
+   * undone lets its green Object fall free.
+   */
+  private passOnGone(): void {
+    const gone = this.contacts.takeGone();
+    if (gone.length === 0) return;
+    const parties = new Set(gone);
+    for (const kind of this.kinds) kind.gone(parties);
   }
 
   /**
@@ -403,7 +434,20 @@ export class SandboxWorld {
     this.elapsed += STEP_SECONDS;
     this.debris.step(STEP_SECONDS);
     const broken = this.rules.applyStep(this.contacts.hits);
+    // A green Object sticks to its first new contact even if that breaks in
+    // this step: it then falls free at once, as when its host breaks later.
+    for (const { sticker, host, pair } of this.sticking.step(
+      this.strokes.objectRecords(),
+      STEP_SECONDS,
+    )) {
+      const point = this.physics.touchPoint(pair) ?? this.physics.getTransform(sticker.body);
+      this.bondsKind.add(sticker.id, sticker.party, host.id, point);
+    }
     for (const target of broken) this.breakTarget(target);
+    for (const piece of this.glue.apply(this.strokes.pieces(), STEP_SECONDS)) {
+      this.breakTarget(piece);
+    }
+    this.passOnGone();
     for (const kind of this.kinds) kind.step(STEP_SECONDS);
   }
 

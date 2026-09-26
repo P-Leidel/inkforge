@@ -22,16 +22,21 @@ type Graphics = Phaser.GameObjects.Graphics;
 const CRACK_STAGES = [0.25, 0.5, 0.75];
 const CRACK_WIDTH = 2;
 const DEBRIS_DEPTH = 5;
+/** Bond blobs show over the Objects they hold. */
+const BOND_DEPTH = 4;
+/** Radius of the blob of glue drawn where a bond holds. */
+const BOND_RADIUS = 5;
 /** Sides of the polygon a piece of Rubble is drawn as. */
 const RUBBLE_SIDES = 20;
 /** Width of the rim around a piece of Rubble. */
 const RUBBLE_RIM = 2;
 
 /**
- * Draws the Sandbox world's state: Terrain, Lines, Objects, Rubble and
- * Debris. Each Stroke gets its own Graphics, drawn again only when its look
- * changes; moving Objects only update its transform. So does each piece of
- * Rubble, which never changes its look. Debris is redrawn every frame.
+ * Draws the Sandbox world's state: Terrain, Lines, Objects, Rubble, bonds
+ * and Debris. Each Stroke gets its own Graphics, drawn again only when its
+ * look changes; moving Objects only update its transform. So does each piece
+ * of Rubble, which never changes its look. Bonds and Debris are redrawn
+ * every frame.
  */
 export class WorldRenderer {
   private readonly lines = new Map<StrokeId, Graphics>();
@@ -43,6 +48,7 @@ export class WorldRenderer {
   /** Each piece of Rubble, live or fading out, by its id. */
   private readonly rubble = new Map<number, Graphics>();
   private readonly debris: Graphics;
+  private readonly bonds: Graphics;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -50,6 +56,7 @@ export class WorldRenderer {
   ) {
     this.drawTerrain(scene.add.graphics());
     this.debris = scene.add.graphics().setDepth(DEBRIS_DEPTH);
+    this.bonds = scene.add.graphics().setDepth(BOND_DEPTH);
   }
 
   private drawTerrain(g: Graphics): void {
@@ -65,7 +72,20 @@ export class WorldRenderer {
     this.syncLines();
     this.syncObjects();
     this.syncRubble();
+    this.drawBonds();
     this.drawDebris();
+  }
+
+  /** A blob of green glue where each stuck Object is held, so it's clear why it hangs. */
+  private drawBonds(): void {
+    const g = this.bonds;
+    g.clear();
+    for (const { point } of this.world.bonds) {
+      g.fillStyle(INK_HUES.green, 1);
+      g.fillCircle(point.x, point.y, BOND_RADIUS);
+      g.lineStyle(2, PALETTE.crack, 0.8);
+      g.strokeCircle(point.x, point.y, BOND_RADIUS);
+    }
   }
 
   /** Rubble in the place it is, and what the cap removed fading out where it was. */

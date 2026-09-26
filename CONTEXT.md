@@ -140,9 +140,13 @@ The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with ph
 ### Simulation
 
 **Arena contents**:
-Everything the simulation tracks and Reset brings back: Strokes (with their Pieces and Fills), Rubble, and later Droplets, Patches, Bonds, Blasts and enemies. Debris is not part of it.
+Everything the simulation tracks and Reset brings back: Strokes (with their Pieces and Fills), Rubble, Bonds, and later Droplets, Patches, Blasts and enemies. Debris is not part of it.
 _Avoid_: Entities, world state
 
 **Settled**:
 Two things already touching when physics starts. Their contact deals no damage, sticks nothing and lands no Droplet until they come apart.
 _Avoid_: Resting contact
+
+**Bond**:
+What holds a green Object to the first new thing it touched after it started moving: a rigid joint where they touched. It lasts until either side breaks, is undone or is removed by a cap; the green Object then falls free and never sticks again.
+_Avoid_: Weld, glue joint

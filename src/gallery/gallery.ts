@@ -199,6 +199,75 @@ export const RUBBLE_DEMO: Demo = {
   },
 };
 
+/**
+ * Three balls of different weights rolled at the same speed across green
+ * floors, above one rolled across grey: glue stops the hollow ball within a
+ * Piece or two and the grey-filled one soon after, while the black-filled
+ * one, heaviest, is slowed least. The green Pieces wear as they work; F1
+ * shows their durability.
+ */
+export const GLUE_DEMO: Demo = {
+  name: 'Glue',
+  build(world) {
+    const lanes = (['grey', 'green', 'green', 'green'] as const).map((colour, k) => {
+      const y = 250 + 180 * k;
+      drawLine(
+        world,
+        [
+          { x: 150, y },
+          { x: 1500, y },
+        ],
+        colour,
+      );
+      const ball = drawObject(world, dragCircle({ x: 230, y: y - 25 }, 20), 'grey');
+      const fill = ([null, null, 'grey', 'black'] as const)[k];
+      if (fill) world.fillAt({ x: 230, y: y - 25 }, fill);
+      return ball;
+    });
+    letGo(
+      world,
+      lanes.map((ball): [StrokeId, Vec2] => [ball, { x: 500, y: 0 }]),
+    );
+  },
+};
+
+/**
+ * Green Objects sticking to the first new thing they touch: a box thrown up
+ * at a Line glues itself under it and hangs there, a ball thrown at a wall
+ * glues itself to it, and a box thrown at a Frozen box knocks it loose and
+ * the two tumble down as one.
+ */
+export const STICK_DEMO: Demo = {
+  name: 'Stick',
+  build(world) {
+    drawLine(
+      world,
+      [
+        { x: 200, y: 300 },
+        { x: 500, y: 300 },
+      ],
+      'grey',
+    );
+    const hanger = drawObject(world, dragBox(330, 520, 40, 40), 'green');
+    drawLine(
+      world,
+      [
+        { x: 1000, y: 200 },
+        { x: 1000, y: 600 },
+      ],
+      'grey',
+    );
+    const ball = drawObject(world, dragCircle({ x: 750, y: 500 }, 20), 'green');
+    drawObject(world, dragBox(1450, 300, 60, 60), 'grey');
+    const thrown = drawObject(world, dragBox(1250, 320, 40, 40), 'green');
+    letGo(world, [
+      [hanger, { x: 0, y: -750 }],
+      [ball, { x: 600, y: -400 }],
+      [thrown, { x: 700, y: -150 }],
+    ]);
+  },
+};
+
 export const GALLERY: readonly Demo[] = [
   BOUNCE_DEMO,
   SLIDE_DEMO,
@@ -207,4 +276,6 @@ export const GALLERY: readonly Demo[] = [
   THIRD_BOUNCE_DEMO,
   BOULDER_DEMO,
   RUBBLE_DEMO,
+  GLUE_DEMO,
+  STICK_DEMO,
 ];
