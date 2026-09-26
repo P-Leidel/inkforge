@@ -10,6 +10,8 @@ import type {
   SandboxWorld,
   StrokeId,
 } from '../sandbox/sandbox-world';
+import { COLOURS, type Colour } from '../materials/colour';
+import { BakedTextures } from './baked-textures';
 import { fillPolygon, strokePolygon, strokePolyline } from './draw';
 import { drawInk, fillInk, hash, INK_HUES, segmentRuns } from './ink';
 import { PALETTE } from './palette';
@@ -49,7 +51,8 @@ const RUBBLE_RIM = 2;
  * Draws the Sandbox world's state: Terrain, Lines, Objects, Rubble, Patches,
  * Droplets, bonds, Debris and Blast rings. Each Stroke gets its own Graphics, drawn again
  * only when its look changes; moving Objects only update its transform. So
- * does each piece of Rubble and each Patch, which never change their look;
+ * does each Patch, which never changes its look, and each piece of Rubble, an
+ * Image of a texture baked once for its Colour and size;
  * a Patch fades as it wears. Droplets, bonds, Debris and Blast rings are
  * redrawn every frame.
  */
@@ -61,7 +64,9 @@ export class WorldRenderer {
   /** The Frozen state and Fill each Object was last drawn with. */
   private readonly drawnLook = new Map<StrokeId, string>();
   /** Each piece of Rubble, live or fading out, by its id. */
-  private readonly rubble = new Map<number, Graphics>();
+  private readonly rubble = new Map<number, Phaser.GameObjects.Image>();
+  /** Rubble's looks, one per Colour and radius. */
+  private readonly baked: BakedTextures;
   /** Each Patch by its id. */
   private readonly patches = new Map<number, Graphics>();
   private readonly droplets: Graphics;
@@ -73,6 +78,13 @@ export class WorldRenderer {
     private readonly scene: Phaser.Scene,
     private readonly world: SandboxWorld,
   ) {
+    this.baked = new BakedTextures(scene);
+    // Rubble in each Colour's usual size, before the first Fill breaks.
+    for (const colour of COLOURS) {
+      const { rubbleMax, rubbleRadius } = world.materials.colours[colour].fill;
+      if (rubbleMax >= 1 && rubbleRadius > 0)
+        this.baked.prepare(...rubbleLook(colour, rubbleRadius));
+    }
     this.drawTerrain(scene.add.graphics());
     this.debris = scene.add.graphics().setDepth(DEBRIS_DEPTH);
     this.bonds = scene.add.graphics().setDepth(BOND_DEPTH);
@@ -140,14 +152,13 @@ export class WorldRenderer {
     ];
     for (const piece of pieces) {
       current.add(piece.id);
-      let g = this.rubble.get(piece.id);
-      if (!g) {
-        g = this.scene.add.graphics();
-        drawRubble(g, piece);
-        this.rubble.set(piece.id, g);
+      let image = this.rubble.get(piece.id);
+      if (!image) {
+        image = this.baked.image(...rubbleLook(piece.colour, piece.radius));
+        this.rubble.set(piece.id, image);
       }
       const { x, y, angle } = piece.transform;
-      g.setPosition(x, y).setRotation(angle).setAlpha(piece.opacity);
+      image.setPosition(x, y).setRotation(angle).setAlpha(piece.opacity);
     }
     removeStale(this.rubble, current);
   }
@@ -321,15 +332,20 @@ function drawObject(g: Graphics, object: ObjectView): void {
   }
 }
 
+/** Rubble's look, to bake: every piece of a Colour and size looks the same. */
+function rubbleLook(colour: Colour, radius: number): [string, number, (g: Graphics) => void] {
+  return [`rubble:${colour}:${radius}`, radius, (g) => drawRubble(g, colour, radius)];
+}
+
 /** A piece of Rubble in its own coordinates: a disc of its Fill Colour's ink, with a rim. */
-function drawRubble(g: Graphics, piece: FadingRubbleView): void {
+function drawRubble(g: Graphics, colour: Colour, radius: number): void {
   const disc = Array.from({ length: RUBBLE_SIDES }, (_, k) => {
     const angle = (2 * Math.PI * k) / RUBBLE_SIDES;
-    const r = piece.radius - RUBBLE_RIM / 2;
+    const r = radius - RUBBLE_RIM / 2;
     return { x: r * Math.cos(angle), y: r * Math.sin(angle) };
   });
-  fillInk(g, piece.colour, disc);
-  drawInk(g, piece.colour, disc, true, RUBBLE_RIM);
+  fillInk(g, colour, disc);
+  drawInk(g, colour, disc, true, RUBBLE_RIM);
 }
 
 /** A Patch in its own coordinates: a strip of its Colour's ink along x, centred on the origin. */
@@ -382,10 +398,13 @@ function drawCracks(g: Graphics, object: ObjectView): void {
   }
 }
 
-function removeStale(graphics: Map<number, Graphics>, current: Set<number>): void {
-  for (const [id, g] of graphics) {
+function removeStale(
+  objects: Map<number, Phaser.GameObjects.GameObject>,
+  current: Set<number>,
+): void {
+  for (const [id, object] of objects) {
     if (current.has(id)) continue;
-    g.destroy();
-    graphics.delete(id);
+    object.destroy();
+    objects.delete(id);
   }
 }

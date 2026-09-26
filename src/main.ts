@@ -6,8 +6,15 @@ new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
   backgroundColor: '#1d2027',
-  // Ask laptops with two GPUs for the faster one.
-  render: { powerPreference: 'high-performance' },
+  render: {
+    // Ask laptops with two GPUs for the faster one.
+    powerPreference: 'high-performance',
+    // Phaser builds a shader for each number of textures a batch of Images
+    // uses, the first time a batch uses it, stalling that frame. One texture
+    // per batch means one shader, built at load, at the price of a draw call
+    // per Text; baked looks share an atlas, so they still batch together.
+    maxTextures: 1,
+  },
   width: ARENA_WIDTH,
   height: ARENA_HEIGHT,
   scale: {

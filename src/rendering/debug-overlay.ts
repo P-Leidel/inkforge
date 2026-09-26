@@ -7,6 +7,7 @@ import type { FrameRecorder } from './frame-times';
 import { PALETTE } from './palette';
 import { readingLines, type Readings } from './readings';
 import { StatsPanel } from './stats-panel';
+import { addMonoFont } from './mono-font';
 
 /** F1 cycles through these. */
 const LEVELS = ['off', 'stats', 'debug'] as const;
@@ -17,10 +18,8 @@ const REFRESH_MS = 250;
 /** Where the stats panel's top-left corner sits, in game px: under the palette. */
 const PANEL_AT = { x: 60, y: 180 };
 
-/** The durability labels' bitmap font, built once per game. */
-const LABEL_FONT = 'debug-labels';
-const LABEL_CHARS = ' 0123456789×/';
-const LABEL_CELL = { width: 9, height: 18 };
+const LABEL_SIZE = 14;
+const LABEL_COLOR = 0x39ff88;
 
 /** Sides of the polygons Rubble colliders and Blast rings are drawn as. */
 const RUBBLE_SIDES = 12;
@@ -30,19 +29,22 @@ const REACH_DOTS = 48;
 const REACH_DOT = 3;
 
 /**
- * The F1 overlay, in two levels. **Stats**: a plain HTML panel with the
- * frame rate, the longest frames, where each frame's time goes, bodies by
- * kind and the render load, refreshed four times a second; it costs the
- * WebGL renderer nothing, so it can stay on while measuring. **Debug** adds
+ * The F1 overlay, in two levels. **Stats**: a panel with the frame rate,
+ * the longest frames, where each frame's time goes, bodies by kind and the
+ * render load, redrawn four times a second from one font texture and plain
+ * rectangles; it costs next to nothing, so it can stay on while measuring.
+ * **Debug** adds
  * collider outlines, each Piece's and Object's durability and Blast rings
  * with their full reach; Rubble never breaks, so it gets no label. The
- * labels share one bitmap font texture. F3 copies the readings.
+ * labels are BitmapText in one font texture. F3 copies the readings.
  */
 export class DebugOverlay {
   private readonly colliders: Phaser.GameObjects.Graphics;
   /** Durability labels, reused from frame to frame. */
   private readonly labels: Phaser.GameObjects.BitmapText[] = [];
   private readonly panel: StatsPanel;
+  /** The durability labels' bitmap font, with a dark backing. */
+  private readonly labelFont: string;
   private level: Level = 'off';
   private lastRefresh = -Infinity;
   private sceneName = 'Sandbox';
@@ -53,8 +55,8 @@ export class DebugOverlay {
     private readonly frames: FrameRecorder,
   ) {
     this.colliders = scene.add.graphics().setDepth(100);
-    this.panel = new StatsPanel(() => void this.copyReadings());
-    addLabelFont(scene);
+    this.panel = new StatsPanel(scene, PANEL_AT, () => void this.copyReadings());
+    this.labelFont = addMonoFont(scene, 'mono-14-backed', LABEL_SIZE, 'rgba(0, 0, 0, 0.67)');
     this.setLevel('off');
   }
 
@@ -87,7 +89,11 @@ export class DebugOverlay {
   private label(k: number): Phaser.GameObjects.BitmapText {
     let label = this.labels[k];
     if (!label) {
-      label = this.scene.add.bitmapText(0, 0, LABEL_FONT, '').setOrigin(0.5).setDepth(101);
+      label = this.scene.add
+        .bitmapText(0, 0, this.labelFont, '')
+        .setTint(LABEL_COLOR)
+        .setOrigin(0.5)
+        .setDepth(101);
       this.labels[k] = label;
     }
     return label;
@@ -100,11 +106,8 @@ export class DebugOverlay {
     const now = performance.now();
     if (now - this.lastRefresh < REFRESH_MS) return;
     this.lastRefresh = now;
-    const canvas = this.scene.game.canvas.getBoundingClientRect();
-    this.panel.show(readingLines(this.readings()), this.frames.recent.records, {
-      x: canvas.left + (PANEL_AT.x * canvas.width) / this.scene.scale.width,
-      y: canvas.top + (PANEL_AT.y * canvas.height) / this.scene.scale.height,
-    });
+    const { recent } = this.frames;
+    this.panel.show(readingLines(this.readings()), recent.records, recent.capacity);
   }
 
   private drawDebug(): void {
@@ -214,6 +217,7 @@ export class DebugOverlay {
     try {
       await navigator.clipboard.writeText(text);
       this.panel.say('Copied');
+      this.lastRefresh = -Infinity;
     } catch {
       // No clipboard access: show the readings to copy by hand.
       window.prompt('Copy the readings:', text);
@@ -232,40 +236,4 @@ function gpuName(
     ? null
     : gl.getExtension('WEBGL_debug_renderer_info');
   return String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
-}
-
-/**
- * Builds the durability labels' bitmap font once: a monospace glyph per cell
- * on the labels' dark backing, so a row of glyphs reads as one label.
- */
-function addLabelFont(scene: Phaser.Scene): void {
-  if (scene.cache.bitmapFont.exists(LABEL_FONT)) return;
-  const { width, height } = LABEL_CELL;
-  const texture = scene.textures.createCanvas(LABEL_FONT, width * LABEL_CHARS.length, height)!;
-  const g = texture.getContext();
-  g.font = '14px monospace';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  [...LABEL_CHARS].forEach((char, k) => {
-    g.fillStyle = 'rgba(0, 0, 0, 0.67)';
-    g.fillRect(k * width, 0, width, height);
-    g.fillStyle = '#39ff88';
-    g.fillText(char, k * width + width / 2, height / 2 + 1);
-  });
-  texture.refresh();
-  scene.cache.bitmapFont.add(
-    LABEL_FONT,
-    Phaser.GameObjects.RetroFont.Parse(scene, {
-      image: LABEL_FONT,
-      width,
-      height,
-      chars: LABEL_CHARS,
-      charsPerRow: LABEL_CHARS.length,
-      'offset.x': 0,
-      'offset.y': 0,
-      'spacing.x': 0,
-      'spacing.y': 0,
-      lineSpacing: 0,
-    }),
-  );
 }
