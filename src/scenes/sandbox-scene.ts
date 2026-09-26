@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
-import { DEMOLITION_DEMO, GALLERY, type Demo } from '../gallery/gallery';
+import { GALLERY, type Demo } from '../gallery/gallery';
 import { COLOURS, type Colour } from '../materials/colour';
 import { DebugOverlay } from '../rendering/debug-overlay';
-import { FrameTimes } from '../rendering/frame-times';
+import { FrameRecorder } from '../rendering/frame-times';
 import { flashRejection, REJECTION_MESSAGES } from '../rendering/rejection-flash';
 import { Hud } from '../rendering/hud';
 import { PaletteBar } from '../rendering/palette-bar';
@@ -50,8 +50,8 @@ export class SandboxScene extends Phaser.Scene {
   /** Sample count the refusal was last checked at. */
   private checkedSamples = 0;
   private stressTest: StressTest | null = null;
-  /** Frame times while the Demolition demo is loaded, for F1; null otherwise. */
-  private demolitionFrames: FrameTimes | null = null;
+  /** Every frame's timings, for the F1 stats. */
+  private readonly frames = new FrameRecorder();
 
   constructor() {
     super('sandbox');
@@ -60,21 +60,33 @@ export class SandboxScene extends Phaser.Scene {
   create(): void {
     this.world = new SandboxWorld();
     this.tuning = new TuningPanel(this.world.materials);
+    this.worldView = new WorldRenderer(this, this.world);
+    this.preview = new StrokePreview(this);
+    this.overlay = new DebugOverlay(this, this.world, this.frames);
+    // Phaser renders after the scene's update: time it for the frame's record.
+    let renderStart = 0;
+    const beforeRender = () => (renderStart = performance.now());
+    const afterRender = () => this.frames.render(performance.now() - renderStart);
+    this.game.events.on(Phaser.Core.Events.PRE_RENDER, beforeRender);
+    this.game.events.on(Phaser.Core.Events.POST_RENDER, afterRender);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.game.events.off(Phaser.Core.Events.PRE_RENDER, beforeRender);
+      this.game.events.off(Phaser.Core.Events.POST_RENDER, afterRender);
+      this.overlay.destroy();
       this.tuning.destroy();
       this.world.dispose();
     });
-
-    this.worldView = new WorldRenderer(this, this.world);
-    this.preview = new StrokePreview(this);
-    this.overlay = new DebugOverlay(this, this.world);
     this.hud = new Hud(this, this.world);
     this.palette = new PaletteBar(this, (colour) => (this.colour = colour));
     new Toolbar(this)
-      .addButton('Clear', () => this.startStressTest(null))
-      .addButton('Pebbles', () => this.startStressTest((world) => new PebbleDrop(world)))
-      .addButton('Box tower', () => this.startStressTest((world) => new BoxTower(world)))
-      .addButton('Ball cannon', () => this.startStressTest((world) => new BallCannon(world)));
+      .addButton('Clear', () => this.startStressTest('Sandbox', null))
+      .addButton('Pebbles', () => this.startStressTest('Pebbles', (world) => new PebbleDrop(world)))
+      .addButton('Box tower', () =>
+        this.startStressTest('Box tower', (world) => new BoxTower(world)),
+      )
+      .addButton('Ball cannon', () =>
+        this.startStressTest('Ball cannon', (world) => new BallCannon(world)),
+      );
     const gallery = new Toolbar(this, GALLERY_ROW_TOP);
     for (const demo of [...GALLERY].reverse()) {
       gallery.addButton(demo.name, () => this.loadDemo(demo));
@@ -86,10 +98,14 @@ export class SandboxScene extends Phaser.Scene {
   }
 
   /** Clears the Arena and starts a stress test on it (or none). */
-  private startStressTest(create: ((world: SandboxWorld) => StressTest) | null): void {
+  private startStressTest(
+    name: string,
+    create: ((world: SandboxWorld) => StressTest) | null,
+  ): void {
     this.world.clear();
     this.stressTest = create ? create(this.world) : null;
-    this.demolitionFrames = null;
+    this.overlay.setSceneName(name);
+    this.frames.sinceStart.restart();
   }
 
   /** Clears the Arena and sets up a gallery demo on it. */
@@ -97,13 +113,14 @@ export class SandboxScene extends Phaser.Scene {
     this.world.clear();
     this.stressTest = null;
     demo.build(this.world);
-    this.demolitionFrames = demo === DEMOLITION_DEMO ? new FrameTimes() : null;
+    this.overlay.setSceneName(demo.name);
+    this.frames.sinceStart.restart();
   }
 
-  /** Takes the world back to the last start; a Demolition replay is timed on its own. */
+  /** Takes the world back to the last start; the replay is timed on its own. */
   private reset(): void {
     this.world.reset();
-    this.demolitionFrames?.restart();
+    this.frames.sinceStart.restart();
   }
 
   private bindKeys(): void {
@@ -115,8 +132,11 @@ export class SandboxScene extends Phaser.Scene {
     keyboard
       .addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
       .on('down', () => this.world.togglePause());
-    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.toggle());
+    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.cycle());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F2).on('down', () => this.tuning.toggle());
+    keyboard
+      .addKey(Phaser.Input.Keyboard.KeyCodes.F3)
+      .on('down', () => void this.overlay.copyReadings());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R).on('down', () => this.reset());
     keyboard.on('keydown-Z', (event: KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
@@ -183,9 +203,12 @@ export class SandboxScene extends Phaser.Scene {
 
   override update(_time: number, deltaMs: number): void {
     // Phaser smooths `deltaMs` over several frames, which would hide a long one.
-    if (this.world.isRunning) this.demolitionFrames?.frame(this.game.loop.rawDelta);
-    this.world.advance(deltaMs / 1000);
+    this.frames.begin(this.game.loop.rawDelta, this.world.isRunning);
+    const start = performance.now();
+    const steps = this.world.advance(deltaMs / 1000);
+    this.frames.physics(performance.now() - start, steps);
     this.stressTest?.update();
+    const drawStart = performance.now();
     this.worldView.draw();
     this.updateRefusal();
     const pointer = this.input.activePointer;
@@ -196,7 +219,8 @@ export class SandboxScene extends Phaser.Scene {
       this.pointerInside ? { x: pointer.worldX, y: pointer.worldY } : null,
     );
     this.palette.show(this.colour);
-    this.overlay.draw(this.demolitionFrames);
+    this.overlay.draw();
     this.hud.draw(this.stressTest?.status());
+    this.frames.draw(performance.now() - drawStart);
   }
 }

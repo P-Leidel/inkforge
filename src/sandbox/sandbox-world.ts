@@ -482,9 +482,12 @@ export class SandboxWorld {
     for (const kind of this.kinds) kind.step(STEP_SECONDS);
   }
 
-  /** Advances by real elapsed time, in whole fixed steps; the remainder carries over. */
-  advance(seconds: number): void {
-    if (!this.running) return;
+  /**
+   * Advances by real elapsed time, in whole fixed steps; the remainder
+   * carries over. Returns the steps taken.
+   */
+  advance(seconds: number): number {
+    if (!this.running) return 0;
     this.accumulator += seconds;
     let steps = 0;
     // A small tolerance so that e.g. 100 ms of frames gives exactly 6 steps.
@@ -494,6 +497,7 @@ export class SandboxWorld {
       steps++;
     }
     if (steps === MAX_STEPS_PER_ADVANCE) this.accumulator = 0;
+    return steps;
   }
 
   /** Frees the physics world. */
