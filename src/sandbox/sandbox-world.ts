@@ -21,6 +21,7 @@ import { Debris, type DebrisParticle } from './debris';
 import { Droplets, type DropletView } from './droplets';
 import { MaterialRules } from './material-rules';
 import { Patches, type PatchView, type Puff } from './patches';
+import { PreviousPoses } from './previous-poses';
 import { Random } from './random';
 import { Rubble, type FadingRubbleView, type RubbleView } from './rubble';
 import {
@@ -34,6 +35,7 @@ import {
 } from './strokes';
 
 export type { BlastView } from './blasts';
+export type { Poses } from './arena-contents';
 export type { BondView } from './bonds';
 export type { DropletView } from './droplets';
 export type { PatchView } from './patches';
@@ -78,7 +80,10 @@ type Kinds = readonly [Strokes, Rubble, Bonds, Droplets, Patches, Blasts<StrokeT
 /** A kind as the Sandbox world runs it, over every kind alike. */
 type AnyKind = Kind<string, unknown, unknown>;
 
-/** Every kind's views by its name: everything R brings back, and nothing visual only. */
+/**
+ * Every kind's views by its name: everything R brings back, and nothing
+ * visual only but the poses bodies had as the latest step began.
+ */
 export type ArenaContents = { readonly [K in Kinds[number] as K['name']]: K['views'] };
 
 /** Every kind's part of a snapshot, by its name. */
@@ -120,6 +125,8 @@ export class SandboxWorld {
   private readonly contacts: ContactLedger<StrokeTarget>;
   private readonly rules: MaterialRules<StrokeTarget, ObjectStroke>;
   private readonly debris = new Debris(new Random(DEBRIS_SEED), GRAVITY);
+  /** Each body's pose as the latest step began, for drawing: the simulation never reads it. */
+  private readonly poses: PreviousPoses;
   private readonly strokes: Strokes;
   private readonly rubbleKind: Rubble;
   private readonly bondsKind: Bonds;
@@ -147,12 +154,20 @@ export class SandboxWorld {
       minBounceSpeed: this.materials.minBounceSpeed,
     });
     this.contacts = new ContactLedger(this.physics);
+    this.poses = new PreviousPoses(this.physics);
     this.addTerrain();
-    this.strokes = new Strokes(this.physics, this.materials, this.arena, this.contacts);
-    this.rubbleKind = new Rubble(this.physics, this.materials, this.contacts);
-    this.bondsKind = new Bonds(this.physics, this.contacts);
-    this.dropletsKind = new Droplets(this.physics, this.materials, this.arena, this.contacts);
-    this.patchesKind = new Patches(this.physics, this.materials, this.contacts);
+    const poses = this.poses;
+    this.strokes = new Strokes(this.physics, this.materials, this.arena, this.contacts, poses);
+    this.rubbleKind = new Rubble(this.physics, this.materials, this.contacts, poses);
+    this.bondsKind = new Bonds(this.physics, this.contacts, poses);
+    this.dropletsKind = new Droplets(
+      this.physics,
+      this.materials,
+      this.arena,
+      this.contacts,
+      poses,
+    );
+    this.patchesKind = new Patches(this.physics, this.materials, this.contacts, poses);
     this.blastsKind = new Blasts(this.physics, this.materials, this.contacts);
     const kinds: Kinds = [
       this.strokes,
@@ -190,6 +205,17 @@ export class SandboxWorld {
   /** Whether physics is running (stands in for the Wave) rather than paused (the Build Phase). */
   get isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * How far the world is into its next step, from 0 to 1: the time `advance`
+   * carried over, in steps. The renderer draws each body that far from its
+   * pose as the latest step began to its pose now. It is 1 while paused, so
+   * everything is drawn where it is.
+   */
+  get stepFraction(): number {
+    if (!this.running) return 1;
+    return Math.min(1, Math.max(0, this.accumulator / STEP_SECONDS));
   }
 
   /** Simulated seconds since the world was created. */
@@ -359,6 +385,7 @@ export class SandboxWorld {
   clear(): void {
     for (const kind of this.kinds) kind.clear();
     this.contacts.takeGone();
+    this.poses.forget();
     this.snapshot = null;
     this.debris.clear();
   }
@@ -468,6 +495,8 @@ export class SandboxWorld {
    */
   private rebuild(snapshot: Snapshot): void {
     this.physics.reset();
+    // Body ids start again after a reset: a pose from before would be another body's.
+    this.poses.forget();
     this.contacts.restore(snapshot.contacts);
     this.addTerrain();
     const saved: Readonly<Record<string, unknown>> = snapshot.contents;
@@ -482,6 +511,7 @@ export class SandboxWorld {
    */
   step(): void {
     if (!this.running) return;
+    this.poses.remember(this.contacts.bodies());
     this.applyMaterials();
     this.contacts.step(this.physics.step());
     this.elapsed += STEP_SECONDS;

@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import type { Segment } from '../geometry/segment';
+import { between, carry, type Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type {
   FadingRubbleView,
@@ -7,6 +8,7 @@ import type {
   ObjectView,
   PatchView,
   PieceView,
+  Poses,
   SandboxWorld,
   StrokeId,
 } from '../sandbox/sandbox-world';
@@ -63,6 +65,12 @@ const PIN_REACH = 10;
  * of looks baked once and shared by every Patch or piece of Rubble that looks
  * the same; a Patch fades as it wears. Droplets, bonds, Debris and Blast rings
  * are redrawn every frame.
+ *
+ * The world steps at a fixed rate, and a screen can show more frames than
+ * that: each Object, piece of Rubble and Droplet is drawn between its pose
+ * as the latest step began and its pose now, as far as the world is into
+ * its next step, so it moves smoothly. Patches and bonds are drawn where
+ * their hosts are drawn. Debris and Blast rings keep to the steps.
  */
 export class WorldRenderer {
   /** Each Line's tiles. */
@@ -127,12 +135,13 @@ export class WorldRenderer {
   }
 
   draw(): void {
+    const fraction = this.world.stepFraction;
     this.syncLines();
-    this.syncObjects();
-    this.syncRubble();
-    this.syncPatches();
-    this.drawDroplets();
-    this.drawBonds();
+    this.syncObjects(fraction);
+    this.syncRubble(fraction);
+    this.syncPatches(fraction);
+    this.drawDroplets(fraction);
+    this.drawBonds(fraction);
     this.drawDebris();
     this.drawBlasts();
   }
@@ -157,10 +166,15 @@ export class WorldRenderer {
   }
 
   /** A blob of green glue where each stuck Object is held, so it's clear why it hangs. */
-  private drawBonds(): void {
+  private drawBonds(fraction: number): void {
     const g = this.bonds;
     g.clear();
-    for (const { point } of this.world.bonds) {
+    for (const bond of this.world.bonds) {
+      const point = carry(
+        bond.point,
+        bond.objectPoses.transform,
+        drawn(bond.objectPoses, fraction),
+      );
       g.fillStyle(INK_HUES.green, 1);
       g.fillCircle(point.x, point.y, BOND_RADIUS);
       g.lineStyle(2, PALETTE.crack, 0.8);
@@ -169,10 +183,14 @@ export class WorldRenderer {
   }
 
   /** Rubble in the place it is, and what the cap removed fading out where it was. */
-  private syncRubble(): void {
+  private syncRubble(fraction: number): void {
     const current = new Set<number>();
     const pieces: FadingRubbleView[] = [
-      ...this.world.rubble.map((piece) => ({ ...piece, opacity: 1 })),
+      ...this.world.rubble.map((piece) => ({
+        ...piece,
+        transform: drawn(piece, fraction),
+        opacity: 1,
+      })),
       ...this.world.fadingRubble,
     ];
     for (const piece of pieces) {
@@ -189,7 +207,7 @@ export class WorldRenderer {
   }
 
   /** Each Patch where its host is now, a strip of its Colour's ink fading as it wears. */
-  private syncPatches(): void {
+  private syncPatches(fraction: number): void {
     const current = new Set<number>();
     for (const patch of this.world.patches) {
       current.add(patch.id);
@@ -198,7 +216,10 @@ export class WorldRenderer {
         image = this.baked.image(...patchLook(patch)).setDepth(PATCH_DEPTH);
         this.patches.set(patch.id, image);
       }
-      const { a, b } = patch.segment;
+      const host = patch.hostPoses.transform;
+      const hostDrawn = drawn(patch.hostPoses, fraction);
+      const a = carry(patch.segment.a, host, hostDrawn);
+      const b = carry(patch.segment.b, host, hostDrawn);
       image
         .setPosition((a.x + b.x) / 2, (a.y + b.y) / 2)
         .setRotation(Math.atan2(b.y - a.y, b.x - a.x))
@@ -208,10 +229,12 @@ export class WorldRenderer {
   }
 
   /** Each Droplet as a small disc in its Colour, with a glint. */
-  private drawDroplets(): void {
+  private drawDroplets(fraction: number): void {
     const g = this.droplets;
     g.clear();
-    for (const { colour, radius, transform } of this.world.droplets) {
+    for (const droplet of this.world.droplets) {
+      const { colour, radius } = droplet;
+      const transform = drawn(droplet, fraction);
       g.fillStyle(INK_HUES[colour], 1);
       g.fillCircle(transform.x, transform.y, radius);
       g.fillStyle(0xffffff, 0.6);
@@ -259,7 +282,7 @@ export class WorldRenderer {
     for (const id of this.drawnLineLook.keys()) if (!current.has(id)) this.drawnLineLook.delete(id);
   }
 
-  private syncObjects(): void {
+  private syncObjects(fraction: number): void {
     const current = new Set<StrokeId>();
     for (const object of this.world.objects) {
       current.add(object.id);
@@ -281,12 +304,17 @@ export class WorldRenderer {
         this.bake([drawing], (g) => drawObject(g, object));
         this.drawnLook.set(object.id, look);
       }
-      const { x, y, angle } = object.transform;
+      const { x, y, angle } = drawn(object, fraction);
       drawing.image.setPosition(x, y).setRotation(angle);
     }
     removeStale(this.objects, current);
     for (const id of this.drawnLook.keys()) if (!current.has(id)) this.drawnLook.delete(id);
   }
+}
+
+/** Where a body is drawn: `fraction` of the way from its previous pose to its pose now. */
+function drawn({ previousTransform, transform }: Poses, fraction: number): Transform {
+  return between(previousTransform, transform, fraction);
 }
 
 /**

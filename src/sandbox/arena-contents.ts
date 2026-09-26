@@ -45,7 +45,11 @@ export type HostSurface =
 export interface Kind<Name extends string, Saved, Views> {
   /** Its key in `world.contents` and in the snapshot. */
   readonly name: Name;
-  /** What the renderer and the tests read. Only Arena contents: nothing visual only. */
+  /**
+   * What the renderer and the tests read. Only Arena contents, nothing visual
+   * only, apart from each body's pose as the latest step began (`Poses`),
+   * which R and Clear forget.
+   */
   readonly views: Views;
   /** Its part of the snapshot. */
   save(): Saved;
@@ -77,6 +81,16 @@ export interface Kind<Name extends string, Saved, Views> {
   erase(brush: Brush): void;
   /** Its turn in each step, after the Material rules and breaking. */
   step(seconds: number): void;
+}
+
+/**
+ * A body's pose after the latest step, and as that step began: the renderer
+ * draws it between the two. The two are the same for a body added since,
+ * and for every body after a rebuild (a start or R) or Clear.
+ */
+export interface Poses {
+  readonly transform: Transform;
+  readonly previousTransform: Transform;
 }
 
 /** A body's pose and motion. */

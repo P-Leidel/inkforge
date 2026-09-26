@@ -20,23 +20,32 @@ import {
 
 const createWorld = sandboxWorlds();
 
-/** A copy of `value` with every `id` left out. */
-function withoutIds(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutIds);
+/** A copy of `value` with every field named in `keys` left out. */
+function without(value: unknown, keys: ReadonlySet<string>): unknown {
+  if (Array.isArray(value)) return value.map((item) => without(item, keys));
   if (typeof value !== 'object' || value === null) return value;
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => key !== 'id')
-      .map(([key, field]) => [key, withoutIds(field)]),
+      .filter(([key]) => !keys.has(key))
+      .map(([key, field]) => [key, without(field, keys)]),
   );
 }
+
+/**
+ * The poses bodies had as the latest step began, which views carry for the
+ * renderer. R forgets them on purpose: it is drawn where it is.
+ */
+const PREVIOUS_POSES = new Set(['previousTransform', 'hostPoses', 'objectPoses']);
 
 /**
  * Everything in the Arena, of every kind: what a replay must play out the
  * same. Ids are left out: ids are never reused, so what a run makes (Rubble
  * from a broken Fill) gets new ones each time it is played.
  */
-const played = (world: SandboxWorld) => withoutIds(world.contents);
+const played = (world: SandboxWorld) => without(world.contents, new Set(['id']));
+
+/** Everything in the Arena, of every kind, that R brings back. */
+const arenaContents = (world: SandboxWorld) => without(world.contents, PREVIOUS_POSES);
 
 describe('Colour gallery', () => {
   for (const demo of GALLERY) {
@@ -65,16 +74,16 @@ describe('Colour gallery', () => {
       const world = createWorld();
       demo.build(world);
       runFor(world, 1);
-      const running = world.contents;
+      const running = arenaContents(world);
 
       world.togglePause();
       world.togglePause(); // takes a snapshot and rebuilds the world from it
-      const started = world.contents;
+      const started = arenaContents(world);
       runFor(world, 1);
       world.reset();
 
       expect(started).toEqual(running);
-      expect(world.contents).toEqual(started);
+      expect(arenaContents(world)).toEqual(started);
     });
   }
 

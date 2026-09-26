@@ -164,6 +164,11 @@ export class ContactLedger<T> {
     return this.parties.get(body);
   }
 
+  /** Every registered body. */
+  bodies(): Iterable<BodyId> {
+    return this.parties.keys();
+  }
+
   /** The registered Party with this id: a body there now. */
   party(id: PartyId): Party<T> | undefined {
     return this.byId.get(id);
