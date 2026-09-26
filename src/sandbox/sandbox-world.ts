@@ -173,7 +173,7 @@ export class SandboxWorld {
         burst: ({ outline, velocity, colours }) => this.debris.burst(outline, velocity, colours),
         addRubble: (rubble) => this.rubbleKind.add(rubble),
         addDroplets: (droplets) => this.dropletsKind.add(droplets),
-        addBlast: (centre, ink) => this.blastsKind.add(centre, ink),
+        addBlast: (centre, size) => this.blastsKind.add(centre, size),
         bond: (sticker, host, point) =>
           this.bondsKind.add(sticker.id, sticker.party, host.id, point),
         isDroplet: (body) => this.dropletsKind.isDroplet(body),

@@ -4,7 +4,14 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld, ShapeId } from '../physics';
 import type { HostSurface } from './arena-contents';
-import { blastInk, type Reach } from './blasts';
+import {
+  blastInk,
+  blastSize,
+  blastStrength,
+  pieceBlastSize,
+  type BlastSize,
+  type Reach,
+} from './blasts';
 import { pairKey, type ContactLedger, type Party } from './contact-ledger';
 import { packSpill, type Landing, type LooseDroplet } from './droplets';
 import { Glue, type Gluer } from './glue';
@@ -12,7 +19,7 @@ import type { PatchRecord } from './patches';
 import type { Random } from './random';
 import { launchRubble, packRubble, type LooseRubble } from './rubble';
 import { Sticking, type Sticker } from './sticking';
-import type { Broken, BrokenOutline, ReleasedFill } from './strokes';
+import type { Broken, BrokenOutline, BrokenPiece, ReleasedFill } from './strokes';
 
 /**
  * Material rules: everything Colour-specific that follows from things
@@ -75,6 +82,21 @@ export function wakes(impulse: number, mass: number, wakeSpeed: number): boolean
   return impulse / mass > wakeSpeed;
 }
 
+/**
+ * The fuse rule: whether a destroyed Piece of `colour` sets off the next one
+ * along its Line. Its Blast, measured a Piece's length (`pieceLength`) from
+ * its centre, must still destroy a whole Piece of that Colour in one go. The
+ * neighbour's nearest point is closer than that: a Piece is at most one and a
+ * half times `pieceLength` long, so it is at most three quarters of that
+ * away, which leaves room for bends.
+ */
+export function fuseBurns(colour: Colour, table: MaterialTable): boolean {
+  const line = table.colours[colour].line;
+  if (line.explodes <= 0) return false;
+  const strength = blastStrength(pieceBlastSize(table), table.pieceLength);
+  return impactDamage(strength, line.damageThreshold, table.damagePerImpulse) >= line.durability;
+}
+
 /** What damages a Breakable. */
 type Cause =
   /** A hit: above the threshold, and it counts towards the impact limit. */
@@ -119,8 +141,8 @@ export interface RulesArena<T, S> {
   addRubble(rubble: readonly LooseRubble[]): void;
   /** Sets a Spill's Droplets loose. */
   addDroplets(droplets: readonly LooseDroplet[]): void;
-  /** Starts a Blast of `ink` px² of red ink at `centre`. */
-  addBlast(centre: Vec2, ink: number): void;
+  /** Starts a Blast of `size` at `centre`. */
+  addBlast(centre: Vec2, size: BlastSize): void;
   /** Bonds a sticking Object to `host` at `point`, in the world. */
   bond(sticker: S, host: Party<unknown>, point: Vec2): void;
   /** Whether a body is a Droplet in flight. */
@@ -353,6 +375,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
     this.arena.burst(broken.debris);
     if (broken.fill) this.releaseFill(broken.fill);
     if (broken.outline) this.explode(broken.outline, broken.fill);
+    if (broken.piece) this.explodePiece(broken.piece);
   }
 
   /**
@@ -421,6 +444,15 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
       fill && { colour: fill.colour, area: polygonArea(fill.outline) },
       this.materials,
     );
-    if (ink > 0) this.arena.addBlast(outline.centre, ink);
+    if (ink > 0) this.arena.addBlast(outline.centre, blastSize(ink, this.materials));
+  }
+
+  /**
+   * Starts a Blast of the fixed Piece size at a broken Piece's centre if its
+   * Line Colour explodes (red), so the next red Piece goes too: a fuse.
+   */
+  private explodePiece({ colour, centre }: BrokenPiece): void {
+    if (this.materials.colours[colour].line.explodes > 0)
+      this.arena.addBlast(centre, pieceBlastSize(this.materials));
   }
 }

@@ -27,6 +27,12 @@ export interface LineMaterial extends SurfaceMaterial {
   glueDrag: number;
   /** Durability a Piece loses per unit of momentum (mass × px/s) its glue drag removes. */
   glueWear: number;
+  /**
+   * 1 if each Piece explodes when it is destroyed (red), in a small Blast of
+   * the fixed size `blast.pieceRadius` and `blast.pieceStrength`, so a Line
+   * burns like a fuse. 0 if it doesn't.
+   */
+  explodes: number;
 }
 
 export interface OutlineMaterial extends SurfaceMaterial {
@@ -107,6 +113,16 @@ export interface BlastMaterial {
    * pebbles and Droplets fly fast but don't vanish.
    */
   maxPushSpeed: number;
+  /**
+   * R (px) of a destroyed Piece's Blast. Red ink doesn't scale it: every
+   * Piece's Blast has this fixed size.
+   */
+  pieceRadius: number;
+  /**
+   * S of a destroyed Piece's Blast. With `pieceRadius` it must still destroy
+   * a Piece of its Colour a Piece's length away, so the Line burns end to end.
+   */
+  pieceStrength: number;
 }
 
 export interface ColourMaterial {
@@ -178,6 +194,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 400,
         glueDrag: 0,
         glueWear: 0,
+        explodes: 0,
       },
       outline: {
         friction: 0.6,
@@ -208,6 +225,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 200,
         glueDrag: 0,
         glueWear: 0,
+        explodes: 0,
       },
       outline: {
         friction: 0.1,
@@ -238,6 +256,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 400,
         glueDrag: 4,
         glueWear: 2,
+        explodes: 0,
       },
       outline: {
         friction: 0.6,
@@ -268,6 +287,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 2000,
         glueDrag: 0,
         glueWear: 0,
+        explodes: 0,
       },
       outline: {
         friction: 1,
@@ -298,6 +318,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         damageThreshold: 300,
         glueDrag: 0,
         glueWear: 0,
+        explodes: 1,
       },
       outline: {
         friction: 0.6,
@@ -346,6 +367,8 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
     strengthMax: 3000,
     push: 1,
     maxPushSpeed: 1200,
+    pieceRadius: 100,
+    pieceStrength: 2400,
   },
 };
 

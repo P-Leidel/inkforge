@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Segment } from '../geometry/segment';
 import { distance, type Vec2 } from '../geometry/vec2';
 import { SANDBOX_ARENA } from '../sandbox/arena';
-import { splitIntoPieces } from './pieces';
+import { pieceCentre, splitIntoPieces } from './pieces';
 import { dragAlong } from './pointer-paths';
 import { processStroke } from './stroke-pipeline';
 
@@ -133,5 +133,25 @@ describe('Stroke pipeline: Pieces', () => {
     expect(result.pieces.length).toBe(Math.round(500 / 48));
     for (const piece of result.pieces) expect(lengthOf(piece)).toBeCloseTo(500 / 10, 0);
     expect(result.pieces.flat()).toEqual(result.segments);
+  });
+});
+
+describe('A Piece’s centre', () => {
+  it('is halfway along its capsules, round a bend', () => {
+    const bent = segmentsOf([
+      { x: 0, y: 0 },
+      { x: 30, y: 0 },
+      { x: 30, y: 10 },
+    ]);
+
+    expect(pieceCentre(bent)).toEqual({ x: 20, y: 0 });
+    expect(
+      pieceCentre(
+        segmentsOf([
+          { x: 5, y: 5 },
+          { x: 5, y: 45 },
+        ]),
+      ),
+    ).toEqual({ x: 5, y: 25 });
   });
 });

@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import { createMaterialTable, type MaterialTable } from '../materials/material-table';
+import {
+  createMaterialTable,
+  DEFAULT_MATERIAL_TABLE,
+  type MaterialTable,
+} from '../materials/material-table';
 import type { BodyId, ShapeId } from '../physics';
-import type { Reach } from './blasts';
+import { blastSize, blastStrength, pieceBlastSize, type Reach } from './blasts';
 import { TERRAIN_PARTY, type NewContact, type Party, type PartyHit } from './contact-ledger';
-import { impactDamage, wakes, wear, type Breakable } from './material-rules';
+import { fuseBurns, impactDamage, wakes, wear, type Breakable } from './material-rules';
 import { fakePatch, fakeRules } from './rules-test-support';
 import { WAITING, type Sticker } from './sticking';
 import type { Broken } from './strokes';
@@ -204,6 +208,17 @@ function brokenObject(outline: Colour, fill: Colour | null): Broken {
       },
     },
     outline: { colour: outline, length: 240, centre },
+    piece: null,
+  };
+}
+
+/** What breaking a Piece of `colour` centred at (100, 200) lets out. */
+function brokenPiece(colour: Colour): Broken {
+  return {
+    debris: { outline: SQUARE, velocity: { x: 0, y: 0 }, colours: [colour] },
+    fill: null,
+    outline: null,
+    piece: { colour, centre: { x: 100, y: 200 } },
   };
 }
 
@@ -295,7 +310,9 @@ describe('Material rules: breaking', () => {
     const { arena } = breakOne(brokenObject('grey', 'red'));
 
     expect(arena.handed('rubble').flat()).toEqual([]);
-    expect(arena.handed('blast')).toEqual([{ centre: { x: 100, y: 200 }, ink: 3600 }]);
+    expect(arena.handed('blast')).toEqual([
+      { centre: { x: 100, y: 200 }, size: blastSize(3600, table) },
+    ]);
   });
 
   it('lets out nothing from a Fill that neither spills, explodes nor has Rubble', () => {
@@ -308,11 +325,32 @@ describe('Material rules: breaking', () => {
     expect(arena.handed('blast')).toEqual([]);
   });
 
-  it('only bursts Debris from a Piece, and does nothing for what is already gone', () => {
-    const piece: Broken = { ...brokenObject('red', null), fill: null, outline: null };
-
-    expect(breakOne(piece).arena.done).toEqual(['break', 'burst']);
+  it('only bursts Debris from a Piece that doesn’t explode, and does nothing for what is already gone', () => {
+    expect(breakOne(brokenPiece('grey')).arena.done).toEqual(['break', 'burst']);
     expect(breakOne(null).arena.done).toEqual(['break']);
+  });
+
+  it('starts a Blast of the fixed Piece size at a red Piece’s centre, after its Debris', () => {
+    const { arena } = breakOne(brokenPiece('red'));
+
+    expect(arena.done).toEqual(['break', 'burst', 'blast']);
+    expect(arena.handed('blast')).toEqual([
+      { centre: { x: 100, y: 200 }, size: { reach: 100, strength: 2400 } },
+    ]);
+  });
+
+  it('sizes a Piece’s Blast by the table, whatever its Line Colour’s ink', () => {
+    const tuned = createMaterialTable();
+    tuned.blast.pieceRadius = 70;
+    tuned.blast.pieceStrength = 900;
+    tuned.colours.grey.line.explodes = 1;
+
+    const { arena } = breakOne(brokenPiece('grey'), tuned);
+
+    expect(arena.handed('blast')).toEqual([
+      { centre: { x: 100, y: 200 }, size: pieceBlastSize(tuned) },
+    ]);
+    expect(pieceBlastSize(tuned)).toEqual({ reach: 70, strength: 900 });
   });
 });
 
@@ -434,6 +472,57 @@ describe('Material rules: a Blast arriving', () => {
     expect(physics.body(1 as BodyId).velocity).toEqual({ x: 0, y: 0 });
     // Red set off by a Blast explodes in turn.
     expect(arena.done).toEqual(['break', 'burst', 'blast']);
+  });
+});
+
+describe('The fuse', () => {
+  const TABLE = DEFAULT_MATERIAL_TABLE;
+
+  it('burns: with the default table, a red Piece’s Blast destroys a red Piece 48 px away', () => {
+    const { damageThreshold, durability } = TABLE.colours.red.line;
+    const at48 = blastStrength(pieceBlastSize(TABLE), 48);
+
+    expect(TABLE.pieceLength).toBe(48);
+    expect(fuseBurns('red', TABLE)).toBe(true);
+    expect(impactDamage(at48, damageThreshold, TABLE.damagePerImpulse)).toBeGreaterThanOrEqual(
+      durability,
+    );
+  });
+
+  it('destroys a red Piece that close through the Blast rule, in one go', () => {
+    const { rules, physics, arena } = fakeRules<Breakable>(TABLE);
+    const next: Breakable = { colour: 'red', role: 'line', damage: 0, impacts: 0 };
+    arena.breaks.set(next, brokenPiece('red'));
+    physics.add(1, { free: false });
+
+    rules.blastReached([
+      {
+        party: partyOf(1, next),
+        centre: { x: 0, y: 0 },
+        point: { x: 48, y: 0 },
+        strength: blastStrength(pieceBlastSize(TABLE), 48),
+      },
+    ]);
+
+    expect(arena.done).toEqual(['break', 'burst', 'blast']);
+  });
+
+  it('goes out when a tuning change weakens the Piece Blast or toughens red Lines', () => {
+    const weak = createMaterialTable();
+    weak.blast.pieceStrength /= 2;
+    const small = createMaterialTable();
+    small.blast.pieceRadius = 60;
+    const tough = createMaterialTable();
+    tough.colours.red.line.durability *= 4;
+
+    expect(fuseBurns('red', weak)).toBe(false);
+    expect(fuseBurns('red', small)).toBe(false);
+    expect(fuseBurns('red', tough)).toBe(false);
+  });
+
+  it('never burns a Line Colour that doesn’t explode', () => {
+    expect(fuseBurns('grey', TABLE)).toBe(false);
+    expect(fuseBurns('black', TABLE)).toBe(false);
   });
 });
 

@@ -9,7 +9,9 @@ import type { BodyId, ContactHit, ContactPair, PhysicsWorld, StepReport } from '
  * - who each body is (its Party), registered by the kind that adds it;
  * - the Settled pairs, which deal no damage and aren't new until they
  *   come apart;
- * - the Squeezed Objects, which are in no channel while they slide.
+ * - the Squeezed Objects, which are in no channel while they slide, and
+ *   restart from rest where their slide ends as if physics started there:
+ *   what they touch then is Settled.
  *
  * Touching is built from the report's begins and ends, so it changes only
  * when contacts do, and a resting pile costs nothing per step. It is part of
@@ -137,7 +139,8 @@ export class ContactLedger<T> {
   /**
    * The last step's new contacts: pairs of Parties that didn't touch as
    * the step began and do at its end, neither Squeezed, the pair not
-   * Settled. What an Object touches in the step its slide ends isn't new.
+   * Settled. What an Object touches in the step its slide ends is Settled,
+   * so it isn't new.
    */
   get newContacts(): readonly NewContact<T>[] {
     return this.newList;
@@ -245,6 +248,15 @@ export class ContactLedger<T> {
     for (const key of this.parted) {
       if (this.settled.has(key) && !this.touches(key)) this.settled.delete(key);
     }
+    // An Object restarts from rest where its slide ends, resting on what it
+    // was squeezed off: what it touches then is Settled, so settling onto a
+    // Line deals no damage, as when physics starts.
+    for (const body of this.slideEnded) {
+      const party = this.parties.get(body)!;
+      for (const other of this.contacts.get(party.id)?.keys() ?? []) {
+        this.settled.add(eitherWay(party.id, other));
+      }
+    }
     if (this.unchecked) {
       // Right after a restore, a Settled pair that didn't begin again never ends.
       for (const key of this.settled) if (!this.touches(key)) this.settled.delete(key);
@@ -263,7 +275,6 @@ export class ContactLedger<T> {
     for (const contact of this.newList) {
       const { a, b } = contact;
       if (this.sliding.has(a.body) || this.sliding.has(b.body)) continue;
-      if (this.slideEnded.has(a.body) || this.slideEnded.has(b.body)) continue;
       if (this.settled.has(eitherWay(a.id, b.id))) continue;
       this.newList[kept++] = contact;
     }
