@@ -160,6 +160,12 @@
   .top .label { color: var(--strong); }
   .top p { max-width: 52rem; }
 
+  /* Addendum: what a check against the code changed after filing */
+  .scope.callout { color: var(--ink); }
+  .addendum { border: 2px solid var(--explore); }
+  .addendum .label { color: var(--explore); }
+  .addendum > p { font-size: 14px; max-width: 60rem; }
+
   @media (min-width: 640px) {
     .page { padding-inline: 24px; padding-block: 56px 80px; }
     h1 { font-size: 2.3rem; }
@@ -259,6 +265,7 @@
       <span class="mono meta">P-Leidel/inkforge · 4998feb (#47) · 2026-09-26</span>
     </div>
     <p class="scope">Scope: the code through #47. That covers the fuse (#20), the Demolition scene (#21), the performance work (#45 to #47: baked textures, the F1 panel, the render budget, cheaper colliders) and the Eraser (#46). It is judged on milestone 3 (the ink economy) and milestone 4 (enemies). It follows the review after #19, and it restructures the refactor queue #34 to #40.</p>
+    <p class="scope callout"><b>Amended.</b> A check against the code after filing split C1 in two, moved part of it after C2 and corrected six facts. The tickets follow the <a href="#addendum">addendum</a> at the end, not the queue below.</p>
     <div class="legend">
       <span class="label">Legend</span>
       <span class="item"><span class="swatch mod"></span>module</span>
@@ -702,6 +709,52 @@ flowchart LR
     <span class="label">Top recommendation</span>
     <h2 id="top-h"><a href="#c1">Let the Sandbox world say what happened</a></h2>
     <p>It is the one candidate a player sees: on the 144 Hz baseline, falling Objects don't look smooth until the renderer can draw between steps. The performance work also made the renderer retained, but the world's read side didn't follow, so the renderer now does the world's bookkeeping. This is the most-changed code in the repo, the change is replay-safe, it opens R4 if #22's Chrome reading asks for it, and it gives M4's kills and ink drops their hook. C4 (#34) is the contained second: it stays inside <code>src/physics/</code>, closes a drift that has already happened, and can run beside it.</p>
+  </section>
+
+  <section id="addendum" class="panel addendum" aria-labelledby="addendum-h">
+    <span id="addendum-h" class="label">Addendum: checked against the code (a69be11)</span>
+    <p>The line references, counts and figures above hold at a69be11. <code>npm run verdict</code> reads 0.461 ms for the Demolition step (mean) and 0.073 ms for one read of every view (331 items), and all 465 tests pass. The plan changes in six places, and six facts are corrected.</p>
+
+    <h3>The queue as filed</h3>
+    <div class="tablewrap">
+      <table class="queue">
+        <thead><tr><th>Order</th><th>Ticket</th><th>Action</th><th>Blocked by</th></tr></thead>
+        <tbody>
+          <tr><td class="ord">1</td><td>#49 Draw moving bodies between the last two steps (C1, the part a player sees)</td><td><span class="act a-new">new</span></td><td>none</td></tr>
+          <tr><td class="ord">2</td><td>#34 Rebuild bodies from one body description (C4)</td><td><span class="act a-rewrite">rewrite</span> #37's surface copies, dead link</td><td>none; can run beside 1</td></tr>
+          <tr><td class="ord">3</td><td>#40 Add and remove every body through one Arena bodies module (C2)</td><td><span class="act a-rewrite">rewrite</span> Patch shapes, #37's revision number and edit timing</td><td>none</td></tr>
+          <tr><td class="ord">4</td><td>#50 Let the Sandbox world say what happened (the rest of C1)</td><td><span class="act a-new">new</span></td><td>#40</td></tr>
+          <tr><td class="ord">5</td><td>#36 Answer "what is here" in one Arena query module (C3)</td><td><span class="act a-rewrite">rewrite</span> geometry tests first</td><td>#40</td></tr>
+          <tr class="out"><td class="ord">·</td><td>#38 M3: undo and Ink cost</td><td><span class="act a-move">move</span> to the M3 spec, notes added</td><td></td></tr>
+          <tr class="out"><td class="ord">·</td><td>#35 One Frozen wake rule</td><td><span class="act a-close">closed</span> not planned</td><td></td></tr>
+          <tr class="out"><td class="ord">·</td><td>#37 A Materials module</td><td><span class="act a-close">closed</span> split into #34, #40, README</td><td></td></tr>
+          <tr class="out"><td class="ord">·</td><td>#39 Geometry tests and walks</td><td><span class="act a-close">closed</span> tests to #36, walks not now</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>What changed in the plan</h3>
+    <ul class="points">
+      <li><b>C1 is split.</b> Smooth motion at 144 Hz needs only each moving body's pose at the step before and the fraction of a step left over (<code>accumulator / STEP_SECONDS</code>), not the list of what happened. That part is small and can't change replays, so it goes first (#49). The list only buys locality (0.073 ms a frame) and becomes #50.</li>
+      <li><b>The list comes after C2.</b> Its "added" and "went" entries come from exactly the calls C2 gathers into one module. Built first, each removal path in four kinds would be instrumented by hand and then moved.</li>
+      <li><b>The list doesn't drop every look key.</b> Crack stages belong to the renderer (world-renderer.ts 26). Poses change every step and Patch wear changes as it is used, so the renderer still reads views each frame. A list also stops the renderer correcting itself every frame, so #50 adds a test that the renderer's ids match the world's.</li>
+      <li><b>C2 covers Patch shapes.</b> A Patch has no Party of its own (patches.ts 175): it is a capsule on its host's body. So Arena bodies owns added shapes too, or <code>Kind</code> can't lose <code>applySurfaces</code>. Passing "gone" on at once moves Bonds' and Patches' removals earlier in a step (today after glue and the Blasts' spread, sandbox-world.ts 497–499). Outcomes may shift once, and the gallery replay tests, which compare a run with its own replay, won't show it.</li>
+      <li><b>C3 keeps the Squeeze out and tests geometry first.</b> The Squeeze moves bodies, so it calls the crossing query rather than living in a query module. <code>surfaceOf</code> is a lookup by id and goes to C2. The brush must reach Patches, which <code>bodiesWithin</code> skips (box2d-physics-world.ts 1015). Tests pinning down <code>shortestWayOut</code> come before any query moves, since the Squeeze must stay bit-identical.</li>
+      <li><b>#37's revision number goes with C2, not C1.</b> It replaces the check in <code>applyMaterials</code>, which feeds <code>applySurfaces</code>, which C2 replaces.</li>
+    </ul>
+
+    <h3>Corrections</h3>
+    <ul class="points">
+      <li>"The Eraser repeated the pairs" (the queue today, C2). Each kind already pairs its calls in a private <code>removeBody</code> (strokes.ts 363, rubble.ts 312, droplets.ts 166), and <code>erase</code> uses it. What the Eraser added is the <code>passOnGone</code> after each kind's turn (sandbox-world.ts 338–341).</li>
+      <li>"ADR 0001's verdict and #22 both pass" (#35) came early. When the review was filed, #22 was still open, with the Demolition reading on the baseline machine and the blind check to do. It has since been closed with both done, and #35's closing stood on ADR 0001 in any case. The top recommendation's "#22's Chrome reading" was a reading in Firefox on the baseline machine.</li>
+      <li>"Closes a drift that has already happened" (top recommendation). The <code>bullet</code> drift is in the code but has no effect yet: only Objects are rebuilt, and circles are always created moving.</li>
+      <li>"7 open tickets become 4." #38 stays open, so 5 stay open; the queue itself goes from 7 to 4, and to 5 with the split.</li>
+      <li>#34's last acceptance criterion pointed at <code>docs/handoffs/README.md</code>, deleted in 5e1e174, and #40 cited it too. Both now point at the code.</li>
+      <li>"The render budget test must pass unchanged" (C1). Its <code>frame</code> helper will pass the fraction of a step, and about 20 assertions on Debris and fading Rubble in six sandbox test files move to the list. The budgets stay.</li>
+    </ul>
+
+    <h3>Top recommendation, amended</h3>
+    <p><b>#49, drawing moving bodies between the last two steps.</b> It is the one change a player sees, it is small, and it can't change replays. #34 is the contained second and can run beside it. Then #40, which #50 and #36 wait on.</p>
   </section>
 
 </main>
