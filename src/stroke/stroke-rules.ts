@@ -23,5 +23,18 @@ export const SMOOTHING_SIGMA = 5;
 export const SIMPLIFY_TOLERANCE = 1;
 /** Most points a simplified Stroke may keep. */
 export const MAX_STROKE_POINTS = 64;
+/**
+ * An Object's collider may stray this far (px) from its Outline to fit in
+ * one convex part: less than half the Outline's ink width, so the
+ * difference never shows, and one part collides for less than several.
+ */
+export const COLLIDER_TOLERANCE = 2;
+/** The tolerance is raised in these steps (px) until the collider fits. */
+export const COLLIDER_TOLERANCE_STEP = 0.25;
+/**
+ * An Outline within this distance (px) of a circle is a ball, and collides
+ * with every corner: with fewer it would roll bumpily, and hop.
+ */
+export const ROUND_TOLERANCE = 0.5;
 /** Box2D polygons are convex with at most this many vertices. */
 export const MAX_PART_VERTICES = 8;
