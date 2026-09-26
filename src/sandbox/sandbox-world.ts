@@ -5,12 +5,7 @@ import {
   TERRAIN_SURFACE,
   type MaterialTable,
 } from '../materials/material-table';
-import {
-  createPhysicsWorld,
-  type BodyId,
-  type PhysicsWorld,
-  type PhysicsWorldFactory,
-} from '../physics';
+import { createPhysicsWorld, type PhysicsWorld, type PhysicsWorldFactory } from '../physics';
 import {
   processStroke,
   type RejectionReason,
@@ -19,8 +14,9 @@ import {
 } from '../stroke/stroke-pipeline';
 import { SANDBOX_ARENA, type Arena } from './arena';
 import type { Kind } from './arena-contents';
+import { ContactLedger, TERRAIN_PARTY, type SavedContacts } from './contact-ledger';
 import { Debris, type DebrisParticle } from './debris';
-import { MaterialRules, type Party } from './material-rules';
+import { MaterialRules } from './material-rules';
 import { Random } from './random';
 import { launchRubble, packRubble, Rubble, type FadingRubbleView, type RubbleView } from './rubble';
 import {
@@ -71,7 +67,7 @@ export interface StrokeOptions {
 type Kinds = readonly [Strokes, Rubble];
 
 /** A kind as the Sandbox world runs it, over every kind alike. */
-type AnyKind = Kind<string, unknown, unknown, StrokeTarget>;
+type AnyKind = Kind<string, unknown, unknown>;
 
 /** Every kind's views by its name: everything R brings back, and nothing visual only. */
 export type ArenaContents = { readonly [K in Kinds[number] as K['name']]: K['views'] };
@@ -82,13 +78,11 @@ type SavedContents = { readonly [K in Kinds[number] as K['name']]: ReturnType<K[
 /** Everything R brings back: the whole simulation when physics last started. */
 interface Snapshot {
   readonly contents: SavedContents;
+  /** Contacts touching when it was taken: they are Settled after a rebuild. */
+  readonly contacts: SavedContacts;
   readonly random: number;
   readonly time: number;
-  /** Contacts touching when it was taken: they deal no damage until they separate. */
-  readonly settled: readonly string[];
 }
-
-const TERRAIN_PARTY: Party<never> = { key: 'terrain', target: null, sliding: false };
 
 export interface SandboxWorldOptions {
   readonly seed?: number;
@@ -103,21 +97,22 @@ export interface SandboxWorldOptions {
  * Reset. It has no rendering dependency, so it is the main testing seam.
  * Each kind of Arena contents is a module of its own (`Strokes`, `Rubble`);
  * the world runs them all, in a fixed order, and passes on what one reports
- * to the next. Each Stroke is drawn in a Colour given with the command; the
- * world holds no selected Colour.
+ * to the next. The Contact ledger decides which contacts count, and the
+ * Material rules read it. Each Stroke is drawn in a Colour given with the
+ * command; the world holds no selected Colour.
  */
 export class SandboxWorld {
   readonly arena: Arena;
   readonly random: Random;
   readonly materials: MaterialTable;
   private readonly physics: PhysicsWorld;
+  private readonly contacts: ContactLedger<StrokeTarget>;
   private readonly rules: MaterialRules;
   private readonly debris = new Debris(new Random(DEBRIS_SEED), GRAVITY);
   private readonly strokes: Strokes;
   private readonly rubbleKind: Rubble;
   /** Every kind, in rebuild order. */
   private readonly kinds: readonly AnyKind[];
-  private terrainBody: BodyId;
   /** Taken whenever physics starts; R returns to it. */
   private snapshot: Snapshot | null = null;
   /** The material table as it was last applied to the physics world. */
@@ -136,10 +131,11 @@ export class SandboxWorld {
       wakeSpeed: this.materials.wakeSpeed,
       minBounceSpeed: this.materials.minBounceSpeed,
     });
-    this.terrainBody = this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
+    this.contacts = new ContactLedger(this.physics);
+    this.addTerrain();
     this.rules = new MaterialRules(this.materials);
-    this.strokes = new Strokes(this.physics, this.materials, this.arena);
-    this.rubbleKind = new Rubble(this.physics, this.materials);
+    this.strokes = new Strokes(this.physics, this.materials, this.arena, this.contacts);
+    this.rubbleKind = new Rubble(this.physics, this.materials, this.contacts);
     const kinds: Kinds = [this.strokes, this.rubbleKind];
     this.kinds = kinds;
   }
@@ -269,12 +265,12 @@ export class SandboxWorld {
 
   /**
    * Removes every Stroke and Fill, the Rubble and the Debris; the Terrain
-   * stays. R has nothing to go back to.
+   * stays. R has nothing to go back to. Nothing is left touching or
+   * Settled, since every kind unregisters its bodies.
    */
   clear(): void {
     for (const kind of this.kinds) kind.clear();
     this.snapshot = null;
-    this.rules.settle([]);
     this.debris.clear();
   }
 
@@ -351,36 +347,28 @@ export class SandboxWorld {
     this.accumulator = 0;
   }
 
+  /**
+   * The whole simulation now. Its contacts are the pairs Settled or touching
+   * now: straight after a rebuild (R, or a start not yet stepped) the engine
+   * hasn't found any contacts yet, so the pairs Settled at the last start
+   * still count until they have stepped apart.
+   */
   private takeSnapshot(): Snapshot {
     return {
       contents: Object.fromEntries(
         this.kinds.map((kind) => [kind.name, kind.save()]),
       ) as SavedContents,
+      contacts: this.contacts.save(),
       random: this.random.state,
       time: this.elapsed,
-      settled: this.settledPairs(),
     };
   }
 
-  /**
-   * The pairs touching now. Straight after a rebuild (R, or a start not yet
-   * stepped) the engine hasn't found any contacts yet, so the pairs settled
-   * at the last start still count until they have stepped apart.
-   */
-  private settledPairs(): string[] {
-    const touching = this.rules.pairKeys(this.physics.touchingPairs(), this.partyOf);
-    return [...new Set([...this.rules.settledPairs, ...touching])];
+  /** Adds the Terrain, which is Party 0 to the Contact ledger. */
+  private addTerrain(): void {
+    const body = this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
+    this.contacts.register({ id: TERRAIN_PARTY, stroke: TERRAIN_PARTY, body, target: null });
   }
-
-  /** Who a body is to the Material rules: the Terrain, or whoever of each kind has it. */
-  private readonly partyOf = (body: BodyId): Party<StrokeTarget> | null => {
-    if (body === this.terrainBody) return TERRAIN_PARTY;
-    for (const kind of this.kinds) {
-      const party = kind.partyOf(body);
-      if (party) return party;
-    }
-    return null;
-  };
 
   /**
    * Applies edits to the material table from the next step. Densities are
@@ -397,12 +385,12 @@ export class SandboxWorld {
 
   /**
    * Rebuilds the physics world from a snapshot, from a fresh engine state:
-   * the Terrain, then every kind in order.
+   * the Contact ledger, the Terrain, then every kind in order.
    */
   private rebuild(snapshot: Snapshot): void {
     this.physics.reset();
-    this.terrainBody = this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
-    this.rules.settle(snapshot.settled);
+    this.contacts.restore(snapshot.contacts);
+    this.addTerrain();
     const saved: Readonly<Record<string, unknown>> = snapshot.contents;
     for (const kind of this.kinds) kind.restore(saved[kind.name]);
   }
@@ -411,10 +399,10 @@ export class SandboxWorld {
   step(): void {
     if (!this.running) return;
     this.applyMaterials();
-    const report = this.physics.step();
+    this.contacts.step(this.physics.step());
     this.elapsed += STEP_SECONDS;
     this.debris.step(STEP_SECONDS);
-    const broken = this.rules.applyStep(report, () => this.physics.touchingPairs(), this.partyOf);
+    const broken = this.rules.applyStep(this.contacts.hits);
     for (const target of broken) this.breakTarget(target);
     for (const kind of this.kinds) kind.step(STEP_SECONDS);
   }

@@ -1,6 +1,6 @@
 # Handoff: #17 Green
 
-Issue: https://github.com/P-Leidel/inkforge/issues/17 (slice 8 of 13; blocked by #27, the Contact ledger). Read [README.md](README.md) first: it has the working agreement, the checks and the engine facts every slice needs.
+Issue: https://github.com/P-Leidel/inkforge/issues/17 (slice 8 of 13; it follows #27, the Contact ledger). Read [README.md](README.md) first: it has the working agreement, the checks and the engine facts every slice needs.
 
 Anything moving across a green Line Piece slows right down (heavier things less), and the Piece wears as it works. A green Object sticks once to the first new thing it touches after it starts moving, and falls free for good when either side breaks. Green Patches come with Spills in #18.
 
@@ -15,20 +15,20 @@ Anything moving across a green Line Piece slows right down (heavier things less)
 ## What already exists
 
 - **Arena contents (#24).** Each kind is a module behind `Kind` (`src/sandbox/arena-contents.ts`): `Strokes` (`strokes.ts`) and `Rubble` (`rubble.ts`). The Sandbox world runs the snapshot, rebuilding, Clear and each step over its list of kinds, in order. See README, "Patterns the slices follow".
-- **Contacts: the Contact ledger (#27, `src/sandbox/contact-ledger.ts`).** Every rule reads contacts from it, not from the `StepReport` or `touchingPairs()`. Each step it gives three channels, in the engine's report order:
-  - **hits**, Party-level, with impulse, point, normal and shapes (damage reads these);
-  - **new contacts**, a Party pair going from not touching to touching, with the first shape pair;
-  - **touching**, looked up per Party.
+- **Contacts: the Contact ledger (#27, `ContactLedger` in `src/sandbox/contact-ledger.ts`, the Sandbox world's `contacts`).** Every rule reads contacts from it, not from the `StepReport` or `touchingPairs()`. After `contacts.step(report)` it gives three channels, in the engine's report order:
+  - **`hits`**, `{ a, b, hit }`: two Parties and the `ContactHit`, with impulse, point, normal and shapes (damage reads these);
+  - **`newContacts`**, `{ a, b, pair }`: two Parties that didn't touch as the step began and do at its end, with the shape pair that made them touch. It is judged over the whole step: a Party pair whose last shape pair ends as another begins in one step isn't new (a body sliding across a capsule seam of the Line it touches);
+  - **`touching(body)`**, looked up per Party by its body: `{ party, pairs }` for each other Party touching it, with the shape pairs between them.
 
   It has already dropped what doesn't count:
   - **Settled pairs** (`CONTEXT.md`), touching when physics started, give no hits and no new contacts until they come apart, but they are touching. This covers the engine reporting every existing contact as beginning again after a rebuild (Space or R).
   - **A Squeezed Object** is in no channel while it slides. What it touches in the step its slide ends isn't new.
   - The adapter keeps an Object's contacts through its own rebuilds (the `rebuilt` set in `trackContacts`), so a wake or the end of a slide doesn't fake new contacts.
-- **Parties** have numeric ids that are never reused and stay the same through a rebuild. The Terrain is 0. Each kind registers its bodies' Parties with the ledger as it adds them and unregisters them as it removes them. A Piece's Party carries its Line's id as `stroke`.
+- **Parties** (`Party<T>`: `id`, `stroke`, `body`, `target`) have numeric ids (`PartyId`) that are never reused and stay the same through a rebuild. The Terrain is 0 (`TERRAIN_PARTY`). Each record keeps its Party id as `party` (`Piece`, `LineStroke`, `ObjectStroke`, the Rubble record). Each kind gets the ledger's `PartyIndex` (`newId`, `register`, `unregister`, `squeezed`) when it is constructed, registers its bodies' Parties as it adds them and unregisters them as it removes them. A Line has a Party id but no body; a Piece's Party carries its Line's id as `stroke`. Rubble's and the Terrain's `target` is null.
 - **Physics.**
   - The module has `getVelocity`, `setVelocity`, `getAngularVelocity` and `getMass`, but no forces, impulses or joints.
   - A Frozen Object is a fixed body. Waking, Release and the end of a slide destroy it and build a new one (`rebuild` in the adapter), and joints die with their body.
-- **Sliding.** A sliding Object is kinematic, and `getSlide(id)` is non-null while it slides. The ledger keeps the short list of sliding Objects and knows when each slide ends.
+- **Sliding.** A sliding Object is kinematic, and `getSlide(id)` is non-null while it slides. `Strokes` calls `contacts.squeezed(body)` after every `slideOut`; the ledger keeps the short list of sliding Objects (`sliding`) and, each step, the ones whose slide ended in it (`slideEnded`, private for now).
 - **Pieces (#15)** are `Piece` records in `LineStroke.pieces`. Each is its own fixed body with a Party of its own. A green Piece has durability 6000 and threshold 400 at `1e13bc5`. Rubble (#16) is dynamic circles (`addCircle`), each with a Party with no target; the `Rubble` kind keeps it.
 - **Breaking.** `MaterialRules.applyStep`, fed the ledger's hits, returns only what impacts broke, and the world's `breakTarget` breaks each through `strokes.break`, which reports the Debris to burst. Damage from wear must break Pieces through the same path, so check `wear(piece, table) >= 1` after adding it and hand the Piece to `breakTarget`.
 
@@ -68,8 +68,8 @@ Anything moving across a green Line Piece slows right down (heavier things less)
   - it is pushed by a Blast (#19; leave a hook);
   - its slide off a Line ends (the user decision above).
 - The adapter wakes Frozen Objects inside `step()`. Detect a wake by Frozen turning false across a step. The hitter's contact began while it was Frozen, so it is in the touched set and doesn't count.
-- **After a slide ends,** the ledger has already done the contact part: no new contacts while it slides, and none in the step its slide ends. Sticking only needs to know that the slide ended, to start the moving state. The ledger knows (it watches the sliding Objects), so add a per-step list of ended slides to it rather than polling `getSlide` for every green Object.
-- **The first new contact** is the first of the ledger's new contacts, in report order, in a step after the one it started moving in, whose other Party is:
+- **After a slide ends,** the ledger has already done the contact part: no new contacts while it slides, and none in the step its slide ends. Sticking only needs to know that the slide ended, to start the moving state. The ledger knows (it watches the sliding Objects): expose its private `slideEnded` set, which holds the bodies whose slide ended in the last step, rather than polling `getSlide` for every green Object.
+- **The first new contact** is the first of the ledger's `newContacts`, in report order, in a step after the one it started moving in, whose other Party is:
   - not in its touched set;
   - Terrain, a Piece, an Object (Frozen or not) or Rubble.
 
