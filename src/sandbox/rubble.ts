@@ -11,7 +11,7 @@ import { rotate, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
-import { motionOf, type Kind, type Motion, type Solids } from './arena-contents';
+import { motionOf, type HostSurface, type Kind, type Motion, type Solids } from './arena-contents';
 import type { PartyId, PartyIndex } from './contact-ledger';
 import type { Random } from './random';
 
@@ -83,14 +83,15 @@ export function packRubble(
 }
 
 /**
- * Sets packed Rubble loose from an Object with the given pose and motion.
+ * Sets packed Rubble (or a Spill's Droplets) loose from an Object with the
+ * given pose and motion.
  * Each piece keeps the Object's velocity at its place (v + ω × r) and spin,
  * and is kicked outward from the centre at `kickSpeed`, turned by a random
  * angle of up to `spread` either way. A piece at the very centre is kicked
  * in a random direction.
  */
 export function launchRubble(
-  pieces: readonly PackedRubble[],
+  pieces: readonly { readonly centre: Vec2 }[],
   from: {
     readonly transform: Transform;
     readonly velocity: Vec2;
@@ -136,7 +137,7 @@ function depthOf(outline: Polygon, p: Vec2): number {
  * at least `radius + GAP` from its edges, with `GAP` between neighbours. Of a
  * few shifts of the grid, the one that fits the most.
  */
-function hexSpots(outline: Polygon, radius: number): Vec2[] {
+export function hexSpots(outline: Polygon, radius: number): Vec2[] {
   const bounds = polygonBounds(outline);
   const margin = radius + GAP;
   const dx = 2 * radius + GAP;
@@ -160,7 +161,7 @@ function hexSpots(outline: Polygon, radius: number): Vec2[] {
 }
 
 /** The point inside the Outline farthest from its edges, on a fine grid, and how far that is. */
-function deepestPoint(outline: Polygon): { point: Vec2; depth: number } {
+export function deepestPoint(outline: Polygon): { point: Vec2; depth: number } {
   const bounds = polygonBounds(outline);
   const stepX = (bounds.maxX - bounds.minX) / DEPTH_GRID;
   const stepY = (bounds.maxY - bounds.minY) / DEPTH_GRID;
@@ -345,6 +346,12 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
       return { centre: { x, y }, radius };
     });
     return { polygons: [], circles };
+  }
+
+  /** A piece of Rubble is a circle. */
+  surfaceOf(party: PartyId): HostSurface | null {
+    const piece = this.rubble.find((r) => r.party === party);
+    return piece ? { kind: 'circle', radius: piece.radius } : null;
   }
 
   applySurfaces(): void {

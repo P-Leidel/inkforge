@@ -59,8 +59,8 @@ export interface ObjectBodyDef {
 }
 
 /**
- * A movable circle (Rubble). It never starts Frozen, and like an Object it
- * reports its hits.
+ * A movable circle (Rubble, Droplets). It never starts Frozen, and like an
+ * Object it reports its hits.
  */
 export interface CircleBodyDef {
   /** World position of its centre. */
@@ -75,6 +75,15 @@ export interface CircleBodyDef {
   readonly velocity?: Vec2;
   /** Angular velocity, rad/s. */
   readonly angularVelocity?: number;
+  /** Circles of the same group (a positive number) never touch each other. None by default. */
+  readonly group?: number;
+  /** False if its hits never wake a Frozen Object (Droplets). True by default. */
+  readonly wakes?: boolean;
+  /**
+   * True for continuous collision against moving bodies too, not only fixed
+   * ones, so a small fast circle can't pass through a moving Object.
+   */
+  readonly bullet?: boolean;
 }
 
 /**
@@ -152,6 +161,22 @@ export interface PhysicsWorld {
   removeBody(id: BodyId): void;
 
   /**
+   * Adds a capsule of `radius` around `segment`, given in the body's own
+   * coordinates (px, relative to its origin, unrotated), to an existing body
+   * (a Patch). It has no mass, so the body's mass stays as it is. It moves
+   * with the body, stays through the body being rebuilt (Release, waking, a
+   * slide), and goes with the body. Hits and contacts name it by its own id.
+   */
+  addCapsule(body: BodyId, segment: Segment, radius: number, surface: Surface): ShapeId;
+  /**
+   * Removes a shape `addCapsule` added; its contacts end with the next step.
+   * Does nothing to one already gone with its body.
+   */
+  removeShape(id: ShapeId): void;
+  /** Changes the surface of a shape `addCapsule` added, from the next step. */
+  setShapeSurface(id: ShapeId, surface: Surface): void;
+
+  /**
    * Advances the simulation by one fixed step. A Frozen Object hit hard
    * enough by a moving body (see `wakeSpeed`) wakes, and the hit plays out as
    * if it had been free. Reports the step's hits and the contacts that
@@ -183,7 +208,10 @@ export interface PhysicsWorld {
    */
   slideOut(id: BodyId, displacement: Vec2, speed: number): void;
 
-  /** Changes the surface of all of a body's shapes from the next step. It stays through rebuilds. */
+  /**
+   * Changes the surface of a body's own shapes from the next step, not those
+   * `addCapsule` added. It stays through rebuilds.
+   */
   setSurface(id: BodyId, surface: Surface): void;
   /** Changes `wakeSpeed` from the next step. */
   setWakeSpeed(speed: number): void;
@@ -193,8 +221,8 @@ export interface PhysicsWorld {
   /** An Object's or a circle's mass. */
   getMass(id: BodyId): number;
   /**
-   * Sets an Object's or a circle's mass, spread evenly over its shape. Never
-   * wakes a Frozen Object.
+   * Sets an Object's or a circle's mass, spread evenly over its own shapes
+   * (not those `addCapsule` added). Never wakes a Frozen Object.
    */
   setMass(id: BodyId, mass: number): void;
 

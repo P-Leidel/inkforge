@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { createMaterialTable } from '../materials/material-table';
-import type { BodyId } from '../physics';
+import type { BodyId, ShapeId } from '../physics';
 import type { Party, Touching } from './contact-ledger';
 import { Glue, type Gluer } from './glue';
+import { wear, type Breakable } from './material-rules';
 
 describe('Glue drag', () => {
   const table = createMaterialTable();
@@ -20,8 +21,16 @@ describe('Glue drag', () => {
     spin: number;
   }
 
-  /** Glue over `bodies`, where each gluer touches the bodies listed for it in `touches`. */
-  function setup(bodies: Body[], touches: Map<BodyId, BodyId[]>) {
+  /**
+   * Glue over `bodies`, where each gluer touches the bodies listed for it in
+   * `touches`, through a shape numbered like its body, or through the shapes
+   * listed for the pair in `through`. Shapes above 100 are Patches'.
+   */
+  function setup(
+    bodies: Body[],
+    touches: Map<BodyId, BodyId[]>,
+    through: (gluer: BodyId, other: BodyId) => number = (gluer) => gluer,
+  ) {
     const at = (id: BodyId) => bodies[id]!;
     const physics = {
       isFree: (id: BodyId) => at(id).free,
@@ -43,12 +52,29 @@ describe('Glue drag', () => {
     const party = (body: BodyId): Party<never> => ({ id: body, stroke: body, body, target: null });
     const contacts = {
       touching: (body: BodyId): Iterable<Touching<unknown>> =>
-        (touches.get(body) ?? []).map((other) => ({ party: party(other), pairs: [] })),
+        (touches.get(body) ?? []).map((other) => ({
+          party: party(other),
+          pairs: [
+            {
+              bodyA: body,
+              bodyB: other,
+              shapeA: through(body, other) as ShapeId,
+              shapeB: other as number as ShapeId,
+            },
+          ],
+        })),
     };
-    return new Glue(table, physics, contacts);
+    return new Glue(table, physics, contacts, (shape) => shape > 100);
   }
 
-  const gluer = (body: number, colour: Colour = 'green'): Gluer => ({
+  type Piece = Gluer & Breakable;
+  /** Wears a Piece by damage, as the Sandbox world does. */
+  const wearPiece = (piece: Piece, amount: number) => {
+    piece.damage += amount;
+    return wear(piece, table) >= 1;
+  };
+
+  const gluer = (body: number, colour: Colour = 'green'): Piece => ({
     colour,
     role: 'line',
     body: body as BodyId,
@@ -69,7 +95,7 @@ describe('Glue drag', () => {
     const heavy = body(4, { x: 300, y: 0 });
     const glue = setup([light, heavy, body(0, { x: 0, y: 0 })], new Map([[id(2), [id(0), id(1)]]]));
 
-    glue.apply([gluer(2)], 1 / 60);
+    glue.apply([gluer(2)], 1 / 60, wearPiece);
 
     expect(light.velocity.x).toBeCloseTo(300 * (1 - 4 / 60), 9);
     expect(light.spin).toBeCloseTo(2 * (1 - 4 / 60), 9);
@@ -88,7 +114,7 @@ describe('Glue drag', () => {
     const left = gluer(1);
     const right = gluer(2);
 
-    glue.apply([left, right], 1 / 60);
+    glue.apply([left, right], 1 / 60, wearPiece);
 
     expect(ball.velocity.y).toBeCloseTo(300 * (1 - 4 / 60), 9);
     // 20 units of momentum removed, times 2, shared.
@@ -100,7 +126,7 @@ describe('Glue drag', () => {
     const pebble = body(0.01, { x: 500, y: 0 });
     const glue = setup([pebble, body(0, { x: 0, y: 0 })], new Map([[id(1), [id(0)]]]));
 
-    glue.apply([gluer(1)], 1 / 60);
+    glue.apply([gluer(1)], 1 / 60, wearPiece);
 
     expect(pebble.velocity.x).toBe(0);
     expect(pebble.spin).toBe(0);
@@ -118,11 +144,37 @@ describe('Glue drag', () => {
     );
     const green = gluer(2);
 
-    glue.apply([green, gluer(3, 'grey')], 1 / 60);
+    glue.apply([green, gluer(3, 'grey')], 1 / 60, wearPiece);
 
     expect(frozen.velocity.x).toBe(300);
     expect(onGrey.velocity.x).toBe(300);
     expect(green.damage).toBe(0);
+  });
+
+  it('drags through a Patch’s own shape, and not through a Patch on a green Piece', () => {
+    const onPatch = body(1, { x: 300, y: 0 });
+    const onBluePatch = body(1, { x: 300, y: 0 });
+    const glue = setup(
+      [onPatch, onBluePatch, body(0, { x: 0, y: 0 }), body(0, { x: 0, y: 0 })],
+      new Map([
+        [id(2), [id(0)]],
+        [id(3), [id(1)]],
+      ]),
+      // The first body touches a green Patch (shape 102) on body 2; the
+      // second touches only a Patch (shape 103) lying on green Piece 3.
+      (gluer) => 100 + gluer,
+    );
+    const patch = { colour: 'green' as const, body: id(2), shape: 102 as ShapeId, used: 0 };
+
+    const worn = glue.apply<Gluer & { used?: number }>([patch, gluer(3)], 1 / 60, (g, amount) => {
+      g.used = (g.used ?? 0) + amount;
+      return g.used > 30;
+    });
+
+    expect(onPatch.velocity.x).toBeCloseTo(300 * (1 - 4 / 60), 9);
+    expect(onBluePatch.velocity.x).toBe(300);
+    expect(patch.used).toBeCloseTo(40, 9);
+    expect(worn).toEqual([patch]);
   });
 
   it('returns the Pieces it wore out', () => {
@@ -131,7 +183,7 @@ describe('Glue drag', () => {
     const piece = gluer(1);
 
     // 40 units of momentum a step, 80 wear: the 13th step wears out 1000.
-    const worn = Array.from({ length: 13 }, () => glue.apply([piece], 1 / 60).length);
+    const worn = Array.from({ length: 13 }, () => glue.apply([piece], 1 / 60, wearPiece).length);
 
     expect(worn.slice(0, 12)).toEqual(Array(12).fill(0));
     expect(worn[12]).toBe(1);

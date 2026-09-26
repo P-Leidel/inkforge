@@ -119,6 +119,11 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
     return { polygons: [], circles: [] };
   }
 
+  /** Bonds have no bodies. */
+  surfaceOf(): null {
+    return null;
+  }
+
   applySurfaces(): void {}
 
   step(): void {}

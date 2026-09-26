@@ -8,13 +8,15 @@ Red Objects explode when they are destroyed. A Blast spreads out as a visible ri
 
 - In the spec: [Red and Blasts](../specs/m2-colours.md#red-and-blasts), [Frozen](../specs/m2-colours.md#frozen) (Blasts waking Frozen Objects), [Fill release](../specs/m2-colours.md#fill-release) and [Damage](../specs/m2-colours.md#damage).
 - [ADR 0008](../adr/0008-red-explodes-when-destroyed.md): red explodes when destroyed, and Blasts act through the normal thresholds. There is no occlusion.
-- The commits of #15–#18 and #24, above all the Fill release (#16, #18), each kind of Arena contents in a module of its own (#24), impulses (#17) and Patch shapes (#18).
+- The commits of #15–#18, #24 and #27, above all the Fill release (#16, #18), each kind of Arena contents in a module of its own (#24), impulses (#17) and Patch shapes and harmless Droplets (#18).
 
 ## What already exists
 
 - **Red Outlines** already have the lowest durability in the table: 250 at `1e13bc5`, with a threshold of 300; red Lines' Pieces have the same. Blue's threshold of 200 is lower; the spec wants red's "very low", so consider lowering it while tuning (below). Red Outlines break by the normal rule, but release only Debris.
 - **Breaking** (#24). The world's `breakTarget` breaks each target the rules return through `strokes.break`, which removes its body and reports a `Broken`: the Debris to burst and, for an Object, its `ReleasedFill` (Colour, mass, local Outline, and the Object's pose and motion as it broke). A Blast needs more from it: the Outline's Colour and length for red ink, and the Object's centre. Extend `Broken`.
-- **The Fill release** (#16, #18) puts out Rubble or a Spill from `releaseFill(fill)` in `sandbox-world.ts`, called by `breakTarget` after the Object's body is removed. Red Fills still release nothing; their Blast goes there. Red's `kickSpeed` is 0.
+- **The Fill release** (#16, #18) puts out Rubble or a Spill from `releaseFill(fill)` in `sandbox-world.ts`, called by `breakTarget` after the Object's body is removed: `releaseSpill` if the Fill Colour's `spills` is above 0, otherwise `releaseRubble`. Red Fills release nothing (red's `rubbleMax` is 0); their Blast goes in `releaseFill`. Red's `kickSpeed` is 0.
+- **Droplets** (#18) are the `Droplets` kind: circles of `dropletRadius` whose records keep their Party id as `party`, registered as harmless Parties (`party.harmless`), which the damage rules and sticking skip. Their bodies never wake a Frozen Object on a hit (`wakes: false`), but `applyImpulse` pushes them like any free body. A Droplet lands at its first new contact, so one a Blast pushes into something lands there.
+- **Patches** (#18) have no body or Party of their own: each is a capsule added to its host's body (`physics.addCapsule`), and `patches.isPatch(shape)` tells its shape from the host's own. Hits and contacts on a Patch are its host's.
 - **Physics.** `applyImpulse(id, impulse)` (at the centre of mass; it wakes a sleeping body), `applyAngularImpulse`, `getInertia` and `isFree` (a moving Object or circle: not Terrain, a Line, a Frozen Object or a sliding one) came with #17; `release`, `isFrozen` and `getMass` were there before. There is no radius query. **Don't use `b2World_OverlapCircle`: it throws in this port** (see README). Use `b2World_OverlapAABB`, then `b2Shape_GetClosestPoint` per shape. Or use the Sandbox world's own geometry: Object parts moved by their transform, Piece capsules, Rubble and Droplet circles.
 - **Damage.** `impactDamage(impulse, threshold, k)` is the formula, and Blasts use it too. The Material rules' private `receive` applies it against the target's own numbers (by its `role`: Line or Outline) and also counts an impact. Blasts need their own entry point that does the first but not the second.
 
@@ -55,7 +57,7 @@ That's how "its Blast then acts on the released Rubble and Droplets" falls out.
 - A Blast is finished once its radius reaches `R`.
 - **Deterministic order:** Blasts in creation order, bodies by Party id. Ids only grow, so the order is the same in a replay even where the ids differ. Each record keeps its Party id as `party`; the Contact ledger looks a Party up by its id (`contacts.party(id)`, #17).
 
-**No effect on Terrain or Patches.** Blasts pass through Terrain and Lines (no occlusion) and don't affect Terrain or Patches. Filter Patch shapes out of the query, and measure hosts to their own shapes.
+**No effect on Terrain or Patches.** Blasts pass through Terrain and Lines (no occlusion) and don't affect Terrain or Patches. Measure hosts to their own shapes: with the Sandbox world's own geometry (Object parts, Piece capsules, Rubble and Droplet circles) Patches are never in it; with an engine query, filter Patch shapes out with `patches.isPatch(shape)`.
 
 **View.** The Blasts kind's views (centre, radius now, `R`, strength) are in `world.contents`; forward `world.blasts` to them for the renderer.
 

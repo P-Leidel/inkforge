@@ -59,6 +59,15 @@ export interface FillMaterial {
   rubbleRadius: number;
   /** Fill area (px²) per piece of Rubble, so the count grows with the Fill's area. */
   rubbleArea: number;
+  /** 1 if a broken Object throws out a Spill of Droplets (blue, green); 0 if not. */
+  spills: number;
+  /**
+   * Capacity a Patch of this Colour uses up per unit of impulse (mass × px/s)
+   * of each hit it takes: blue wears by its bounces. 0 if hits don't wear it.
+   * A Patch meets things with its Colour's Line surface and glue, and its glue
+   * wears it by the Line's `glueWear`.
+   */
+  patchHitWear: number;
 }
 
 export interface ColourMaterial {
@@ -97,6 +106,22 @@ export interface MaterialTable {
   rubbleCap: number;
   /** A released piece is kicked up to this far (radians) either side of straight outward. */
   kickSpread: number;
+  /** Fewest Droplets in a Spill. */
+  dropletsMin: number;
+  /** Most Droplets in a Spill. */
+  dropletsMax: number;
+  /** Radius (px) of a Droplet. */
+  dropletRadius: number;
+  /** Mass of a Droplet; it deals no damage, so it only has to be small. */
+  dropletMass: number;
+  /** Total length (px) of a Spill's Patches per px² of Fill, shared among its Droplets. */
+  patchLengthPerArea: number;
+  /** Thickness (px) of a Patch: it stands proud of its host's surface by half of it. */
+  patchThickness: number;
+  /** Wear a Patch takes per px of its length before it wears out. */
+  patchCapacity: number;
+  /** Most Patches at once; a new one over it removes the oldest. */
+  patchCap: number;
 }
 
 /**
@@ -123,7 +148,15 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         impactLimit: 0,
         sticks: 0,
       },
-      fill: { density: 1, kickSpeed: 200, rubbleMax: 18, rubbleRadius: 6, rubbleArea: 250 },
+      fill: {
+        density: 1,
+        kickSpeed: 200,
+        rubbleMax: 18,
+        rubbleRadius: 6,
+        rubbleArea: 250,
+        spills: 0,
+        patchHitWear: 0,
+      },
     },
     blue: {
       line: {
@@ -143,7 +176,15 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         impactLimit: 3,
         sticks: 0,
       },
-      fill: { density: 0.5, kickSpeed: 400, rubbleMax: 0, rubbleRadius: 0, rubbleArea: 0 },
+      fill: {
+        density: 0.5,
+        kickSpeed: 400,
+        rubbleMax: 0,
+        rubbleRadius: 0,
+        rubbleArea: 0,
+        spills: 1,
+        patchHitWear: 1,
+      },
     },
     green: {
       line: {
@@ -163,7 +204,15 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         impactLimit: 0,
         sticks: 1,
       },
-      fill: { density: 1, kickSpeed: 300, rubbleMax: 0, rubbleRadius: 0, rubbleArea: 0 },
+      fill: {
+        density: 1,
+        kickSpeed: 300,
+        rubbleMax: 0,
+        rubbleRadius: 0,
+        rubbleArea: 0,
+        spills: 1,
+        patchHitWear: 0,
+      },
     },
     black: {
       line: {
@@ -183,7 +232,15 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         impactLimit: 0,
         sticks: 0,
       },
-      fill: { density: 3, kickSpeed: 200, rubbleMax: 8, rubbleRadius: 8.5, rubbleArea: 450 },
+      fill: {
+        density: 3,
+        kickSpeed: 200,
+        rubbleMax: 8,
+        rubbleRadius: 8.5,
+        rubbleArea: 450,
+        spills: 0,
+        patchHitWear: 0,
+      },
     },
     red: {
       line: {
@@ -203,7 +260,15 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         impactLimit: 0,
         sticks: 0,
       },
-      fill: { density: 1, kickSpeed: 0, rubbleMax: 0, rubbleRadius: 0, rubbleArea: 0 },
+      fill: {
+        density: 1,
+        kickSpeed: 0,
+        rubbleMax: 0,
+        rubbleRadius: 0,
+        rubbleArea: 0,
+        spills: 0,
+        patchHitWear: 0,
+      },
     },
   },
   inkMass: 0.00075,
@@ -213,6 +278,14 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   wakeSpeed: 82.5,
   rubbleCap: 150,
   kickSpread: 0.35,
+  dropletsMin: 10,
+  dropletsMax: 15,
+  dropletRadius: 3,
+  dropletMass: 0.02,
+  patchLengthPerArea: 0.04,
+  patchThickness: 3,
+  patchCapacity: 250,
+  patchCap: 200,
 };
 
 /** A fresh, editable copy of the default table. */

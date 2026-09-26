@@ -82,8 +82,18 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     userData: unknown;
   }
 
+  export class b2Filter {
+    categoryBits: number;
+    maskBits: number;
+    /** Shapes with the same negative group never touch; the same positive group always do. */
+    groupIndex: number;
+  }
+
   export interface b2ShapeDef {
     userData: unknown;
+    filter: b2Filter;
+    /** Finds contacts for a new fixed shape at once, with what already overlaps it. */
+    forceContactCreation: boolean;
     friction: number;
     restitution: number;
     density: number;
@@ -253,6 +263,8 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     def: b2ShapeDef,
     circle: b2Circle,
   ): b2ShapeId;
+  /** Destroys the shape's contacts too, waking the bodies they touched. */
+  export function b2DestroyShape(shapeId: b2ShapeId): void;
   export function b2Shape_GetBody(shapeId: b2ShapeId): b2BodyId;
   export function b2Shape_GetUserData(shapeId: b2ShapeId): unknown;
   export function b2Shape_GetRestitution(shapeId: b2ShapeId): number;

@@ -31,7 +31,7 @@ Don't make the boxes red: the scene has exactly 5 Blasts. The boxes break from B
 
 **Headless test.** The chain plays out: all 5 Blasts go off, about 60 Rubble and about 30 Droplets.
 
-- Count distinct ids seen in `world.contents` each step (Blasts, Rubble, Droplets), since Droplets turn into Patches within a step or two. Ids are never reused within a run, so each id is one thing.
+- Count distinct ids seen in `world.contents` each step (Blasts, Rubble, Droplets), since each Droplet turns into a Patch as soon as it lands (most within a second or so of the Spill). Ids are never reused within a run, so each id is one thing.
 - Use tolerances that match "about".
 - The gallery replay test also covers the new demo.
 

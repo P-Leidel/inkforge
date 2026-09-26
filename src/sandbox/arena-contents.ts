@@ -1,5 +1,6 @@
 import type { Circle } from '../geometry/overlap';
 import type { Polygon } from '../geometry/polygon';
+import type { Segment } from '../geometry/segment';
 import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { BodyId, PhysicsWorld } from '../physics';
@@ -22,6 +23,18 @@ export interface Solids {
 }
 
 /**
+ * A body's surface in its own coordinates (px, relative to its origin,
+ * unrotated): where a Patch can be laid on it.
+ */
+export type HostSurface =
+  /** Polygon edges: an Object's Outline, or the Terrain's polygons. */
+  | { readonly kind: 'polygons'; readonly polygons: readonly Polygon[] }
+  /** The sides of connected capsules: a Piece. */
+  | { readonly kind: 'capsules'; readonly segments: readonly Segment[]; readonly radius: number }
+  /** A circle about the origin: Rubble. */
+  | { readonly kind: 'circle'; readonly radius: number };
+
+/**
  * One kind of Arena contents. It owns its records and their ids, which are
  * never reused, and keeps nothing for what is gone. It registers each of its
  * bodies' Parties with the Contact ledger as it adds the body, also on
@@ -42,6 +55,8 @@ export interface Kind<Name extends string, Saved, Views> {
   clear(): void;
   /** What of it new Objects may not overlap. */
   solids(): Solids;
+  /** The surface of its body with this Party, if it has one: where a Droplet lands. */
+  surfaceOf(party: PartyId): HostSurface | null;
   /** Re-applies its surfaces after a material table edit. */
   applySurfaces(): void;
   /**

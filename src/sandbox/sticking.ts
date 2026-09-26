@@ -123,11 +123,12 @@ export class Sticking {
     return strokes;
   }
 
-  /** The body's first new contact this step with a Stroke not in `touched`. */
+  /** The body's first new contact this step with a Stroke not in `touched`; Droplets don't count. */
   private firstNew(body: BodyId, touched: readonly Touched[]) {
     for (const { a, b, pair } of this.contacts.newContacts) {
       const host = a.body === body ? b : b.body === body ? a : null;
-      if (host && !touched.some(({ stroke }) => stroke === host.stroke)) return { host, pair };
+      if (host && !host.harmless && !touched.some(({ stroke }) => stroke === host.stroke))
+        return { host, pair };
     }
     return null;
   }

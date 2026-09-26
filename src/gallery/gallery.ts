@@ -268,6 +268,46 @@ export const STICK_DEMO: Demo = {
   },
 };
 
+/**
+ * A blue-filled and a green-filled box breaking on anvils above a row of
+ * surfaces: a grey Line, a Frozen box and the ground. Their Spills coat
+ * everything the Droplets land on with Patches, and a ball dropped after
+ * them bounces high off the blue ones. No Droplet wakes the Frozen boxes.
+ */
+export const SPILL_DEMO: Demo = {
+  name: 'Spill',
+  build(world) {
+    const dropped = (['blue', 'green'] as const).flatMap((fill, k) => {
+      const x = 560 + 760 * k;
+      drawLine(
+        world,
+        [
+          { x: x - 20, y: 540 },
+          { x: x + 20, y: 540 },
+        ],
+        'black',
+      );
+      drawLine(
+        world,
+        [
+          { x: x - 250, y: 650 },
+          { x: x - 60, y: 650 },
+        ],
+        'grey',
+      );
+      // Frozen, and too heavy for the ball to knock loose.
+      drawObject(world, dragBox(x + 60, 610, 150, 60), 'grey');
+      world.fillAt({ x: x + 135, y: 640 }, 'black');
+      const box = drawObject(world, dragBox(x - 40, 180, 80, 80), 'grey');
+      world.fillAt({ x, y: 220 }, fill);
+      // A ball thrown up lands on the Frozen box after the Spill has.
+      const ball = drawObject(world, dragCircle({ x: x + 135, y: 450 }, 16), 'grey');
+      return [box, [ball, { x: 0, y: -550 }] as [StrokeId, Vec2]];
+    });
+    letGo(world, dropped);
+  },
+};
+
 export const GALLERY: readonly Demo[] = [
   BOUNCE_DEMO,
   SLIDE_DEMO,
@@ -278,4 +318,5 @@ export const GALLERY: readonly Demo[] = [
   RUBBLE_DEMO,
   GLUE_DEMO,
   STICK_DEMO,
+  SPILL_DEMO,
 ];

@@ -13,12 +13,14 @@ import {
   type StrokeResult,
 } from '../stroke/stroke-pipeline';
 import { SANDBOX_ARENA, type Arena } from './arena';
-import type { Kind } from './arena-contents';
+import type { HostSurface, Kind } from './arena-contents';
 import { Bonds, type BondView } from './bonds';
-import { ContactLedger, TERRAIN_PARTY, type SavedContacts } from './contact-ledger';
+import { ContactLedger, TERRAIN_PARTY, type Party, type SavedContacts } from './contact-ledger';
 import { Debris, type DebrisParticle } from './debris';
-import { Glue } from './glue';
-import { MaterialRules } from './material-rules';
+import { Droplets, packSpill, type DropletView } from './droplets';
+import { Glue, type GlueWear } from './glue';
+import { MaterialRules, wear } from './material-rules';
+import { Patches, type PatchRecord, type PatchView, type Puff } from './patches';
 import { Random } from './random';
 import { launchRubble, packRubble, Rubble, type FadingRubbleView, type RubbleView } from './rubble';
 import { Sticking } from './sticking';
@@ -27,12 +29,15 @@ import {
   type FillOutcome,
   type LineView,
   type ObjectView,
+  type Piece,
   type ReleasedFill,
   type StrokeId,
   type StrokeTarget,
 } from './strokes';
 
 export type { BondView } from './bonds';
+export type { DropletView } from './droplets';
+export type { PatchView } from './patches';
 export type { FadingRubbleView, RubbleView } from './rubble';
 export {
   SLIDE_OUT_SPEED,
@@ -66,10 +71,13 @@ export interface StrokeOptions {
 
 /**
  * Every kind of Arena contents, in the fixed order they are rebuilt in:
- * Strokes, then Rubble, then Bonds. A kind that lives on another comes after
- * it.
+ * Strokes, Rubble, Bonds, Droplets, then Patches. A kind that lives on
+ * another comes after it.
  */
-type Kinds = readonly [Strokes, Rubble, Bonds];
+type Kinds = readonly [Strokes, Rubble, Bonds, Droplets, Patches];
+
+/** What glues: green Pieces and green Patches. */
+type Gluing = Piece | PatchRecord;
 
 /** A kind as the Sandbox world runs it, over every kind alike. */
 type AnyKind = Kind<string, unknown, unknown>;
@@ -100,10 +108,10 @@ export interface SandboxWorldOptions {
 /**
  * The headless sandbox: the Arena and its contents, the pause state, and
  * Reset. It has no rendering dependency, so it is the main testing seam.
- * Each kind of Arena contents is a module of its own (`Strokes`, `Rubble`);
- * the world runs them all, in a fixed order, and passes on what one reports
- * to the next. The Contact ledger decides which contacts count, and the
- * Material rules read it. Each Stroke is drawn in a Colour given with the
+ * Each kind of Arena contents is a module of its own (`Strokes`, `Rubble`,
+ * `Bonds`, `Droplets`, `Patches`); the world runs them all, in a fixed
+ * order, and passes on what one reports to the next. The Contact ledger
+ * decides which contacts count, and the Material rules read it. Each Stroke is drawn in a Colour given with the
  * command; the world holds no selected Colour.
  */
 export class SandboxWorld {
@@ -119,6 +127,8 @@ export class SandboxWorld {
   private readonly strokes: Strokes;
   private readonly rubbleKind: Rubble;
   private readonly bondsKind: Bonds;
+  private readonly dropletsKind: Droplets;
+  private readonly patchesKind: Patches;
   /** Every kind, in rebuild order. */
   private readonly kinds: readonly AnyKind[];
   /** Taken whenever physics starts; R returns to it. */
@@ -141,14 +151,24 @@ export class SandboxWorld {
     });
     this.contacts = new ContactLedger(this.physics);
     this.addTerrain();
-    this.rules = new MaterialRules(this.materials);
-    this.glue = new Glue(this.materials, this.physics, this.contacts);
-    this.sticking = new Sticking(this.materials, this.physics, this.contacts);
     this.strokes = new Strokes(this.physics, this.materials, this.arena, this.contacts);
     this.rubbleKind = new Rubble(this.physics, this.materials, this.contacts);
     this.bondsKind = new Bonds(this.physics, this.contacts);
-    const kinds: Kinds = [this.strokes, this.rubbleKind, this.bondsKind];
+    this.dropletsKind = new Droplets(this.physics, this.materials, this.arena, this.contacts);
+    this.patchesKind = new Patches(this.physics, this.materials, this.contacts);
+    const kinds: Kinds = [
+      this.strokes,
+      this.rubbleKind,
+      this.bondsKind,
+      this.dropletsKind,
+      this.patchesKind,
+    ];
     this.kinds = kinds;
+    this.rules = new MaterialRules(this.materials);
+    this.glue = new Glue(this.materials, this.physics, this.contacts, (shape) =>
+      this.patchesKind.isPatch(shape),
+    );
+    this.sticking = new Sticking(this.materials, this.physics, this.contacts);
   }
 
   /** Whether physics is running (stands in for the Wave) rather than paused (the Build Phase). */
@@ -196,6 +216,16 @@ export class SandboxWorld {
   /** Green Objects stuck to what they touched. */
   get bonds(): readonly BondView[] {
     return this.bondsKind.views;
+  }
+
+  /** Droplets in flight. */
+  get droplets(): readonly DropletView[] {
+    return this.dropletsKind.views;
+  }
+
+  /** Patches, oldest first. */
+  get patches(): readonly PatchView[] {
+    return this.patchesKind.views;
   }
 
   /**
@@ -282,9 +312,9 @@ export class SandboxWorld {
   }
 
   /**
-   * Removes every Stroke and Fill, the Rubble and the Debris; the Terrain
-   * stays. R has nothing to go back to. Nothing is left touching or
-   * Settled, since every kind unregisters its bodies.
+   * Removes every Stroke and Fill, the Rubble, Droplets, Patches and the
+   * Debris; the Terrain stays. R has nothing to go back to. Nothing is left
+   * touching or Settled, since every kind unregisters its bodies.
    */
   clear(): void {
     for (const kind of this.kinds) kind.clear();
@@ -317,12 +347,43 @@ export class SandboxWorld {
     if (broken.fill) this.releaseFill(broken.fill);
   }
 
+  /** Bursts a puff of Debris where each used-up Patch was. */
+  private puff(puffs: readonly Puff[]): void {
+    for (const { outline, velocity, colour } of puffs)
+      this.debris.burst(outline, velocity, [colour]);
+  }
+
   /**
    * Lets out a broken Object's Fill, in the same step, from where the Object
-   * was and moving as it moved: grey and black Fills release Rubble, kicked
-   * outward from its centre. Other Fills release nothing yet.
+   * was and moving as it moved, kicked outward from its centre: grey and
+   * black Fills release Rubble, blue and green ones a Spill of Droplets.
+   * Red Fills release nothing yet.
    */
-  private releaseFill({ colour, mass, outline, from }: ReleasedFill): void {
+  private releaseFill(released: ReleasedFill): void {
+    if (this.materials.colours[released.colour].fill.spills > 0) this.releaseSpill(released);
+    else this.releaseRubble(released);
+  }
+
+  /** Throws out a Spill, drawing from `world.random`: the count and spots, then the kick. */
+  private releaseSpill({ colour, outline, from }: ReleasedFill): void {
+    const { centres, length } = packSpill(outline, this.materials, this.random);
+    const launched = launchRubble(
+      centres.map((centre) => ({ centre })),
+      from,
+      this.materials.colours[colour].fill.kickSpeed,
+      this.materials.kickSpread,
+      this.random,
+    );
+    this.dropletsKind.add(
+      launched.map(({ position, velocity, angularVelocity }) => ({
+        colour,
+        length,
+        motion: { transform: { ...position, angle: 0 }, velocity, angularVelocity },
+      })),
+    );
+  }
+
+  private releaseRubble({ colour, mass, outline, from }: ReleasedFill): void {
     const fill = this.materials.colours[colour].fill;
     const pieces = packRubble(outline, colour, mass, this.materials, this.random);
     const launched = launchRubble(
@@ -395,6 +456,28 @@ export class SandboxWorld {
     };
   }
 
+  /**
+   * Lays a Patch where each Droplet landed, on the surface of what it landed
+   * on: the Terrain's polygons, or the host's kind's surface for it.
+   */
+  private layPatches(): void {
+    for (const { colour, length, centre, host } of this.dropletsKind.land(
+      this.contacts.newContacts,
+    )) {
+      const surface = this.surfaceOf(host);
+      if (surface) this.puff(this.patchesKind.add(host, surface, centre, colour, length));
+    }
+  }
+
+  private surfaceOf(host: Party<unknown>): HostSurface | null {
+    if (host.id === TERRAIN_PARTY) return { kind: 'polygons', polygons: this.arena.terrain };
+    for (const kind of this.kinds) {
+      const surface = kind.surfaceOf(host.id);
+      if (surface) return surface;
+    }
+    return null;
+  }
+
   /** Adds the Terrain, which is Party 0 to the Contact ledger. */
   private addTerrain(): void {
     const body = this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
@@ -443,13 +526,29 @@ export class SandboxWorld {
       const point = this.physics.touchPoint(pair) ?? this.physics.getTransform(sticker.body);
       this.bondsKind.add(sticker.id, sticker.party, host.id, point);
     }
+    // Droplets land before anything breaks, so a Patch on something broken
+    // in this step goes with it.
+    this.layPatches();
+    this.patchesKind.wearByHits(this.contacts.hits);
     for (const target of broken) this.breakTarget(target);
-    for (const piece of this.glue.apply(this.strokes.pieces(), STEP_SECONDS)) {
-      this.breakTarget(piece);
+    for (const worn of this.glue.apply<Gluing>(
+      [...this.strokes.pieces(), ...this.patchesKind.gluers()],
+      STEP_SECONDS,
+      this.wearGluer,
+    )) {
+      if (worn.kind === 'piece') this.breakTarget(worn);
     }
     this.passOnGone();
+    this.puff(this.patchesKind.removeUsedUp());
     for (const kind of this.kinds) kind.step(STEP_SECONDS);
   }
+
+  /** Glue wears a Piece by damage, and a Patch by using it up. */
+  private readonly wearGluer: GlueWear<Gluing> = (gluer, amount) => {
+    if (gluer.kind !== 'piece') return this.patchesKind.wear(gluer, amount);
+    gluer.damage += amount;
+    return wear(gluer, this.materials) >= 1;
+  };
 
   /** Advances by real elapsed time, in whole fixed steps; the remainder carries over. */
   advance(seconds: number): void {
