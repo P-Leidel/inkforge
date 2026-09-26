@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { createMaterialTable, DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
+import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import { blastInk, blastSize, blastStrength } from './blasts';
-import { MaterialRules, type Breakable } from './material-rules';
 import type { SandboxWorld } from './sandbox-world';
 import { drawLine, drawObject, objectById, runFor, sandboxWorlds } from './test-support';
 
@@ -43,22 +42,6 @@ describe('Blast size and falloff', () => {
     expect(blastInk({ ...outline, colour: 'grey' }, { ...fill, colour: 'red' }, TABLE)).toBe(2000);
     expect(blastInk({ ...outline, colour: 'red' }, { ...fill, colour: 'grey' }, TABLE)).toBe(800);
     expect(blastInk({ ...outline, colour: 'grey' }, { ...fill, colour: 'blue' }, TABLE)).toBe(0);
-  });
-});
-
-describe('Blast damage', () => {
-  it('beats the receiver’s own threshold and never counts as an impact', () => {
-    const table = createMaterialTable();
-    const rules = new MaterialRules(table);
-    const { damageThreshold } = table.colours.blue.outline;
-    const blue: Breakable = { colour: 'blue', role: 'outline', damage: 0, impacts: 0 };
-
-    expect(rules.applyBlast(blue, damageThreshold)).toBe(false);
-    expect(blue.damage).toBe(0);
-    for (let k = 0; k < 5; k++) rules.applyBlast(blue, damageThreshold + 100);
-
-    expect(blue.damage).toBe(500);
-    expect(blue.impacts).toBe(0);
   });
 });
 

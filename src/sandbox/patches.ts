@@ -11,7 +11,7 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld, ShapeId } from '../physics';
 import type { HostSurface, Kind, Solids } from './arena-contents';
-import type { ContactLedger, Party, PartyHit, PartyId } from './contact-ledger';
+import type { ContactLedger, Party, PartyId } from './contact-ledger';
 
 /**
  * Patches: the strips of ink Droplets leave where they land. A Patch is a
@@ -260,9 +260,9 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
     return puffs;
   }
 
-  /** Whether a shape is a Patch's. */
-  isPatch(shape: ShapeId): boolean {
-    return this.byShape.has(shape);
+  /** The Patch whose shape this is, if any. */
+  patchOf(shape: ShapeId): PatchRecord | undefined {
+    return this.byShape.get(shape);
   }
 
   /** Every Patch, oldest first: the green ones glue. */
@@ -270,27 +270,12 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
     return this.patches;
   }
 
-  /** Wears a Patch by `amount`; returns whether it is used up. */
-  wear(patch: PatchRecord, amount: number): boolean {
-    patch.used += amount;
-    return patch.used >= this.capacity(patch);
-  }
-
   /**
-   * Wears each Patch a hit names by the hit's impulse, times its Colour's
-   * `patchHitWear`: every bounce a blue Patch gives uses it up a little. A
-   * Droplet landing doesn't count.
+   * Records that a Patch used up `amount` more. How much a hit or glue
+   * uses is the Material rules' to decide.
    */
-  wearByHits(hits: readonly PartyHit<unknown>[]): void {
-    if (this.patches.length === 0) return;
-    for (const { a, b, hit } of hits) {
-      if (a.harmless || b.harmless) continue;
-      for (const shape of [hit.shapeA, hit.shapeB]) {
-        const patch = this.byShape.get(shape);
-        if (!patch) continue;
-        patch.used += hit.impulse * this.materials.colours[patch.colour].fill.patchHitWear;
-      }
-    }
+  use(patch: PatchRecord, amount: number): void {
+    patch.used += amount;
   }
 
   /** Removes every used-up Patch; returns their puffs. */

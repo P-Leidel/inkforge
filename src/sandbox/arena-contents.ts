@@ -11,8 +11,9 @@ import type { PartyId } from './contact-ledger';
  * Each kind of it (Strokes, Rubble, ...) is a module of its own behind the
  * shape below, and the Sandbox world runs the snapshot, rebuilding, Clear
  * and each step once over every kind, in one fixed order. Kinds never call
- * each other: a kind reports what happened, and the world passes it on.
- * Debris is visual only and is not a kind.
+ * each other, and never decide a Material rule: a kind reports what
+ * happened, the Material rules decide what follows, and the world wires
+ * their decisions back to the kinds. Debris is visual only and is not a kind.
  */
 
 /** Shapes a new Object may not overlap, in world coordinates. */

@@ -82,7 +82,7 @@ The **Gallery** row below it clears the Arena and plays a ready-made demo of the
 │   ├── materials/       The Colours and the material table (pure data)
 │   ├── stroke/          Stroke pipeline: raw pointer samples → Line, Object or rejection
 │   ├── physics/         Physics module; the only code that talks to the engine (ADR 0001)
-│   ├── sandbox/         Headless Sandbox world: a module per kind of Arena contents, the Contact ledger, rules, pause, Reset
+│   ├── sandbox/         Headless Sandbox world: a module per kind of Arena contents, the Contact ledger, the Material rules, pause, Reset
 │   ├── stress-tests/    Scripted engine stress tests (ball cannon, box tower, pebbles)
 │   ├── gallery/         Colour gallery demos, built through the Sandbox world
 │   ├── scenes/          Phaser scenes: input → Sandbox world commands
