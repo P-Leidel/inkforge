@@ -313,3 +313,154 @@ describe('Circle bodies', () => {
     expect(world.getAngularVelocity(pebble)).toBe(3.3);
   });
 });
+
+describe('Pushes', () => {
+  it('change a free body’s momentum and spin, and leave anything else alone', () => {
+    const world = createWorld();
+    const terrain = world.addTerrain([GROUND], DEAD);
+    const line = world.addLine([{ a: { x: 100, y: 100 }, b: { x: 300, y: 100 } }], 8, DEAD);
+    const add = (x: number, frozen: boolean) =>
+      world.addObject({
+        position: { x, y: 300 },
+        parts: [square(20)],
+        frozen,
+        surface: DEAD,
+        mass: 2,
+      });
+    const moving = add(500, false);
+    const frozen = add(700, true);
+    const sliding = add(900, false);
+    world.slideOut(sliding, { x: 0, y: -40 }, 250);
+    const pebble = world.addCircle({
+      position: { x: 300, y: 300 },
+      radius: 6,
+      surface: DEAD,
+      mass: 0.5,
+    });
+
+    expect([terrain, line, frozen, sliding].map((id) => world.isFree(id))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect([moving, pebble].map((id) => world.isFree(id))).toEqual([true, true]);
+
+    // A 40 px square of mass 2 turns with 2 × (40² + 40²) / 12.
+    expect(world.getInertia(moving)).toBeCloseTo((2 * 3200) / 12, 6);
+    world.applyImpulse(moving, { x: 300, y: -100 });
+    world.applyAngularImpulse(moving, world.getInertia(moving) * 2);
+    world.applyImpulse(frozen, { x: 300, y: -100 });
+    expect(world.getVelocity(moving).x).toBeCloseTo(150, 6);
+    expect(world.getVelocity(moving).y).toBeCloseTo(-50, 6);
+    expect(world.getAngularVelocity(moving)).toBeCloseTo(2, 6);
+    expect(world.getVelocity(frozen)).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('Bonds', () => {
+  const box = (world: PhysicsWorld, x: number, y: number, frozen = false) =>
+    world.addObject({
+      position: { x, y },
+      parts: [square(20)],
+      frozen,
+      surface: DEAD,
+      mass: 1,
+    });
+  /** Anchors that hold two unrotated bodies at `a` and `b` together at `point`. */
+  const at = (a: { x: number; y: number }, b: { x: number; y: number }, point = a) => ({
+    onA: { x: point.x - a.x, y: point.y - a.y },
+    onB: { x: point.x - b.x, y: point.y - b.y },
+    angle: 0,
+  });
+
+  it('hold a moving Object where it is when bonded to the Terrain', () => {
+    const world = createWorld();
+    const terrain = world.addTerrain([GROUND], DEAD);
+    const hanging = box(world, 500, 300);
+
+    world.addBond(hanging, terrain, at({ x: 500, y: 300 }, { x: 0, y: 0 }));
+    for (let step = 0; step < 120; step++) world.step();
+
+    expect(world.getTransform(hanging).x).toBeCloseTo(500, 0);
+    expect(world.getTransform(hanging).y).toBeCloseTo(300, 0);
+  });
+
+  it('stop the two touching, and let go when removed', () => {
+    const world = createWorld();
+    const terrain = world.addTerrain([GROUND], DEAD);
+    const resting = box(world, 500, 480);
+    for (let step = 0; step < 30; step++) world.step();
+    const touching = world.touchingPairs();
+    expect(touching).toHaveLength(1);
+
+    const bond = world.addBond(resting, terrain, at({ x: 500, y: 480 }, { x: 0, y: 0 }));
+    expect(world.step().ends).toEqual(touching);
+    expect(world.touchingPairs()).toEqual([]);
+
+    world.removeBond(bond);
+    expect(world.getBond(bond)).toBeNull();
+    world.removeBond(bond); // already gone: nothing happens
+    for (let step = 0; step < 30; step++) world.step();
+    expect(world.touchingPairs()).toHaveLength(1); // it rests on the ground again
+  });
+
+  it('last through a Frozen host waking, and the two then move as one', () => {
+    const world = createWorld();
+    const host = box(world, 500, 300, true);
+    const stuck = box(world, 540, 300);
+    world.addBond(stuck, host, at({ x: 540, y: 300 }, { x: 500, y: 300 }, { x: 520, y: 300 }));
+    for (let step = 0; step < 30; step++) world.step();
+    expect(world.getTransform(stuck).y).toBeCloseTo(300, 0); // held by the Frozen host
+
+    world.release(host);
+    for (let step = 0; step < 30; step++) world.step();
+
+    const a = world.getTransform(host);
+    const b = world.getTransform(stuck);
+    expect(a.y).toBeGreaterThan(400); // they fell
+    expect(b.x - a.x).toBeCloseTo(40, 0);
+    expect(b.y - a.y).toBeCloseTo(0, 0);
+  });
+
+  it('are carried along by a slide, and go with either body', () => {
+    const world = createWorld();
+    const terrain = world.addTerrain([GROUND], DEAD);
+    const stuck = box(world, 500, 300);
+    const bond = world.addBond(stuck, terrain, at({ x: 500, y: 300 }, { x: 0, y: 0 }));
+
+    world.slideOut(stuck, { x: 0, y: -50 }, 250);
+    for (let step = 0; step < 60; step++) world.step();
+
+    // Held where the slide left it, not pulled back.
+    expect(world.getTransform(stuck).y).toBeCloseTo(250, 0);
+    expect(world.getBond(bond)!.onB.y).toBeCloseTo(250, 0);
+
+    world.removeBody(stuck);
+    expect(world.getBond(bond)).toBeNull();
+  });
+});
+
+describe('Touch points', () => {
+  it('say where two shapes began touching in the last step, and nothing for others', () => {
+    const world = createWorld();
+    world.addTerrain([GROUND], DEAD);
+    world.addObject({
+      position: { x: 500, y: 470 },
+      parts: [square(20)],
+      frozen: false,
+      surface: DEAD,
+      mass: 1,
+    });
+
+    let report = world.step();
+    for (let step = 0; step < 60 && report.begins.length === 0; step++) report = world.step();
+    const [pair] = report.begins;
+
+    const point = world.touchPoint(pair!)!;
+    expect(point.x).toBeCloseTo(500, 0);
+    expect(point.y).toBeCloseTo(500, 0);
+    world.step();
+    expect(world.touchPoint(pair!)).toBeNull();
+  });
+});

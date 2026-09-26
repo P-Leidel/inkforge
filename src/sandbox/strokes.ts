@@ -13,6 +13,7 @@ import type { Arena } from './arena';
 import { motionOf, type Kind, type Motion, type Solids } from './arena-contents';
 import type { PartyId, PartyIndex } from './contact-ledger';
 import { durabilityLeft, wear, type Breakable } from './material-rules';
+import { WAITING, type StickState } from './sticking';
 
 /** Speed (px/s) at which a Line squeezes an Object off itself; Box2D's push-out cap. */
 export const SLIDE_OUT_SPEED = 250;
@@ -124,6 +125,8 @@ export interface ObjectStroke extends Breakable {
   damage: number;
   /** Hits above its damage threshold so far. */
   impacts: number;
+  /** Where it is in sticking once, if its Outline sticks (green). */
+  sticking: StickState;
 }
 
 type Stroke = LineStroke | ObjectStroke;
@@ -296,6 +299,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       fillMass: 0,
       damage: 0,
       impacts: 0,
+      sticking: WAITING,
     };
     this.registerObject(object);
     this.strokes.push(object);
@@ -331,6 +335,16 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   private slideOut(body: BodyId, move: Vec2): void {
     this.physics.slideOut(body, move, SLIDE_OUT_SPEED);
     this.contacts.squeezed(body);
+  }
+
+  /** Every Piece still there, Line by Line in drawing order: what may glue. */
+  *pieces(): Iterable<Piece> {
+    for (const stroke of this.strokes) if (stroke.kind === 'line') yield* stroke.pieces;
+  }
+
+  /** Every Object, in drawing order: what may stick. */
+  *objectRecords(): Iterable<ObjectStroke> {
+    for (const stroke of this.strokes) if (stroke.kind === 'object') yield stroke;
   }
 
   private objectStrokes(): ObjectStroke[] {
@@ -550,6 +564,9 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     });
     this.history = [...saved.history];
   }
+
+  /** Nothing of it is attached to anything else. */
+  gone(): void {}
 
   dropVisuals(): void {}
 

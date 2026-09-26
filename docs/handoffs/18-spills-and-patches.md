@@ -21,11 +21,15 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
   - `touching(body)`: `{ party, pairs }` for each other Party touching that body's Party, with the shape pairs between them.
 
   It has already dropped Settled pairs (`CONTEXT.md`) from hits and new contacts, and Squeezed Objects from everything. A Party (`Party<T>`: `id`, `stroke`, `body`, `target`) has a numeric id that is never reused and stays the same through a rebuild; each record keeps it as `party`. Each kind gets the ledger's `PartyIndex` when it is constructed, registers its bodies' Parties as it adds them (`newId`, `register`), and unregisters them as it removes them (`unregister`).
-- **Glue drag** (#17) is applied once per body per step for bodies touching green Pieces, read from the ledger. Its wear goes to the Pieces.
+- **Glue drag** (#17) is `Glue` in `src/sandbox/glue.ts`: `glue.apply(gluers, dt)` drags every free body (`physics.isFree`) touching a gluer once per step, by the strongest glue it touches, and shares the momentum removed between the gluers it touches as wear. A `Gluer` today is a `Breakable` with a `body`, a Piece, and its glue is its Colour's `line.glueDrag`; the world hands it `strokes.pieces()`. It finds what a gluer touches with `contacts.touching(gluer.body)`, whatever shape pair they touch through. Green Patches need it per shape (see Behaviour below), and wear that isn't damage.
+- **Sticking** (#17) is `Sticking` in `src/sandbox/sticking.ts`. It sticks a moving green Object to its first entry in the ledger's `newContacts` with a Stroke it didn't start moving with, whatever the other Party is. **Droplets must never count** (the #17 handoff): skip Droplet Parties in its `firstNew`. A green Object landing on a Patch sticks to the Patch's host, since the Patch is part of the host's body.
+- **Host gone** (#17). Every kind has `gone(parties)`, which the world calls with the Parties each step or command removed (broken, undone, removed or capped), in kind order. Patches get it for free by implementing it.
+- **Physics** (#17) now has `applyImpulse`, `applyAngularImpulse`, `getInertia`, `isFree`, `touchPoint(pair)` (where a pair that began in the last step touched, even on a body the step rebuilt) and bonds (`addBond`, `getBond`, `removeBond`), which `rebuild` carries over (`reweld`). `touchPoint` can place a landed Droplet's Patch.
+- **The kinds** are Strokes, Rubble, then Bonds (#17).
 - **Hits name their shapes** (`shapeA`, `shapeB`). A `ShapeId` stays the same when an Object's body is rebuilt, but not through `physics.reset()`.
 - **Three adapter functions** in `box2d-physics-world.ts` must change for Patch shapes:
   - `setSurface(id)` and `setMass(id)` loop over every shape of a body (`b2Body_GetShapes`), so a Patch shape would get its host's surface and density. Limit them to the body's own shapes. Whenever the table changes, the Sandbox world calls each kind's `applySurfaces`, which calls `setSurface` for each of its bodies (`bodiesOf` in `Strokes`).
-  - `rebuild` re-creates only `rec.parts`, so Patches on a Frozen host would vanish when it wakes. Carry them over with their `ShapeId`s.
+  - `rebuild` re-creates only `rec.parts` (then welds the body's bonds again), so Patches on a Frozen host would vanish when it wakes. Carry them over with their `ShapeId`s.
 - **Object shapes have hit events on.** So a Droplet hitting an Object produces a hit even if the Droplet's own shapes have hit events off.
 
 ## Suggested design (a proposal)
@@ -38,9 +42,9 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
   - Patch thickness;
   - Patch capacity per px of length;
   - `patchCap: 200`.
-- A Patch's surface can be its Colour's `line` surface: blue restitution 0.9, green's friction. Its glue drag is green's `line` value from #17. Impulse and momentum have the same unit (mass × px/s), so one capacity per length serves both blue and green.
+- A Patch's surface can be its Colour's `line` surface: blue restitution 0.9, green's friction. Its glue drag is green's `line.glueDrag` from #17 (4). Impulse and momentum have the same unit (mass × px/s), so one capacity per length serves both blue and green.
 
-**Kinds.** Droplets and Patches become kinds (#24's decision), after their hosts in the world's list: Strokes, Rubble, Bonds, then Droplets and Patches. Each owns its records, ids, views and snapshot part, registers its bodies' Parties with the ledger, and implements every part of `Kind`. Kinds never call each other: the world hands a landed Droplet's Patch from one to the other, and passes a broken Object's Spill from `releaseFill` to Droplets.
+**Kinds.** Droplets and Patches become kinds (#24's decision), after their hosts in the world's list: Strokes, Rubble, Bonds (#17), then Droplets and Patches. Each owns its records, ids, views and snapshot part, registers its bodies' Parties with the ledger, and implements every part of `Kind`. Kinds never call each other: the world hands a landed Droplet's Patch from one to the other, and passes a broken Object's Spill from `releaseFill` to Droplets.
 
 **Droplets.**
 
@@ -79,13 +83,13 @@ A broken blue- or green-filled Object throws out a Spill of 10–15 Droplets. Ea
 **Behaviour.**
 
 - **Blue:** its restitution does the bouncing. Each of the ledger's hits naming its `ShapeId` wears it by the hit's impulse. The Material rules' "one impact per Stroke" is for damage only; wear counts every hit.
-- **Green:** a body touching a green Patch shape gets glue drag. The ledger's touching is per Party, so check the `pairs` of the host's `touching(hostBody)` entries for the Patch's `ShapeId`. Keep it once per body per step across green Pieces and green Patches. The drag's momentum is charged to the green things touched. The Patch's host isn't dragged by its own Patch.
+- **Green:** a body touching a green Patch shape gets glue drag. The ledger's touching is per Party, so check the `pairs` of the host's `touching(hostBody)` entries for the Patch's `ShapeId`. Extend `Glue` for it rather than writing a second drag: e.g. give a `Gluer` an optional shape to filter the pairs by, and a way to take its wear other than damage. It already keeps the drag once per body per step across all its gluers, and charges the momentum to the gluers touched. The Patch's host isn't dragged by its own Patch: `touching` never lists a body's own Party.
 - **Hits on a Patch** damage its host by the normal rule (the user decision). Patches take no damage from hits or Blasts.
 - **Capacity** is `capacityPerLength × length`. At capacity, remove the shape and burst a puff of Debris.
 
 **Lifetime.**
 
-- A Patch vanishes when its host breaks, is undone, or is removed by the Rubble cap. Patches hear it through "host gone" (#17): the world hands every kind what each step or command removed.
+- A Patch vanishes when its host breaks, is undone, or is removed by the Rubble cap. Patches hear it through `gone(parties)` (host gone, #17).
 - Patches on Terrain last until worn out.
 - The cap: at most 200; the oldest goes first.
 - Clear removes Patches. Undo leaves the ones on other hosts, since they are never in the history.

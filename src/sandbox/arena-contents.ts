@@ -3,6 +3,7 @@ import type { Polygon } from '../geometry/polygon';
 import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { BodyId, PhysicsWorld } from '../physics';
+import type { PartyId } from './contact-ledger';
 
 /**
  * Arena contents: everything the simulation tracks and Reset brings back.
@@ -43,6 +44,14 @@ export interface Kind<Name extends string, Saved, Views> {
   solids(): Solids;
   /** Re-applies its surfaces after a material table edit. */
   applySurfaces(): void;
+  /**
+   * Hears which Parties a step or a command removed (broken, undone, removed
+   * or capped), its own too: whatever of it was attached to them goes. The
+   * world tells every kind, in kind order, before their turn in a step and
+   * after every command that removes something. Clear tells none: every
+   * kind clears itself.
+   */
+  gone(parties: ReadonlySet<PartyId>): void;
   /** Its turn in each step, after the Material rules and breaking. */
   step(seconds: number): void;
 }

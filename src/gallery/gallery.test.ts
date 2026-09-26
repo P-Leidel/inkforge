@@ -7,9 +7,11 @@ import {
   BOUNCE_DEMO,
   DROP_DEMO,
   GALLERY,
+  GLUE_DEMO,
   KNOCK_DEMO,
   RUBBLE_DEMO,
   SLIDE_DEMO,
+  STICK_DEMO,
   THIRD_BOUNCE_DEMO,
 } from './gallery';
 
@@ -169,5 +171,34 @@ describe('Colour gallery', () => {
     const worn = (line: typeof underPebbles) => Math.max(...line!.pieces.map((p) => p.wear));
     expect(worn(underStones)).toBeGreaterThan(0.25); // cracked
     expect(worn(underPebbles)).toBeLessThan(worn(underStones));
+  });
+
+  it('Glue: green stops the hollow ball soonest and the black-filled one last; the one on grey rolls furthest', () => {
+    const world = createWorld();
+    GLUE_DEMO.build(world);
+
+    runFor(world, 3);
+
+    const [onGrey, hollow, greyFilled, blackFilled] = world.objects.map((o) => o.transform.x - 230);
+    expect(hollow).toBeLessThan(2 * 48);
+    expect(greyFilled).toBeGreaterThan(hollow!);
+    expect(blackFilled).toBeGreaterThan(greyFilled!);
+    expect(onGrey).toBeGreaterThan(1.5 * blackFilled!);
+    const [, ...green] = world.lines;
+    for (const line of green) expect(line.pieces.some((p) => p.wear > 0)).toBe(true);
+  });
+
+  it('Stick: each green Object glues itself to the first new thing it touches', () => {
+    const world = createWorld();
+    STICK_DEMO.build(world);
+
+    runFor(world, 2);
+
+    const green = world.objects.filter((o) => o.colour === 'green');
+    expect(world.bonds.map((b) => b.object).sort()).toEqual(green.map((o) => o.id).sort());
+    const [hanger] = green;
+    expect(hanger!.transform.y).toBeLessThan(340); // hanging under the Line
+    const knocked = world.objects.find((o) => o.colour === 'grey')!;
+    expect(knocked.frozen).toBe(false);
   });
 });

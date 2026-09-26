@@ -18,6 +18,15 @@ export interface LineMaterial extends SurfaceMaterial {
   durability: number;
   /** Hits with a smaller impulse (mass × px/s) than this don't damage a Piece. */
   damageThreshold: number;
+  /**
+   * Glue drag (ADR 0007): the force (mass × px/s²) per px/s of speed that
+   * slows anything moving across a Piece, not scaled by the mover's mass, so
+   * heavier things are slowed less. Its spin is slowed at the same rate. 0
+   * for no glue.
+   */
+  glueDrag: number;
+  /** Durability a Piece loses per unit of momentum (mass × px/s) its glue drag removes. */
+  glueWear: number;
 }
 
 export interface OutlineMaterial extends SurfaceMaterial {
@@ -29,6 +38,11 @@ export interface OutlineMaterial extends SurfaceMaterial {
   damageThreshold: number;
   /** An Object breaks on this many hits above its damage threshold; 0 for no limit. */
   impactLimit: number;
+  /**
+   * 1 if an Object sticks, once, to the first new thing it touches after it
+   * starts moving (green); 0 if it never sticks.
+   */
+  sticks: number;
 }
 
 export interface FillMaterial {
@@ -92,7 +106,14 @@ export interface MaterialTable {
 export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   colours: {
     grey: {
-      line: { friction: 0.6, restitution: 0.1, durability: 6000, damageThreshold: 400 },
+      line: {
+        friction: 0.6,
+        restitution: 0.1,
+        durability: 6000,
+        damageThreshold: 400,
+        glueDrag: 0,
+        glueWear: 0,
+      },
       outline: {
         friction: 0.6,
         restitution: 0.1,
@@ -100,11 +121,19 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         durability: 2400,
         damageThreshold: 400,
         impactLimit: 0,
+        sticks: 0,
       },
       fill: { density: 1, kickSpeed: 200, rubbleMax: 18, rubbleRadius: 6, rubbleArea: 250 },
     },
     blue: {
-      line: { friction: 0.1, restitution: 0.9, durability: 4000, damageThreshold: 200 },
+      line: {
+        friction: 0.1,
+        restitution: 0.9,
+        durability: 4000,
+        damageThreshold: 200,
+        glueDrag: 0,
+        glueWear: 0,
+      },
       outline: {
         friction: 0.1,
         restitution: 0.9,
@@ -112,11 +141,19 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         durability: 2000,
         damageThreshold: 200,
         impactLimit: 3,
+        sticks: 0,
       },
       fill: { density: 0.5, kickSpeed: 400, rubbleMax: 0, rubbleRadius: 0, rubbleArea: 0 },
     },
     green: {
-      line: { friction: 0.6, restitution: 0, durability: 6000, damageThreshold: 400 },
+      line: {
+        friction: 0.6,
+        restitution: 0,
+        durability: 6000,
+        damageThreshold: 400,
+        glueDrag: 4,
+        glueWear: 2,
+      },
       outline: {
         friction: 0.6,
         restitution: 0,
@@ -124,11 +161,19 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         durability: 2400,
         damageThreshold: 400,
         impactLimit: 0,
+        sticks: 1,
       },
       fill: { density: 1, kickSpeed: 300, rubbleMax: 0, rubbleRadius: 0, rubbleArea: 0 },
     },
     black: {
-      line: { friction: 1, restitution: 0, durability: 20000, damageThreshold: 2000 },
+      line: {
+        friction: 1,
+        restitution: 0,
+        durability: 20000,
+        damageThreshold: 2000,
+        glueDrag: 0,
+        glueWear: 0,
+      },
       outline: {
         friction: 1,
         restitution: 0,
@@ -136,11 +181,19 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         durability: 20000,
         damageThreshold: 2000,
         impactLimit: 0,
+        sticks: 0,
       },
       fill: { density: 3, kickSpeed: 200, rubbleMax: 8, rubbleRadius: 8.5, rubbleArea: 450 },
     },
     red: {
-      line: { friction: 0.6, restitution: 0.1, durability: 250, damageThreshold: 300 },
+      line: {
+        friction: 0.6,
+        restitution: 0.1,
+        durability: 250,
+        damageThreshold: 300,
+        glueDrag: 0,
+        glueWear: 0,
+      },
       outline: {
         friction: 0.6,
         restitution: 0.1,
@@ -148,6 +201,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
         durability: 250,
         damageThreshold: 300,
         impactLimit: 0,
+        sticks: 0,
       },
       fill: { density: 1, kickSpeed: 0, rubbleMax: 0, rubbleRadius: 0, rubbleArea: 0 },
     },

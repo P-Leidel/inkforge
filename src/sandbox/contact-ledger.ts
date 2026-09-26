@@ -102,6 +102,10 @@ export class ContactLedger<T> {
   private nextId = 1;
   /** The Party of every registered body. */
   private readonly parties = new Map<BodyId, Party<T>>();
+  /** The same Parties by their id. */
+  private readonly byId = new Map<PartyId, Party<T>>();
+  /** Parties unregistered since `takeGone`: what was removed. */
+  private gone: PartyId[] = [];
   /** Who touches whom, both ways round, with the shape pairs they touch through. */
   private readonly contacts = new Map<PartyId, Map<PartyId, Contact<T>>>();
   /**
@@ -147,6 +151,23 @@ export class ContactLedger<T> {
   /** A body was added: from now on it is `party` to every rule. */
   register(party: Party<T>): void {
     this.parties.set(party.body, party);
+    this.byId.set(party.id, party);
+  }
+
+  /** The registered Party with this id: a body there now. */
+  party(id: PartyId): Party<T> | undefined {
+    return this.byId.get(id);
+  }
+
+  /**
+   * The Parties unregistered since the last call, in the order they went:
+   * what was broken, undone, removed, cleared or capped. A rebuild forgets
+   * Parties without them going.
+   */
+  takeGone(): readonly PartyId[] {
+    const gone = this.gone;
+    if (gone.length > 0) this.gone = [];
+    return gone;
   }
 
   /** A body was removed: its Party goes, with everything it touched and was Settled with. */
@@ -154,6 +175,8 @@ export class ContactLedger<T> {
     const party = this.parties.get(body);
     if (!party) return;
     this.parties.delete(body);
+    this.byId.delete(party.id);
+    this.gone.push(party.id);
     this.sliding.delete(body);
     this.slideEnded.delete(body);
     const mine = this.contacts.get(party.id);
@@ -305,6 +328,8 @@ export class ContactLedger<T> {
    */
   restore(saved: SavedContacts): void {
     this.parties.clear();
+    this.byId.clear();
+    this.gone = [];
     this.contacts.clear();
     this.sliding.clear();
     this.slideEnded.clear();

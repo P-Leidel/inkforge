@@ -325,6 +325,9 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
     for (const { motion, ...rubble } of saved) this.addBody(rubble, motion);
   }
 
+  /** Nothing of it is attached to anything else. */
+  gone(): void {}
+
   dropVisuals(): void {
     this.fading = [];
   }

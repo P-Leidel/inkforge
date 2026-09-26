@@ -1,5 +1,7 @@
 import {
+  b2Body_ApplyAngularImpulse,
   b2Body_ApplyLinearImpulse,
+  b2Body_ApplyLinearImpulseToCenter,
   b2Body_ApplyMassFromShapes,
   b2Body_GetAngularVelocity,
   b2Body_GetContactData,
@@ -24,12 +26,15 @@ import {
   b2CreateCapsuleShape,
   b2CreateCircleShape,
   b2CreatePolygonShape,
+  b2CreateWeldJoint,
   b2CreateWorld,
   b2CreateWorldArray,
   b2DefaultBodyDef,
   b2DefaultShapeDef,
+  b2DefaultWeldJointDef,
   b2DefaultWorldDef,
   b2DestroyBody,
+  b2DestroyJoint,
   b2DestroyWorld,
   b2MakePolygon,
   b2MakeRot,
@@ -47,6 +52,7 @@ import {
   b2World_SetRestitutionThreshold,
   b2World_Step,
   type b2BodyId,
+  type b2JointId,
   type b2Polygon,
   type b2Rot,
   type b2ShapeId,
@@ -58,6 +64,8 @@ import type { Transform } from '../../geometry/transform';
 import type { Vec2 } from '../../geometry/vec2';
 import type {
   BodyId,
+  BondAnchors,
+  BondId,
   CircleBodyDef,
   ContactHit,
   ContactPair,
@@ -166,6 +174,21 @@ function destroyB2World(worldId: b2WorldId): void {
   }
 }
 
+/** Two bodies held together by a weld joint. */
+interface BondRecord {
+  readonly a: BodyId;
+  readonly b: BodyId;
+  anchors: BondAnchors;
+  joint: b2JointId;
+}
+
+/** An angle in -π..π, as the engine measures one body's angle relative to another's. */
+function unwind(angle: number): number {
+  if (angle > Math.PI) return angle - 2 * Math.PI;
+  if (angle < -Math.PI) return angle + 2 * Math.PI;
+  return angle;
+}
+
 /** A slide in progress: an Object moving off a Line at a set velocity. */
 interface Slide {
   /** Seconds of sliding left. */
@@ -187,6 +210,10 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
   const touching = new Map<string, ContactPair>();
   /** Contacts ended between steps (a body removed), for the next report. */
   let pendingEnds: ContactPair[] = [];
+  /** Where each shape pair that began touching in the last step touched, by `pairKey`. */
+  const beginPoints = new Map<string, Vec2>();
+  const bonds = new Map<BondId, BondRecord>();
+  let nextBondId = 1;
   /**
    * Bodies rebuilt since the last step. The engine forgets their contacts
    * without an end event and reports them beginning again, so their pairs
@@ -343,6 +370,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     const begins: ContactPair[] = [];
     const ends = pendingEnds;
     pendingEnds = [];
+    beginPoints.clear();
     for (const event of events.endEvents) {
       const pair = pairOf(event.shapeIdA, event.shapeIdB);
       const key = pairKey(pair.shapeA, pair.shapeB);
@@ -354,6 +382,15 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       if (touching.has(key)) continue;
       touching.set(key, pair);
       begins.push(pair);
+      const { manifold } = event;
+      if (manifold.pointCount === 0) continue;
+      let x = 0;
+      let y = 0;
+      for (let k = 0; k < manifold.pointCount; k++) {
+        x += manifold.points[k]!.pointX;
+        y += manifold.points[k]!.pointY;
+      }
+      beginPoints.set(key, { x: toPx(x / manifold.pointCount), y: toPx(y / manifold.pointCount) });
     }
     if (rebuilt.size > 0) {
       const still = new Set<string>();
@@ -439,6 +476,56 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     const damping = rec.kind === 'circle' ? CIRCLE_ANGULAR_DAMPING : 0;
     rec.b2Id = makeB2Body(id, type, position, rotation, damping);
     addShapes(rec);
+    // Destroying the body destroyed its joints.
+    for (const bond of bonds.values()) if (bond.a === id || bond.b === id) reweld(bond);
+  }
+
+  /**
+   * Welds a bond's two bodies together at its anchors. The engine destroys
+   * the contacts between them, and the end events it makes for them are
+   * lost at the next step's start, so they are reported with the next step.
+   */
+  function weld(a: BodyId, b: BodyId, anchors: BondAnchors): b2JointId {
+    const def = b2DefaultWeldJointDef();
+    def.bodyIdA = record(a).b2Id;
+    def.bodyIdB = record(b).b2Id;
+    def.localAnchorA = toB2(anchors.onA);
+    def.localAnchorB = toB2(anchors.onB);
+    def.referenceAngle = unwind(anchors.angle);
+    def.collideConnected = false;
+    const joint = b2CreateWeldJoint(worldId, def);
+    for (const [key, pair] of touching) {
+      const between =
+        (pair.bodyA === a && pair.bodyB === b) || (pair.bodyA === b && pair.bodyB === a);
+      if (!between) continue;
+      touching.delete(key);
+      pendingEnds.push(pair);
+    }
+    return joint;
+  }
+
+  /**
+   * Welds a bond's bodies again after one was rebuilt, holding them as they
+   * are now: its point stays where it is on A, and moves on B, as a slide
+   * carries one body away from the other.
+   */
+  function reweld(bond: BondRecord): void {
+    const a = record(bond.a).b2Id;
+    const b = record(bond.b).b2Id;
+    const pa = b2Body_GetPosition(a);
+    const qa = b2Body_GetRotation(a);
+    const pb = b2Body_GetPosition(b);
+    const qb = b2Body_GetRotation(b);
+    const ox = toM(bond.anchors.onA.x);
+    const oy = toM(bond.anchors.onA.y);
+    const dx = pa.x + qa.c * ox - qa.s * oy - pb.x;
+    const dy = pa.y + qa.s * ox + qa.c * oy - pb.y;
+    bond.anchors = {
+      onA: bond.anchors.onA,
+      onB: { x: toPx(qb.c * dx + qb.s * dy), y: toPx(-qb.s * dx + qb.c * dy) },
+      angle: Math.atan2(qb.s * qa.c - qb.c * qa.s, qb.c * qa.c + qb.s * qa.s),
+    };
+    bond.joint = weld(bond.a, bond.b, bond.anchors);
   }
 
   /** Advances sliding Objects; one that has arrived becomes dynamic, at rest. */
@@ -630,6 +717,9 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     touching.clear();
     rebuilt.clear();
     pendingEnds = [];
+    beginPoints.clear();
+    bonds.clear();
+    nextBondId = 1;
   }
 
   const world: PhysicsWorld = {
@@ -712,6 +802,8 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       bodies.delete(id);
       sliding.delete(id);
       rebuilt.delete(id);
+      // Its joints went with it.
+      for (const [bondId, bond] of bonds) if (bond.a === id || bond.b === id) bonds.delete(bondId);
       // The engine's end events for these are lost at the next step's start.
       for (const [key, pair] of touching) {
         if (pair.bodyA !== id && pair.bodyB !== id) continue;
@@ -804,8 +896,16 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       return [...touching.values()];
     },
 
+    touchPoint(pair) {
+      return beginPoints.get(pairKey(pair.shapeA, pair.shapeB)) ?? null;
+    },
+
     isFrozen(id) {
       return record(id).frozen;
+    },
+
+    isFree(id) {
+      return movable(record(id)) && !sliding.has(id);
     },
 
     release(id) {
@@ -887,6 +987,38 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
 
     getAngularVelocity(id) {
       return b2Body_GetAngularVelocity(record(id).b2Id);
+    },
+
+    getInertia(id) {
+      const rec = record(id);
+      return rec.density * rec.unit.inertia * PX_PER_METRE ** 2;
+    },
+
+    applyImpulse(id, impulse) {
+      if (!world.isFree(id)) return;
+      b2Body_ApplyLinearImpulseToCenter(record(id).b2Id, toB2(impulse), true);
+    },
+
+    applyAngularImpulse(id, impulse) {
+      if (!world.isFree(id)) return;
+      b2Body_ApplyAngularImpulse(record(id).b2Id, impulse / PX_PER_METRE ** 2, true);
+    },
+
+    addBond(a, b, anchors) {
+      const id = nextBondId++ as BondId;
+      bonds.set(id, { a, b, anchors, joint: weld(a, b, anchors) });
+      return id;
+    },
+
+    getBond(id) {
+      return bonds.get(id)?.anchors ?? null;
+    },
+
+    removeBond(id) {
+      const bond = bonds.get(id);
+      if (!bond) return;
+      bonds.delete(id);
+      b2DestroyJoint(bond.joint);
     },
 
     setVelocity(id, velocity) {
