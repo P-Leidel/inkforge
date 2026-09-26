@@ -10,7 +10,7 @@ import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
 import type { Arena } from './arena';
-import { motionOf, type Kind, type Motion, type Solids } from './arena-contents';
+import { motionOf, type HostSurface, type Kind, type Motion, type Solids } from './arena-contents';
 import type { PartyId, PartyIndex } from './contact-ledger';
 import { durabilityLeft, wear, type Breakable } from './material-rules';
 import { WAITING, type StickState } from './sticking';
@@ -581,6 +581,20 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   /** Objects are solid; Lines aren't (an Object drawn over one is squeezed off it). */
   solids(): Solids {
     return { polygons: this.objectStrokes().map((s) => this.worldParts(s)), circles: [] };
+  }
+
+  /** An Object's Outline, or the sides of a Piece's capsules (in the world, where its body is). */
+  surfaceOf(party: PartyId): HostSurface | null {
+    for (const stroke of this.strokes) {
+      if (stroke.kind === 'object') {
+        if (stroke.party === party) return { kind: 'polygons', polygons: [stroke.outline] };
+        continue;
+      }
+      const piece = stroke.pieces.find((p) => p.party === party);
+      if (piece)
+        return { kind: 'capsules', segments: piece.segments, radius: stroke.thickness / 2 };
+    }
+    return null;
   }
 
   applySurfaces(): void {

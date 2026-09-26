@@ -5,6 +5,7 @@ import type {
   FadingRubbleView,
   LineView,
   ObjectView,
+  PatchView,
   PieceView,
   SandboxWorld,
   StrokeId,
@@ -24,6 +25,12 @@ const CRACK_WIDTH = 2;
 const DEBRIS_DEPTH = 5;
 /** Bond blobs show over the Objects they hold. */
 const BOND_DEPTH = 4;
+/** Patches show over what they lie on, and Droplets over them. */
+const PATCH_DEPTH = 3;
+/** A Patch is drawn a little wider than it is thick, so it reads on its host's edge. */
+const PATCH_EXTRA_WIDTH = 2.5;
+/** A used-up Patch has faded to this opacity. */
+const PATCH_WORN_ALPHA = 0.35;
 /** Radius of the blob of glue drawn where a bond holds. */
 const BOND_RADIUS = 5;
 /** Sides of the polygon a piece of Rubble is drawn as. */
@@ -32,11 +39,12 @@ const RUBBLE_SIDES = 20;
 const RUBBLE_RIM = 2;
 
 /**
- * Draws the Sandbox world's state: Terrain, Lines, Objects, Rubble, bonds
- * and Debris. Each Stroke gets its own Graphics, drawn again only when its
- * look changes; moving Objects only update its transform. So does each piece
- * of Rubble, which never changes its look. Bonds and Debris are redrawn
- * every frame.
+ * Draws the Sandbox world's state: Terrain, Lines, Objects, Rubble, Patches,
+ * Droplets, bonds and Debris. Each Stroke gets its own Graphics, drawn again
+ * only when its look changes; moving Objects only update its transform. So
+ * does each piece of Rubble and each Patch, which never change their look;
+ * a Patch fades as it wears. Droplets, bonds and Debris are redrawn every
+ * frame.
  */
 export class WorldRenderer {
   private readonly lines = new Map<StrokeId, Graphics>();
@@ -47,6 +55,9 @@ export class WorldRenderer {
   private readonly drawnLook = new Map<StrokeId, string>();
   /** Each piece of Rubble, live or fading out, by its id. */
   private readonly rubble = new Map<number, Graphics>();
+  /** Each Patch by its id. */
+  private readonly patches = new Map<number, Graphics>();
+  private readonly droplets: Graphics;
   private readonly debris: Graphics;
   private readonly bonds: Graphics;
 
@@ -57,6 +68,7 @@ export class WorldRenderer {
     this.drawTerrain(scene.add.graphics());
     this.debris = scene.add.graphics().setDepth(DEBRIS_DEPTH);
     this.bonds = scene.add.graphics().setDepth(BOND_DEPTH);
+    this.droplets = scene.add.graphics().setDepth(PATCH_DEPTH);
   }
 
   private drawTerrain(g: Graphics): void {
@@ -72,6 +84,8 @@ export class WorldRenderer {
     this.syncLines();
     this.syncObjects();
     this.syncRubble();
+    this.syncPatches();
+    this.drawDroplets();
     this.drawBonds();
     this.drawDebris();
   }
@@ -107,6 +121,37 @@ export class WorldRenderer {
       g.setPosition(x, y).setRotation(angle).setAlpha(piece.opacity);
     }
     removeStale(this.rubble, current);
+  }
+
+  /** Each Patch where its host is now, a strip of its Colour's ink fading as it wears. */
+  private syncPatches(): void {
+    const current = new Set<number>();
+    for (const patch of this.world.patches) {
+      current.add(patch.id);
+      let g = this.patches.get(patch.id);
+      if (!g) {
+        g = this.scene.add.graphics().setDepth(PATCH_DEPTH);
+        drawPatch(g, patch);
+        this.patches.set(patch.id, g);
+      }
+      const { a, b } = patch.segment;
+      g.setPosition((a.x + b.x) / 2, (a.y + b.y) / 2)
+        .setRotation(Math.atan2(b.y - a.y, b.x - a.x))
+        .setAlpha(1 - (1 - PATCH_WORN_ALPHA) * patch.wear);
+    }
+    removeStale(this.patches, current);
+  }
+
+  /** Each Droplet as a small disc in its Colour, with a glint. */
+  private drawDroplets(): void {
+    const g = this.droplets;
+    g.clear();
+    for (const { colour, radius, transform } of this.world.droplets) {
+      g.fillStyle(INK_HUES[colour], 1);
+      g.fillCircle(transform.x, transform.y, radius);
+      g.fillStyle(0xffffff, 0.6);
+      g.fillCircle(transform.x - radius * 0.35, transform.y - radius * 0.35, radius * 0.35);
+    }
   }
 
   /** Each particle as a small tumbling square in its Colour, fading out. */
@@ -256,6 +301,22 @@ function drawRubble(g: Graphics, piece: FadingRubbleView): void {
   });
   fillInk(g, piece.colour, disc);
   drawInk(g, piece.colour, disc, true, RUBBLE_RIM);
+}
+
+/** A Patch in its own coordinates: a strip of its Colour's ink along x, centred on the origin. */
+function drawPatch(g: Graphics, patch: PatchView): void {
+  const { a, b } = patch.segment;
+  const half = Math.hypot(b.x - a.x, b.y - a.y) / 2;
+  drawInk(
+    g,
+    patch.colour,
+    [
+      { x: -half, y: 0 },
+      { x: half, y: 0 },
+    ],
+    false,
+    patch.thickness + PATCH_EXTRA_WIDTH,
+  );
 }
 
 /** How many crack stages a Piece's or an Object's wear shows: 0 to 3. */

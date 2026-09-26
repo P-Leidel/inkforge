@@ -285,6 +285,47 @@ describe('Circle bodies', () => {
     expect(wakes(20)).toBe(false);
   });
 
+  it('of one group pass through each other, and hit circles of none', () => {
+    function meet(groups: [number | undefined, number | undefined]): boolean {
+      const world = createWorld();
+      const [a, b] = groups.map((group, k) =>
+        world.addCircle(
+          circle({
+            position: { x: 480 + 40 * k, y: 250 },
+            velocity: { x: k === 0 ? 300 : -300, y: 0 },
+            ...(group !== undefined && { group }),
+          }),
+        ),
+      );
+      for (let step = 0; step < 10; step++) world.step();
+      return world.getTransform(a!).x < world.getTransform(b!).x;
+    }
+
+    expect(meet([1, 1])).toBe(false); // they passed through each other
+    expect(meet([1, undefined])).toBe(true);
+    expect(meet([1, 2])).toBe(true);
+  });
+
+  it('never wake a Frozen Object if they are made not to, however hard they hit', () => {
+    const world = createWorld();
+    const box = world.addObject({
+      position: { x: 500, y: 300 },
+      parts: [square(20)],
+      frozen: true,
+      surface: DEAD,
+      mass: 0.2,
+    });
+    world.addCircle(
+      circle({ position: { x: 500, y: 250 }, velocity: { x: 0, y: 3000 }, wakes: false, mass: 5 }),
+    );
+
+    const [hit] = stepUntilHit(world).hits;
+
+    expect(hit!.impulse).toBeGreaterThan(0);
+    for (let step = 0; step < 30; step++) world.step();
+    expect(world.isFrozen(box)).toBe(true);
+  });
+
   it('roll to a stop on flat ground', () => {
     const world = createWorld();
     world.addTerrain([GROUND], DEAD);
@@ -438,6 +479,115 @@ describe('Bonds', () => {
 
     world.removeBody(stuck);
     expect(world.getBond(bond)).toBeNull();
+  });
+});
+
+describe('Added capsules', () => {
+  const BOUNCY = { friction: 0.6, restitution: 0.9 };
+  const strip = { a: { x: -20, y: -20 }, b: { x: 20, y: -20 } };
+
+  it('bounce with their own surface where they lie, and go when removed', () => {
+    const world = createWorld();
+    const ground = world.addTerrain([GROUND], DEAD);
+    const patch = world.addCapsule(
+      ground,
+      { a: { x: 400, y: 500 }, b: { x: 600, y: 500 } },
+      1.5,
+      BOUNCY,
+    );
+    const drop = () =>
+      world.addObject({
+        position: { x: 500, y: 400 },
+        parts: [square(20)],
+        frozen: false,
+        surface: DEAD,
+        mass: 1,
+        velocity: { x: 0, y: 500 },
+      });
+
+    const box = drop();
+    const [hit] = stepUntilHit(world).hits;
+    expect([hit!.shapeA, hit!.shapeB]).toContain(patch);
+    world.step();
+    expect(world.getVelocity(box).y).toBeLessThan(-300); // bounced back up
+
+    world.removeBody(box);
+    world.removeShape(patch);
+    world.removeShape(patch); // already gone: nothing happens
+    const dead = drop();
+    stepUntilHit(world);
+    world.step();
+    expect(Math.abs(world.getVelocity(dead).y)).toBeLessThan(50);
+  });
+
+  it('leave a body’s mass alone, keep their surface through setSurface, and stay through a wake', () => {
+    const world = createWorld();
+    const ground = world.addTerrain([GROUND], DEAD);
+    const box = world.addObject({
+      position: { x: 500, y: 300 },
+      parts: [square(20)],
+      frozen: true,
+      surface: DEAD,
+      mass: 1,
+    });
+    const patch = world.addCapsule(box, strip, 1.5, BOUNCY);
+    world.setSurface(box, DEAD);
+    world.setMass(box, 2);
+    expect(world.getMass(box)).toBe(2);
+
+    world.release(box);
+    expect(world.getMass(box)).toBe(2);
+    expect(world.getInertia(box)).toBeCloseTo((2 * 40 * 40) / 6, 6);
+    // Turned over, it lands on the patch, which bounces it off the ground.
+    world.removeBody(box);
+    const flipped = world.addObject({
+      position: { x: 500, y: 400 },
+      parts: [square(20)],
+      frozen: true,
+      surface: DEAD,
+      mass: 1,
+      angle: Math.PI,
+    });
+    const onFlipped = world.addCapsule(flipped, strip, 1.5, BOUNCY);
+    world.setSurface(flipped, DEAD);
+    world.setMass(flipped, 1);
+    world.release(flipped);
+    world.setVelocity(flipped, { x: 0, y: 500 });
+    const [hit] = stepUntilHit(world).hits;
+
+    expect(new Set([hit!.bodyA, hit!.bodyB])).toEqual(new Set([ground, flipped]));
+    expect([hit!.shapeA, hit!.shapeB]).toContain(onFlipped);
+    expect(onFlipped).not.toBe(patch);
+    world.step();
+    expect(world.getVelocity(flipped).y).toBeLessThan(-300);
+  });
+
+  it('end their contacts when removed', () => {
+    const world = createWorld();
+    const ground = world.addTerrain([GROUND], DEAD);
+    const patch = world.addCapsule(
+      ground,
+      { a: { x: 400, y: 500 }, b: { x: 600, y: 500 } },
+      1.5,
+      DEAD,
+    );
+    world.addObject({
+      position: { x: 500, y: 470 },
+      parts: [square(20)],
+      frozen: false,
+      surface: DEAD,
+      mass: 1,
+    });
+    for (let step = 0; step < 30; step++) world.step();
+    const onPatch = () =>
+      world.touchingPairs().some((pair) => pair.shapeA === patch || pair.shapeB === patch);
+    expect(onPatch()).toBe(true);
+
+    world.removeShape(patch);
+    const { ends } = world.step();
+
+    expect(onPatch()).toBe(false);
+    expect(ends.some((pair) => pair.shapeA === patch || pair.shapeB === patch)).toBe(true);
   });
 });
 

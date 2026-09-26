@@ -35,6 +35,7 @@ import {
   b2DefaultWorldDef,
   b2DestroyBody,
   b2DestroyJoint,
+  b2DestroyShape,
   b2DestroyWorld,
   b2MakePolygon,
   b2MakeRot,
@@ -111,8 +112,10 @@ const NO_MASS: UnitMass = { area: 0, centre: new b2Vec2(0, 0), inertia: 0 };
 interface BodyRecord {
   b2Id: b2BodyId;
   readonly kind: BodyKind;
-  /** Its shapes' ids: an Object's by part, kept when it is rebuilt. */
+  /** Its own shapes' ids: an Object's by part, kept when it is rebuilt. */
   readonly shapes: readonly ShapeId[];
+  /** The shapes `addCapsule` added to it, oldest first, kept when it is rebuilt. */
+  readonly added: ShapeId[];
   frozen: boolean;
   /** An Object's convex parts in body coordinates, to rebuild it on Release. */
   readonly parts: readonly Polygon[];
@@ -125,6 +128,19 @@ interface BodyRecord {
   readonly unit: UnitMass;
   /** What a moving body was created with, to read back exactly while the engine still holds it. */
   placed?: Placement;
+  /** A circle's collision group: circles of the same group never touch. */
+  readonly group?: number;
+  /** False if its hits never wake a Frozen Object. */
+  readonly wakes?: boolean;
+}
+
+/** A shape `addCapsule` added to a body: no mass, its own surface. */
+interface AddedShape {
+  readonly body: BodyId;
+  readonly segment: Segment;
+  readonly radius: number;
+  surface: Surface;
+  b2Id: b2ShapeId;
 }
 
 /**
@@ -214,6 +230,8 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
   const beginPoints = new Map<string, Vec2>();
   const bonds = new Map<BondId, BondRecord>();
   let nextBondId = 1;
+  /** Every shape `addCapsule` added, on bodies still there. */
+  const added = new Map<ShapeId, AddedShape>();
   /**
    * Bodies rebuilt since the last step. The engine forgets their contacts
    * without an end event and reports them beginning again, so their pairs
@@ -236,12 +254,14 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     position: b2Vec2,
     rotation?: b2Rot,
     angularDamping = 0,
+    bullet = false,
   ): b2BodyId {
     const def = b2DefaultBodyDef();
     def.type = type;
     def.position = position;
     if (rotation) def.rotation = rotation;
     def.angularDamping = angularDamping;
+    def.isBullet = bullet;
     def.userData = id;
     return b2CreateBody(worldId, def);
   }
@@ -259,6 +279,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       b2Id,
       kind,
       shapes,
+      added: [],
       frozen: false,
       parts: [],
       surface,
@@ -306,12 +327,40 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
   function addShapes(rec: BodyRecord): void {
     if (rec.radius !== undefined) {
       const def = shapeDef(rec.shapes[0]!, rec.surface, true, rec.density);
+      if (rec.group) def.filter.groupIndex = -rec.group;
       b2CreateCircleShape(rec.b2Id, def, new b2Circle(new b2Vec2(0, 0), toM(rec.radius)));
       return;
     }
     rec.parts.forEach((part, k) =>
       addPolygon(rec.b2Id, rec.shapes[k]!, part, rec.surface, true, rec.density),
     );
+  }
+
+  /**
+   * Creates a shape `addCapsule` added on its body's (new) body. It has no
+   * density, so the body's mass stays as it is, and it reports hits as the
+   * body's own shapes do. On a fixed body it finds what already overlaps it
+   * at once.
+   */
+  function createAddedShape(id: ShapeId, shape: Omit<AddedShape, 'b2Id'>): b2ShapeId {
+    const rec = record(shape.body);
+    const hitEvents = rec.kind === 'object' || rec.kind === 'circle';
+    const def = shapeDef(id, shape.surface, hitEvents, 0);
+    def.forceContactCreation = true;
+    const capsule = new b2Capsule();
+    capsule.center1 = toB2(shape.segment.a);
+    capsule.center2 = toB2(shape.segment.b);
+    capsule.radius = toM(shape.radius);
+    return b2CreateCapsuleShape(rec.b2Id, def, capsule);
+  }
+
+  /** A body's own shapes in the engine, leaving out those `addCapsule` added. */
+  function ownShapes(rec: BodyRecord): b2ShapeId[] {
+    const shapes: b2ShapeId[] = [];
+    const count = b2Body_GetShapes(rec.b2Id, shapes);
+    return shapes
+      .slice(0, count)
+      .filter((shape) => !added.has(b2Shape_GetUserData(shape) as ShapeId));
   }
 
   /** A circle's mass at density 1, about its centre. */
@@ -476,7 +525,11 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     const damping = rec.kind === 'circle' ? CIRCLE_ANGULAR_DAMPING : 0;
     rec.b2Id = makeB2Body(id, type, position, rotation, damping);
     addShapes(rec);
-    // Destroying the body destroyed its joints.
+    // Destroying the body destroyed its added shapes and its joints.
+    for (const id of rec.added) {
+      const shape = added.get(id)!;
+      shape.b2Id = createAddedShape(id, shape);
+    }
     for (const bond of bonds.values()) if (bond.a === id || bond.b === id) reweld(bond);
   }
 
@@ -720,6 +773,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     beginPoints.clear();
     bonds.clear();
     nextBondId = 1;
+    added.clear();
   }
 
   const world: PhysicsWorld = {
@@ -758,6 +812,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
         b2Id,
         kind: 'object',
         shapes: newShapeIds(def.parts.length),
+        added: [],
         frozen: def.frozen,
         parts: def.parts,
         surface: def.surface,
@@ -780,15 +835,19 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
           toB2(def.position),
           b2MakeRot(def.angle ?? 0),
           CIRCLE_ANGULAR_DAMPING,
+          def.bullet ?? false,
         ),
         kind: 'circle',
         shapes: newShapeIds(1),
+        added: [],
         frozen: false,
         parts: [],
         radius: def.radius,
         surface: def.surface,
         unit,
         density: def.mass / unit.area,
+        ...(def.group !== undefined && { group: def.group }),
+        ...(def.wakes !== undefined && { wakes: def.wakes }),
       };
       bodies.set(id, rec);
       addShapes(rec);
@@ -802,6 +861,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       bodies.delete(id);
       sliding.delete(id);
       rebuilt.delete(id);
+      for (const shape of rec.added) added.delete(shape);
       // Its joints went with it.
       for (const [bondId, bond] of bonds) if (bond.a === id || bond.b === id) bonds.delete(bondId);
       // The engine's end events for these are lost at the next step's start.
@@ -810,6 +870,38 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
         touching.delete(key);
         pendingEnds.push(pair);
       }
+    },
+
+    addCapsule(body, segment, radius, surface) {
+      const rec = record(body);
+      const id = nextShapeId++ as ShapeId;
+      const shape = { body, segment, radius, surface };
+      added.set(id, { ...shape, b2Id: createAddedShape(id, shape) });
+      rec.added.push(id);
+      return id;
+    },
+
+    removeShape(id) {
+      const shape = added.get(id);
+      if (!shape) return;
+      added.delete(id);
+      const rec = record(shape.body);
+      rec.added.splice(rec.added.indexOf(id), 1);
+      b2DestroyShape(shape.b2Id);
+      // The engine's end events for these are lost at the next step's start.
+      for (const [key, pair] of touching) {
+        if (pair.shapeA !== id && pair.shapeB !== id) continue;
+        touching.delete(key);
+        pendingEnds.push(pair);
+      }
+    },
+
+    setShapeSurface(id, surface) {
+      const shape = added.get(id);
+      if (!shape) return;
+      shape.surface = surface;
+      b2Shape_SetFriction(shape.b2Id, surface.friction);
+      b2Shape_SetRestitution(shape.b2Id, surface.restitution);
     },
 
     step() {
@@ -858,7 +950,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
         for (const [frozenId, hitterId, sign] of sides) {
           const frozen = bodies.get(frozenId);
           const hitter = bodies.get(hitterId);
-          if (!frozen?.frozen || !hitter) continue;
+          if (!frozen?.frozen || !hitter || hitter.wakes === false) continue;
           if (b2Body_GetType(hitter.b2Id) !== b2BodyType.b2_dynamicBody) continue;
           const motion = before.get(hitterId);
           if (!motion) continue;
@@ -939,11 +1031,9 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     setSurface(id, surface) {
       const rec = record(id);
       rec.surface = surface;
-      const shapes: b2ShapeId[] = [];
-      const count = b2Body_GetShapes(rec.b2Id, shapes);
-      for (let i = 0; i < count; i++) {
-        b2Shape_SetFriction(shapes[i]!, surface.friction);
-        b2Shape_SetRestitution(shapes[i]!, surface.restitution);
+      for (const shape of ownShapes(rec)) {
+        b2Shape_SetFriction(shape, surface.friction);
+        b2Shape_SetRestitution(shape, surface.restitution);
       }
     },
 
@@ -965,9 +1055,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       rec.density = rec.unit.area > 0 ? mass / rec.unit.area : 0;
       // A fixed body has no mass; a Frozen Object gets its density when it unfreezes.
       if (rec.frozen) return;
-      const shapes: b2ShapeId[] = [];
-      const count = b2Body_GetShapes(rec.b2Id, shapes);
-      for (let i = 0; i < count; i++) b2Shape_SetDensity(shapes[i]!, rec.density);
+      for (const shape of ownShapes(rec)) b2Shape_SetDensity(shape, rec.density);
       b2Body_ApplyMassFromShapes(rec.b2Id);
     },
 

@@ -54,8 +54,9 @@ export class MaterialRules {
    * Applies a step's hits, as the Contact ledger gives them: each party
    * takes the strongest hit of the step from each Stroke it hit (several
    * shapes of one body, or several Pieces of one Line, hitting at once are
-   * one impact), and is damaged by it against its own threshold. Returns
-   * what broke, in the order the hits first reached it.
+   * one impact), and is damaged by it against its own threshold. Hits with
+   * a harmless Party (a Droplet) deal no damage either way. Returns what
+   * broke, in the order the hits first reached it.
    */
   applyStep<T extends Breakable>(hits: readonly PartyHit<T>[]): T[] {
     if (hits.length === 0) return [];
@@ -69,6 +70,7 @@ export class MaterialRules {
       else if (current.impulse < impulse) current.impulse = impulse;
     };
     for (const { a, b, hit } of hits) {
+      if (a.harmless || b.harmless) continue;
       take(a, b, hit.impulse);
       take(b, a, hit.impulse);
     }

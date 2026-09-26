@@ -46,8 +46,10 @@ export interface Party<T> {
    */
   readonly stroke: PartyId;
   readonly body: BodyId;
-  /** What takes damage on this side, or null (Terrain, Rubble). */
+  /** What takes damage on this side, or null (Terrain, Rubble, Droplets). */
   readonly target: T | null;
+  /** True for a Droplet: it deals no damage, and nothing sticks to it. */
+  readonly harmless?: boolean;
 }
 
 /** A hit that counts, between two Parties. */

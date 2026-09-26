@@ -140,7 +140,7 @@ The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with ph
 ### Simulation
 
 **Arena contents**:
-Everything the simulation tracks and Reset brings back: Strokes (with their Pieces and Fills), Rubble, Bonds, and later Droplets, Patches, Blasts and enemies. Debris is not part of it.
+Everything the simulation tracks and Reset brings back: Strokes (with their Pieces and Fills), Rubble, Bonds, Droplets, Patches, and later Blasts and enemies. Debris is not part of it.
 _Avoid_: Entities, world state
 
 **Settled**:
