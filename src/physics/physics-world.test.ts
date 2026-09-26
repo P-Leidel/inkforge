@@ -285,6 +285,43 @@ describe('Circle bodies', () => {
     expect(wakes(20)).toBe(false);
   });
 
+  it('wake a Frozen Object of several parts, and every hit between the two plays out as a free collision', () => {
+    const world = createWorld();
+    const box = world.addObject({
+      position: { x: 500, y: 300 },
+      // Two halves meeting under the circle: it hits both in one step.
+      parts: [
+        [
+          { x: -20, y: -20 },
+          { x: 0, y: -20 },
+          { x: 0, y: 20 },
+          { x: -20, y: 20 },
+        ],
+        [
+          { x: 0, y: -20 },
+          { x: 20, y: -20 },
+          { x: 20, y: 20 },
+          { x: 0, y: 20 },
+        ],
+      ],
+      frozen: true,
+      surface: DEAD,
+      mass: 1,
+    });
+    const ball = world.addCircle(
+      circle({ position: { x: 500, y: 260 }, mass: 1, velocity: { x: 0, y: 600 } }),
+    );
+
+    const { hits } = stepUntilHit(world);
+    const between = hits.filter((hit) => new Set([hit.bodyA, hit.bodyB, box, ball]).size === 2);
+    const partsHit = new Set(between.map((hit) => (hit.bodyA === box ? hit.shapeA : hit.shapeB)));
+
+    expect(world.isFrozen(box)).toBe(false);
+    expect(partsHit.size).toBe(2);
+    // Two equal masses share the hit; against a wall the ratio would be 1.
+    for (const hit of between) expect(hit.impulse / hit.speed).toBeCloseTo(0.5, 1);
+  });
+
   it('of one group pass through each other, and hit circles of none', () => {
     function meet(groups: [number | undefined, number | undefined]): boolean {
       const world = createWorld();

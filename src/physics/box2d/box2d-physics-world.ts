@@ -919,6 +919,8 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
 
       const hits: ContactHit[] = [];
       const wakes = new Map<BodyId, Wake>();
+      // Each hit on a Frozen Object, with the impulse it has between two free bodies.
+      const onFrozen: { k: number; frozen: BodyId; hitter: BodyId; j: number }[] = [];
       for (const event of b2World_GetContactEvents(worldId).hitEvents) {
         const pair = pairOf(event.shapeIdA, event.shapeIdB);
         const a = pair.bodyA;
@@ -969,6 +971,7 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
             towards,
             restitution,
           );
+          onFrozen.push({ k: hits.length - 1, frozen: frozenId, hitter: hitterId, j });
           const push = j * target.invMass;
           if (toPx(push) <= options.wakeSpeed) continue;
           const current = wakes.get(frozenId);
@@ -976,15 +979,11 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
           wakes.set(frozenId, { hitter: hitterId, motion, point, normal: towards, j, push });
         }
       }
-      for (const [frozenId, wake] of wakes) {
-        wakeByHit(frozenId, wake);
-        // The hit that woke it played out between two free bodies.
-        const k = hits.findIndex(
-          (hit) =>
-            (hit.bodyA === frozenId && hit.bodyB === wake.hitter) ||
-            (hit.bodyB === frozenId && hit.bodyA === wake.hitter),
-        );
-        if (k >= 0) hits[k] = { ...hits[k]!, impulse: toPx(wake.j) };
+      for (const [frozenId, wake] of wakes) wakeByHit(frozenId, wake);
+      // A woken Object's hits with its hitter played out between two free
+      // bodies, on every pair of their shapes that hit.
+      for (const { k, frozen, hitter, j } of onFrozen) {
+        if (wakes.get(frozen)?.hitter === hitter) hits[k] = { ...hits[k]!, impulse: toPx(j) };
       }
       return { hits, begins, ends };
     },
