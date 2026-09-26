@@ -746,7 +746,7 @@ flowchart LR
     <h3>Corrections</h3>
     <ul class="points">
       <li>"The Eraser repeated the pairs" (the queue today, C2). Each kind already pairs its calls in a private <code>removeBody</code> (strokes.ts 363, rubble.ts 312, droplets.ts 166), and <code>erase</code> uses it. What the Eraser added is the <code>passOnGone</code> after each kind's turn (sandbox-world.ts 338–341).</li>
-      <li>"ADR 0001's verdict and #22 both pass" (#35). #22 is open: the Demolition reading on the baseline machine and the blind check are still to do. #35's closing stands on ADR 0001 alone. The top recommendation's "#22's Chrome reading" is now a reading in Firefox on the baseline machine.</li>
+      <li>"ADR 0001's verdict and #22 both pass" (#35) came early. When the review was filed, #22 was still open, with the Demolition reading on the baseline machine and the blind check to do. It has since been closed with both done, and #35's closing stood on ADR 0001 in any case. The top recommendation's "#22's Chrome reading" was a reading in Firefox on the baseline machine.</li>
       <li>"Closes a drift that has already happened" (top recommendation). The <code>bullet</code> drift is in the code but has no effect yet: only Objects are rebuilt, and circles are always created moving.</li>
       <li>"7 open tickets become 4." #38 stays open, so 5 stay open; the queue itself goes from 7 to 4, and to 5 with the split.</li>
       <li>#34's last acceptance criterion pointed at <code>docs/handoffs/README.md</code>, deleted in 5e1e174, and #40 cited it too. Both now point at the code.</li>
