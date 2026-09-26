@@ -39,7 +39,7 @@ describe('Readings', () => {
       'since start  53.5 fps   longest 24.1 ms   1% low 41 fps',
       '             3 frames   >20 ms: 1   >33 ms: 0',
       'ms, last 1 s physics 0.4 (max 0.4)   draw 0.3 (max 0.3)',
-      '             render 4.8 (max 4.8)   steps 1',
+      '             render 4.8 (max 4.8)   steps 60 · 0.4 ms each',
       'bodies       83: Pieces 24   Objects 7   Rubble 62',
       '             Droplets 3   Patches 23   Blasts 1   Debris 40',
       'render       Graphics 31 · 6,212 commands   Text 29   objects 150',

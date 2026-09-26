@@ -113,8 +113,13 @@ export interface RecentSummary {
   readonly physicsMs: { readonly mean: number; readonly max: number };
   readonly drawMs: { readonly mean: number; readonly max: number };
   readonly renderMs: { readonly mean: number; readonly max: number };
-  /** Physics steps in the latest frame. */
+  /**
+   * Physics steps over these frames. A frame takes a whole number of fixed
+   * steps, so above 60 fps most frames take none, and one frame says little.
+   */
   readonly steps: number;
+  /** Physics time per step over these frames, ms; null without a step. */
+  readonly msPerStep: number | null;
 }
 
 /** The last `capacity` frames, oldest first, for the frame graph. */
@@ -144,6 +149,8 @@ export class RecentFrames {
     let totalMs = 0;
     let frames = 0;
     let longestMs = 0;
+    let steps = 0;
+    let physicsTotal = 0;
     const physics = { mean: 0, max: 0 };
     const draw = { mean: 0, max: 0 };
     const render = { mean: 0, max: 0 };
@@ -152,6 +159,8 @@ export class RecentFrames {
       totalMs += record.ms;
       frames++;
       longestMs = Math.max(longestMs, record.ms);
+      steps += record.steps;
+      physicsTotal += record.physicsMs;
       for (const [phase, ms] of [
         [physics, record.physicsMs],
         [draw, record.drawMs],
@@ -169,7 +178,8 @@ export class RecentFrames {
       physicsMs: physics,
       drawMs: draw,
       renderMs: render,
-      steps: newest.steps,
+      steps,
+      msPerStep: steps > 0 ? physicsTotal / steps : null,
     };
   }
 }

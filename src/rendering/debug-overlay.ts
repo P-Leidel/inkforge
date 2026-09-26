@@ -176,7 +176,13 @@ export class DebugOverlay {
     let commands = 0;
     let texts = 0;
     let images = 0;
-    const list = this.scene.children.list;
+    // The game's load: the overlay's own panel, colliders and labels are left out.
+    const own = new Set<Phaser.GameObjects.GameObject>([
+      ...this.panel.objects,
+      this.colliders,
+      ...this.labels,
+    ]);
+    const list = this.scene.children.list.filter((child) => !own.has(child));
     const baked = bakedTextureUse();
     for (const child of list) {
       if (child instanceof Phaser.GameObjects.Graphics && child.visible) {
@@ -220,6 +226,11 @@ export class DebugOverlay {
     const text = [
       `Inkforge readings, ${new Date().toISOString()}`,
       `scene        ${this.sceneName}, ${this.world.isRunning ? 'running' : 'paused'}`,
+      `F1           ${
+        this.level === 'debug'
+          ? 'debug view: its colliders and labels add to the frame times'
+          : this.level
+      }`,
       `browser      ${navigator.userAgent}`,
       `GPU          ${gpuName(game.renderer)}`,
       `screen       ${this.scene.scale.width}×${this.scene.scale.height} shown at ` +
