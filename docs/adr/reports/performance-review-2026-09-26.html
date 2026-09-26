@@ -299,9 +299,9 @@
         <li><span><b>R1 + R6</b>, one small PR. It removes a texture upload from every frame. No change to the look or the simulation. <b>Done</b>, with A2's thinner grey grain (see below).</span></li>
         <li><span><b>M1</b>, the new F1 overlay. Everything after this is measured with it, and it is the tool #22 reads. <b>Done</b> (see below).</span></li>
         <li><span><b>R2</b>, Rubble as shared textures. It removes the largest single cost (80% of commands after the chain). It also proves the baking approach on the simplest case: Rubble never changes its look. <b>Done</b> (see below).</span></li>
-        <li><span><b>T1</b>, the Eraser. It makes testing fast: clear a wall, re-run a chain.</span></li>
-        <li><span><b>R3</b>, bake Strokes, Patches and the static UI (candidate 7 of the review after #19, now justified by these measurements). A1 is only needed if R3 slips.</span></li>
+        <li><span><b>R3</b>, bake Strokes, Patches and the static UI (candidate 7 of the review after #19, now justified by these measurements). A1 is only needed if R3 slips. <b>Done</b> (see below).</span></li>
         <li><span><b>M2</b>, a render budget test in Vitest, so an ink look can't quietly bring the cost back.</span></li>
+        <li><span><b>T1</b>, the Eraser, moved after R3 and M2. It makes testing fast: clear a wall, re-run a chain.</span></li>
         <li><span>Re-run #22 on the laptop with the new F1 readings. Then <b>R4</b>/<b>R5</b> if the longest frame is still over 33 ms. Keep <b>A3</b> for when the placeholder art is replaced.</span></li>
       </ol>
       <p class="muted" style="font-size:13px">Expected result after steps 1, 3 and 5: the per-frame Graphics replay drops from about 53k commands to the few thousand that really move (Debris, Droplets, Blast rings, bonds). That matches the green rows above.</p>
