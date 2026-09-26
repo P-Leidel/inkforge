@@ -4,6 +4,7 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, ContactPair, ShapeId } from '../physics';
 import type { HostSurface } from './arena-contents';
+import type { BlastSize } from './blasts';
 import type { NewContact, Party, PartyHit, Touching } from './contact-ledger';
 import type { Landing, LooseDroplet } from './droplets';
 import {
@@ -161,8 +162,8 @@ export class FakeArena<T, S> implements RulesArena<T, S> {
     this.log.push({ what: 'droplets', with: droplets });
   }
 
-  addBlast(centre: Vec2, ink: number): void {
-    this.log.push({ what: 'blast', with: { centre, ink } });
+  addBlast(centre: Vec2, size: BlastSize): void {
+    this.log.push({ what: 'blast', with: { centre, size } });
   }
 
   bond(sticker: S, host: Party<unknown>, point: Vec2): void {

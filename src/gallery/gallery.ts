@@ -43,7 +43,10 @@ function letGo(world: SandboxWorld, objects: readonly (StrokeId | [StrokeId, Vec
   world.togglePause();
 }
 
-/** The same grey ball dropped onto a Line of each Colour: blue bounces it back up. */
+/**
+ * The same grey ball dropped onto a Line of each Colour: blue bounces it
+ * back up, and the red Line goes off under it and burns away.
+ */
 export const BOUNCE_DEMO: Demo = {
   name: 'Bounce',
   build(world) {
@@ -371,6 +374,62 @@ export const SHRAPNEL_DEMO: Demo = {
   },
 };
 
+/**
+ * A red Line winding down across the Arena, lit by a bomb dropped on its
+ * far end: it burns Piece by Piece like a fuse, each Piece's small Blast
+ * destroying the next, round every bend, to a Frozen bomb at its end. The
+ * bomb's Blast knocks loose the two Frozen boxes above it.
+ */
+export const FUSE_DEMO: Demo = {
+  name: 'Fuse',
+  build(world) {
+    drawLine(
+      world,
+      [
+        { x: 200, y: 500 },
+        { x: 420, y: 560 },
+        { x: 560, y: 480 },
+        { x: 760, y: 640 },
+        { x: 960, y: 560 },
+        { x: 1160, y: 760 },
+        { x: 1360, y: 760 },
+      ],
+      'red',
+    );
+    bomb(world, { x: 1390, y: 756 });
+    drawObject(world, dragBox(1360, 640, 60, 60), 'grey');
+    drawObject(world, dragBox(1430, 690, 50, 50), 'grey');
+    letGo(world, [bomb(world, { x: 215, y: 150 })]);
+  },
+};
+
+/**
+ * Two red mine strips, each under a falling box. A hollow box set down on
+ * one gently leaves it alone. A grey-filled box dropped from high on the
+ * other sets it off: the strip burns from where the box landed to both
+ * ends, and its Blasts break the box and throw its pebbles.
+ */
+export const MINES_DEMO: Demo = {
+  name: 'Mines',
+  build(world) {
+    for (const x of [300, 900]) {
+      drawLine(
+        world,
+        [
+          { x, y: 760 },
+          { x: x + 400, y: 760 },
+        ],
+        'red',
+      );
+    }
+    // Its bottom 5 px above the strip's surface.
+    const gentle = drawObject(world, dragBox(470, 691, 60, 60), 'grey');
+    const dropped = drawObject(world, dragBox(1030, 150, 60, 60), 'grey');
+    world.fillAt({ x: 1060, y: 180 }, 'grey');
+    letGo(world, [gentle, dropped]);
+  },
+};
+
 export const GALLERY: readonly Demo[] = [
   BOUNCE_DEMO,
   SLIDE_DEMO,
@@ -384,4 +443,6 @@ export const GALLERY: readonly Demo[] = [
   SPILL_DEMO,
   CHAIN_DEMO,
   SHRAPNEL_DEMO,
+  FUSE_DEMO,
+  MINES_DEMO,
 ];

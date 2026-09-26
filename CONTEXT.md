@@ -71,7 +71,7 @@ The player's action of unfreezing an Object during a Wave.
 _Avoid_: Activate, trigger, drop
 
 **Squeeze**:
-What happens to an Object a new Line is drawn across: it slides the shortest way off the Line, passing through Terrain and Lines, then carries on from rest. It deals and takes no damage while it slides.
+What happens to an Object a new Line is drawn across: it slides the shortest way off the Line, passing through Terrain and Lines, then carries on from rest, touching the Line it slid off. It deals and takes no damage while it slides, and what it touches where it stops is Settled.
 _Avoid_: Push-out, overlap
 
 ### Breaking
@@ -144,7 +144,7 @@ Everything the simulation tracks and Reset brings back: Strokes (with their Piec
 _Avoid_: Entities, world state
 
 **Settled**:
-Two things already touching when physics starts. Their contact deals no damage, sticks nothing and lands no Droplet until they come apart.
+Two things already touching when physics starts, or when a Squeeze ends. Their contact deals no damage, sticks nothing and lands no Droplet until they come apart.
 _Avoid_: Resting contact
 
 **Bond**:

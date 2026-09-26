@@ -6,7 +6,7 @@ Do not add Claude as a co-author. Leave `Co-Authored-By: Claude ...` trailers (a
 
 ## Milestone 2 handoffs
 
-Issues #20 and #21 each have a handoff in `docs/handoffs/`. Before starting one of them, read `docs/handoffs/README.md` and that issue's handoff.
+Issue #21 has a handoff in `docs/handoffs/`. Before starting it, read `docs/handoffs/README.md` and its handoff.
 
 ## Agent skills
 

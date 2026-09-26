@@ -77,3 +77,19 @@ function capsules(points: readonly Vec2[], maxLength: number): Segment[] {
   }
   return out;
 }
+
+/**
+ * A Piece's centre: the point halfway along its capsules, which follow one
+ * another end to end.
+ */
+export function pieceCentre(segments: readonly Segment[]): Vec2 {
+  const lengths = segments.map(({ a, b }) => distance(a, b));
+  let left = lengths.reduce((sum, length) => sum + length, 0) / 2;
+  for (let k = 0; k < segments.length; k++) {
+    const { a, b } = segments[k]!;
+    const length = lengths[k]!;
+    if (left <= length) return lerp(a, b, length > 0 ? left / length : 0);
+    left -= length;
+  }
+  return segments.at(-1)!.b;
+}

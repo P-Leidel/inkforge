@@ -157,7 +157,7 @@ describe('The Contact ledger', () => {
     expect(touchingOf(ledger, box)).toEqual(['terrain']);
   });
 
-  it('leaves a Squeezed Object out of every channel, and counts its hits but no new contacts in the step its slide ends', () => {
+  it('leaves a Squeezed Object out of every channel, and Settles what it touches in the step its slide ends', () => {
     const { ledger, slides } = setup();
     const [terrain, line, box, ball] = [
       party(0, 1, 'terrain'),
@@ -175,15 +175,25 @@ describe('The Contact ledger', () => {
     expect(touchingOf(ledger, box)).toEqual([]);
     expect(touchingOf(ledger, ball)).toEqual([]);
 
-    // It arrives: rebuilt as a moving body, it touches the Line it slid off.
+    // It arrives: rebuilt as a moving body from rest, it touches the Line it
+    // slid off, and settles onto it as if physics had just started.
     slides.delete(box.body);
     ledger.step(report({ begins: [pair(line, box)], hits: [hit(line, box, 400)] }));
-    expect(hitsOf(ledger)).toEqual([['line', 'box', 400]]);
+    expect(hitsOf(ledger)).toEqual([]);
     expect(newOf(ledger)).toEqual([]);
     expect(touchingOf(ledger, box)).toEqual(['ball', 'line']);
+    ledger.step(report({ hits: [hit(line, box, 400), hit(ball, box, 300)] }));
+    expect(hitsOf(ledger)).toEqual([]);
 
-    ledger.step(report({ begins: [pair(terrain, box)] }));
+    ledger.step(report({ begins: [pair(terrain, box)], hits: [hit(terrain, box, 200)] }));
     expect(newOf(ledger)).toEqual([['terrain', 'box', 0, 20]]);
+    expect(hitsOf(ledger)).toEqual([['terrain', 'box', 200]]);
+
+    // Once it has come apart from the ball, the two count again.
+    ledger.step(report({ ends: [pair(box, ball)] }));
+    ledger.step(report({ begins: [pair(box, ball)], hits: [hit(ball, box, 500)] }));
+    expect(newOf(ledger)).toEqual([['box', 'ball', 20, 30]]);
+    expect(hitsOf(ledger)).toEqual([['ball', 'box', 500]]);
   });
 
   it('keeps two Parties touching through two shape pairs as one entry until both end', () => {

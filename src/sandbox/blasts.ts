@@ -50,6 +50,11 @@ export function blastSize(ink: number, table: MaterialTable): BlastSize {
   };
 }
 
+/** A destroyed Piece's Blast: of a fixed size, whatever its red ink. */
+export function pieceBlastSize(table: MaterialTable): BlastSize {
+  return { reach: table.blast.pieceRadius, strength: table.blast.pieceStrength };
+}
+
 /** A Blast's strength at `distance` from its centre: S × (1 − d/R)², 0 beyond R. */
 export function blastStrength({ reach, strength }: BlastSize, distance: number): number {
   const left = 1 - clamp(distance, 0, reach) / reach;
@@ -117,11 +122,17 @@ export class Blasts<T> implements Kind<'blasts', readonly SavedBlast[], readonly
     }));
   }
 
-  /** Starts a Blast of `ink` px² of red ink at `centre`; its ring grows from the next `spread`. */
-  add(centre: Vec2, ink: number): void {
+  /** Starts a Blast of `size` at `centre`; its ring grows from the next `spread`. */
+  add(centre: Vec2, { reach, strength }: BlastSize): void {
     const { x, y } = centre;
-    const size = blastSize(ink, this.materials);
-    this.blasts.push({ id: this.nextId++, centre: { x, y }, radius: 0, ...size, acted: new Set() });
+    this.blasts.push({
+      id: this.nextId++,
+      centre: { x, y },
+      radius: 0,
+      reach,
+      strength,
+      acted: new Set(),
+    });
   }
 
   /**

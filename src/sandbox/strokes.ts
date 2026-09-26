@@ -13,6 +13,7 @@ import type { Colour } from '../materials/colour';
 import { fillMass, outlineMass } from '../materials/mass';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
+import { pieceCentre } from '../stroke/pieces';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
 import type { Arena } from './arena';
 import { motionOf, type HostSurface, type Kind, type Motion, type Solids } from './arena-contents';
@@ -27,6 +28,13 @@ export const SLIDE_OUT_SPEED = 250;
  * moving Object resting on a Line sinks into it a little, and isn't squeezed.
  */
 const SQUEEZE_TOLERANCE = 1;
+/**
+ * How far (px) a squeezed Object ends up clear of the Lines it slides off.
+ * Less than the engine's contact margin (1 px), so it restarts touching the
+ * Line under it, rather than dropping onto it: a heavy Object dropping even
+ * 1 px would hit a red Line hard enough to damage it.
+ */
+const SQUEEZE_MARGIN = 0.5;
 
 export type StrokeId = number;
 
@@ -180,6 +188,13 @@ export interface BrokenOutline {
   readonly centre: Vec2;
 }
 
+/** A broken Piece, which explodes if its Line Colour does. */
+export interface BrokenPiece {
+  readonly colour: Colour;
+  /** Its centre, halfway along it. */
+  readonly centre: Vec2;
+}
+
 /** What breaking a Piece or an Object lets out: the Material rules decide what follows. */
 export interface Broken {
   /** What Debris bursts from: an Outline or band in world coordinates, moving and coloured so. */
@@ -192,6 +207,8 @@ export interface Broken {
   readonly fill: ReleasedFill | null;
   /** A broken Object's Outline; null for a Piece. */
   readonly outline: BrokenOutline | null;
+  /** A broken Piece; null for an Object. */
+  readonly piece: BrokenPiece | null;
 }
 
 /**
@@ -414,6 +431,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
         parts,
         crossing.map((c) => capsulePolygon(c.segment, c.radius)),
         [...this.arena.terrain, ...others, ...clearOf],
+        SQUEEZE_MARGIN,
       );
       if (move) this.slideOut(object.body, move);
       else this.physics.release(object.body);
@@ -516,6 +534,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
         length: polygonPerimeter(local),
         centre: { x: from.transform.x, y: from.transform.y },
       },
+      piece: null,
     };
   }
 
@@ -533,6 +552,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       },
       fill: null,
       outline: null,
+      piece: { colour: line.colour, centre: pieceCentre(piece.segments) },
     };
   }
 

@@ -28,7 +28,7 @@ A worst-case scene for performance: a chain of red bombs tearing through filled 
 - **a wall of mixed-Colour Lines** in the Blasts' way.
 - **a trigger,** e.g. the first bomb dropped from a height, or a ball Released at it.
 
-Don't make the boxes red, or fill anything red: the scene has exactly 5 Blasts. The boxes break from Blasts, from Rubble, or from falls after a Blast wakes them. A grey Outline takes Blast damage only above 400 of strength and has 2400 of durability, so a Blast alone rarely breaks a grey box; the Shrapnel demo (`SHRAPNEL_DEMO`) shows a bomb's pebbles knocking things loose beyond its reach. Tune the layout until the chain reliably plays out.
+Don't make the boxes red, fill anything red or put red in the wall: the scene has exactly 5 Blasts. Since #20 every red Piece a Blast or a hit destroys makes a Blast of its own (`blast.pieceRadius` 100, `blast.pieceStrength` 2400), so a red Line in the wall burns end to end and adds one Blast per Piece. The boxes break from Blasts, from Rubble, or from falls after a Blast wakes them. A grey Outline takes Blast damage only above 400 of strength and has 2400 of durability, so a Blast alone rarely breaks a grey box; the Shrapnel demo (`SHRAPNEL_DEMO`) shows a bomb's pebbles knocking things loose beyond its reach. Tune the layout until the chain reliably plays out.
 
 **Headless test.** The chain plays out: all 5 Blasts go off, about 60 Rubble and about 30 Droplets.
 
@@ -49,7 +49,7 @@ Don't make the boxes red, or fill anything red: the scene has exactly 5 Blasts. 
 ## Watch out for
 
 - **Headless step times.** If p99 is over 16.7 ms (a 60 fps frame), look at what #16–#20 do per step before blaming the engine:
-  - Blast queries: one `physics.bodiesWithin` per spreading Blast per step (a bounding-box query, then the nearest point of each shape in it);
+  - Blast queries: one `physics.bodiesWithin` per spreading Blast per step (a bounding-box query, then the nearest point of each shape in it). A burning red Line has several spreading at once, about one per two Pieces; the Fuse demo (28 Pieces) is a ready-made case to time;
   - the Material rules' phases, above all the glue drag loop (`rules.glue`);
   - Rubble piles and the 64-entry contact buffer;
   - Patch bookkeeping.
