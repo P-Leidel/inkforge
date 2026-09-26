@@ -1,8 +1,9 @@
 import { applyTransform } from '../geometry/transform';
 import { rotate, sub, type Vec2 } from '../geometry/vec2';
 import type { BodyId, BondAnchors, BondId, PhysicsWorld } from '../physics';
-import type { Kind, Solids } from './arena-contents';
+import type { Kind, Poses, Solids } from './arena-contents';
 import type { ContactLedger, PartyId } from './contact-ledger';
+import type { PreviousPoses } from './previous-poses';
 import type { StrokeId } from './strokes';
 
 /**
@@ -19,6 +20,8 @@ export interface BondView {
   readonly object: StrokeId;
   /** Where the bond holds, in the world: where the two touched as it stuck. */
   readonly point: Vec2;
+  /** The stuck Object's poses: drawn between them, the bond moves with it as drawn. */
+  readonly objectPoses: Poses;
 }
 
 interface BondRecord {
@@ -47,14 +50,19 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
   constructor(
     private readonly physics: PhysicsWorld,
     private readonly parties: Pick<ContactLedger<unknown>, 'party'>,
+    private readonly poses: Pick<PreviousPoses, 'of'>,
   ) {}
 
   get views(): readonly BondView[] {
-    return this.bonds.map(({ id, object, body, bond }) => ({
-      id,
-      object,
-      point: applyTransform(this.physics.getBond(bond)!.onA, this.physics.getTransform(body)),
-    }));
+    return this.bonds.map(({ id, object, body, bond }) => {
+      const objectPoses = this.poses.of(body);
+      return {
+        id,
+        object,
+        point: applyTransform(this.physics.getBond(bond)!.onA, objectPoses.transform),
+        objectPoses,
+      };
+    });
   }
 
   /** Sticks Object `object`, Party `stuck`, to Party `host` at `point`, holding the two as they are now. */

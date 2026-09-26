@@ -5,14 +5,15 @@ import {
 } from '../geometry/segment';
 import { bandPolygon } from '../geometry/separation';
 import type { Polygon } from '../geometry/polygon';
-import { applyTransform } from '../geometry/transform';
+import { applyTransform, type Transform } from '../geometry/transform';
 import { rotate, sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld, ShapeId } from '../physics';
-import type { HostSurface, Kind, Solids } from './arena-contents';
+import type { HostSurface, Kind, Poses, Solids } from './arena-contents';
 import { brushTouchesCapsules, type Brush } from './brush';
 import type { ContactLedger, Party, PartyId } from './contact-ledger';
+import type { PreviousPoses } from './previous-poses';
 
 /**
  * Patches: the strips of ink Droplets leave where they land. A Patch is a
@@ -138,6 +139,8 @@ export interface PatchView {
   readonly colour: Colour;
   /** Its centre line in the world, where its host is now. */
   readonly segment: Segment;
+  /** Its host's poses: drawn between them, it moves with its host as drawn. */
+  readonly hostPoses: Poses;
   readonly thickness: number;
   /** How used up it is, from 0 (fresh) to 1 (gone). */
   readonly wear: number;
@@ -189,20 +192,28 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
     private readonly parties: Pick<ContactLedger<unknown>, 'party'>,
+    private readonly poses: Pick<PreviousPoses, 'of'>,
   ) {}
 
   get views(): readonly PatchView[] {
-    return this.patches.map((patch) => ({
-      id: patch.id,
-      colour: patch.colour,
-      segment: this.worldSegment(patch),
-      thickness: patch.thickness,
-      wear: Math.min(1, patch.used / this.capacity(patch)),
-    }));
+    return this.patches.map((patch) => {
+      const hostPoses = this.poses.of(patch.body);
+      return {
+        id: patch.id,
+        colour: patch.colour,
+        segment: this.worldSegment(patch, hostPoses.transform),
+        hostPoses,
+        thickness: patch.thickness,
+        wear: Math.min(1, patch.used / this.capacity(patch)),
+      };
+    });
   }
 
-  private worldSegment({ body, segment }: PatchRecord): Segment {
-    const transform = this.physics.getTransform(body);
+  /** Its centre line in the world, with its host at `transform`: where it is now by default. */
+  private worldSegment(
+    { body, segment }: PatchRecord,
+    transform: Transform = this.physics.getTransform(body),
+  ): Segment {
     return { a: applyTransform(segment.a, transform), b: applyTransform(segment.b, transform) };
   }
 

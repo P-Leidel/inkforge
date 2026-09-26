@@ -1,13 +1,13 @@
 import { polygonArea, type Polygon } from '../geometry/polygon';
-import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import type { Arena } from './arena';
-import { motionOf, type Kind, type Motion, type Solids } from './arena-contents';
+import { motionOf, type Kind, type Motion, type Poses, type Solids } from './arena-contents';
 import { brushTouchesCircle, type Brush } from './brush';
 import type { Party, PartyId, PartyIndex } from './contact-ledger';
+import type { PreviousPoses } from './previous-poses';
 import type { Random } from './random';
 import { deepestPoint, hexSpots } from './rubble';
 
@@ -61,11 +61,10 @@ export function packSpill(outline: Polygon, table: MaterialTable, random: Random
   return { centres, length: (table.patchLengthPerArea * polygonArea(outline)) / count };
 }
 
-export interface DropletView {
+export interface DropletView extends Poses {
   readonly id: number;
   readonly colour: Colour;
   readonly radius: number;
-  readonly transform: Transform;
   /** Linear velocity, px/s. */
   readonly velocity: Vec2;
 }
@@ -122,6 +121,7 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
     private readonly materials: MaterialTable,
     private readonly arena: Arena,
     private readonly contacts: PartyIndex<never>,
+    private readonly poses: Pick<PreviousPoses, 'of'>,
   ) {}
 
   get views(): readonly DropletView[] {
@@ -129,7 +129,7 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
       id,
       colour,
       radius,
-      transform: this.physics.getTransform(body),
+      ...this.poses.of(body),
       velocity: this.physics.getVelocity(body),
     }));
   }

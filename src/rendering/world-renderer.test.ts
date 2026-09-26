@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { DEMOLITION_DEMO } from '../gallery/gallery';
 import type { Vec2 } from '../geometry/vec2';
 import { COLOURS } from '../materials/colour';
-import type { SandboxWorld } from '../sandbox/sandbox-world';
-import { drawLine, drawObject, sandboxWorlds } from '../sandbox/test-support';
+import { STEP_SECONDS, type SandboxWorld } from '../sandbox/sandbox-world';
+import { drawLine, drawObject, objectById, sandboxWorlds } from '../sandbox/test-support';
 import { bakedTextureUse } from './baked-textures';
 import { WorldRenderer } from './world-renderer';
 
@@ -25,11 +25,15 @@ const TEXTURE_BYTES = 8 * 2 ** 20;
 
 const createWorld = sandboxWorlds();
 
-/** A stand-in for a Phaser object: every call returns it, and the ones that draw are counted. */
+/**
+ * A stand-in for a Phaser object: every call returns it, the ones that draw
+ * are counted, and where it was last placed is kept.
+ */
 interface Recorded {
   calls: number;
   visible: boolean;
   destroyed: boolean;
+  position: Vec2 | null;
 }
 
 /**
@@ -39,6 +43,8 @@ interface Recorded {
  */
 class RecordingScene {
   readonly displayList: Recorded[] = [];
+  /** Every object placed with `setPosition`, on the display list or not. */
+  readonly placed: Recorded[] = [];
   readonly textures = new Map<string, Recorded & { key: string; width: number; height: number }>();
   /** Drawing calls baked into textures since the last look. */
   baked = 0;
@@ -74,7 +80,7 @@ class RecordingScene {
   }
 
   private record(onList: boolean): Recorded {
-    const state: Recorded = { calls: 0, visible: true, destroyed: false };
+    const state: Recorded = { calls: 0, visible: true, destroyed: false, position: null };
     const own = state as unknown as Record<string | symbol, unknown>;
     const proxy: Recorded = new Proxy(state, {
       get: (target, name) => {
@@ -82,7 +88,10 @@ class RecordingScene {
         return (...args: unknown[]) => {
           if (name === 'clear') target.calls = 0;
           else if (name === 'setVisible') target.visible = Boolean(args[0]);
-          else if (name === 'destroy') {
+          else if (name === 'setPosition') {
+            if (!target.position) this.placed.push(proxy);
+            target.position = { x: Number(args[0]), y: Number(args[1]) };
+          } else if (name === 'destroy') {
             target.destroyed = true;
             this.displayList.splice(this.displayList.indexOf(proxy), 1);
           } else if (!String(name).startsWith('set') && name !== 'add' && name !== 'render') {
@@ -192,5 +201,46 @@ describe('World renderer: render budget', () => {
     renderer.destroy();
     expect(recording.textures.size).toBe(0);
     expect(bakedTextureUse()).toEqual(before);
+  });
+});
+
+describe('World renderer: between steps', () => {
+  it('draws a falling Object halfway between its two poses halfway through a step', () => {
+    const world = createWorld();
+    const recording = new RecordingScene();
+    const renderer = new WorldRenderer(recording.asScene(), world);
+    const id = drawObject(world, box(900, 200, 60, 60));
+    world.togglePause();
+    world.release(id);
+    world.advance(3 * STEP_SECONDS);
+
+    world.advance(1.5 * STEP_SECONDS);
+    renderer.draw();
+
+    const { previousTransform: from, transform: to } = objectById(world, id);
+    expect(to.y - from.y).toBeGreaterThan(1);
+    const placed = recording.placed;
+    expect(placed).toHaveLength(1); // the Object's image, and nothing else
+    expect(placed[0]!.position!.x).toBeCloseTo((from.x + to.x) / 2, 6);
+    expect(placed[0]!.position!.y).toBeCloseTo((from.y + to.y) / 2, 6);
+    renderer.destroy();
+  });
+
+  it('draws the pose now while paused', () => {
+    const world = createWorld();
+    const recording = new RecordingScene();
+    const renderer = new WorldRenderer(recording.asScene(), world);
+    const id = drawObject(world, box(900, 200, 60, 60));
+    world.togglePause();
+    world.release(id);
+    world.advance(4.5 * STEP_SECONDS);
+
+    world.togglePause();
+    renderer.draw();
+
+    const { transform } = objectById(world, id);
+    const [placed] = recording.placed;
+    expect(placed!.position).toEqual({ x: transform.x, y: transform.y });
+    renderer.destroy();
   });
 });

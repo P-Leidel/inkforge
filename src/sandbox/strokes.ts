@@ -7,7 +7,7 @@ import {
   type Polygon,
 } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
-import { transformPoints, type Transform } from '../geometry/transform';
+import { transformPoints } from '../geometry/transform';
 import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { fillMass, outlineMass } from '../materials/mass';
@@ -17,9 +17,17 @@ import { pieceCentre } from '../stroke/pieces';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
 import type { Arena } from './arena';
 import { brushTouchesCapsules, brushTouchesPolygon, type Brush } from './brush';
-import { motionOf, type HostSurface, type Kind, type Motion, type Solids } from './arena-contents';
+import {
+  motionOf,
+  type HostSurface,
+  type Kind,
+  type Motion,
+  type Poses,
+  type Solids,
+} from './arena-contents';
 import type { PartyId, PartyIndex } from './contact-ledger';
 import { durabilityLeft, wear, type Breakable } from './material-rules';
+import type { PreviousPoses } from './previous-poses';
 import { WAITING, type StickState } from './sticking';
 
 /** Speed (px/s) at which a Line squeezes an Object off itself; Box2D's push-out cap. */
@@ -60,7 +68,7 @@ export interface LineView {
   readonly pieces: readonly PieceView[];
 }
 
-export interface ObjectView {
+export interface ObjectView extends Poses {
   readonly id: StrokeId;
   /** The Colour of its Outline. */
   readonly colour: Colour;
@@ -68,7 +76,6 @@ export interface ObjectView {
   readonly outline: Polygon;
   /** Convex collider parts relative to the body's origin. */
   readonly parts: readonly Polygon[];
-  readonly transform: Transform;
   /** Linear velocity, px/s. */
   readonly velocity: Vec2;
   readonly frozen: boolean;
@@ -232,6 +239,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     private readonly materials: MaterialTable,
     private readonly arena: Arena,
     private readonly contacts: PartyIndex<StrokeTarget>,
+    private readonly poses: Pick<PreviousPoses, 'of'>,
   ) {}
 
   get views(): StrokeViews {
@@ -263,7 +271,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       colour: stroke.colour,
       outline: stroke.outline,
       parts: stroke.parts,
-      transform: this.physics.getTransform(stroke.body),
+      ...this.poses.of(stroke.body),
       velocity: this.physics.getVelocity(stroke.body),
       frozen: this.physics.isFrozen(stroke.body),
       fill: stroke.fill,

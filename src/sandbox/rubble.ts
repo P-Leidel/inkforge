@@ -11,9 +11,17 @@ import { rotate, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
-import { motionOf, type HostSurface, type Kind, type Motion, type Solids } from './arena-contents';
+import {
+  motionOf,
+  type HostSurface,
+  type Kind,
+  type Motion,
+  type Poses,
+  type Solids,
+} from './arena-contents';
 import { brushTouchesCircle, type Brush } from './brush';
 import type { PartyId, PartyIndex } from './contact-ledger';
+import type { PreviousPoses } from './previous-poses';
 import type { Random } from './random';
 
 /**
@@ -181,14 +189,13 @@ export function deepestPoint(outline: Polygon): { point: Vec2; depth: number } {
 /** Seconds Rubble removed by the cap takes to fade out. */
 const FADE_SECONDS = 0.5;
 
-export interface RubbleView {
+/** A piece of Rubble; its transform is its centre and rotation. */
+export interface RubbleView extends Poses {
   readonly id: number;
   /** The Colour of the Fill it came from. */
   readonly colour: Colour;
   readonly radius: number;
   readonly mass: number;
-  /** Its centre and rotation. */
-  readonly transform: Transform;
   /** Linear velocity, px/s. */
   readonly velocity: Vec2;
 }
@@ -253,6 +260,7 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
     private readonly contacts: PartyIndex<never>,
+    private readonly poses: Pick<PreviousPoses, 'of'>,
   ) {}
 
   /** Rubble, oldest first. */
@@ -262,7 +270,7 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
       colour,
       radius,
       mass,
-      transform: this.physics.getTransform(body),
+      ...this.poses.of(body),
       velocity: this.physics.getVelocity(body),
     }));
   }
