@@ -300,7 +300,7 @@
         <li><span><b>M1</b>, the new F1 overlay. Everything after this is measured with it, and it is the tool #22 reads. <b>Done</b> (see below).</span></li>
         <li><span><b>R2</b>, Rubble as shared textures. It removes the largest single cost (80% of commands after the chain). It also proves the baking approach on the simplest case: Rubble never changes its look. <b>Done</b> (see below).</span></li>
         <li><span><b>R3</b>, bake Strokes, Patches and the static UI (candidate 7 of the review after #19, now justified by these measurements). A1 is only needed if R3 slips. <b>Done</b> (see below).</span></li>
-        <li><span><b>M2</b>, a render budget test in Vitest, so an ink look can't quietly bring the cost back.</span></li>
+        <li><span><b>M2</b>, a render budget test in Vitest, so an ink look can't quietly bring the cost back. <b>Done</b> (see below).</span></li>
         <li><span><b>T1</b>, the Eraser, moved after R3 and M2. It makes testing fast: clear a wall, re-run a chain.</span></li>
         <li><span>Re-run #22 on the laptop with the new F1 readings. Then <b>R4</b>/<b>R5</b> if the longest frame is still over 33 ms. Keep <b>A3</b> for when the placeholder art is replaced.</span></li>
       </ol>
@@ -341,7 +341,8 @@ render     Graphics 31 · 6,212 commands
         <div class="rec-head"><span class="id">M2</span><h3>A render budget test</h3></div>
         <div class="badges"><span class="badge p1b"><span class="dot"></span>P1</span><span class="badge rs">Blast radius S</span></div>
         <p>A Vitest test that runs the <code>WorldRenderer</code> against a recording stub scene over the Demolition chain, and fails if the Graphics commands replayed per frame go over a budget (say 8,000). Command counts are deterministic, unlike frame times in CI, and they follow the real cost closely.</p>
-        <p class="files mono">new src/rendering/world-renderer.test.ts (stub scene recording add.graphics / add.image)</p>
+        <p class="callout"><b>Done</b>, counting drawing calls (<code>fillCircle</code>, <code>lineBetween</code> and the like) rather than Phaser's command entries, since the stub records calls. Three tests, run headless on a stand-in scene that keeps the display list and the textures. <b>The Demolition chain</b>, 300 frames: at most 1,500 calls replayed in a frame (peak today 974: Debris, Droplets, bonds, Blast rings, Terrain), at most 1,000 calls baked in a frame after the first (peak 306), at most 8 MB of textures (peak 5.1 MB). Run against the renderers from before R3 and before R2, the chain peaks at 2,485 and 7,399 calls, and both fail. <b>Still Strokes replay nothing</b>: 20 Lines and 5 filled Objects, one of each per Colour, leave the replayed count at the empty Arena's, and are not baked again while their looks stay the same. <b>Textures are freed</b>: Clear leaves only the atlas, and destroying the renderer frees everything.</p>
+        <p class="files mono">src/rendering/world-renderer.test.ts</p>
       </article>
 
       <article id="m3" class="rec">
