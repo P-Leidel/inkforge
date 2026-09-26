@@ -196,13 +196,14 @@
             <tr><td>Demolition, F1 on</td><td class="n">14.7</td><td class="n">20.6</td><td class="n">0.8</td><td class="n">0.2</td><td class="n">4.0</td><td class="n">61.5</td></tr>
             <tr><td>+ 24 Lines, F1 off</td><td class="n">17.2</td><td class="n">34.5</td><td class="n">1.0</td><td class="n">0.4</td><td class="n">5.6</td><td class="n">50.1</td></tr>
             <tr><td>+ 24 Lines, F1 on</td><td class="n">10.3</td><td class="n">56.8</td><td class="n">0.7</td><td class="n">0.4</td><td class="n">1.7</td><td class="n">92.4</td></tr>
+            <tr><td><b>After R1 + R6 + A2</b>, Demolition, F1 off (mean of 3 runs)</td><td class="n">28.7</td><td class="n">10.5</td><td class="n">1.3</td><td class="n">0.3</td><td class="n">0.0</td><td class="n">32.4</td></tr>
             <tr class="exp"><td>Demolition, HUD text set only on change</td><td class="n">27.5</td><td class="n">20.3</td><td class="n">1.3</td><td class="n">0.3</td><td class="n">0.0</td><td class="n">33.7</td></tr>
             <tr class="exp"><td>Demolition, Strokes · Rubble · Patches hidden</td><td class="n">66.8</td><td class="n">1.8</td><td class="n">0.2</td><td class="n">0.1</td><td class="n">0.3</td><td class="n">13.8</td></tr>
             <tr class="exp"><td>+ 24 Lines, both of the above</td><td class="n">53.5</td><td class="n">1.7</td><td class="n">0.2</td><td class="n">0.2</td><td class="n">0.0</td><td class="n">17.5</td></tr>
           </tbody>
         </table>
       </div>
-      <p class="muted" style="font-size:13px">Green rows are experiments patched into the running page, not code changes. The render left over in them is mostly the software rasteriser, plus the Debris, Terrain and palette Graphics still on screen. Physics per frame reads low because Phaser clamps its delta to 16.7 ms for the first 120 frames after a page load, so the chain ran in slow motion (see <a href="#s3">S3</a>). The two hidden-Graphics runs each had one multi-second stall at the start that the other runs didn't. It looks like a harness artefact, so the median is the figure to trust there.</p>
+      <p class="muted" style="font-size:13px">Green rows are experiments patched into the running page, not code changes. The render left over in them is mostly the software rasteriser, plus the Debris, Terrain and palette Graphics still on screen. Physics per frame reads low because Phaser clamps its delta to 16.7 ms for the first 120 frames after a page load, so the chain ran in slow motion (see <a href="#s3">S3</a>). The "After" row is the shipped change: the median frame halves and Graphics commands after the chain drop from 52,735 to 41,972, but the mean render barely moves, because it is held up by the long frames when Rubble appears (99th percentile about 220 ms). R2 is aimed at those. The two hidden-Graphics runs each had one multi-second stall at the start that the other runs didn't. It looks like a harness artefact, so the median is the figure to trust there.</p>
     </div>
 
     <div class="grid2">
@@ -295,7 +296,7 @@
     <h2 id="order-h">Suggested order, as issues</h2>
     <div class="panel">
       <ol class="steps">
-        <li><span><b>R1 + R6</b>, one small PR. It removes a texture upload from every frame. No change to the look or the simulation.</span></li>
+        <li><span><b>R1 + R6</b>, one small PR. It removes a texture upload from every frame. No change to the look or the simulation. <b>Done</b>, with A2's thinner grey grain (see below).</span></li>
         <li><span><b>M1</b>, the new F1 overlay. Everything after this is measured with it, and it is the tool #22 reads.</span></li>
         <li><span><b>R2</b>, Rubble as shared textures. It removes the largest single cost (80% of commands after the chain). It also proves the baking approach on the simplest case: Rubble never changes its look.</span></li>
         <li><span><b>T1</b>, the Eraser. It makes testing fast: clear a wall, re-run a chain.</span></li>
@@ -355,6 +356,7 @@ render     Graphics 31 · 6,212 commands
         <div class="rec-head"><span class="id">R1</span><h3>HUD: set the status text and colour only when they change</h3></div>
         <div class="badges"><span class="badge p0b"><span class="dot"></span>P0</span><span class="badge rs">Blast radius S</span></div>
         <p><code>Hud.draw</code> calls <code>setColor</code> every frame. Unlike <code>setText</code>, that always re-renders the Text's canvas and re-uploads its texture: 10% of main-thread time in the profile. Remember the last running state and return early.</p>
+        <p class="callout"><b>Done.</b> The HUD touches the status Text only when the world starts or pauses.</p>
         <p class="files mono">src/rendering/hud.ts</p>
       </article>
 
@@ -400,6 +402,7 @@ render     Graphics 31 · 6,212 commands
         <div class="rec-head"><span class="id">R6</span><h3>Ask for the high-performance GPU</h3></div>
         <div class="badges"><span class="badge p1b"><span class="dot"></span>P1</span><span class="badge rs">Blast radius S</span></div>
         <p>Add <code>render: { powerPreference: 'high-performance' }</code> to the game config. Laptops with a second GPU then use it for the canvas. It costs battery life on those laptops only, which is fine for a game.</p>
+        <p class="callout"><b>Done.</b> Added to the game config.</p>
         <p class="files mono">src/main.ts</p>
       </article>
     </div>
@@ -417,6 +420,7 @@ render     Graphics 31 · 6,212 commands
         <div class="rec-head"><span class="id">A2</span><h3>A pattern budget per Colour</h3></div>
         <div class="badges"><span class="badge p2b"><span class="dot"></span>P2</span><span class="badge rs">Blast radius S</span></div>
         <p>Grey costs 10 to 30 times what black does for the same ink, only because of grain density (a speck every 2.5 px along a Line, every 4 px across a Fill). Give each Colour's look a budget in draw calls per 100 px, and thin grey's grain to match green's and red's. That keeps unbaked paths (the preview, Debris) cheap, and it keeps the look readable for the blind check, where each Colour must be told apart by texture.</p>
+        <p class="callout"><b>Done.</b> Grey's grain only, as decided: a speck every 7 px along a Line (was 2.5) and every 8 px across a Fill (was 4), each a little larger so the grain still reads, and one colour change per shade instead of per speck. A 400 px grey Line now draws 57 grain circles instead of 160; an 80 px grey box, 100 instead of 400. The budget per Colour is still open.</p>
         <p class="files mono">src/rendering/ink.ts</p>
       </article>
 
@@ -464,7 +468,7 @@ render     Graphics 31 · 6,212 commands
         <p>A sandbox tool that removes what it passes over, quietly. It is for testing, not a game mechanic: in the game, the Build Phase has undo and the Wave has nothing.</p>
         <div class="kv">
           <span class="label">Pick it</span><span><b>E</b> or a sixth swatch after the five Colours. Keys 1–5 go back to drawing. The cursor shows the brush as a circle (radius 12 px).</span>
-          <span class="label">Use it</span><span>Click or drag. Everything the brush touches goes: a whole Object with its Fill, the <b>Pieces</b> of a Line it crosses (so you can cut a gap in a wall; Shift takes the whole Line), Rubble, Droplets and Patches.</span>
+          <span class="label">Use it</span><span>Click or drag. Everything the brush touches goes: a whole Object with its Fill, the <b>Pieces</b> of a Line it crosses (so you can cut a gap in a wall), Rubble, Droplets and Patches.</span>
           <span class="label">Quietly</span><span>Erasing is not breaking. There is no Debris, no Fill released, no Blast, and nothing is damaged. A green Object bonded to what was erased falls free, as when its host breaks (the ledger's "gone").</span>
           <span class="label">When</span><span>Paused and running. What was erased while running comes back with R, like everything since the start. Erasing while paused is part of the next start's snapshot.</span>
           <span class="label">Undo</span><span>Erasing isn't undone, and it removes the erased Strokes from the undo history (as <code>remove</code> does now).</span>
@@ -476,12 +480,12 @@ render     Graphics 31 · 6,212 commands
   </section>
 
   <section aria-labelledby="open-h">
-    <h2 id="open-h">Decisions for you</h2>
+    <h2 id="open-h">Decisions</h2>
     <div class="panel">
       <ul>
-        <li><b>Eraser on Lines</b>: Pieces by default and the whole Line with Shift (recommended), or always the whole Stroke?</li>
-        <li><b>Baked look</b>: a WebGL <code>DynamicTexture</code>, pixel-identical to today (recommended), or <code>generateTexture</code> through Canvas 2D, whose smoother antialiasing changes the look slightly?</li>
-        <li><b>Grey grain</b> (A2): may grey's look get thinner grain now, or does it stay until the real art (A3)?</li>
+        <li><b>Eraser on Lines</b>: it removes only the Pieces it touches. No Shift for the whole Line.</li>
+        <li><b>Baked look</b>: a WebGL <code>DynamicTexture</code>, pixel-identical to today.</li>
+        <li><b>Grey grain</b> (A2): thinned now, not left for the real art.</li>
       </ul>
     </div>
   </section>

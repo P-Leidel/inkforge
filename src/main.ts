@@ -6,6 +6,8 @@ new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
   backgroundColor: '#1d2027',
+  // Ask laptops with two GPUs for the faster one.
+  render: { powerPreference: 'high-performance' },
   width: ARENA_WIDTH,
   height: ARENA_HEIGHT,
   scale: {

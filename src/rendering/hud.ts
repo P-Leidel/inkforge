@@ -9,6 +9,8 @@ const HELP_TEXT =
 export class Hud {
   private readonly status: Phaser.GameObjects.Text;
   private readonly readout: Phaser.GameObjects.Text;
+  /** What the status shows, so it is redrawn only when that changes. */
+  private shownRunning: boolean | null = null;
 
   constructor(
     scene: Phaser.Scene,
@@ -43,8 +45,12 @@ export class Hud {
 
   /** `readout`: the running stress test's measurements, if any. */
   draw(readout = ''): void {
+    // Text re-renders its canvas and re-uploads the texture on every change
+    // (setColor even when the colour is the same), so touch it only on a change.
     this.readout.setText(readout);
     const running = this.world.isRunning;
+    if (running === this.shownRunning) return;
+    this.shownRunning = running;
     this.status.setText(running ? '▶ RUNNING' : '❚❚ PAUSED');
     this.status.setColor(running ? PALETTE.running : PALETTE.paused);
   }

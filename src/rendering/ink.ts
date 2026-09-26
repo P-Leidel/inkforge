@@ -33,6 +33,16 @@ export function hash(n: number): number {
   return x - Math.floor(x);
 }
 
+/** Splits grain specks into light and dark, so each shade is set once. */
+function byShade<T extends { readonly index: number }>(specks: readonly T[]): [number, T[]][] {
+  const light = specks.filter(({ index }) => hash(index + 0.5) < 0.5);
+  const dark = specks.filter(({ index }) => hash(index + 0.5) >= 0.5);
+  return [
+    [GRAIN_LIGHT, light],
+    [GRAIN_DARK, dark],
+  ];
+}
+
 interface PathPoint {
   readonly p: Vec2;
   /** Unit tangent. */
@@ -102,14 +112,18 @@ export function drawInk(
   }
   band(g, points, closed, width, INK_HUES[colour], alpha);
   switch (colour) {
-    case 'grey':
-      // Grainy: light and dark specks scattered across the band.
-      for (const { p, n, index } of pointsAlong(points, closed, 2.5)) {
-        const across = (hash(index) - 0.5) * (width - 2);
-        g.fillStyle(hash(index + 0.5) < 0.5 ? GRAIN_LIGHT : GRAIN_DARK, alpha);
-        g.fillCircle(p.x + n.x * across, p.y + n.y * across, Math.max(0.6, width * 0.1));
+    case 'grey': {
+      // Grainy: light and dark specks scattered across the band. Sparse,
+      // since every speck is a circle Phaser re-tessellates each frame.
+      for (const [shade, specks] of byShade(pointsAlong(points, closed, 7))) {
+        g.fillStyle(shade, alpha);
+        for (const { p, n, index } of specks) {
+          const across = (hash(index) - 0.5) * (width - 2);
+          g.fillCircle(p.x + n.x * across, p.y + n.y * across, Math.max(0.8, width * 0.14));
+        }
       }
       break;
+    }
     case 'blue': {
       // Glossy: a highlight running along one side, with brighter glints.
       const shine = points.map((p, i) => {
@@ -185,12 +199,13 @@ export function fillInk(g: Graphics, colour: Colour, polygon: Polygon, alpha = 1
   g.closePath();
   g.fillPath();
   switch (colour) {
-    case 'grey':
-      for (const { p, index } of gridInside(polygon, 4)) {
-        g.fillStyle(hash(index + 0.5) < 0.5 ? GRAIN_LIGHT : GRAIN_DARK, alpha);
-        g.fillCircle(p.x, p.y, 0.9);
+    case 'grey': {
+      for (const [shade, specks] of byShade(gridInside(polygon, 8))) {
+        g.fillStyle(shade, alpha);
+        for (const { p } of specks) g.fillCircle(p.x, p.y, 1.3);
       }
       break;
+    }
     case 'blue':
       g.lineStyle(2, GLOSS, 0.6 * alpha);
       for (const { p, index } of gridInside(polygon, 14)) {
