@@ -4,7 +4,7 @@ A 2D side-view physics defense game: the player draws lines and objects with sca
 
 **Play the latest build:** https://p-leidel.github.io/inkforge/
 
-The project is at **milestone 1, the physics sandbox** ([spec](docs/specs/m1-physics-sandbox.md)). See the [game design document](docs/gdd.md) for the full picture and [`CONTEXT.md`](CONTEXT.md) for the glossary.
+The project is at **milestone 2, Colours** ([spec](docs/specs/m2-colours.md)), built on [milestone 1, the physics sandbox](docs/specs/m1-physics-sandbox.md). See the [game design document](docs/gdd.md) for the full picture and [`CONTEXT.md`](CONTEXT.md) for the glossary.
 
 ## Getting started
 
