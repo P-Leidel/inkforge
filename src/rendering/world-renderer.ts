@@ -11,10 +11,11 @@ import type {
   StrokeId,
 } from '../sandbox/sandbox-world';
 import { COLOURS, type Colour } from '../materials/colour';
-import { BakedTextures } from './baked-textures';
+import { BakedDrawing, BakedTextures, bakingGraphics } from './baked-textures';
 import { fillPolygon, strokePolygon, strokePolyline } from './draw';
-import { drawInk, fillInk, hash, INK_HUES, segmentRuns } from './ink';
+import { drawInk, fillInk, hash, INK_HUES, inkReach, segmentRuns } from './ink';
 import { PALETTE } from './palette';
+import { rectAround, tilesAlong } from './tiles';
 
 /** Width an Outline is drawn with, centred on the Object's edge. */
 const OUTLINE_WIDTH = 5;
@@ -46,29 +47,37 @@ const BOND_RADIUS = 5;
 const RUBBLE_SIDES = 20;
 /** Width of the rim around a piece of Rubble. */
 const RUBBLE_RIM = 2;
+/** Lines are baked in tiles of at most this many px square. */
+const LINE_TILE = 256;
+/** How far a Frozen Object's pin reaches from its centre, px. */
+const PIN_REACH = 10;
 
 /**
  * Draws the Sandbox world's state: Terrain, Lines, Objects, Rubble, Patches,
- * Droplets, bonds, Debris and Blast rings. Each Stroke gets its own Graphics, drawn again
- * only when its look changes; moving Objects only update its transform. So
- * does each Patch, which never changes its look, and each piece of Rubble, an
- * Image of a texture baked once for its Colour and size;
- * a Patch fades as it wears. Droplets, bonds, Debris and Blast rings are
- * redrawn every frame.
+ * Droplets, bonds, Debris and Blast rings.
+ *
+ * Each Stroke is baked into textures of its own, and baked again only when
+ * its look changes (a crack, a break, a Fill): a Line in tiles, so a long
+ * diagonal one doesn't need a texture the size of the screen, and an Object
+ * in one texture that moves and turns with it. Patches and Rubble are Images
+ * of looks baked once and shared by every Patch or piece of Rubble that looks
+ * the same; a Patch fades as it wears. Droplets, bonds, Debris and Blast rings
+ * are redrawn every frame.
  */
 export class WorldRenderer {
-  private readonly lines = new Map<StrokeId, Graphics>();
-  private readonly objects = new Map<StrokeId, Graphics>();
+  /** Each Line's tiles. */
+  private readonly lines = new Map<StrokeId, BakedDrawing[]>();
+  private readonly objects = new Map<StrokeId, BakedDrawing>();
   /** The Pieces and cracks each Line was last drawn with. */
   private readonly drawnLineLook = new Map<StrokeId, string>();
   /** The Frozen state and Fill each Object was last drawn with. */
   private readonly drawnLook = new Map<StrokeId, string>();
   /** Each piece of Rubble, live or fading out, by its id. */
   private readonly rubble = new Map<number, Phaser.GameObjects.Image>();
-  /** Rubble's looks, one per Colour and radius. */
+  /** The looks of Rubble, by Colour and radius, and of Patches, by Colour and size. */
   private readonly baked: BakedTextures;
   /** Each Patch by its id. */
-  private readonly patches = new Map<number, Graphics>();
+  private readonly patches = new Map<number, Phaser.GameObjects.Image>();
   private readonly droplets: Graphics;
   private readonly debris: Graphics;
   private readonly bonds: Graphics;
@@ -90,6 +99,22 @@ export class WorldRenderer {
     this.bonds = scene.add.graphics().setDepth(BOND_DEPTH);
     this.droplets = scene.add.graphics().setDepth(PATCH_DEPTH);
     this.blasts = scene.add.graphics().setDepth(BLAST_DEPTH);
+  }
+
+  /** Frees the textures. */
+  destroy(): void {
+    for (const tiles of this.lines.values()) for (const tile of tiles) tile.destroy();
+    for (const drawing of this.objects.values()) drawing.destroy();
+    for (const image of [...this.rubble.values(), ...this.patches.values()]) image.destroy();
+    this.baked.destroy();
+  }
+
+  /** Draws `draw` once and bakes it into each of `drawings`. */
+  private bake(drawings: readonly BakedDrawing[], draw: (g: Graphics) => void): void {
+    const g = bakingGraphics(this.scene);
+    draw(g);
+    for (const drawing of drawings) drawing.bake(g);
+    g.destroy();
   }
 
   private drawTerrain(g: Graphics): void {
@@ -168,14 +193,14 @@ export class WorldRenderer {
     const current = new Set<number>();
     for (const patch of this.world.patches) {
       current.add(patch.id);
-      let g = this.patches.get(patch.id);
-      if (!g) {
-        g = this.scene.add.graphics().setDepth(PATCH_DEPTH);
-        drawPatch(g, patch);
-        this.patches.set(patch.id, g);
+      let image = this.patches.get(patch.id);
+      if (!image) {
+        image = this.baked.image(...patchLook(patch)).setDepth(PATCH_DEPTH);
+        this.patches.set(patch.id, image);
       }
       const { a, b } = patch.segment;
-      g.setPosition((a.x + b.x) / 2, (a.y + b.y) / 2)
+      image
+        .setPosition((a.x + b.x) / 2, (a.y + b.y) / 2)
         .setRotation(Math.atan2(b.y - a.y, b.x - a.x))
         .setAlpha(1 - (1 - PATCH_WORN_ALPHA) * patch.wear);
     }
@@ -215,14 +240,18 @@ export class WorldRenderer {
     const current = new Set<StrokeId>();
     for (const line of this.world.lines) {
       current.add(line.id);
-      let g = this.lines.get(line.id);
-      if (!g) {
-        g = this.scene.add.graphics();
-        this.lines.set(line.id, g);
+      let tiles = this.lines.get(line.id);
+      if (!tiles) {
+        // Around the whole Line: it only loses Pieces from here on.
+        const reach = inkReach(line.colour, line.thickness);
+        tiles = tilesAlong(line.segments, reach, LINE_TILE).map(
+          (rect) => new BakedDrawing(this.scene, rect),
+        );
+        this.lines.set(line.id, tiles);
       }
       const look = line.pieces.map((p) => `${p.index}:${crackStage(p.wear)}`).join(' ');
       if (this.drawnLineLook.get(line.id) !== look) {
-        drawLine(g, line);
+        this.bake(tiles, (g) => drawLine(g, line));
         this.drawnLineLook.set(line.id, look);
       }
     }
@@ -234,17 +263,26 @@ export class WorldRenderer {
     const current = new Set<StrokeId>();
     for (const object of this.world.objects) {
       current.add(object.id);
-      let g = this.objects.get(object.id);
-      if (!g) {
-        g = this.scene.add.graphics();
-        this.objects.set(object.id, g);
+      let drawing = this.objects.get(object.id);
+      if (!drawing) {
+        const pin = [
+          { x: -PIN_REACH, y: -PIN_REACH },
+          { x: PIN_REACH, y: PIN_REACH },
+        ];
+        const rect = rectAround(
+          [...object.outline, ...pin],
+          inkReach(object.colour, OUTLINE_WIDTH),
+        );
+        drawing = new BakedDrawing(this.scene, rect);
+        this.objects.set(object.id, drawing);
       }
       const look = `${object.frozen} ${object.fill} ${crackStage(object.wear)}`;
       if (this.drawnLook.get(object.id) !== look) {
-        drawObject(g, object);
+        this.bake([drawing], (g) => drawObject(g, object));
         this.drawnLook.set(object.id, look);
       }
-      g.setPosition(object.transform.x, object.transform.y).setRotation(object.transform.angle);
+      const { x, y, angle } = object.transform;
+      drawing.image.setPosition(x, y).setRotation(angle);
     }
     removeStale(this.objects, current);
     for (const id of this.drawnLook.keys()) if (!current.has(id)) this.drawnLook.delete(id);
@@ -256,7 +294,6 @@ export class WorldRenderer {
  * broken Piece leaves a gap, and each Piece's cracks.
  */
 function drawLine(g: Graphics, line: LineView): void {
-  g.clear();
   for (const run of segmentRuns(line.segments)) {
     drawInk(g, line.colour, run, false, line.thickness);
   }
@@ -312,7 +349,6 @@ function pointAlong(segments: readonly Segment[], fraction: number): { p: Vec2; 
  * its Fill, or around a faintly tinted, hollow inside. A Frozen one is pinned.
  */
 function drawObject(g: Graphics, object: ObjectView): void {
-  g.clear();
   if (object.fill) {
     fillInk(g, object.fill, object.outline);
   } else {
@@ -348,19 +384,33 @@ function drawRubble(g: Graphics, colour: Colour, radius: number): void {
   drawInk(g, colour, disc, true, RUBBLE_RIM);
 }
 
-/** A Patch in its own coordinates: a strip of its Colour's ink along x, centred on the origin. */
-function drawPatch(g: Graphics, patch: PatchView): void {
+/**
+ * A Patch's look, to bake: Patches of a Colour, length and thickness look the
+ * same. Rounded to whole px of length and half px of thickness, so a few
+ * looks serve every Patch.
+ */
+function patchLook(patch: PatchView): [string, number, (g: Graphics) => void] {
   const { a, b } = patch.segment;
-  const half = Math.hypot(b.x - a.x, b.y - a.y) / 2;
+  const length = Math.round(Math.hypot(b.x - a.x, b.y - a.y));
+  const width = Math.round(2 * patch.thickness) / 2 + PATCH_EXTRA_WIDTH;
+  return [
+    `patch:${patch.colour}:${length}:${width}`,
+    length / 2 + inkReach(patch.colour, width),
+    (g) => drawPatch(g, patch.colour, length, width),
+  ];
+}
+
+/** A Patch in its own coordinates: a strip of its Colour's ink along x, centred on the origin. */
+function drawPatch(g: Graphics, colour: Colour, length: number, width: number): void {
   drawInk(
     g,
-    patch.colour,
+    colour,
     [
-      { x: -half, y: 0 },
-      { x: half, y: 0 },
+      { x: -length / 2, y: 0 },
+      { x: length / 2, y: 0 },
     ],
     false,
-    patch.thickness + PATCH_EXTRA_WIDTH,
+    width,
   );
 }
 
@@ -398,13 +448,14 @@ function drawCracks(g: Graphics, object: ObjectView): void {
   }
 }
 
-function removeStale(
-  objects: Map<number, Phaser.GameObjects.GameObject>,
+/** Destroys and forgets what is no longer in the world. */
+function removeStale<T extends { destroy(): void } | readonly { destroy(): void }[]>(
+  drawn: Map<number, T>,
   current: Set<number>,
 ): void {
-  for (const [id, object] of objects) {
+  for (const [id, thing] of drawn) {
     if (current.has(id)) continue;
-    object.destroy();
-    objects.delete(id);
+    for (const part of Array.isArray(thing) ? thing : [thing]) part.destroy();
+    drawn.delete(id);
   }
 }

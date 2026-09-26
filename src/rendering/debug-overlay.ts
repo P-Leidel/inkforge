@@ -8,6 +8,7 @@ import { PALETTE } from './palette';
 import { readingLines, type Readings } from './readings';
 import { StatsPanel } from './stats-panel';
 import { addMonoFont } from './mono-font';
+import { bakedTextureUse } from './baked-textures';
 
 /** F1 cycles through these. */
 const LEVELS = ['off', 'stats', 'debug'] as const;
@@ -174,13 +175,17 @@ export class DebugOverlay {
     let graphics = 0;
     let commands = 0;
     let texts = 0;
+    let images = 0;
     const list = this.scene.children.list;
+    const baked = bakedTextureUse();
     for (const child of list) {
       if (child instanceof Phaser.GameObjects.Graphics && child.visible) {
         graphics++;
         commands += child.commandBuffer.length;
       } else if (child instanceof Phaser.GameObjects.Text && child.visible) {
         texts++;
+      } else if (child instanceof Phaser.GameObjects.Image && child.visible) {
+        images++;
       }
     }
     return {
@@ -196,7 +201,15 @@ export class DebugOverlay {
         blasts: world.blasts.length,
         debris: world.debrisParticles.length,
       },
-      render: { graphics, commands, texts, objects: list.length },
+      render: {
+        graphics,
+        commands,
+        texts,
+        images,
+        bakedTextures: baked.textures,
+        bakedBytes: baked.bytes,
+        objects: list.length,
+      },
     };
   }
 

@@ -21,6 +21,11 @@ export interface RenderLoad {
   readonly commands: number;
   /** Visible Text objects: each its own texture. */
   readonly texts: number;
+  /** Visible Images, most of them of baked looks. */
+  readonly images: number;
+  /** Textures baked looks are kept in, and their memory, bytes. */
+  readonly bakedTextures: number;
+  readonly bakedBytes: number;
   /** Everything on the display list. */
   readonly objects: number;
 }
@@ -72,6 +77,11 @@ export function readingLines({ recent, sinceStart, bodies, render }: Readings): 
       'render',
       `Graphics ${render.graphics} · ${number(render.commands)} commands   Text ${render.texts}   ` +
         `objects ${number(render.objects)}`,
+    ),
+    row(
+      '',
+      `Images ${number(render.images)}   baked ${render.bakedTextures} textures · ` +
+        `${(render.bakedBytes / 2 ** 20).toFixed(1)} MB`,
     ),
   ];
 }

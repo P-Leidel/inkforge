@@ -5,6 +5,7 @@ import { isClosingStroke } from '../stroke/close-detection';
 import { CLOSE_RADIUS, LINE_THICKNESS } from '../stroke/stroke-rules';
 import { drawInk } from './ink';
 import { PALETTE } from './palette';
+import { drawBrush } from './palette-bar';
 
 /** Where the pointer's Colour dab sits, relative to the pointer. */
 const POINTER_OFFSET = { x: 16, y: 16 };
@@ -53,6 +54,12 @@ export class StrokePreview {
       g.fillStyle(marker, 1);
       g.fillCircle(start.x, start.y, 5);
     }
+  }
+
+  /** With the Eraser picked: its brush at the pointer, in place of a dab. */
+  drawBrush(pointer: Vec2 | null): void {
+    this.g.clear();
+    if (pointer) drawBrush(this.g, pointer);
   }
 
   private drawPointerDab(pointer: Vec2, colour: Colour): void {

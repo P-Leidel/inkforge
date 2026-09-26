@@ -6,6 +6,7 @@ import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import type { Arena } from './arena';
 import { motionOf, type Kind, type Motion, type Solids } from './arena-contents';
+import { brushTouchesCircle, type Brush } from './brush';
 import type { Party, PartyId, PartyIndex } from './contact-ledger';
 import type { Random } from './random';
 import { deepestPoint, hexSpots } from './rubble';
@@ -203,6 +204,16 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
 
   /** Nothing of it is attached to anything else. */
   gone(): void {}
+
+  /** An erased Droplet lays no Patch. */
+  erase(brush: Brush): void {
+    this.droplets = this.droplets.filter(({ body, radius }) => {
+      const { x, y } = this.physics.getTransform(body);
+      if (!brushTouchesCircle(brush, { x, y }, radius)) return true;
+      this.removeBody(body);
+      return false;
+    });
+  }
 
   dropVisuals(): void {}
 

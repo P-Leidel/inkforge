@@ -11,6 +11,7 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld, ShapeId } from '../physics';
 import type { HostSurface, Kind, Solids } from './arena-contents';
+import { brushTouchesCapsules, type Brush } from './brush';
 import type { ContactLedger, Party, PartyId } from './contact-ledger';
 
 /**
@@ -309,6 +310,17 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
     this.patches = this.patches.filter(({ host, shape }) => {
       if (!parties.has(host)) return true;
       this.byShape.delete(shape);
+      return false;
+    });
+  }
+
+  /** An erased Patch goes without a puff; its host stays. */
+  erase(brush: Brush): void {
+    this.patches = this.patches.filter((patch) => {
+      if (!brushTouchesCapsules(brush, [this.worldSegment(patch)], patch.thickness / 2))
+        return true;
+      this.physics.removeShape(patch.shape);
+      this.byShape.delete(patch.shape);
       return false;
     });
   }

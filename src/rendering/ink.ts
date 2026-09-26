@@ -93,6 +93,14 @@ function band(
   for (const p of points) g.fillCircle(p.x, p.y, width / 2);
 }
 
+/**
+ * How far ink drawn `width` wide along a path reaches from it, px, with room
+ * for antialiasing: half its width, or further for green's drips.
+ */
+export function inkReach(colour: Colour, width: number): number {
+  return (colour === 'green' ? 1.4 * width : width / 2) + 2;
+}
+
 /** Draws a stretch of ink along a path in its Colour's hue and texture. */
 export function drawInk(
   g: Graphics,

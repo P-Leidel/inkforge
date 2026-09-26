@@ -4,6 +4,7 @@ import type { Segment } from '../geometry/segment';
 import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { BodyId, PhysicsWorld } from '../physics';
+import type { Brush } from './brush';
 import type { PartyId } from './contact-ledger';
 
 /**
@@ -61,13 +62,19 @@ export interface Kind<Name extends string, Saved, Views> {
   /** Re-applies its surfaces after a material table edit. */
   applySurfaces(): void;
   /**
-   * Hears which Parties a step or a command removed (broken, undone, removed
-   * or capped), its own too: whatever of it was attached to them goes. The
+   * Hears which Parties a step or a command removed (broken, undone, removed,
+   * erased or capped), its own too: whatever of it was attached to them goes. The
    * world tells every kind, in kind order, before their turn in a step and
    * after every command that removes something. Clear tells none: every
    * kind clears itself.
    */
   gone(parties: ReadonlySet<PartyId>): void;
+  /**
+   * Removes, quietly, whatever of it the Eraser's brush touches: nothing
+   * breaks, bursts or comes out of it. The world tells every kind what went
+   * after each kind's turn, so a kind never erases what went with a host.
+   */
+  erase(brush: Brush): void;
   /** Its turn in each step, after the Material rules and breaking. */
   step(seconds: number): void;
 }

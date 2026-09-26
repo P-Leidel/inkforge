@@ -74,6 +74,10 @@ _Avoid_: Activate, trigger, drop
 What happens to an Object a new Line is drawn across: it slides the shortest way off the Line, passing through Terrain and Lines, then carries on from rest, touching the Line it slid off. It deals and takes no damage while it slides, and what it touches where it stops is Settled.
 _Avoid_: Push-out, overlap
 
+**Eraser**:
+A sandbox tool for testing, not part of the game: it quietly removes whatever its brush passes over, whole Objects with their Fills, the Pieces of Lines, Rubble, Droplets and Patches. Erasing is not breaking: nothing bursts into Debris, releases its Fill or sets off a Blast.
+_Avoid_: Delete, rubber
+
 ### Breaking
 
 **Piece**:
