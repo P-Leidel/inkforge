@@ -54,6 +54,7 @@ Don't make the boxes red, or fill anything red: the scene has exactly 5 Blasts. 
   - Patch bookkeeping.
 
   Report what you find either way.
+- **Time the reads too.** The renderer, F1 and the stress tests read every view each frame (`world.objects`, `world.rubble` and so on), and each read rebuilds each view with up to ten physics calls per Object. In the verdict's Demolition section, also time one read of every view per step, as a frame would, and print it next to the step times. Candidate 4 of the [architecture review after #19](../adr/reports/architecture-review-2026-09-26.html) (one read model, updated per step) waits on these numbers, so say in your commit message whether they argue for it before enemies arrive.
 - **Replay.** The chain must play the same after R and Space (the gallery replay test).
 - **Last slice.** This is the last agent slice. When you close #21, delete `docs/handoffs/` entirely (this file and the README) and the "Milestone 2 handoffs" section in `CLAUDE.md`. #22 is for a person.
 

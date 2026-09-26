@@ -1,6 +1,8 @@
 # Handoff: #20 Red Lines and the fuse
 
-Issue: https://github.com/P-Leidel/inkforge/issues/20 (slice 11 of 13; blocked by #19). Read [README.md](README.md) first: it has the working agreement, the checks and the engine facts every slice needs.
+Issue: https://github.com/P-Leidel/inkforge/issues/20 (slice 11 of 13; blocked by #19 and #33). Read [README.md](README.md) first: it has the working agreement, the checks and the engine facts every slice needs.
+
+**#33 comes first.** It moves the break path (`breakTarget`, `explode`, `blastReached`) out of the Sandbox world into the Material rules, and it updates this handoff when it lands. Where this file still names those world methods, read them as the Material rules' break and Blast rules: the Piece Blast is one more Material rule there, not a new world method.
 
 A red Line burns from end to end like a fuse. Each red Piece explodes with a small Blast when it is destroyed, and that Blast is strong enough to destroy the next red Piece. That gives mine strips and timed chains. An Object drawn over a red Line still doesn't set it off when physics starts.
 
