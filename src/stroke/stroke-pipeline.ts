@@ -8,6 +8,7 @@ import {
   type Polygon,
 } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
+import { simplifyPolygon } from '../geometry/simplify';
 import { distance, pathLength, type Vec2 } from '../geometry/vec2';
 import { closeRing, isClosingStroke } from './close-detection';
 import { splitIntoPieces } from './pieces';
@@ -16,6 +17,8 @@ import { flattenSpikesClosed, flattenSpikesOpen, simplifyCapped } from './simpli
 import { findCorners, sharpenCorners } from './corners';
 import { smooth, smoothBetweenCorners } from './smoothing';
 import {
+  COLLIDER_TOLERANCE,
+  COLLIDER_TOLERANCE_STEP,
   LINE_THICKNESS,
   MAX_LINE_SEGMENT_LENGTH,
   MAX_PART_VERTICES,
@@ -23,6 +26,7 @@ import {
   MIN_LINE_LENGTH,
   MIN_OBJECT_AREA,
   PRESMOOTHING_SIGMA,
+  ROUND_TOLERANCE,
   SAMPLE_SPACING,
   SIMPLIFY_TOLERANCE,
   SMOOTHING_SIGMA,
@@ -104,9 +108,34 @@ function processClosedStroke(samples: readonly Vec2[], context: StrokeContext): 
   if (drawnArea < MIN_OBJECT_AREA) {
     return { kind: 'rejected', reason: 'too-small', path: samples };
   }
-  const parts = decomposeConvex(outline, MAX_PART_VERTICES);
+  const parts = decomposeConvex(colliderOf(outline), MAX_PART_VERTICES);
   if (overlapsSolid(parts, context)) return { kind: 'rejected', reason: 'overlaps', path: samples };
   return { kind: 'object', outline, parts };
+}
+
+/**
+ * The shape an Object collides with: its Outline, simplified just enough
+ * to be one convex part's worth of corners (`MAX_PART_VERTICES`), if that
+ * keeps it within `COLLIDER_TOLERANCE`. A small Object, a pebble, then
+ * collides as one shape instead of several. A round Outline keeps every
+ * corner: with fewer, a ball would roll bumpily.
+ */
+function colliderOf(outline: Polygon): Polygon {
+  if (isRound(outline)) return outline;
+  for (let t = SIMPLIFY_TOLERANCE; t <= COLLIDER_TOLERANCE; t += COLLIDER_TOLERANCE_STEP) {
+    const collider = t === SIMPLIFY_TOLERANCE ? outline : simplifyPolygon(outline, t);
+    if (collider.length > MAX_PART_VERTICES) continue;
+    return collider.length >= 3 && !isSelfIntersecting(collider) ? collider : outline;
+  }
+  return outline;
+}
+
+/** Whether every corner of a ring lies within `ROUND_TOLERANCE` of one circle: a ball. */
+function isRound(ring: Polygon): boolean {
+  const c = polygonCentroid(ring);
+  const radii = ring.map((p) => distance(p, c));
+  const radius = radii.reduce((sum, r) => sum + r, 0) / radii.length;
+  return radii.every((r) => Math.abs(r - radius) <= ROUND_TOLERANCE);
 }
 
 /** The ring scaled about its centroid to the given area. */

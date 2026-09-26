@@ -230,8 +230,9 @@ describe('The Rubble cap', () => {
     const materials = createMaterialTable();
     materials.rubbleCap = 20;
     const world = createWorld({ materials });
-    const first = smashable(world, 300, 'grey');
-    const second = smashable(world, 700, 'grey');
+    // Dropped from high enough to break for certain.
+    const first = smashable(world, 300, 'grey', { drop: 350 });
+    const second = smashable(world, 700, 'grey', { drop: 350 });
 
     smash(world, [first]);
     const older = world.rubble.map((r) => r.id);

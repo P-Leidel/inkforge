@@ -367,7 +367,7 @@ export const SHRAPNEL_DEMO: Demo = {
       ],
       'black',
     );
-    for (const x of [380, 860]) drawObject(world, dragBox(x, 400, 40, 160), 'grey');
+    for (const x of [390, 860]) drawObject(world, dragBox(x, 440, 30, 100), 'grey');
     const box = drawObject(world, dragBox(600, 150, 80, 80), 'red');
     world.fillAt({ x: 640, y: 190 }, 'grey');
     letGo(world, [box]);

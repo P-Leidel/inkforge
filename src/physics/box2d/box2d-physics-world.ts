@@ -88,6 +88,13 @@ import type {
  */
 const PX_PER_METRE = 50;
 const SUB_STEPS = 4;
+/**
+ * Stiffness of contacts (Hz). At Box2D's default, 30, things that land
+ * hard stay sunk into each other for several frames: 41 pairs of the 100
+ * Pebbles more than 2 px deep at once. At 45 it is 25, and a tower of
+ * boxes still settles as fast; stiffer still, the tower rocks for seconds.
+ */
+const CONTACT_HERTZ = 45;
 /** Hit events are reported above this speed; we decide about waking ourselves. */
 const HIT_EVENT_THRESHOLD_PX = 5;
 /**
@@ -178,6 +185,7 @@ function createB2World(options: PhysicsWorldOptions): b2WorldId {
   def.hitEventThreshold = toM(HIT_EVENT_THRESHOLD_PX);
   def.restitutionThreshold = toM(options.minBounceSpeed);
   def.enableContinuous = true;
+  def.contactHertz = CONTACT_HERTZ;
   return b2CreateWorld(def);
 }
 
