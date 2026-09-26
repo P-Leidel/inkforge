@@ -9,13 +9,14 @@ A worst-case scene for performance: a chain of red bombs tearing through filled 
 - In the spec: [Performance and exit criteria](../specs/m2-colours.md#performance-and-exit-criteria), and in [Testing Decisions](../specs/m2-colours.md#testing-decisions) "the Demolition chain plays out".
 - [ADR 0001](../adr/0001-phaser-box2d-physics.md): the verdict section and its table.
 - `scripts/engine-verdict.ts`, `src/stress-tests/` and `src/gallery/gallery.ts`.
-- The commits of #16–#20. The scene uses everything they built.
+- The commits of #16–#20 and #33. The scene uses everything they built.
 
 ## What already exists
 
 - **Gallery demos** are `Demo { name, build(world) }` objects in `src/gallery/gallery.ts`, listed in `GALLERY` and shown as a row of buttons by `SandboxScene` (`loadDemo` clears the Arena and builds the demo). `letGo()` starts physics and lets Objects go before the snapshot, so R and Space replay a demo.
 - **`npm run verdict`** runs the milestone 1 checks headless. `pebbles()` shows how it times physics steps with `performance.now()` and prints the mean, p99 and max.
 - **The F1 overlay** (`src/rendering/debug-overlay.ts`) prints fps (`game.loop.actualFps`) and the body count.
+- **The Material rules** (#33; `MaterialRules` in `src/sandbox/material-rules.ts`, the world's `rules`) decide every consequence the chain sets off: damage, breaking, Fill release, Blast damage, wake and push, glue and Patch wear, sticking and Droplet landing. `SandboxWorld.step()` runs their phases one line each (`impacts`, `stick`, `land`, `breakAll`, `glue`, then `blasts.spread(dt, rules.blastReached)`), so the step's rule work can be timed phase by phase there.
 
 ## Suggested design (a proposal)
 
@@ -49,7 +50,7 @@ Don't make the boxes red, or fill anything red: the scene has exactly 5 Blasts. 
 
 - **Headless step times.** If p99 is over 16.7 ms (a 60 fps frame), look at what #16–#20 do per step before blaming the engine:
   - Blast queries: one `physics.bodiesWithin` per spreading Blast per step (a bounding-box query, then the nearest point of each shape in it);
-  - the glue drag loop;
+  - the Material rules' phases, above all the glue drag loop (`rules.glue`);
   - Rubble piles and the 64-entry contact buffer;
   - Patch bookkeeping.
 

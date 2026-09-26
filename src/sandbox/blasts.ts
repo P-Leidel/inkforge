@@ -10,8 +10,8 @@ import { TERRAIN_PARTY, type Party, type PartyId } from './contact-ledger';
  * Blasts (ADR 0008): rings of force spreading out from destroyed red ink.
  * Sizing a Blast and its falloff are pure; the `Blasts` kind below holds the
  * rings still spreading. A Blast acts once on each body its ring reaches,
- * but it only reports what it reached: the Sandbox world pushes, damages
- * and breaks.
+ * but it only reports what it reached: the Material rules push, wake,
+ * damage and break.
  */
 
 /** A Blast's size: how far it reaches and how strong it is at its centre. */

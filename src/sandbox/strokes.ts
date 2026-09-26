@@ -180,7 +180,7 @@ export interface BrokenOutline {
   readonly centre: Vec2;
 }
 
-/** What breaking a Piece or an Object lets out, for the Sandbox world to pass on. */
+/** What breaking a Piece or an Object lets out: the Material rules decide what follows. */
 export interface Broken {
   /** What Debris bursts from: an Outline or band in world coordinates, moving and coloured so. */
   readonly debris: {

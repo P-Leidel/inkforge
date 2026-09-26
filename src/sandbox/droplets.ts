@@ -6,7 +6,7 @@ import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import type { Arena } from './arena';
 import { motionOf, type Kind, type Motion, type Solids } from './arena-contents';
-import type { NewContact, Party, PartyId, PartyIndex } from './contact-ledger';
+import type { Party, PartyId, PartyIndex } from './contact-ledger';
 import type { Random } from './random';
 import { deepestPoint, hexSpots } from './rubble';
 
@@ -104,10 +104,11 @@ type SavedDroplet = Omit<DropletRecord, 'body'> & { readonly motion: Motion };
  * The Droplets in flight, oldest first. Each is a small fast circle that
  * never touches another Droplet, never wakes a Frozen Object, and is a
  * harmless Party to the Contact ledger: it deals no damage, and nothing
- * sticks to it. It lands at its first new contact (Settled pairs are never
- * new, so one touching something at the snapshot doesn't land again), and
- * vanishes if it leaves the Arena. Droplet ids are never reused. Droplets
- * aren't solid: a Stroke can be drawn through a Spill.
+ * sticks to it. The Material rules land it at its first new contact
+ * (Settled pairs are never new, so one touching something at the snapshot
+ * doesn't land again), and it vanishes if it leaves the Arena. Droplet ids
+ * are never reused. Droplets aren't solid: a Stroke can be drawn through a
+ * Spill.
  */
 export class Droplets implements Kind<'droplets', readonly SavedDroplet[], readonly DropletView[]> {
   readonly name = 'droplets';
@@ -167,26 +168,23 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
     this.byBody.delete(body);
   }
 
+  /** Whether a body is a Droplet's. */
+  isDroplet(body: BodyId): boolean {
+    return this.byBody.has(body);
+  }
+
   /**
-   * Lands every Droplet with a new contact this step, at its first one in
-   * the ledger's order: it goes, and the Landing says where to lay its Patch.
+   * Removes the Droplet whose body this is, which landed on `host`; the
+   * Landing says where to lay its Patch. Which contact lands a Droplet is
+   * the Material rules' to decide.
    */
-  land(newContacts: readonly NewContact<unknown>[]): Landing[] {
-    const landings: Landing[] = [];
-    for (const { a, b } of newContacts) {
-      for (const [mine, host] of [
-        [a, b],
-        [b, a],
-      ] as const) {
-        const droplet = this.byBody.get(mine.body);
-        if (!droplet || host.harmless) continue;
-        const { x, y } = this.physics.getTransform(droplet.body);
-        landings.push({ colour: droplet.colour, length: droplet.length, centre: { x, y }, host });
-        this.removeBody(droplet.body);
-      }
-    }
-    if (landings.length > 0) this.droplets = this.droplets.filter((d) => this.byBody.has(d.body));
-    return landings;
+  land(body: BodyId, host: Party<unknown>): Landing {
+    const droplet = this.byBody.get(body);
+    if (!droplet) throw new Error(`no Droplet has body ${body}`);
+    const { x, y } = this.physics.getTransform(body);
+    this.removeBody(body);
+    this.droplets.splice(this.droplets.indexOf(droplet), 1);
+    return { colour: droplet.colour, length: droplet.length, centre: { x, y }, host };
   }
 
   save(): readonly SavedDroplet[] {
