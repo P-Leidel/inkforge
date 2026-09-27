@@ -699,3 +699,61 @@ describe('Bodies within a radius', () => {
     expect([...near(179).keys()].sort()).toEqual([line, pebble].sort());
   });
 });
+
+describe('Shapes near a box', () => {
+  const box = (minX: number, minY: number, maxX: number, maxY: number) => ({
+    minX,
+    minY,
+    maxX,
+    maxY,
+  });
+
+  it('names every shape, added capsules too, whose bounds overlap the box, and the body it is on', () => {
+    const world = createWorld();
+    const ground = world.addTerrain([GROUND], DEAD);
+    const line = world.addLine([{ a: { x: 100, y: 300 }, b: { x: 300, y: 300 } }], 8, DEAD);
+    const frozen = world.addObject({
+      position: { x: 500, y: 300 },
+      parts: [square(20)],
+      frozen: true,
+      surface: DEAD,
+      mass: 1,
+    });
+    const patch = world.addCapsule(
+      frozen,
+      { a: { x: -20, y: -20 }, b: { x: 20, y: -20 } },
+      2,
+      DEAD,
+    );
+    const bodies = (found: readonly { body: number }[]) => [...new Set(found.map((f) => f.body))];
+
+    // Around the Line's right end, reaching the top of the box: its Patch.
+    const found = world.shapesNear(box(290, 270, 600, 305));
+    expect(bodies(found).sort()).toEqual([line, frozen].sort());
+    expect(found.filter((f) => f.body === frozen).map((f) => f.shape)).toContain(patch);
+    expect(bodies(world.shapesNear(box(0, 480, 50, 520)))).toEqual([ground]);
+    expect(world.shapesNear(box(700, 100, 800, 200))).toEqual([]);
+
+    world.removeBody(line);
+    expect(bodies(world.shapesNear(box(290, 270, 310, 305)))).toEqual([]);
+  });
+
+  it('follows a moving body, and one rebuilt by a Release', () => {
+    const world = createWorld();
+    world.addTerrain([GROUND], DEAD);
+    const box20 = world.addObject({
+      position: { x: 400, y: 100 },
+      parts: [square(20)],
+      frozen: true,
+      surface: DEAD,
+      mass: 1,
+    });
+    world.release(box20);
+    for (let step = 0; step < 30; step++) world.step();
+    const { x, y } = world.getTransform(box20);
+
+    expect(y).toBeGreaterThan(200);
+    expect(world.shapesNear(box(x - 1, y - 1, x + 1, y + 1)).map((f) => f.body)).toEqual([box20]);
+    expect(world.shapesNear(box(399, 99, 401, 101))).toEqual([]);
+  });
+});

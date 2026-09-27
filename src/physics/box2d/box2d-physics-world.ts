@@ -76,6 +76,7 @@ import type { Transform } from '../../geometry/transform';
 import type { Vec2 } from '../../geometry/vec2';
 import type {
   BodyId,
+  BodyShape,
   BondAnchors,
   BondId,
   CircleBodyDef,
@@ -1124,6 +1125,22 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
         null,
       );
       return [...nearest.values()];
+    },
+
+    shapesNear({ minX, minY, maxX, maxY }) {
+      const found: BodyShape[] = [];
+      const box = new b2AABB(toM(minX), toM(minY), toM(maxX), toM(maxY));
+      b2World_OverlapAABB(
+        worldId,
+        box,
+        b2DefaultQueryFilter(),
+        (shape) => {
+          found.push({ body: bodyIdOfShape(shape), shape: b2Shape_GetUserData(shape) as ShapeId });
+          return true;
+        },
+        null,
+      );
+      return found;
     },
 
     touchPoint(pair) {

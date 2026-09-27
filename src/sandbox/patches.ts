@@ -9,8 +9,7 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld, ShapeId } from '../physics';
 import type { ArenaBodies } from './arena-bodies';
-import type { HostSurface, Kind, Poses, Solids } from './arena-contents';
-import { brushTouchesCapsules, type Brush } from './brush';
+import type { HostSurface, Kind, Poses } from './arena-contents';
 import type { Party, PartyId } from './contact-ledger';
 import type { Why } from './happenings';
 import type { PreviousPoses } from './previous-poses';
@@ -253,10 +252,16 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   /** Over the Patch cap, the oldest go first. */
   private cap(): void {
     const over = this.patches.length - Math.max(0, Math.floor(this.materials.patchCap));
-    if (over > 0) this.remove(this.patches.slice(0, over), 'capped');
+    if (over > 0) this.removeAll(this.patches.slice(0, over), 'capped');
   }
 
-  private remove(patches: readonly PatchRecord[], why: Why): void {
+  /** Removes Patch `id` at once, for `why`, and its host stays: an erased Patch. */
+  remove(id: number, why: Why): void {
+    const patch = this.patches.find((p) => p.id === id);
+    if (patch) this.removeAll([patch], why);
+  }
+
+  private removeAll(patches: readonly PatchRecord[], why: Why): void {
     for (const { shape } of patches) {
       this.bodies.removeShape(shape, why);
       this.byShape.delete(shape);
@@ -285,7 +290,7 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   /** Removes every used-up Patch. */
   removeUsedUp(): void {
     const used = this.patches.filter((patch) => patch.used >= this.capacity(patch));
-    if (used.length > 0) this.remove(used, 'used-up');
+    if (used.length > 0) this.removeAll(used, 'used-up');
   }
 
   save(): readonly SavedPatch[] {
@@ -312,22 +317,6 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
       this.byShape.delete(shape);
       return false;
     });
-  }
-
-  /** An erased Patch goes, and its host stays. */
-  erase(brush: Brush): void {
-    this.patches = this.patches.filter((patch) => {
-      if (!brushTouchesCapsules(brush, [this.worldSegment(patch)], patch.thickness / 2))
-        return true;
-      this.bodies.removeShape(patch.shape, 'erased');
-      this.byShape.delete(patch.shape);
-      return false;
-    });
-  }
-
-  /** Patches take no room of their own. */
-  solids(): Solids {
-    return { polygons: [], circles: [] };
   }
 
   step(): void {}

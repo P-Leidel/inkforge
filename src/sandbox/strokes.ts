@@ -1,11 +1,6 @@
 import { capsuleOverlapsPolygon } from '../geometry/overlap';
 import { bandPolygon, capsulePolygon, shortestWayOut } from '../geometry/separation';
-import {
-  polygonCentroid,
-  polygonContainsPoint,
-  polygonPerimeter,
-  type Polygon,
-} from '../geometry/polygon';
+import { polygonCentroid, polygonPerimeter, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import { transformPoints } from '../geometry/transform';
 import { sub, type Vec2 } from '../geometry/vec2';
@@ -16,9 +11,9 @@ import type { BodyId, ObjectBodyDef, PhysicsWorld } from '../physics';
 import { pieceCentre } from '../stroke/pieces';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
 import type { Arena } from './arena';
-import { brushTouchesCapsules, brushTouchesPolygon, type Brush } from './brush';
 import type { ArenaBodies } from './arena-bodies';
-import { motionOf, type Kind, type Motion, type Poses, type Solids } from './arena-contents';
+import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
+import type { ArenaQuery, Capsule } from './arena-query';
 import type { PartyId } from './contact-ledger';
 import type { Happening, Why } from './happenings';
 import { durabilityLeft, wear, type Breakable } from './material-rules';
@@ -151,6 +146,12 @@ type Stroke = LineStroke | ObjectStroke;
 /** What takes damage: an Object or a Piece. */
 export type StrokeTarget = ObjectStroke | Piece;
 
+/** A Line's capsules, one per segment of each Piece still there, in order. */
+function capsulesOf(line: LineStroke): Capsule[] {
+  const radius = line.thickness / 2;
+  return line.pieces.flatMap((piece) => piece.segments.map((segment) => ({ segment, radius })));
+}
+
 /** One undo step: a Stroke, or the Fill of an Object. */
 type Action = { readonly kind: 'stroke' | 'fill'; readonly id: StrokeId };
 
@@ -235,6 +236,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     private readonly materials: MaterialTable,
     private readonly arena: Arena,
     private readonly bodies: ArenaBodies<StrokeTarget>,
+    private readonly query: Pick<ArenaQuery, 'objectsAt' | 'objectsCrossing'>,
     private readonly poses: Pick<PreviousPoses, 'of'>,
     /** Appends to the list of what happened: a Fill and a Release. */
     private readonly say: (happening: Happening) => void,
@@ -309,7 +311,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       const line: LineStroke = { kind: 'line', id, party, colour, thickness, pieces };
       this.strokes.push(line);
       this.history.push({ kind: 'stroke', id });
-      if (running) this.squeeze(this.objectStrokes(), [line]);
+      if (running) this.squeeze(this.crossedBy([line]));
       return id;
     }
     // The body's origin is the outline's centroid; shapes are stored relative to it.
@@ -338,7 +340,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     );
     this.strokes.push(object);
     this.history.push({ kind: 'stroke', id });
-    if (running) this.squeeze([object], this.lineStrokes());
+    if (running) this.squeeze([object]);
     return id;
   }
 
@@ -392,6 +394,11 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     return this.strokes.filter((s): s is LineStroke => s.kind === 'line');
   }
 
+  private objectById(id: StrokeId): ObjectStroke | undefined {
+    const stroke = this.strokes.find((s) => s.id === id);
+    return stroke?.kind === 'object' ? stroke : undefined;
+  }
+
   /** An Object's Outline where the Object is now. */
   private worldOutline(stroke: ObjectStroke): Polygon {
     return transformPoints(stroke.outline, this.physics.getTransform(stroke.body));
@@ -405,31 +412,35 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
 
   /** Squeezes every Object off the Lines crossing it, as physics starts. */
   squeezeAll(): void {
-    this.squeeze(this.objectStrokes(), this.lineStrokes());
+    this.squeeze(this.crossedBy(this.lineStrokes()));
+  }
+
+  /** The Objects one of `lines` crosses more deeply than it touches, in drawing order. */
+  private crossedBy(lines: readonly LineStroke[]): ObjectStroke[] {
+    const touching = lines
+      .flatMap(capsulesOf)
+      .map(({ segment, radius }) => ({ segment, radius: radius - SQUEEZE_TOLERANCE }));
+    return this.query.objectsCrossing(touching).flatMap(({ id }) => this.objectById(id) ?? []);
   }
 
   /**
-   * Squeezes each of `objects` that one of `lines` crosses off the Lines
-   * crossing it: drawing a Line through an Object, moving or Frozen, shoves
-   * it. It slides the shortest way off at the push-out speed, passing
-   * through Lines and Terrain, and then restarts from rest. (Box2D's own
-   * push-out jams bodies made of several convex parts on a Line deep inside
-   * them, since each part is pushed out on its own.) A sliding Object deals
-   * and takes no damage.
+   * Squeezes each of `objects` that a Line crosses off the Lines crossing
+   * it: drawing a Line through an Object, moving or Frozen, shoves it. It
+   * slides the shortest way off at the push-out speed, passing through
+   * Lines and Terrain, and then restarts from rest. (Box2D's own push-out
+   * jams bodies made of several convex parts on a Line deep inside them,
+   * since each part is pushed out on its own.) A sliding Object deals and
+   * takes no damage.
    */
-  private squeeze(objects: readonly ObjectStroke[], lines: readonly LineStroke[]): void {
-    const capsulesOf = (line: LineStroke) =>
-      line.pieces.flatMap((piece) =>
-        piece.segments.map((segment) => ({ segment, radius: line.thickness / 2 })),
-      );
-    const trigger = lines.flatMap(capsulesOf);
+  private squeeze(objects: readonly ObjectStroke[]): void {
+    if (objects.length === 0) return;
     const capsules = this.lineStrokes().flatMap(capsulesOf);
     for (const object of objects) {
       const parts = this.worldParts(object);
-      const crosses = ({ segment: { a, b }, radius }: (typeof capsules)[number]) =>
+      const crosses = ({ segment: { a, b }, radius }: Capsule) =>
         parts.some((part) => capsuleOverlapsPolygon(a, b, radius - SQUEEZE_TOLERANCE, part));
-      if (!trigger.some(crosses)) continue;
       const crossing = capsules.filter(crosses);
+      if (crossing.length === 0) continue;
       const others = this.objectStrokes()
         .filter((o) => o !== object)
         .flatMap((o) => this.worldParts(o));
@@ -449,10 +460,10 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
 
   /** The topmost (most recently drawn) Object under `point` where it is now, if any. */
   private objectAt(point: Vec2, accept: (stroke: ObjectStroke) => boolean = () => true) {
-    for (let i = this.strokes.length - 1; i >= 0; i--) {
-      const stroke = this.strokes[i]!;
-      if (stroke.kind !== 'object' || !accept(stroke)) continue;
-      if (polygonContainsPoint(this.worldOutline(stroke), point)) return stroke;
+    const under = this.query.objectsAt(point);
+    for (let i = under.length - 1; i >= 0; i--) {
+      const stroke = this.objectById(under[i]!.id);
+      if (stroke && accept(stroke)) return stroke;
     }
     return null;
   }
@@ -506,22 +517,19 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   }
 
   /**
-   * Removes the Objects the brush touches, with their Fills, and the Pieces
-   * of Lines it touches; the rest of a Line stays fixed where it is, and the
-   * Line goes with its last Piece. Erased Strokes are gone from the history.
+   * Removes Piece `index` of Line `lineId`, for `why`; the rest of the Line
+   * stays fixed where it is, and the Line goes with its last Piece.
    */
-  erase(brush: Brush): void {
-    for (const object of this.objectStrokes()) {
-      if (brushTouchesPolygon(brush, this.worldOutline(object))) this.remove(object.id, 'erased');
-    }
-    for (const line of this.lineStrokes()) {
-      const radius = line.thickness / 2;
-      const erased = line.pieces.filter((p) => brushTouchesCapsules(brush, p.segments, radius));
-      if (erased.length === 0) continue;
-      for (const piece of erased) this.bodies.removeBody(piece.body, 'erased');
-      line.pieces = line.pieces.filter((piece) => !erased.includes(piece));
-      if (line.pieces.length === 0) this.remove(line.id, 'erased');
-    }
+  removePiece(lineId: StrokeId, index: number, why: Why): void {
+    const line = this.lineStrokes().find((s) => s.id === lineId);
+    const piece = line?.pieces.find((p) => p.index === index);
+    if (line && piece) this.dropPiece(line, piece, why);
+  }
+
+  private dropPiece(line: LineStroke, piece: Piece, why: Why): void {
+    this.bodies.removeBody(piece.body, why);
+    line.pieces = line.pieces.filter((p) => p !== piece);
+    if (line.pieces.length === 0) this.remove(line.id, why);
   }
 
   /**
@@ -572,9 +580,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   private breakPiece(piece: Piece): Broken | null {
     const line = this.lineStrokes().find((s) => s.id === piece.lineId);
     if (!line) return null;
-    this.bodies.removeBody(piece.body, 'broke');
-    line.pieces = line.pieces.filter((p) => p !== piece);
-    if (line.pieces.length === 0) this.remove(line.id, 'broke');
+    this.dropPiece(line, piece, 'broke');
     return {
       debris: {
         outline: bandPolygon(piece.segments, line.thickness / 2),
@@ -641,11 +647,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   clear(): void {
     this.strokes = [];
     this.history = [];
-  }
-
-  /** Objects are solid; Lines aren't (an Object drawn over one is squeezed off it). */
-  solids(): Solids {
-    return { polygons: this.objectStrokes().map((s) => this.worldParts(s)), circles: [] };
   }
 
   step(): void {}

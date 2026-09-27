@@ -255,6 +255,47 @@ describe('Arena bodies', () => {
     expect(bodies.surfaceOf(gone.id)).toBeNull();
   });
 
+  it('names what the query found, with its form, each once and in the order added', () => {
+    const { physics, bodies, line, object, pebble, patchOn } = setup();
+    const a = line();
+    const b = object();
+    const c = pebble({ harmless: true });
+    const patch = patchOn(b.id)!;
+    const terrainBody = 1 as BodyId; // the stub numbers bodies from 1, the Terrain first
+    const own = (body: BodyId) => ({ body, shape: 999 as ShapeId });
+    const onB = physics.shapesOn(b.body);
+
+    // Found in any order, some more than once, with a body already gone.
+    const gone = pebble();
+    bodies.removeBody(gone.body, 'broke');
+    const figures = bodies.figures([
+      own(c.body),
+      { body: b.body, shape: onB[0]! },
+      own(b.body),
+      own(gone.body),
+      own(a.body),
+      own(terrainBody),
+      own(a.body),
+    ]);
+
+    expect(figures.map(({ what }) => what)).toEqual([
+      null,
+      { thing: 'piece', id: 1, index: 0 },
+      { thing: 'object', id: 2 },
+      { thing: 'rubble', id: 3, colour: 'grey', radius: 6 },
+      { thing: 'patch', id: 4, colour: 'blue', segment, thickness: 3 },
+    ]);
+    expect(figures.map(({ body }) => body)).toEqual([terrainBody, a.body, b.body, c.body, b.body]);
+    expect(figures.map(({ form }) => form)).toEqual([
+      { kind: 'terrain', polygons: [square] },
+      { kind: 'capsules', segments: [segment], radius: 4 },
+      { kind: 'object', outline: square, parts: [square] },
+      { kind: 'circle', radius: 6 },
+      { kind: 'capsule', segment, radius: 1.5 },
+    ]);
+    expect(patch.shape).toBe(onB[0]);
+  });
+
   it('re-applies every body’s and Patch shape’s surface from the table after an edit', () => {
     const { physics, materials, bodies, line, object, pebble, patchOn } = setup();
     const a = line();

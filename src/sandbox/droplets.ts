@@ -5,8 +5,7 @@ import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import type { Arena } from './arena';
 import type { ArenaBodies } from './arena-bodies';
-import { motionOf, type Kind, type Motion, type Poses, type Solids } from './arena-contents';
-import { brushTouchesCircle, type Brush } from './brush';
+import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
 import type { Party, PartyId } from './contact-ledger';
 import type { Why } from './happenings';
 import type { PreviousPoses } from './previous-poses';
@@ -209,24 +208,17 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
   /** Nothing of it is attached to anything else. */
   gone(): void {}
 
-  /** An erased Droplet lays no Patch. */
-  erase(brush: Brush): void {
-    this.droplets = this.droplets.filter(({ body, radius }) => {
-      const { x, y } = this.physics.getTransform(body);
-      if (!brushTouchesCircle(brush, { x, y }, radius)) return true;
-      this.removeBody(body, 'erased');
-      return false;
-    });
+  /** Removes Droplet `id` at once, for `why`; it lays no Patch: an erased Droplet. */
+  remove(id: number, why: Why): void {
+    const index = this.droplets.findIndex((droplet) => droplet.id === id);
+    if (index < 0) return;
+    const { body } = this.droplets.splice(index, 1)[0]!;
+    this.removeBody(body, why);
   }
 
   clear(): void {
     this.droplets = [];
     this.byBody.clear();
-  }
-
-  /** Droplets aren't solid. */
-  solids(): Solids {
-    return { polygons: [], circles: [] };
   }
 
   /** Droplets that left the Arena vanish. */
