@@ -3,8 +3,18 @@ import { describe, expect, it } from 'vitest';
 import { DEMOLITION_DEMO } from '../gallery/gallery';
 import type { Vec2 } from '../geometry/vec2';
 import { COLOURS } from '../materials/colour';
+import { createMaterialTable } from '../materials/material-table';
 import { STEP_SECONDS, type SandboxWorld } from '../sandbox/sandbox-world';
-import { drawLine, drawObject, objectById, sandboxWorlds } from '../sandbox/test-support';
+import {
+  drawLine,
+  drawObject,
+  entriesOf,
+  hear,
+  objectById,
+  runFor,
+  sandboxWorlds,
+} from '../sandbox/test-support';
+import { dragBox } from '../stroke/pointer-paths';
 import { bakedTextureUse } from './baked-textures';
 import { WorldRenderer } from './world-renderer';
 
@@ -121,6 +131,36 @@ function box(x: number, y: number, width: number, height: number): Vec2[] {
 function frame(world: SandboxWorld, renderer: WorldRenderer): void {
   world.step();
   renderer.draw();
+}
+
+/** The ids of the world's Lines, Objects, Rubble and Patches. */
+function idsIn(world: SandboxWorld) {
+  return {
+    lines: world.lines.map((l) => l.id),
+    objects: world.objects.map((o) => o.id),
+    rubble: world.rubble.map((r) => r.id),
+    patches: world.patches.map((p) => p.id),
+  };
+}
+
+const sorted = (ids: readonly number[]) => [...ids].sort((a, b) => a - b);
+
+/** The ids the renderer holds a drawing for, each list in id order. */
+function idsHeld(renderer: WorldRenderer) {
+  const { lines, objects, rubble, patches } = renderer.held();
+  return {
+    lines: sorted(lines),
+    objects: sorted(objects),
+    rubble: sorted(rubble),
+    patches: sorted(patches),
+  };
+}
+
+/** A renderer on a recording scene, and the recording. */
+function renderWorld(world: SandboxWorld) {
+  const recording = new RecordingScene();
+  const renderer = new WorldRenderer(recording.asScene(), world);
+  return { recording, renderer };
 }
 
 describe('World renderer: render budget', () => {
@@ -241,6 +281,184 @@ describe('World renderer: between steps', () => {
     const { transform } = objectById(world, id);
     const [placed] = recording.placed;
     expect(placed!.position).toEqual({ x: transform.x, y: transform.y });
+    renderer.destroy();
+  });
+});
+
+describe('World renderer: by what happened', () => {
+  it('holds exactly the world’s ids every frame of the Demolition chain, through R and Clear', () => {
+    const world = createWorld();
+    const { renderer } = renderWorld(world);
+    DEMOLITION_DEMO.build(world);
+    renderer.draw();
+    const expectInStep = () => {
+      const want = idsIn(world);
+      expect(idsHeld(renderer)).toEqual({
+        lines: sorted(want.lines),
+        objects: sorted(want.objects),
+        rubble: sorted(want.rubble),
+        patches: sorted(want.patches),
+      });
+    };
+    expectInStep();
+
+    let seen = { rubble: 0, patches: 0 };
+    for (let k = 0; k < 300; k++) {
+      // Two steps between some frames, as a slow frame takes.
+      world.step();
+      if (k % 3 === 0) world.step();
+      renderer.draw();
+      expectInStep();
+      seen = {
+        rubble: Math.max(seen.rubble, world.rubble.length),
+        patches: Math.max(seen.patches, world.patches.length),
+      };
+    }
+    expect(seen.rubble).toBeGreaterThan(0);
+    expect(seen.patches).toBeGreaterThan(0);
+
+    world.reset();
+    renderer.draw();
+    expectInStep();
+    expect(renderer.held().objects.length).toBeGreaterThan(0);
+
+    world.clear();
+    renderer.draw();
+    expect(renderer.held()).toEqual({ lines: [], objects: [], rubble: [], patches: [] });
+    renderer.destroy();
+  });
+
+  it('must start on a world with nothing in it', () => {
+    const world = createWorld();
+    drawObject(world, box(900, 200, 60, 60));
+
+    expect(() => renderWorld(world)).toThrow();
+  });
+
+  it('bakes an Object again when it is filled, and only then', () => {
+    const world = createWorld();
+    const { recording, renderer } = renderWorld(world);
+    drawObject(world, box(900, 200, 60, 60));
+    renderer.draw();
+    recording.baked = 0;
+    renderer.draw();
+    expect(recording.baked).toBe(0);
+
+    world.fillAt({ x: 930, y: 230 }, 'black');
+    renderer.draw();
+
+    expect(recording.baked).toBeGreaterThan(0);
+    renderer.destroy();
+  });
+
+  it('bursts Debris where something broke; it falls through everything and is gone in about 2 s', () => {
+    const world = createWorld();
+    const { renderer } = renderWorld(world);
+    const ball = drawObject(world, box(900, 200, 40, 40), 'red');
+    world.togglePause();
+    world.release(ball);
+    const heard = hear(world);
+    while (entriesOf(heard(), 'burst').length === 0) world.step();
+    renderer.draw();
+    const burst = renderer.debrisCount;
+    expect(burst).toBeGreaterThan(0);
+    const bodies = world.bodyCount;
+
+    runFor(world, 1.9);
+    renderer.draw();
+    expect(renderer.debrisCount).toBe(burst);
+    expect(world.bodyCount).toBe(bodies);
+
+    runFor(world, 0.2);
+    renderer.draw();
+    expect(renderer.debrisCount).toBe(0);
+    renderer.destroy();
+  });
+
+  it('keeps Debris still while paused, and drops it on R and on Clear', () => {
+    const world = createWorld();
+    const { renderer } = renderWorld(world);
+    const ball = drawObject(world, box(900, 200, 40, 40), 'red');
+    world.togglePause();
+    world.release(ball);
+    const heard = hear(world);
+    while (entriesOf(heard(), 'burst').length === 0) world.step();
+    world.togglePause();
+    renderer.draw();
+    const burst = renderer.debrisCount;
+
+    for (let k = 0; k < 200; k++) renderer.draw(); // paused: no time passes
+    expect(renderer.debrisCount).toBe(burst);
+
+    world.reset();
+    renderer.draw();
+    expect(renderer.debrisCount).toBe(0);
+
+    world.togglePause();
+    world.release(ball);
+    while (entriesOf(heard(), 'burst').length < 2) world.step();
+    renderer.draw();
+    expect(renderer.debrisCount).toBeGreaterThan(0);
+    world.clear();
+    renderer.draw();
+    expect(renderer.debrisCount).toBe(0);
+    renderer.destroy();
+  });
+
+  it('fades out Rubble the cap removed where it was, and then frees it', () => {
+    const materials = createMaterialTable();
+    materials.rubbleCap = 3;
+    const world = createWorld({ materials });
+    const { recording, renderer } = renderWorld(world);
+    const pot = drawObject(world, dragBox(900, 200, 60, 60));
+    world.fillAt({ x: 930, y: 230 }, 'grey');
+    world.materials.colours.grey.outline.durability = 1;
+    renderer.draw();
+    world.togglePause();
+    world.release(pot);
+    const heard = hear(world);
+    while (!entriesOf(heard(), 'went').some(({ why }) => why === 'capped')) world.step();
+    const capped = entriesOf(heard(), 'went').filter(({ why }) => why === 'capped').length;
+    const images = recording.displayList.length;
+
+    renderer.draw();
+    // The capped Rubble's images stay, to fade out: the Object's went.
+    expect(renderer.held().rubble).toHaveLength(3);
+    expect(recording.displayList.length).toBe(images - 1 + 3 + capped);
+
+    runFor(world, 0.4);
+    renderer.draw();
+    expect(recording.displayList.length).toBe(images - 1 + 3 + capped);
+    runFor(world, 0.2); // 0.5 s after the cap
+    renderer.draw();
+    expect(recording.displayList.length).toBe(images - 1 + 3);
+    renderer.destroy();
+  });
+
+  it('bursts a puff of Debris where a Patch was used up', () => {
+    const world = createWorld();
+    const { renderer } = renderWorld(world);
+    // A blue-filled box breaks on the ground and spills Patches there.
+    const pot = drawObject(world, dragBox(470, 700, 60, 60), 'grey');
+    world.fillAt({ x: 500, y: 730 }, 'blue');
+    world.materials.colours.grey.outline.durability = 1;
+    world.togglePause();
+    world.release(pot);
+    runFor(world, 3); // the Spill has landed, and its Debris is gone
+    renderer.draw();
+    expect(world.patches.length).toBeGreaterThan(0);
+    expect(renderer.debrisCount).toBe(0);
+    world.materials.patchCapacity = 0; // used up at the next use
+    const heard = hear(world);
+    const ball = drawObject(world, dragBox(480, 500, 40, 40));
+    world.fillAt({ x: 500, y: 520 }, 'black');
+    world.release(ball);
+
+    while (!entriesOf(heard(), 'went').some(({ why }) => why === 'used-up')) world.step();
+    renderer.draw();
+
+    expect(entriesOf(heard(), 'burst')).toEqual([]);
+    expect(renderer.debrisCount).toBeGreaterThan(0);
     renderer.destroy();
   });
 });

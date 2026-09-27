@@ -1,19 +1,25 @@
 import type Phaser from 'phaser';
+import { bandPolygon } from '../geometry/separation';
 import type { Segment } from '../geometry/segment';
-import { between, carry, type Transform } from '../geometry/transform';
+import { applyTransform, between, carry, type Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
-import type {
-  FadingRubbleView,
-  LineView,
-  ObjectView,
-  PatchView,
-  PieceView,
-  Poses,
-  SandboxWorld,
-  StrokeId,
+import { Random } from '../sandbox/random';
+import {
+  GRAVITY,
+  STEP_SECONDS,
+  type Entry,
+  type LineView,
+  type ObjectView,
+  type PieceView,
+  type Poses,
+  type Reader,
+  type SandboxWorld,
+  type StrokeId,
+  type Thing,
 } from '../sandbox/sandbox-world';
 import { COLOURS, type Colour } from '../materials/colour';
 import { BakedDrawing, BakedTextures, bakingGraphics } from './baked-textures';
+import { Debris } from './debris';
 import { fillPolygon, strokePolygon, strokePolyline } from './draw';
 import { drawInk, fillInk, hash, INK_HUES, inkReach, segmentRuns } from './ink';
 import { PALETTE } from './palette';
@@ -23,11 +29,14 @@ import { rectAround, tilesAlong } from './tiles';
 const OUTLINE_WIDTH = 5;
 
 type Graphics = Phaser.GameObjects.Graphics;
+type Image = Phaser.GameObjects.Image;
 
 /** Wear at which each of the three crack stages shows. */
 const CRACK_STAGES = [0.25, 0.5, 0.75];
 const CRACK_WIDTH = 2;
 const DEBRIS_DEPTH = 5;
+/** Seed of the Debris' own random generator, apart from the simulation's. */
+const DEBRIS_SEED = 0x0deb415;
 /** Blast rings show over everything else in the Arena. */
 const BLAST_DEPTH = 6;
 /** Width of a Blast's ring at full strength, and as it dies out. */
@@ -49,14 +58,59 @@ const BOND_RADIUS = 5;
 const RUBBLE_SIDES = 20;
 /** Width of the rim around a piece of Rubble. */
 const RUBBLE_RIM = 2;
+/** Seconds Rubble removed by the cap takes to fade out. */
+const RUBBLE_FADE_SECONDS = 0.5;
 /** Lines are baked in tiles of at most this many px square. */
 const LINE_TILE = 256;
 /** How far a Frozen Object's pin reaches from its centre, px. */
 const PIN_REACH = 10;
 
+/** A Line as drawn: its tiles, once baked, and what it was last baked with. */
+interface DrawnLine {
+  tiles: BakedDrawing[] | null;
+  /** The places along the Line of its Pieces still there. */
+  readonly pieces: Set<number>;
+  /** Each Piece's crack stage, in order along the Line, as last baked. */
+  stages: readonly number[];
+  /** Whether a Piece came or went since it was last baked. */
+  stale: boolean;
+}
+
+/** An Object as drawn: its texture, once baked, and what it was last baked with. */
+interface DrawnObject {
+  drawing: BakedDrawing | null;
+  frozen: boolean;
+  stage: number;
+  /** Whether its Fill changed, or it was Released, since it was last baked. */
+  stale: boolean;
+}
+
+/** Rubble the cap removed, fading out where it was. */
+interface FadingRubble {
+  readonly image: Image;
+  /** The simulated time the cap removed it, s. */
+  readonly since: number;
+}
+
+/** The ids of what the renderer holds a drawing for. */
+export interface Held {
+  readonly lines: readonly StrokeId[];
+  readonly objects: readonly StrokeId[];
+  readonly rubble: readonly number[];
+  readonly patches: readonly number[];
+}
+
 /**
  * Draws the Sandbox world's state: Terrain, Lines, Objects, Rubble, Patches,
  * Droplets, bonds, Debris and Blast rings.
+ *
+ * What it holds a drawing for comes and goes only by the world's list of
+ * what happened, which it reads once a frame: it makes a drawing on
+ * `added`, bakes again on a Fill or a Release, frees it on `went` and
+ * drops everything on `start over`. Poses, wear and the Frozen state it
+ * still reads from the views each frame. What is visual only is its own,
+ * drawn from the list: Debris bursts where something broke and where a
+ * Patch went used up or capped, and Rubble the cap removed fades out.
  *
  * Each Stroke is baked into textures of its own, and baked again only when
  * its look changes (a crack, a break, a Fill): a Line in tiles, so a long
@@ -73,28 +127,39 @@ const PIN_REACH = 10;
  * their hosts are drawn. Debris and Blast rings keep to the steps.
  */
 export class WorldRenderer {
-  /** Each Line's tiles. */
-  private readonly lines = new Map<StrokeId, BakedDrawing[]>();
-  private readonly objects = new Map<StrokeId, BakedDrawing>();
-  /** The Pieces and cracks each Line was last drawn with. */
-  private readonly drawnLineLook = new Map<StrokeId, string>();
-  /** The Frozen state and Fill each Object was last drawn with. */
-  private readonly drawnLook = new Map<StrokeId, string>();
-  /** Each piece of Rubble, live or fading out, by its id. */
-  private readonly rubble = new Map<number, Phaser.GameObjects.Image>();
+  private readonly happenings: Reader;
+  /** Each Line by its id. */
+  private readonly lines = new Map<StrokeId, DrawnLine>();
+  private readonly objects = new Map<StrokeId, DrawnObject>();
+  /** Each piece of Rubble by its id. */
+  private readonly rubble = new Map<number, Image>();
+  /** Rubble the cap removed, oldest first. */
+  private fading: FadingRubble[] = [];
   /** The looks of Rubble, by Colour and radius, and of Patches, by Colour and size. */
   private readonly baked: BakedTextures;
   /** Each Patch by its id. */
-  private readonly patches = new Map<number, Phaser.GameObjects.Image>();
+  private readonly patches = new Map<number, Image>();
+  private readonly debris = new Debris(new Random(DEBRIS_SEED), GRAVITY, STEP_SECONDS);
+  /** The simulated time the Debris has moved on to, s. */
+  private debrisTime: number;
   private readonly droplets: Graphics;
-  private readonly debris: Graphics;
+  private readonly debrisGraphics: Graphics;
   private readonly bonds: Graphics;
   private readonly blasts: Graphics;
 
+  /**
+   * Draws `world`, which must hold no Strokes, Rubble or Patches yet: from
+   * here on it knows what is there only by what happens.
+   */
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly world: SandboxWorld,
   ) {
+    const { lines, objects, rubble, patches } = world;
+    if (lines.length + objects.length + rubble.length + patches.length > 0)
+      throw new Error('a World renderer starts on a world with nothing in it');
+    this.happenings = world.happenings.reader();
+    this.debrisTime = world.time;
     this.baked = new BakedTextures(scene);
     // Rubble in each Colour's usual size, before the first Fill breaks.
     for (const colour of COLOURS) {
@@ -103,18 +168,32 @@ export class WorldRenderer {
         this.baked.prepare(...rubbleLook(colour, rubbleRadius));
     }
     this.drawTerrain(scene.add.graphics());
-    this.debris = scene.add.graphics().setDepth(DEBRIS_DEPTH);
+    this.debrisGraphics = scene.add.graphics().setDepth(DEBRIS_DEPTH);
     this.bonds = scene.add.graphics().setDepth(BOND_DEPTH);
     this.droplets = scene.add.graphics().setDepth(PATCH_DEPTH);
     this.blasts = scene.add.graphics().setDepth(BLAST_DEPTH);
   }
 
-  /** Frees the textures. */
+  /** Frees the textures, and stops reading what happens. */
   destroy(): void {
-    for (const tiles of this.lines.values()) for (const tile of tiles) tile.destroy();
-    for (const drawing of this.objects.values()) drawing.destroy();
-    for (const image of [...this.rubble.values(), ...this.patches.values()]) image.destroy();
+    this.happenings.close();
+    this.dropAll();
     this.baked.destroy();
+  }
+
+  /** Debris particles in flight. */
+  get debrisCount(): number {
+    return this.debris.count;
+  }
+
+  /** The ids of what it holds a drawing for, for tests. */
+  held(): Held {
+    return {
+      lines: [...this.lines.keys()],
+      objects: [...this.objects.keys()],
+      rubble: [...this.rubble.keys()],
+      patches: [...this.patches.keys()],
+    };
   }
 
   /** Draws `draw` once and bakes it into each of `drawings`. */
@@ -135,15 +214,147 @@ export class WorldRenderer {
   }
 
   draw(): void {
+    const now = this.world.time;
+    this.debris.advance(Math.round((now - this.debrisTime) / STEP_SECONDS));
+    this.debrisTime = now;
+    for (const entry of this.happenings.read()) this.follow(entry, now);
     const fraction = this.world.stepFraction;
-    this.syncLines();
-    this.syncObjects(fraction);
-    this.syncRubble(fraction);
-    this.syncPatches(fraction);
+    this.drawLines();
+    this.drawObjects(fraction);
+    this.placeRubble(fraction, now);
+    this.placePatches(fraction);
     this.drawDroplets(fraction);
     this.drawBonds(fraction);
     this.drawDebris();
     this.drawBlasts();
+  }
+
+  /** Makes, bakes again or frees what one entry of the list says; `now` is the world's time. */
+  private follow(entry: Entry, now: number): void {
+    switch (entry.kind) {
+      case 'added':
+        this.add(entry.what);
+        return;
+      case 'went': {
+        const { what, why, transform, velocity } = entry;
+        if (what.thing === 'rubble' && why === 'capped') this.fade(what.id, transform, entry.time);
+        else this.free(what);
+        if (what.thing === 'patch' && (why === 'capped' || why === 'used-up')) {
+          // A puff of Debris where the Patch was.
+          const segment = {
+            a: applyTransform(what.segment.a, transform),
+            b: applyTransform(what.segment.b, transform),
+          };
+          const band = bandPolygon([segment], what.thickness / 2 + 1);
+          this.debris.burst(band, velocity, [what.colour], this.stepsSince(entry.time, now));
+        }
+        return;
+      }
+      case 'filled':
+      case 'released': {
+        const object = this.objects.get(entry.id);
+        if (object) object.stale = true;
+        return;
+      }
+      case 'burst':
+        this.debris.burst(
+          entry.outline,
+          entry.velocity,
+          entry.colours,
+          this.stepsSince(entry.time, now),
+        );
+        return;
+      case 'exploded':
+        return;
+      case 'start-over':
+        this.dropAll();
+        return;
+    }
+  }
+
+  /** Whole steps from `time` to `now`. */
+  private stepsSince(time: number, now: number): number {
+    return Math.max(0, Math.round((now - time) / STEP_SECONDS));
+  }
+
+  /** Makes a drawing for what was added; Lines and Objects are baked when next drawn. */
+  private add(what: Thing): void {
+    switch (what.thing) {
+      case 'piece': {
+        let line = this.lines.get(what.id);
+        if (!line) {
+          line = { tiles: null, pieces: new Set(), stages: [], stale: true };
+          this.lines.set(what.id, line);
+        }
+        line.pieces.add(what.index);
+        line.stale = true;
+        return;
+      }
+      case 'object':
+        this.objects.set(what.id, { drawing: null, frozen: true, stage: 0, stale: true });
+        return;
+      case 'rubble':
+        this.rubble.set(what.id, this.baked.image(...rubbleLook(what.colour, what.radius)));
+        return;
+      case 'patch':
+        this.patches.set(what.id, this.baked.image(...patchLook(what)).setDepth(PATCH_DEPTH));
+        return;
+      case 'droplet':
+        return; // drawn afresh every frame
+    }
+  }
+
+  /** Frees the drawing of what went. A Line goes with its last Piece. */
+  private free(what: Thing): void {
+    switch (what.thing) {
+      case 'piece': {
+        const line = this.lines.get(what.id);
+        if (!line) return;
+        line.pieces.delete(what.index);
+        line.stale = true;
+        if (line.pieces.size > 0) return;
+        for (const tile of line.tiles ?? []) tile.destroy();
+        this.lines.delete(what.id);
+        return;
+      }
+      case 'object':
+        this.objects.get(what.id)?.drawing?.destroy();
+        this.objects.delete(what.id);
+        return;
+      case 'rubble':
+        this.rubble.get(what.id)?.destroy();
+        this.rubble.delete(what.id);
+        return;
+      case 'patch':
+        this.patches.get(what.id)?.destroy();
+        this.patches.delete(what.id);
+        return;
+      case 'droplet':
+        return;
+    }
+  }
+
+  /** Keeps the image of Rubble the cap removed where it was, to fade out. */
+  private fade(id: number, { x, y, angle }: Transform, since: number): void {
+    const image = this.rubble.get(id);
+    if (!image) return;
+    this.rubble.delete(id);
+    image.setPosition(x, y).setRotation(angle).setAlpha(1);
+    this.fading.push({ image, since });
+  }
+
+  /** Frees every drawing, and drops the Debris and the fading Rubble. */
+  private dropAll(): void {
+    for (const { tiles } of this.lines.values()) for (const tile of tiles ?? []) tile.destroy();
+    for (const { drawing } of this.objects.values()) drawing?.destroy();
+    for (const image of [...this.rubble.values(), ...this.patches.values()]) image.destroy();
+    for (const { image } of this.fading) image.destroy();
+    this.lines.clear();
+    this.objects.clear();
+    this.rubble.clear();
+    this.patches.clear();
+    this.fading = [];
+    this.debris.clear();
   }
 
   /**
@@ -183,39 +394,28 @@ export class WorldRenderer {
   }
 
   /** Rubble in the place it is, and what the cap removed fading out where it was. */
-  private syncRubble(fraction: number): void {
-    const current = new Set<number>();
-    const pieces: FadingRubbleView[] = [
-      ...this.world.rubble.map((piece) => ({
-        ...piece,
-        transform: drawn(piece, fraction),
-        opacity: 1,
-      })),
-      ...this.world.fadingRubble,
-    ];
-    for (const piece of pieces) {
-      current.add(piece.id);
-      let image = this.rubble.get(piece.id);
-      if (!image) {
-        image = this.baked.image(...rubbleLook(piece.colour, piece.radius));
-        this.rubble.set(piece.id, image);
-      }
-      const { x, y, angle } = piece.transform;
-      image.setPosition(x, y).setRotation(angle).setAlpha(piece.opacity);
+  private placeRubble(fraction: number, now: number): void {
+    for (const piece of this.world.rubble) {
+      const { x, y, angle } = drawn(piece, fraction);
+      this.rubble.get(piece.id)?.setPosition(x, y).setRotation(angle);
     }
-    removeStale(this.rubble, current);
+    if (this.fading.length === 0) return;
+    this.fading = this.fading.filter(({ image, since }) => {
+      const age = now - since;
+      if (age < RUBBLE_FADE_SECONDS) {
+        image.setAlpha(1 - age / RUBBLE_FADE_SECONDS);
+        return true;
+      }
+      image.destroy();
+      return false;
+    });
   }
 
   /** Each Patch where its host is now, a strip of its Colour's ink fading as it wears. */
-  private syncPatches(fraction: number): void {
-    const current = new Set<number>();
+  private placePatches(fraction: number): void {
     for (const patch of this.world.patches) {
-      current.add(patch.id);
-      let image = this.patches.get(patch.id);
-      if (!image) {
-        image = this.baked.image(...patchLook(patch)).setDepth(PATCH_DEPTH);
-        this.patches.set(patch.id, image);
-      }
+      const image = this.patches.get(patch.id);
+      if (!image) continue;
       const host = patch.hostPoses.transform;
       const hostDrawn = drawn(patch.hostPoses, fraction);
       const a = carry(patch.segment.a, host, hostDrawn);
@@ -225,7 +425,6 @@ export class WorldRenderer {
         .setRotation(Math.atan2(b.y - a.y, b.x - a.x))
         .setAlpha(1 - (1 - PATCH_WORN_ALPHA) * patch.wear);
     }
-    removeStale(this.patches, current);
   }
 
   /** Each Droplet as a small disc in its Colour, with a glint. */
@@ -244,9 +443,9 @@ export class WorldRenderer {
 
   /** Each particle as a small tumbling square in its Colour, fading out. */
   private drawDebris(): void {
-    const g = this.debris;
+    const g = this.debrisGraphics;
     g.clear();
-    for (const { colour, size, position, angle, opacity } of this.world.debrisParticles) {
+    for (const { colour, size, position, angle, opacity } of this.debris.views) {
       const c = (Math.cos(angle) * size) / 2;
       const s = (Math.sin(angle) * size) / 2;
       g.fillStyle(INK_HUES[colour], opacity);
@@ -259,57 +458,59 @@ export class WorldRenderer {
     }
   }
 
-  private syncLines(): void {
-    const current = new Set<StrokeId>();
+  /** Bakes each Line again when a Piece came or went, or a Piece's crack stage changed. */
+  private drawLines(): void {
     for (const line of this.world.lines) {
-      current.add(line.id);
-      let tiles = this.lines.get(line.id);
-      if (!tiles) {
-        // Around the whole Line: it only loses Pieces from here on.
-        const reach = inkReach(line.colour, line.thickness);
-        tiles = tilesAlong(line.segments, reach, LINE_TILE).map(
-          (rect) => new BakedDrawing(this.scene, rect),
-        );
-        this.lines.set(line.id, tiles);
-      }
-      const look = line.pieces.map((p) => `${p.index}:${crackStage(p.wear)}`).join(' ');
-      if (this.drawnLineLook.get(line.id) !== look) {
-        this.bake(tiles, (g) => drawLine(g, line));
-        this.drawnLineLook.set(line.id, look);
-      }
+      const drawnLine = this.lines.get(line.id);
+      if (!drawnLine) continue;
+      const stages = line.pieces.map((piece) => crackStage(piece.wear));
+      if (!drawnLine.stale && sameStages(drawnLine.stages, stages)) continue;
+      // Around the whole Line as it first shows: it only loses Pieces from here on.
+      drawnLine.tiles ??= tilesAlong(
+        line.segments,
+        inkReach(line.colour, line.thickness),
+        LINE_TILE,
+      ).map((rect) => new BakedDrawing(this.scene, rect));
+      this.bake(drawnLine.tiles, (g) => drawLine(g, line));
+      drawnLine.stages = stages;
+      drawnLine.stale = false;
     }
-    removeStale(this.lines, current);
-    for (const id of this.drawnLineLook.keys()) if (!current.has(id)) this.drawnLineLook.delete(id);
   }
 
-  private syncObjects(fraction: number): void {
-    const current = new Set<StrokeId>();
+  /**
+   * Bakes each Object again when its Fill changed, it was Released, a hit
+   * or a Blast woke it, or its crack stage changed, and places it.
+   */
+  private drawObjects(fraction: number): void {
     for (const object of this.world.objects) {
-      current.add(object.id);
-      let drawing = this.objects.get(object.id);
-      if (!drawing) {
-        const pin = [
-          { x: -PIN_REACH, y: -PIN_REACH },
-          { x: PIN_REACH, y: PIN_REACH },
-        ];
-        const rect = rectAround(
-          [...object.outline, ...pin],
-          inkReach(object.colour, OUTLINE_WIDTH),
+      const drawnObject = this.objects.get(object.id);
+      if (!drawnObject) continue;
+      const stage = crackStage(object.wear);
+      if (
+        drawnObject.stale ||
+        drawnObject.frozen !== object.frozen ||
+        drawnObject.stage !== stage
+      ) {
+        drawnObject.drawing ??= new BakedDrawing(
+          this.scene,
+          rectAround(
+            [...object.outline, { x: -PIN_REACH, y: -PIN_REACH }, { x: PIN_REACH, y: PIN_REACH }],
+            inkReach(object.colour, OUTLINE_WIDTH),
+          ),
         );
-        drawing = new BakedDrawing(this.scene, rect);
-        this.objects.set(object.id, drawing);
-      }
-      const look = `${object.frozen} ${object.fill} ${crackStage(object.wear)}`;
-      if (this.drawnLook.get(object.id) !== look) {
-        this.bake([drawing], (g) => drawObject(g, object));
-        this.drawnLook.set(object.id, look);
+        this.bake([drawnObject.drawing], (g) => drawObject(g, object));
+        drawnObject.frozen = object.frozen;
+        drawnObject.stage = stage;
+        drawnObject.stale = false;
       }
       const { x, y, angle } = drawn(object, fraction);
-      drawing.image.setPosition(x, y).setRotation(angle);
+      drawnObject.drawing!.image.setPosition(x, y).setRotation(angle);
     }
-    removeStale(this.objects, current);
-    for (const id of this.drawnLook.keys()) if (!current.has(id)) this.drawnLook.delete(id);
   }
+}
+
+function sameStages(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((stage, k) => stage === b[k]);
 }
 
 /** Where a body is drawn: `fraction` of the way from its previous pose to its pose now. */
@@ -417,7 +618,11 @@ function drawRubble(g: Graphics, colour: Colour, radius: number): void {
  * same. Rounded to whole px of length and half px of thickness, so a few
  * looks serve every Patch.
  */
-function patchLook(patch: PatchView): [string, number, (g: Graphics) => void] {
+function patchLook(patch: {
+  readonly colour: Colour;
+  readonly segment: Segment;
+  readonly thickness: number;
+}): [string, number, (g: Graphics) => void] {
   const { a, b } = patch.segment;
   const length = Math.round(Math.hypot(b.x - a.x, b.y - a.y));
   const width = Math.round(2 * patch.thickness) / 2 + PATCH_EXTRA_WIDTH;
@@ -473,17 +678,5 @@ function drawCracks(g: Graphics, object: ObjectView): void {
       });
     }
     strokePolyline(g, points);
-  }
-}
-
-/** Destroys and forgets what is no longer in the world. */
-function removeStale<T extends { destroy(): void } | readonly { destroy(): void }[]>(
-  drawn: Map<number, T>,
-  current: Set<number>,
-): void {
-  for (const [id, thing] of drawn) {
-    if (current.has(id)) continue;
-    for (const part of Array.isArray(thing) ? thing : [thing]) part.destroy();
-    drawn.delete(id);
   }
 }

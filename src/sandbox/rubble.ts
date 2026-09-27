@@ -180,9 +180,6 @@ export function deepestPoint(outline: Polygon): { point: Vec2; depth: number } {
   return best;
 }
 
-/** Seconds Rubble removed by the cap takes to fade out. */
-const FADE_SECONDS = 0.5;
-
 /** A piece of Rubble; its transform is its centre and rotation. */
 export interface RubbleView extends Poses {
   readonly id: number;
@@ -192,16 +189,6 @@ export interface RubbleView extends Poses {
   readonly mass: number;
   /** Linear velocity, px/s. */
   readonly velocity: Vec2;
-}
-
-/** Rubble the cap removed, fading out where it was. It has no body. */
-export interface FadingRubbleView {
-  readonly id: number;
-  readonly colour: Colour;
-  readonly radius: number;
-  readonly transform: Transform;
-  /** From 1 as it is removed down to 0. */
-  readonly opacity: number;
 }
 
 /** A piece of Rubble set loose from a broken Object's Fill. */
@@ -226,28 +213,17 @@ interface RubbleRecord {
 
 type SavedRubble = Omit<RubbleRecord, 'body'> & { readonly motion: Motion };
 
-interface FadingRubble {
-  readonly id: number;
-  readonly colour: Colour;
-  readonly radius: number;
-  readonly transform: Transform;
-  /** Seconds since the cap removed it. */
-  age: number;
-}
-
 /**
  * The Rubble in the Arena, oldest first, and the cap on it. Rubble ids, like
  * Stroke ids, are never reused, not even after R or Clear. Rubble the cap
- * removes leaves a fading ghost that is visual only, like Debris: it isn't
- * in the snapshot, and R and Clear drop it. Each piece is a Party of its
- * own to the Contact ledger, with no target: it deals damage by the normal
- * rule, as its own hitter, and never takes any.
+ * removes goes as `capped`; the renderer fades it out where it was. Each
+ * piece is a Party of its own to the Contact ledger, with no target: it
+ * deals damage by the normal rule, as its own hitter, and never takes any.
  */
 export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly RubbleView[]> {
   readonly name = 'rubble';
   /** Oldest first. */
   private rubble: RubbleRecord[] = [];
-  private fading: FadingRubble[] = [];
   private nextId = 1;
 
   constructor(
@@ -269,17 +245,6 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
     }));
   }
 
-  /** Rubble the cap removed, fading out. */
-  get fadingViews(): readonly FadingRubbleView[] {
-    return this.fading.map(({ id, colour, radius, transform, age }) => ({
-      id,
-      colour,
-      radius,
-      transform,
-      opacity: Math.max(0, 1 - age / FADE_SECONDS),
-    }));
-  }
-
   /** Sets Rubble loose, in order, then applies the cap. */
   add(loose: readonly LooseRubble[]): void {
     for (const { motion, ...rubble } of loose)
@@ -288,7 +253,7 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
   }
 
   private addBody(rubble: Omit<RubbleRecord, 'body'>, motion: Motion): void {
-    const { party } = rubble;
+    const { id, party, colour, radius } = rubble;
     const { body } = this.bodies.addCircle(
       {
         position: { x: motion.transform.x, y: motion.transform.y },
@@ -299,19 +264,16 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
         angularVelocity: motion.angularVelocity,
       },
       { colour: rubble.colour, role: 'outline' },
+      { thing: 'rubble', id, colour, radius },
       (body) => ({ id: party, stroke: party, body, target: null }),
     );
     this.rubble.push({ ...rubble, body });
   }
 
-  /** Over the Rubble cap, the oldest Rubble goes at once and fades out where it was. */
+  /** Over the Rubble cap, the oldest Rubble goes at once. */
   private cap(): void {
     const cap = Math.max(0, this.materials.rubbleCap);
-    while (this.rubble.length > cap) {
-      const { id, colour, radius, body } = this.rubble.shift()!;
-      this.fading.push({ id, colour, radius, transform: this.physics.getTransform(body), age: 0 });
-      this.bodies.removeBody(body);
-    }
+    while (this.rubble.length > cap) this.bodies.removeBody(this.rubble.shift()!.body, 'capped');
   }
 
   save(): readonly SavedRubble[] {
@@ -330,23 +292,18 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
   /** Nothing of it is attached to anything else. */
   gone(): void {}
 
-  /** Erased Rubble goes at once, leaving no ghost. */
+  /** Erased Rubble goes at once. */
   erase(brush: Brush): void {
     this.rubble = this.rubble.filter(({ body, radius }) => {
       const { x, y } = this.physics.getTransform(body);
       if (!brushTouchesCircle(brush, { x, y }, radius)) return true;
-      this.bodies.removeBody(body);
+      this.bodies.removeBody(body, 'erased');
       return false;
     });
   }
 
-  dropVisuals(): void {
-    this.fading = [];
-  }
-
   clear(): void {
     this.rubble = [];
-    this.fading = [];
   }
 
   /** Rubble is solid: an Object drawn over it is refused. */
@@ -358,9 +315,5 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
     return { polygons: [], circles };
   }
 
-  /** The ghosts fade. */
-  step(seconds: number): void {
-    for (const ghost of this.fading) ghost.age += seconds;
-    this.fading = this.fading.filter((ghost) => ghost.age < FADE_SECONDS);
-  }
+  step(): void {}
 }

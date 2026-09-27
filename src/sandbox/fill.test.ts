@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { transformPoints } from '../geometry/transform';
 import { COLOURS, type Colour } from '../materials/colour';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import type { SandboxWorld } from './sandbox-world';
-import { drawLine, drawObject, objectById, runFor, sandboxWorlds } from './test-support';
+import { drawLine, drawObject, hear, objectById, runFor, sandboxWorlds } from './test-support';
 
 const createWorld = sandboxWorlds();
 
@@ -44,11 +45,34 @@ describe('Fill', () => {
     const box = box60(world, 300, 300);
     world.fillAt({ x: 330, y: 330 }, 'grey');
 
+    const heard = hear(world);
+
     const outcome = world.fillAt({ x: 320, y: 340 }, 'black');
 
-    expect(outcome).toEqual({ kind: 'already-filled', id: box });
+    // With the Outline where the Object is, for the scene to flash.
+    const { outline, transform } = objectById(world, box);
+    expect(outcome).toEqual({
+      kind: 'already-filled',
+      id: box,
+      outline: transformPoints(outline, transform),
+    });
     expect(objectById(world, box).fill).toBe('grey');
     expect(objectById(world, box).mass).toBeCloseTo(4.14, 1);
+    expect(heard()).toEqual([]);
+  });
+
+  it('says it filled the Object, and that undo took the Fill back', () => {
+    const world = createWorld();
+    const box = box60(world, 300, 300);
+    const heard = hear(world);
+
+    world.fillAt({ x: 330, y: 330 }, 'grey');
+    world.undo();
+
+    expect(heard()).toEqual([
+      { kind: 'filled', id: box, fill: 'grey', time: 0 },
+      { kind: 'filled', id: box, fill: null, time: 0 },
+    ]);
   });
 
   it('allows every Outline and Fill pair, the same Colour twice included', () => {

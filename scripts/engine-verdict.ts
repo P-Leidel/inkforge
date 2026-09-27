@@ -220,16 +220,17 @@ function restingPile() {
 /**
  * The Demolition scene (the gallery demo): a chain of five red bombs through
  * filled boxes, two Spills and a wall of Lines. Times the whole Sandbox world
- * step for 5 s from the drop, and apart from it one read of every view per
- * step, as a frame's renderer and F1 overlay make. Counts what the chain set
- * off by distinct ids.
+ * step for 5 s from the drop, and apart from it one read of every view and
+ * of the list of what happened per step, as a frame's renderer and F1
+ * overlay make. Counts what the chain set off by the list's entries.
  */
 function demolition() {
   return withWorld((world) => {
     DEMOLITION_DEMO.build(world);
-    const blasts = new Set<number>();
-    const rubble = new Set<number>();
-    const droplets = new Set<number>();
+    const happenings = world.happenings.reader();
+    let blasts = 0;
+    let rubble = 0;
+    let droplets = 0;
     const stepTimes: number[] = [];
     const readTimes: number[] = [];
     let chainStart: number | null = null;
@@ -240,32 +241,35 @@ function demolition() {
       const t0 = performance.now();
       world.step();
       const t1 = performance.now();
+      const entries = happenings.read();
       const read =
         world.lines.length +
         world.objects.length +
         world.rubble.length +
-        world.fadingRubble.length +
         world.bonds.length +
         world.droplets.length +
         world.patches.length +
         world.blasts.length +
-        world.debrisParticles.length;
+        entries.length;
       readTimes.push(performance.now() - t1);
       stepTimes.push(t1 - t0);
       items = Math.max(items, read);
-      for (const { id } of world.blasts) blasts.add(id);
-      for (const { id } of world.rubble) rubble.add(id);
-      for (const { id } of world.droplets) droplets.add(id);
+      for (const entry of entries) {
+        if (entry.kind === 'exploded') blasts++;
+        else if (entry.kind === 'added' && entry.what.thing === 'rubble') rubble++;
+        else if (entry.kind === 'added' && entry.what.thing === 'droplet') droplets++;
+      }
       if (world.blasts.length > 0) {
         chainStart ??= step;
         chainEnd = step + 1;
       }
       bodies = Math.max(bodies, world.bodyCount);
     }
+    happenings.close();
     return {
-      blasts: blasts.size,
-      rubble: rubble.size,
-      droplets: droplets.size,
+      blasts,
+      rubble,
+      droplets,
       bodies,
       items,
       chainSeconds: (chainEnd - (chainStart ?? 0)) * STEP_SECONDS,
@@ -327,5 +331,5 @@ const times = (t: { mean: number; p99: number; max: number }) =>
 console.log(`   step, whole run:        ${times(demo.step)}`);
 console.log(`   step, during the chain: ${times(demo.chain)}`);
 console.log(
-  `   one read of every view: ${times(demo.read)} (up to ${demo.items} items; per frame, apart from the step)`,
+  `   one read of every view and the list: ${times(demo.read)} (up to ${demo.items} items; per frame, apart from the step)`,
 );

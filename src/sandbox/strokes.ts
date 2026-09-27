@@ -20,6 +20,7 @@ import { brushTouchesCapsules, brushTouchesPolygon, type Brush } from './brush';
 import type { ArenaBodies } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses, type Solids } from './arena-contents';
 import type { PartyId } from './contact-ledger';
+import type { Happening, Why } from './happenings';
 import { durabilityLeft, wear, type Breakable } from './material-rules';
 import type { PreviousPoses } from './previous-poses';
 import { WAITING, type StickState } from './sticking';
@@ -93,7 +94,8 @@ export interface StrokeViews {
 /** What a Fill click did. */
 export type FillOutcome =
   | { readonly kind: 'filled'; readonly id: StrokeId }
-  | { readonly kind: 'already-filled'; readonly id: StrokeId }
+  /** The Object under the click holds a Fill already; `outline` is its Outline where it is now. */
+  | { readonly kind: 'already-filled'; readonly id: StrokeId; readonly outline: Polygon }
   | { readonly kind: 'missed' };
 
 /** What the Stroke pipeline made of a Stroke that is added. */
@@ -234,6 +236,8 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     private readonly arena: Arena,
     private readonly bodies: ArenaBodies<StrokeTarget>,
     private readonly poses: Pick<PreviousPoses, 'of'>,
+    /** Appends to the list of what happened: a Fill and a Release. */
+    private readonly say: (happening: Happening) => void,
   ) {}
 
   get views(): StrokeViews {
@@ -340,8 +344,9 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
 
   /** Adds a Piece's fixed body. Its Party's Stroke is its Line's, `line`. */
   private addPiece(saved: SavedPiece, thickness: number, line: PartyId): Piece {
-    const { segments, colour, party } = saved;
-    return this.bodies.addLine(segments, thickness, colour, (body) => ({
+    const { segments, colour, party, lineId, index } = saved;
+    const what = { thing: 'piece', id: lineId, index } as const;
+    return this.bodies.addLine(segments, thickness, colour, what, (body) => ({
       id: party,
       stroke: line,
       body,
@@ -354,8 +359,9 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     saved: Omit<ObjectStroke, 'body'>,
     def: Omit<ObjectBodyDef, 'surface'>,
   ): ObjectStroke {
-    const { colour, outline, party } = saved;
-    return this.bodies.addObject(def, colour, outline, (body) => ({
+    const { colour, outline, party, id } = saved;
+    const what = { thing: 'object', id } as const;
+    return this.bodies.addObject(def, colour, outline, what, (body) => ({
       id: party,
       stroke: party,
       body,
@@ -384,6 +390,11 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
 
   private lineStrokes(): LineStroke[] {
     return this.strokes.filter((s): s is LineStroke => s.kind === 'line');
+  }
+
+  /** An Object's Outline where the Object is now. */
+  private worldOutline(stroke: ObjectStroke): Polygon {
+    return transformPoints(stroke.outline, this.physics.getTransform(stroke.body));
   }
 
   /** An Object's collider parts where the Object is now. */
@@ -441,8 +452,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     for (let i = this.strokes.length - 1; i >= 0; i--) {
       const stroke = this.strokes[i]!;
       if (stroke.kind !== 'object' || !accept(stroke)) continue;
-      const outline = transformPoints(stroke.outline, this.physics.getTransform(stroke.body));
-      if (polygonContainsPoint(outline, point)) return stroke;
+      if (polygonContainsPoint(this.worldOutline(stroke), point)) return stroke;
     }
     return null;
   }
@@ -461,7 +471,9 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   fillAt(point: Vec2, colour: Colour): FillOutcome {
     const object = this.objectAt(point);
     if (!object) return { kind: 'missed' };
-    if (object.fill) return { kind: 'already-filled', id: object.id };
+    if (object.fill) {
+      return { kind: 'already-filled', id: object.id, outline: this.worldOutline(object) };
+    }
     this.setFill(object, colour);
     this.history.push({ kind: 'fill', id: object.id });
     return { kind: 'filled', id: object.id };
@@ -471,6 +483,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     object.fill = fill;
     object.fillMass = fillMass(object.outline, fill, this.materials);
     this.physics.setMass(object.body, object.outlineMass + object.fillMass);
+    this.say({ kind: 'filled', id: object.id, fill });
   }
 
   /** Releases a Frozen Object, optionally setting it moving. */
@@ -479,15 +492,16 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     if (stroke?.kind !== 'object' || !this.physics.isFrozen(stroke.body)) return false;
     this.physics.release(stroke.body);
     if (velocity) this.physics.setVelocity(stroke.body, velocity);
+    this.say({ kind: 'released', id });
     return true;
   }
 
-  /** Removes one Stroke with its Fill. */
-  remove(id: StrokeId): void {
+  /** Removes one Stroke with its Fill, for `why`. */
+  remove(id: StrokeId, why: Why): void {
     const index = this.strokes.findIndex((s) => s.id === id);
     if (index < 0) return;
     const [stroke] = this.strokes.splice(index, 1);
-    for (const body of this.bodiesOf(stroke!)) this.bodies.removeBody(body);
+    for (const body of this.bodiesOf(stroke!)) this.bodies.removeBody(body, why);
     this.history = this.history.filter((action) => action.id !== id);
   }
 
@@ -498,16 +512,15 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
    */
   erase(brush: Brush): void {
     for (const object of this.objectStrokes()) {
-      const outline = transformPoints(object.outline, this.physics.getTransform(object.body));
-      if (brushTouchesPolygon(brush, outline)) this.remove(object.id);
+      if (brushTouchesPolygon(brush, this.worldOutline(object))) this.remove(object.id, 'erased');
     }
     for (const line of this.lineStrokes()) {
       const radius = line.thickness / 2;
       const erased = line.pieces.filter((p) => brushTouchesCapsules(brush, p.segments, radius));
       if (erased.length === 0) continue;
-      for (const piece of erased) this.bodies.removeBody(piece.body);
+      for (const piece of erased) this.bodies.removeBody(piece.body, 'erased');
       line.pieces = line.pieces.filter((piece) => !erased.includes(piece));
-      if (line.pieces.length === 0) this.remove(line.id);
+      if (line.pieces.length === 0) this.remove(line.id, 'erased');
     }
   }
 
@@ -520,7 +533,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     const action = this.history.pop();
     if (!action) return;
     if (action.kind === 'stroke') {
-      this.remove(action.id);
+      this.remove(action.id, 'undone');
       return;
     }
     const object = this.objectStrokes().find((s) => s.id === action.id);
@@ -542,7 +555,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     const from = motionOf(this.physics, object.body);
     const outline = transformPoints(object.outline, from.transform);
     const colours = object.fill ? [object.colour, object.fill] : [object.colour];
-    this.remove(object.id);
+    this.remove(object.id, 'broke');
     const { fill, fillMass, outline: local } = object;
     return {
       debris: { outline, velocity: from.velocity, colours },
@@ -559,9 +572,9 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   private breakPiece(piece: Piece): Broken | null {
     const line = this.lineStrokes().find((s) => s.id === piece.lineId);
     if (!line) return null;
-    this.bodies.removeBody(piece.body);
+    this.bodies.removeBody(piece.body, 'broke');
     line.pieces = line.pieces.filter((p) => p !== piece);
-    if (line.pieces.length === 0) this.remove(line.id);
+    if (line.pieces.length === 0) this.remove(line.id, 'broke');
     return {
       debris: {
         outline: bandPolygon(piece.segments, line.thickness / 2),
@@ -624,8 +637,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
 
   /** Nothing of it is attached to anything else. */
   gone(): void {}
-
-  dropVisuals(): void {}
 
   clear(): void {
     this.strokes = [];

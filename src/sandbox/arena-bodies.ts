@@ -12,6 +12,7 @@ import {
   type PartyId,
   type SavedContacts,
 } from './contact-ledger';
+import type { Happening, Thing, Why } from './happenings';
 
 /**
  * Arena bodies: every body in the Arena, and every shape added on one, come
@@ -21,6 +22,9 @@ import {
  * - removing one unregisters it and tells every kind what went before the
  *   call returns, so nothing is left attached to a body that is gone;
  * - sliding one marks it Squeezed.
+ *
+ * It also says what was added and what went, and why, for the list of what
+ * happened: each body and added shape is a Thing that its kind names.
  *
  * It knows each body's Colour and role, and each added shape's Colour, so it
  * re-applies surfaces after a material table edit, and it knows each Party's
@@ -37,6 +41,8 @@ export type BodiesPhysics = Pick<
   | 'addObject'
   | 'addCircle'
   | 'removeBody'
+  | 'getTransform'
+  | 'getVelocity'
   | 'slideOut'
   | 'addCapsule'
   | 'removeShape'
@@ -60,6 +66,9 @@ export interface Paint {
 /** Who a new body is, given the body: a kind builds its record around it. */
 type Who<P> = (body: BodyId) => P;
 
+/** What an added body or shape is, for the list of what happened; none for the Terrain. */
+type What = Thing | null;
+
 /** A shape added on a host's body. */
 export interface AddedShape {
   readonly shape: ShapeId;
@@ -70,6 +79,7 @@ export interface AddedShape {
 interface BodyEntry {
   readonly body: BodyId;
   readonly party: PartyId;
+  readonly what: What;
   /** Null for the Terrain, whose surface never changes. */
   readonly paint: Paint | null;
   /** Where a Patch can be laid on it; null if nothing lands on it. */
@@ -81,6 +91,7 @@ interface BodyEntry {
 interface ShapeEntry {
   readonly body: BodyId;
   readonly colour: Colour;
+  readonly what: Thing;
 }
 
 export class ArenaBodies<T> {
@@ -93,12 +104,14 @@ export class ArenaBodies<T> {
    * @param gone Hears each Party that went, as it goes: the Sandbox world
    * tells every kind, in kind order. What hears it only forgets its own
    * records and lets go of what they held, and never calls back in.
+   * @param say Appends to the list of what happened.
    */
   constructor(
     private readonly physics: BodiesPhysics,
     private readonly contacts: BodiesLedger<T>,
     private readonly materials: MaterialTable,
     private readonly gone: (parties: ReadonlySet<PartyId>) => void,
+    private readonly say: (happening: Happening) => void,
   ) {}
 
   /** A new Party id, never reused. */
@@ -109,7 +122,7 @@ export class ArenaBodies<T> {
   /** Adds the Terrain, which is Party 0. */
   addTerrain(polygons: readonly Polygon[]): void {
     const body = this.physics.addTerrain(polygons, TERRAIN_SURFACE);
-    this.track(body, TERRAIN_PARTY, null, { kind: 'polygons', polygons });
+    this.track(body, TERRAIN_PARTY, null, null, { kind: 'polygons', polygons });
     this.contacts.register({ id: TERRAIN_PARTY, stroke: TERRAIN_PARTY, body, target: null });
   }
 
@@ -118,11 +131,12 @@ export class ArenaBodies<T> {
     segments: readonly Segment[],
     thickness: number,
     colour: Colour,
+    what: Thing,
     who: Who<P>,
   ): P {
     const body = this.physics.addLine(segments, thickness, this.materials.colours[colour].line);
     const surface: HostSurface = { kind: 'capsules', segments, radius: thickness / 2 };
-    return this.register(body, { colour, role: 'line' }, surface, who);
+    return this.register(body, { colour, role: 'line' }, surface, what, who);
   }
 
   /** Adds an Object with its Colour's Outline surface; Patches lie along `outline`. */
@@ -130,6 +144,7 @@ export class ArenaBodies<T> {
     def: Omit<ObjectBodyDef, 'surface'>,
     colour: Colour,
     outline: Polygon,
+    what: Thing,
     who: Who<P>,
   ): P {
     const body = this.physics.addObject({
@@ -137,58 +152,77 @@ export class ArenaBodies<T> {
       surface: this.materials.colours[colour].outline,
     });
     const surface: HostSurface = { kind: 'polygons', polygons: [outline] };
-    return this.register(body, { colour, role: 'outline' }, surface, who);
+    return this.register(body, { colour, role: 'outline' }, surface, what, who);
   }
 
   /**
    * Adds a moving circle with `paint`'s surface. Patches lie on its rim,
    * unless it is harmless: nothing lands on a Droplet.
    */
-  addCircle<P extends Party<T>>(def: Omit<CircleBodyDef, 'surface'>, paint: Paint, who: Who<P>): P {
+  addCircle<P extends Party<T>>(
+    def: Omit<CircleBodyDef, 'surface'>,
+    paint: Paint,
+    what: Thing,
+    who: Who<P>,
+  ): P {
     const body = this.physics.addCircle({
       ...def,
       surface: this.materials.colours[paint.colour][paint.role],
     });
     const circle: HostSurface = { kind: 'circle', radius: def.radius };
-    return this.register(body, paint, circle, who, (party) => !party.harmless);
+    return this.register(body, paint, circle, what, who, (party) => !party.harmless);
   }
 
   private register<P extends Party<T>>(
     body: BodyId,
     paint: Paint,
     surface: HostSurface,
+    what: Thing,
     who: Who<P>,
     lands: (party: P) => boolean = () => true,
   ): P {
     const party = who(body);
-    this.track(body, party.id, paint, lands(party) ? surface : null);
+    this.track(body, party.id, what, paint, lands(party) ? surface : null);
     this.contacts.register(party);
+    this.say({ kind: 'added', what });
     return party;
   }
 
   private track(
     body: BodyId,
     party: PartyId,
+    what: What,
     paint: Paint | null,
     surface: HostSurface | null,
   ): void {
-    this.bodies.set(body, { body, party, paint, surface, shapes: new Set() });
+    this.bodies.set(body, { body, party, what, paint, surface, shapes: new Set() });
   }
 
   /**
-   * Removes a body, with the shapes added on it, and unregisters its Party.
-   * Every kind hears that it went before this returns. Does nothing to a
-   * body that is already gone.
+   * Removes a body, with the shapes added on it, and unregisters its Party,
+   * for `why`. The shapes on it go first, with their host. Every kind hears
+   * that it went before this returns. Does nothing to a body that is
+   * already gone.
    */
-  removeBody(body: BodyId): void {
+  removeBody(body: BodyId, why: Why): void {
     const entry = this.bodies.get(body);
     if (!entry) return;
+    const motion = this.motionOf(body);
     // The engine drops the shapes added on it with it.
-    for (const shape of entry.shapes) this.shapes.delete(shape);
+    for (const shape of entry.shapes) {
+      this.say({ kind: 'went', what: this.shapes.get(shape)!.what, why: 'with-host', ...motion });
+      this.shapes.delete(shape);
+    }
     this.bodies.delete(body);
     this.physics.removeBody(body);
     this.contacts.unregister(body);
+    if (entry.what) this.say({ kind: 'went', what: entry.what, why, ...motion });
     this.gone(new Set([entry.party]));
+  }
+
+  /** Where a body is and how it moves, as it or a shape on it goes. */
+  private motionOf(body: BodyId) {
+    return { transform: this.physics.getTransform(body), velocity: this.physics.getVelocity(body) };
   }
 
   /** Slides an Object `displacement` px at `speed` px/s; it is Squeezed until it arrives. */
@@ -202,21 +236,38 @@ export class ArenaBodies<T> {
    * coordinates) on the body of Party `host`, with `colour`'s Line surface:
    * a Patch. It goes with its host. Null if the host is gone.
    */
-  addShape(host: PartyId, segment: Segment, radius: number, colour: Colour): AddedShape | null {
+  addShape(
+    host: PartyId,
+    segment: Segment,
+    radius: number,
+    colour: Colour,
+    what: Thing,
+  ): AddedShape | null {
     const body = this.contacts.party(host)?.body;
     const entry = body === undefined ? undefined : this.bodies.get(body);
     if (body === undefined || !entry) return null;
     const surface = this.materials.colours[colour].line;
     const shape = this.physics.addCapsule(body, segment, radius, surface);
     entry.shapes.add(shape);
-    this.shapes.set(shape, { body, colour });
+    this.shapes.set(shape, { body, colour, what });
+    this.say({ kind: 'added', what });
     return { shape, body };
   }
 
-  /** Removes a shape `addShape` added; its host stays. Does nothing to one already gone. */
-  removeShape(shape: ShapeId): void {
+  /**
+   * Removes a shape `addShape` added, for `why`; its host stays. Does
+   * nothing to one already gone.
+   */
+  removeShape(shape: ShapeId, why: Why): void {
     const entry = this.shapes.get(shape);
     if (!entry) return;
+    const motion = this.motionOf(entry.body);
+    this.dropShape(shape);
+    this.say({ kind: 'went', what: entry.what, why, ...motion });
+  }
+
+  private dropShape(shape: ShapeId): void {
+    const entry = this.shapes.get(shape)!;
     this.shapes.delete(shape);
     this.bodies.get(entry.body)?.shapes.delete(shape);
     this.physics.removeShape(shape);
@@ -248,11 +299,11 @@ export class ArenaBodies<T> {
 
   /**
    * Removes every added shape, then every body but the Terrain, in the order
-   * they were added, telling no kind: Clear, where every kind forgets all
-   * of itself.
+   * they were added, telling no kind and saying nothing: Clear, where every
+   * kind forgets all of itself, and the Sandbox world says it starts over.
    */
   clear(): void {
-    for (const shape of [...this.shapes.keys()]) this.removeShape(shape);
+    for (const shape of [...this.shapes.keys()]) this.dropShape(shape);
     for (const { body, party } of [...this.bodies.values()]) {
       if (party === TERRAIN_PARTY) continue;
       this.bodies.delete(body);

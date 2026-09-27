@@ -3,8 +3,6 @@ import {
   distancePointToSegment,
   type Segment,
 } from '../geometry/segment';
-import { bandPolygon } from '../geometry/separation';
-import type { Polygon } from '../geometry/polygon';
 import { applyTransform, type Transform } from '../geometry/transform';
 import { rotate, sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
@@ -14,6 +12,7 @@ import type { ArenaBodies } from './arena-bodies';
 import type { HostSurface, Kind, Poses, Solids } from './arena-contents';
 import { brushTouchesCapsules, type Brush } from './brush';
 import type { Party, PartyId } from './contact-ledger';
+import type { Why } from './happenings';
 import type { PreviousPoses } from './previous-poses';
 
 /**
@@ -21,8 +20,8 @@ import type { PreviousPoses } from './previous-poses';
  * thin capsule laid along its host's surface and added to the host's body,
  * so it moves with the host and whatever lands there touches the Patch. It
  * has no mass, and meets things with its Colour's Line surface and glue:
- * blue bounces, green glues. It wears as it is used, and vanishes in a puff
- * of Debris when it is used up.
+ * blue bounces, green glues. It wears as it is used, and goes when it is
+ * used up; the renderer bursts a puff of Debris where it was.
  */
 
 /** Edges within this angle (radians) of the one a Droplet landed on count as the same edge. */
@@ -147,14 +146,6 @@ export interface PatchView {
   readonly wear: number;
 }
 
-/** A puff of Debris where a used-up Patch was, for the Sandbox world to burst. */
-export interface Puff {
-  /** In the world. */
-  readonly outline: Polygon;
-  readonly velocity: Vec2;
-  readonly colour: Colour;
-}
-
 /** A Patch: one shape on its host's body. */
 export interface PatchRecord {
   readonly kind: 'patch';
@@ -228,9 +219,15 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   /**
    * Lays a Patch of `length` px on `host`, whose surface is `surface`, for a
    * Droplet that landed with its centre at `centre` (in the world). Over the
-   * Patch cap, the oldest Patches go at once; returns their puffs.
+   * Patch cap, the oldest Patches go at once.
    */
-  add(host: Party<unknown>, surface: HostSurface, centre: Vec2, colour: Colour, length: number) {
+  add(
+    host: Party<unknown>,
+    surface: HostSurface,
+    centre: Vec2,
+    colour: Colour,
+    length: number,
+  ): void {
     const transform = this.physics.getTransform(host.body);
     const local = rotate(sub(centre, transform), -transform.angle);
     const segment = layPatch(surface, local, length);
@@ -239,12 +236,13 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
       const id = this.nextId++;
       this.attach({ id, colour, host: host.id, segment, thickness, used: 0 });
     }
-    return this.cap();
+    this.cap();
   }
 
   private attach(saved: SavedPatch): void {
-    const { host, segment, thickness, colour } = saved;
-    const added = this.bodies.addShape(host, segment, thickness / 2, colour);
+    const { id, host, segment, thickness, colour } = saved;
+    const what = { thing: 'patch', id, colour, segment, thickness } as const;
+    const added = this.bodies.addShape(host, segment, thickness / 2, colour, what);
     if (!added) return;
     const { shape, body } = added;
     const patch: PatchRecord = { ...saved, kind: 'patch', body, shape };
@@ -253,25 +251,17 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   }
 
   /** Over the Patch cap, the oldest go first. */
-  private cap(): Puff[] {
+  private cap(): void {
     const over = this.patches.length - Math.max(0, Math.floor(this.materials.patchCap));
-    if (over <= 0) return [];
-    return this.remove(this.patches.slice(0, over));
+    if (over > 0) this.remove(this.patches.slice(0, over), 'capped');
   }
 
-  /** Removes Patches and returns their puffs. */
-  private remove(patches: readonly PatchRecord[]): Puff[] {
-    const puffs = patches.map((patch) => ({
-      outline: bandPolygon([this.worldSegment(patch)], patch.thickness / 2 + 1),
-      velocity: this.physics.getVelocity(patch.body),
-      colour: patch.colour,
-    }));
+  private remove(patches: readonly PatchRecord[], why: Why): void {
     for (const { shape } of patches) {
-      this.bodies.removeShape(shape);
+      this.bodies.removeShape(shape, why);
       this.byShape.delete(shape);
     }
     this.patches = this.patches.filter(({ shape }) => this.byShape.has(shape));
-    return puffs;
   }
 
   /** The Patch whose shape this is, if any. */
@@ -292,10 +282,10 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
     patch.used += amount;
   }
 
-  /** Removes every used-up Patch; returns their puffs. */
-  removeUsedUp(): Puff[] {
+  /** Removes every used-up Patch. */
+  removeUsedUp(): void {
     const used = this.patches.filter((patch) => patch.used >= this.capacity(patch));
-    return used.length > 0 ? this.remove(used) : [];
+    if (used.length > 0) this.remove(used, 'used-up');
   }
 
   save(): readonly SavedPatch[] {
@@ -308,8 +298,6 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
     this.byShape.clear();
     for (const patch of saved) this.attach(patch);
   }
-
-  dropVisuals(): void {}
 
   clear(): void {
     this.patches = [];
@@ -326,12 +314,12 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
     });
   }
 
-  /** An erased Patch goes without a puff; its host stays. */
+  /** An erased Patch goes, and its host stays. */
   erase(brush: Brush): void {
     this.patches = this.patches.filter((patch) => {
       if (!brushTouchesCapsules(brush, [this.worldSegment(patch)], patch.thickness / 2))
         return true;
-      this.bodies.removeShape(patch.shape);
+      this.bodies.removeShape(patch.shape, 'erased');
       this.byShape.delete(patch.shape);
       return false;
     });
