@@ -4,9 +4,10 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, ContactPair, ShapeId } from '../physics';
 import type { HostSurface } from './arena-contents';
-import type { BlastSize } from './blasts';
+import type { BlastSize, Reach } from './blasts';
 import type { NewContact, Party, PartyHit, Touching } from './contact-ledger';
 import type { Landing, LooseDroplet } from './droplets';
+import type { Gluer } from './glue';
 import {
   MaterialRules,
   type Broken,
@@ -123,7 +124,8 @@ export interface FakeDroplet {
 /**
  * Arena contents that record what the rules did to them, in order, in
  * `log`: `break`, `burst`, `rubble`, `droplets`, `blast`, `bond`, `land`,
- * `patch` and `use`, each with what it was handed.
+ * `patch` and `use`, each with what it was handed; `reach` when a Blast
+ * spreading reached something, and `used-up` for each Patch removed.
  */
 export class FakeArena<T, S> implements RulesArena<T, S> {
   /** What breaking each target lets out; a target not in it is already gone. */
@@ -132,6 +134,14 @@ export class FakeArena<T, S> implements RulesArena<T, S> {
   /** Each host's surface by its Party id. */
   readonly surfaces = new Map<number, HostSurface>();
   readonly patches = new Map<ShapeId, PatchRecord>();
+  /** What a Patch holds: one that has used up this much is removed at the end of the step. */
+  patchCapacity = Infinity;
+  /** The Objects that may stick. */
+  mayStick: S[] = [];
+  /** The gluers, handed to glue drag as they are. */
+  glue: ((T & Gluer) | PatchRecord)[] = [];
+  /** What the Blasts reach when they next spread, one batch per Blast; handed out once. */
+  reaching: Reach<T>[][] = [];
   readonly log: { readonly what: string; readonly with?: unknown }[] = [];
 
   /** The names of what was done, in order. */
@@ -197,6 +207,31 @@ export class FakeArena<T, S> implements RulesArena<T, S> {
   usePatch(patch: PatchRecord, amount: number): void {
     patch.used += amount;
     this.log.push({ what: 'use', with: { patch, amount } });
+  }
+
+  removeUsedUpPatches(): void {
+    for (const [shape, patch] of this.patches) {
+      if (patch.used < this.patchCapacity) continue;
+      this.patches.delete(shape);
+      this.log.push({ what: 'used-up', with: patch });
+    }
+  }
+
+  stickers(): Iterable<S> {
+    return this.mayStick;
+  }
+
+  gluers(): Iterable<(T & Gluer) | PatchRecord> {
+    return this.glue;
+  }
+
+  spreadBlasts(_seconds: number, act: (reached: readonly Reach<T>[]) => void): void {
+    const batches = this.reaching;
+    this.reaching = [];
+    for (const reached of batches) {
+      this.log.push({ what: 'reach', with: reached });
+      act(reached);
+    }
   }
 }
 

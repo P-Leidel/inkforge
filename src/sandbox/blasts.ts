@@ -188,6 +188,6 @@ export class Blasts<T> implements Kind<'blasts', readonly SavedBlast[], readonly
     this.blasts = [];
   }
 
-  /** Blasts spread in their own call, `spread`. */
+  /** Blasts spread when the Material rules spread them, through `spread`. */
   step(): void {}
 }

@@ -20,7 +20,8 @@ describe('Glue drag', () => {
    * The Material rules over `bodies` (body k is the k-th), where each gluer
    * touches the bodies listed for it in `touches`, through a shape numbered
    * like its body, or through the shape `through` gives for the pair.
-   * Shapes above 100 are Patches': `patches` lists them.
+   * Shapes above 100 are Patches': `patches` lists them. `glue` steps the
+   * rules once with the gluers it is handed.
    */
   function setup(
     bodies: Partial<FakeBody>[],
@@ -53,7 +54,12 @@ describe('Glue drag', () => {
       );
     }
     for (const patch of patches) fake.arena.patches.set(patch.shape, patch);
-    return fake;
+    /** A step of the rules with these gluers. */
+    const glue = (gluers: typeof fake.arena.glue) => {
+      fake.arena.glue = gluers;
+      fake.rules.step(1 / 60);
+    };
+    return { ...fake, glue };
   }
 
   const gluer = (body: number, colour: Colour = 'green'): Piece => ({
@@ -73,12 +79,12 @@ describe('Glue drag', () => {
   const fixed = (): Partial<FakeBody> => body(0, { x: 0, y: 0 }, false);
 
   it('slows a moving body by c·dt/m of its motion, spin too, not scaled by mass', () => {
-    const { rules, physics } = setup(
+    const { glue, physics } = setup(
       [body(1, { x: 300, y: 0 }), body(4, { x: 300, y: 0 }), fixed()],
       new Map([[2, [0, 1]]]),
     );
 
-    rules.glue([gluer(2)], 1 / 60);
+    glue([gluer(2)]);
 
     const [light, heavy] = [physics.body(0 as BodyId), physics.body(1 as BodyId)];
     expect(light.velocity.x).toBeCloseTo(300 * (1 - 4 / 60), 9);
@@ -87,7 +93,7 @@ describe('Glue drag', () => {
   });
 
   it('drags a body once however many green Pieces it touches, and shares the wear', () => {
-    const { rules, physics } = setup(
+    const { glue, physics } = setup(
       [body(1, { x: 0, y: 300 }), fixed(), fixed()],
       new Map([
         [1, [0]],
@@ -97,7 +103,7 @@ describe('Glue drag', () => {
     const left = gluer(1);
     const right = gluer(2);
 
-    rules.glue([left, right], 1 / 60);
+    glue([left, right]);
 
     expect(physics.body(0 as BodyId).velocity.y).toBeCloseTo(300 * (1 - 4 / 60), 9);
     // 20 units of momentum removed, times 2, shared.
@@ -108,16 +114,16 @@ describe('Glue drag', () => {
   });
 
   it('stops a light body rather than flinging it back', () => {
-    const { rules, physics } = setup([body(0.01, { x: 500, y: 0 }), fixed()], new Map([[1, [0]]]));
+    const { glue, physics } = setup([body(0.01, { x: 500, y: 0 }), fixed()], new Map([[1, [0]]]));
 
-    rules.glue([gluer(1)], 1 / 60);
+    glue([gluer(1)]);
 
     expect(physics.body(0 as BodyId).velocity.x).toBe(0);
     expect(physics.body(0 as BodyId).spin).toBe(0);
   });
 
   it('leaves alone what isn’t free, and what touches only glue-less Pieces', () => {
-    const { rules, physics } = setup(
+    const { glue, physics } = setup(
       [body(1, { x: 300, y: 0 }, false), body(1, { x: 300, y: 0 }), fixed(), fixed()],
       new Map([
         [2, [0]],
@@ -126,7 +132,7 @@ describe('Glue drag', () => {
     );
     const green = gluer(2);
 
-    rules.glue([green, gluer(3, 'grey')], 1 / 60);
+    glue([green, gluer(3, 'grey')]);
 
     expect(physics.body(0 as BodyId).velocity.x).toBe(300);
     expect(physics.body(1 as BodyId).velocity.x).toBe(300);
@@ -137,7 +143,7 @@ describe('Glue drag', () => {
     // The first body touches a green Patch (shape 102) on body 2; the
     // second touches only a blue Patch (shape 103) lying on green Piece 3.
     const patch = fakePatch('green', 2, 102);
-    const { rules, physics, arena } = setup(
+    const { glue, physics, arena } = setup(
       [body(1, { x: 300, y: 0 }), body(1, { x: 300, y: 0 }), fixed(), fixed()],
       new Map([
         [2, [0]],
@@ -148,7 +154,7 @@ describe('Glue drag', () => {
     );
     const piece = gluer(3);
 
-    rules.glue([piece, patch], 1 / 60);
+    glue([piece, patch]);
 
     expect(physics.body(0 as BodyId).velocity.x).toBeCloseTo(300 * (1 - 4 / 60), 9);
     expect(physics.body(1 as BodyId).velocity.x).toBe(300);
@@ -160,12 +166,12 @@ describe('Glue drag', () => {
   });
 
   it('breaks a Piece once it has worn it out', () => {
-    const { rules, arena } = setup([body(20, { x: 600, y: 0 }), fixed()], new Map([[1, [0]]]));
+    const { glue, arena } = setup([body(20, { x: 600, y: 0 }), fixed()], new Map([[1, [0]]]));
     const piece = gluer(1);
 
     // 40 units of momentum a step, 80 wear: the 13th step wears out 1000.
     const broken = Array.from({ length: 13 }, () => {
-      rules.glue([piece], 1 / 60);
+      glue([piece]);
       return arena.handed('break').length;
     });
 
