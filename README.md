@@ -4,7 +4,7 @@ A 2D side-view physics defense game: the player draws lines and objects with sca
 
 **Play the latest build:** https://p-leidel.github.io/inkforge/
 
-The project is at **milestone 2, Colours** ([spec](docs/specs/m2-colours.md)), built on [milestone 1, the physics sandbox](docs/specs/m1-physics-sandbox.md). See the [game design document](docs/gdd.md) for the full picture and [`CONTEXT.md`](CONTEXT.md) for the glossary.
+The project has finished **milestone 3, Ink costs** ([spec](docs/specs/m3-ink-costs.md)), built on [milestone 2, Colours](docs/specs/m2-colours.md) and [milestone 1, the physics sandbox](docs/specs/m1-physics-sandbox.md); milestone 4, enemies and the Ink Core, is next. See the [game design document](docs/gdd.md) for the full picture and [`CONTEXT.md`](CONTEXT.md) for the glossary.
 
 ## Getting started
 
@@ -91,7 +91,7 @@ The toolbar clears the Arena and runs the engine stress tests: **Ball cannon** (
 
 The **Gallery ▾** button at the toolbar's right end drops down a list of ready-made demos of the Colours; picking one clears the Arena and plays it, and clicking anywhere else closes the list. **Bounce** drops the same ball onto a Line of each Colour: blue bounces it back up, and red goes off under it; **Slide** puts the same box on a ramp of each Colour; **Knock** throws the same ball at a hollow, a grey-filled and a black-filled box; **Drop** drops a box of each Colour from high up: red explodes, well away from the rest; **Third bounce** bounces a blue ball until its third bounce breaks it; **Boulder** drops the same boulder onto a grey and a black Line: it smashes through grey and cracks black; **Rubble** breaks a grey-filled and a black-filled box side by side on a short black Line: the pebbles and stones spill onto a grey Line below, and the stones crack it; **Glue** rolls a hollow, a grey-filled and a black-filled ball across green floors, and a hollow one across grey: on green the hollow ball stops first and the black-filled one last; **Stick** throws green Objects: a box glues itself under a Line and hangs there, a ball glues itself to a wall, and a box knocks a Frozen box loose and tumbles down stuck to it; **Spill** breaks a blue-filled and a green-filled box on anvils above a Line and a Frozen box: their Droplets coat everything they land on, and a ball thrown up after them bounces high off the blue Patches and stops dead on the green ones; **Chain** drops a bomb at the end of a row of Frozen red bombs that curls up into the air: they go off one by one, straight through a black Line, and knock two Frozen boxes loose, while a bomb hanging out of reach stays; **Shrapnel** drops a grey-filled red box onto an anvil: its Blast throws the pebbles, which knock loose two Frozen posts the Blast itself can't reach; **Fuse** drops a bomb on the far end of a red Line winding down across the Arena: it burns Piece by Piece, round every bend, to a Frozen bomb whose Blast knocks two Frozen boxes loose; **Mines** drops a box on each of two red strips: the one set down gently leaves its strip alone, and the grey-filled one dropped from high sets its strip off and is blown apart, pebbles and all; and **Demolition** is the worst case for performance: a big bomb dropped at the end of a row of four more sets off a chain that tears through three grey-filled boxes and a black-filled one, a blue- and a green-filled Object and a wall of grey, blue, green and black Lines, leaving about 60 Rubble, 30 Droplets and five Blasts in well under a second.
 
-F1 opens the stats panel, in every scene: fps and the longest frame over the last second; since the start, the average fps, the longest frame, the frames over 20 ms and over 33 ms and the 1% low (the fps 99% of frames reach), counted from the frame after a scene was loaded or R was pressed, and only while physics runs; where the last second's time went (physics, the scene's drawing, Phaser's render) and the physics steps it took, with the time each took; bodies by kind; and what the game has Phaser replay each frame (its Graphics and their command-buffer entries, which count each command's arguments too, so they aren't the render budget's drawing calls), with the textures that Strokes, Patches and Rubble are baked into and their memory; and each Ink Tank in px², and whether Ink costs is on. F1's own panel, colliders and labels are left out of that load. A graph shows the last 240 frames, split the same way, with guides at 60 fps and 33 ms. It is drawn from one font texture and plain rectangles, redrawn four times a second, so leaving it on while measuring costs the game next to nothing, and milestone 2's exit criterion, at least 60 fps on average and no frame over 33 ms, can be read in the browser. F3 or **Copy readings** copies it all with the browser, the GPU, the screen size and F1's level, to paste into an issue. Press F1 again for the debug view on top (colliders, durability, Blast rings), which does cost frame time, and once more to close it. `npm run verdict` times the same scene headless: the whole Sandbox world step over the run and during the chain, and one read of every view per step, as each frame's drawing makes. `npm test` holds the render budget: the Demolition chain may replay at most 1,500 drawing calls in any frame, Strokes that stand still replay none, and textures are freed with what they show (`src/rendering/world-renderer.test.ts`).
+F1 opens the stats panel, in every scene: fps and the longest frame over the last second; since the start, the average fps, the longest frame, the frames over 20 ms and over 33 ms and the 1% low (the fps 99% of frames reach), counted from the frame after a scene was loaded or R was pressed, and only while physics runs; where the last second's time went (physics, the scene's drawing, Phaser's render) and the physics steps it took, with the time each took; bodies by kind; and what the game has Phaser replay each frame (its Graphics and their command-buffer entries, which count each command's arguments too, so they aren't the render budget's drawing calls), with the textures that Strokes, Patches and Rubble are baked into and their memory; and each Ink Tank in px², and whether Ink costs is on. F1's own panel, colliders and labels are left out of that load. A graph shows the last 240 frames, split the same way, with guides at 60 fps and 33 ms. It is drawn from one font texture and plain rectangles, redrawn four times a second, so leaving it on while measuring costs the game next to nothing, and the exit criterion of milestones 2 and 3, at least 60 fps on average and no frame over 33 ms, can be read in the browser. F3 or **Copy readings** copies it all with the browser, the GPU, the screen size and F1's level, to paste into an issue. Press F1 again for the debug view on top (colliders, durability, Blast rings), which does cost frame time, and once more to close it. `npm run verdict` times the same scene headless: the whole Sandbox world step over the run and during the chain, and one read of every view per step, as each frame's drawing makes. `npm test` holds the render budget: the Demolition chain may replay at most 1,500 drawing calls in any frame, Strokes that stand still replay none, and textures are freed with what they show (`src/rendering/world-renderer.test.ts`).
 
 Performance is judged on one baseline machine: a desktop with an NVIDIA GeForce GTX 980 and a 1920 × 1080 screen at 144 Hz, running Firefox 143 on Windows. Take readings there with F1 showing stats only, since the debug view adds its own cost. Firefox's timer reads in whole milliseconds there, which is fine for the counts of long frames; LibreWolf's fingerprinting protection rounds it to 16.7 ms and hides them.
 
@@ -99,7 +99,12 @@ Performance is judged on one baseline machine: a desktop with an NVIDIA GeForce 
 
 ```
 ├── .github/workflows/   CI and GitHub Pages deploy
-├── docs/                GDD, specs, ADRs and agent docs
+├── docs/
+│   ├── gdd.md           Game design document
+│   ├── specs/           One spec per milestone
+│   ├── adr/             Architecture decision records
+│   │   └── reports/     Architecture and performance reviews (HTML)
+│   └── agents/          How the agent skills use this repo
 ├── public/              Static files copied as-is into the build
 ├── src/
 │   ├── main.ts          Entry point: boots Phaser
@@ -108,13 +113,15 @@ Performance is judged on one baseline machine: a desktop with an NVIDIA GeForce 
 │   ├── stroke/          Stroke pipeline: raw pointer samples → Line, Object or rejection
 │   ├── physics/         Physics module; the only code that talks to the engine (ADR 0001)
 │   ├── sandbox/         Headless Sandbox world: a module per kind of Arena contents, the Contact ledger, the Material rules, pause, Reset
-│   ├── game/            Headless Game over the Sandbox world: Ink Tanks, prices, undo and refunds (ADR 0009)
+│   ├── game/            Headless Game over the Sandbox world: the Ink table, Ink Tanks, prices, undo and refunds (ADR 0009)
 │   ├── stress-tests/    Scripted engine stress tests (ball cannon, box tower, pebbles)
 │   ├── gallery/         Colour gallery demos, built through the Sandbox world
 │   ├── input/           Drawing input: a press, a drag and a release → Game commands, previews and flashes
 │   ├── scenes/          Phaser scenes: forward events to Drawing input, draw what it and the world show
-│   └── rendering/       Phaser drawing: world, debug overlay, toolbar, feedback
-├── scripts/             Developer scripts (engine verdict)
+│   ├── rendering/       Phaser drawing of the Arena: Strokes, Fills, Rubble, Patches, Blasts, Debris, the Stroke preview and the rejection flash
+│   ├── ui/              Controls: toolbar, Gallery menu, palette with the Ink gauges, HUD, F2 tuning panel
+│   └── debug/           F1 stats and debug view, frame times, F3 readings
+├── scripts/             Developer scripts: the engine verdict and the Phaser Box2D patch
 ├── index.html
 └── CONTEXT.md           Domain glossary
 ```

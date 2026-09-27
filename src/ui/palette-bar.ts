@@ -4,9 +4,9 @@ import type { CostEstimate, Game } from '../game/game';
 import { ERASER_RADIUS, type Tool } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
-import { BakedDrawing, bakingGraphics } from './baked-textures';
-import { drawInk, INK_HUES } from './ink';
-import { FONT_FAMILY, PALETTE } from './palette';
+import { BakedDrawing, bakingGraphics } from '../rendering/baked-textures';
+import { drawInk, INK_HUES } from '../rendering/ink';
+import { FONT_FAMILY, PALETTE } from '../rendering/palette';
 
 const LEFT = 60;
 const TOP = 40;

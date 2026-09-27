@@ -3,14 +3,14 @@ import { transformPoints } from '../geometry/transform';
 import type { Game } from '../game/game';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { bandPolygon } from '../geometry/separation';
-import { strokePolygon, strokeRing } from './draw';
+import { strokePolygon, strokeRing } from '../rendering/draw';
 import type { FrameRecorder } from './frame-times';
-import { PALETTE } from './palette';
+import { PALETTE } from '../rendering/palette';
 import { readingLines, type Readings } from './readings';
 import { StatsPanel } from './stats-panel';
 import { addMonoFont } from './mono-font';
-import { bakedTextureUse } from './baked-textures';
-import type { WorldRenderer } from './world-renderer';
+import { bakedTextureUse } from '../rendering/baked-textures';
+import type { WorldRenderer } from '../rendering/world-renderer';
 
 /** F1 cycles through these. */
 const LEVELS = ['off', 'stats', 'debug'] as const;

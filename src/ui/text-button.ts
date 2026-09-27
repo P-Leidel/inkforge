@@ -1,5 +1,5 @@
 import type Phaser from 'phaser';
-import { FONT_FAMILY, PALETTE } from './palette';
+import { FONT_FAMILY, PALETTE } from '../rendering/palette';
 
 const BUTTON_COLOUR = '#2c313b';
 const HOVER_COLOUR = '#3b4250';
