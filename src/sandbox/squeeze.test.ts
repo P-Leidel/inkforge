@@ -98,4 +98,35 @@ describe('Squeeze: where a squeezed Object ends up', () => {
       ]
     `);
   });
+
+  it('ends clear of Rubble in the shorter way, and leaves it where it lies', () => {
+    const world = createWorld();
+    // A grey-filled box drops onto the ground and breaks; its pebbles settle.
+    const falling = drawObject(world, dragBox(470, 560, 60, 60));
+    world.fillAt({ x: 500, y: 590 }, 'grey');
+    runFor(world, 0.01);
+    world.release(falling);
+    runFor(world, 5);
+    expect(world.objects).toHaveLength(0);
+    const top = [...world.rubble].sort(
+      (p, q) => p.transform.y - p.radius - (q.transform.y - q.radius),
+    )[0]!;
+    const pebble = { ...top.transform };
+
+    // A box 3 px above the topmost pebble, and a Line across it 10 px deep
+    // from its top: down, the shorter way off the Line, would land on the pebble.
+    const boxTop = pebble.y - top.radius - 3 - 40;
+    const box = drawObject(world, dragBox(pebble.x - 20, boxTop, 40, 40));
+    drawLine(world, across(boxTop + 6, pebble.x - 100, pebble.x + 100));
+    let highest = Infinity;
+    for (let step = 0; step < 12; step++) {
+      world.step();
+      highest = Math.min(highest, objectById(world, box).transform.y);
+    }
+
+    // Up, by the Line's depth into the box's bottom and the Squeeze's margin.
+    expect(highest).toBeLessThan(boxTop + 20 - 35);
+    const after = world.rubble.find((r) => r.id === top.id)!.transform;
+    expect(Math.hypot(after.x - pebble.x, after.y - pebble.y)).toBeLessThan(0.5);
+  });
 });

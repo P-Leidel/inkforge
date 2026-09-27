@@ -455,8 +455,9 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   /**
    * Squeezes each of `objects` that a Line crosses off the Lines crossing
    * it: drawing a Line through an Object, moving or Frozen, shoves it. It
-   * slides the shortest way off at the push-out speed, passing through
-   * Lines and Terrain, and then restarts from rest. (Box2D's own push-out
+   * slides the shortest way off at the push-out speed, to a place the Arena
+   * query says is clear, passing through Lines and Terrain, and then
+   * restarts from rest. (Box2D's own push-out
    * jams bodies made of several convex parts on a Line deep inside them,
    * since each part is pushed out on its own.) A sliding Object deals and
    * takes no damage.

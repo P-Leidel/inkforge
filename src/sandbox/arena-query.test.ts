@@ -185,12 +185,13 @@ describe('Arena query', () => {
     ).toEqual(SANDBOX_ARENA.terrain);
   });
 
-  it('keeps a squeezed Object clear of the Terrain, other Objects and Lines; not itself, Droplets or Patches', () => {
+  it('keeps a squeezed Object clear of the Terrain, other Objects, Rubble and Lines; not itself, Droplets or Patches', () => {
     const { query, object, piece, circle, patch } = setup();
     const at = (x: number, y: number) => square(10).map((p) => ({ x: p.x + x, y: p.y + y }));
     const squeezed = object({ x: 400, y: 400 }, square(20));
     object({ x: 500, y: 400 }, square(20));
     piece([{ a: { x: 600, y: 380 }, b: { x: 600, y: 420 } }]);
+    circle({ x: 800, y: 400 }, 6);
     circle({ x: 1000, y: 400 }, 6, true);
     patch(squeezed.party, { a: { x: -20, y: -24 }, b: { x: 20, y: -24 } });
     const blocks = (x: number, y: number) => query.blocksSqueezed(at(x, y), squeezed.body);
@@ -202,6 +203,8 @@ describe('Arena query', () => {
     expect(blocks(530, 400)).toBe(false); // touching another Object
     expect(blocks(610, 400)).toBe(true);
     expect(blocks(616, 400)).toBe(false); // clear of the Line
+    expect(blocks(813, 400)).toBe(true);
+    expect(blocks(816, 400)).toBe(false); // touching the Rubble
     expect(blocks(1000, 400)).toBe(false);
     expect(blocks(400, 360)).toBe(false); // on the Patch, above the host
   });
@@ -417,7 +420,7 @@ function everyBody(bodies: ArenaBodies<null>, physics: PhysicsWorld) {
         figures().flatMap(({ form }) => (form.kind === 'terrain' ? form.polygons : [])),
       ),
     blocksSqueezed: (part: Polygon, squeezed: BodyId) =>
-      figures().some(({ body, form }) => {
+      figures().some(({ what, body, form }) => {
         if (form.kind === 'terrain')
           return form.polygons.some((p) => convexPolygonsOverlap(part, p));
         if (form.kind === 'object' && body !== squeezed) {
@@ -429,6 +432,10 @@ function everyBody(bodies: ArenaBodies<null>, physics: PhysicsWorld) {
           return form.segments.some((segment) =>
             convexPolygonsOverlap(part, capsulePolygon(segment, form.radius)),
           );
+        }
+        if (form.kind === 'circle' && what?.thing === 'rubble') {
+          const { x, y } = transform(body);
+          return circleOverlapsPolygon({ centre: { x, y }, radius: form.radius }, part);
         }
         return false;
       }),

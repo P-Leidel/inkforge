@@ -187,11 +187,11 @@ export class ArenaQuery {
    * Squeeze: whether a convex part of the Object with body `squeezed`,
    * moved to where a Squeeze would leave it, in world coordinates, overlaps
    * by more than `TOUCH_TOLERANCE` what it must end clear of: the Terrain,
-   * another Object's collider parts, or a Line, each Piece's capsule as
-   * `capsulePolygon` encloses it. Droplets and Patches don't count.
+   * another Object's collider parts, Rubble, or a Line, each Piece's capsule
+   * as `capsulePolygon` encloses it. Droplets and Patches don't count.
    */
   blocksSqueezed(part: Polygon, squeezed: BodyId): boolean {
-    return this.near(polygonBounds(part), 0).some(({ body, form }) => {
+    return this.near(polygonBounds(part), 0).some(({ what, body, form }) => {
       switch (form.kind) {
         case 'terrain':
           return form.polygons.some((solid) => convexPolygonsOverlap(part, solid));
@@ -203,8 +203,10 @@ export class ArenaQuery {
             convexPolygonsOverlap(part, capsulePolygon(segment, form.radius)),
           );
         case 'circle':
+          if (what?.thing !== 'rubble') return false;
+          return circleOverlapsPolygon({ centre: this.centre(body), radius: form.radius }, part);
         case 'capsule':
-          // Rubble, Droplets and Patches don't count.
+          // Patches don't count.
           return false;
       }
     });
