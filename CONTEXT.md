@@ -90,7 +90,7 @@ One short section of a Line, about one enemy wide, that has its own durability a
 _Avoid_: Segment, chunk
 
 **Debris**:
-The fragments a broken Piece or Object bursts into. Purely visual.
+The fragments a broken Piece or Object bursts into, and the pop of an Enemy that dies. Purely visual.
 _Avoid_: Rubble (which is physical)
 
 **Rubble**:

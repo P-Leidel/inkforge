@@ -39,9 +39,9 @@ export interface EnemyMaterial {
   push: number;
   /** Durability per second it wears off what it presses. */
   pressing: number;
-  /** Damage it takes before it dies (from #87). */
+  /** Damage it takes before it dies. */
   hp: number;
-  /** Hits with a smaller impulse (mass × px/s) than this don't damage it (from #87). */
+  /** Hits and Blasts with a smaller impulse (mass × px/s) than this don't damage it. */
   damageThreshold: number;
   /** HP the Ink Core loses when it reaches it. */
   coreDamage: number;

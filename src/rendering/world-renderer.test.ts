@@ -452,6 +452,28 @@ describe('World renderer: by what happened', () => {
     renderer.destroy();
   });
 
+  it('bursts a pop of Debris where an Enemy died', () => {
+    const world = createWorld();
+    const { renderer } = renderWorld(world);
+    world.spawn('crawler', { x: 500, y: 860 });
+    runFor(world, 0.2);
+    renderer.draw();
+    expect(renderer.debrisCount).toBe(0);
+    // Its HP runs out at the next hit: a box dropped on it.
+    world.enemyTable.types.crawler.hp = 1;
+    const box = drawObject(world, dragBox(490, 600, 40, 40));
+    world.fillAt({ x: 510, y: 620 }, 'black');
+    world.release(box);
+
+    const died = () => world.enemies.length === 0;
+    for (let step = 0; step < 120 && !died(); step++) world.step();
+    renderer.draw();
+
+    expect(died()).toBe(true);
+    expect(renderer.debrisCount).toBeGreaterThan(0);
+    renderer.destroy();
+  });
+
   it('bursts a puff of Debris where a Patch was used up', () => {
     const world = createWorld();
     const { renderer } = renderWorld(world);

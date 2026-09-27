@@ -99,7 +99,7 @@ export class Numbers {
   of(type: ThingType): ThingNumbers;
   of(type: ThingType): ThingNumbers {
     if (type.kind === 'enemy') {
-      // An Enemy's HP is its own (#87): it takes damage, but never breaks.
+      // An Enemy's HP is its own, which the Material rules take damage off: it never breaks.
       return { surface: this.enemy(type.type), fixed: false, toughness: null };
     }
     const { line, outline } = this.materials.colours[type.colour];

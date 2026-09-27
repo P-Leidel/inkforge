@@ -3,6 +3,7 @@ import type { Segment } from '../geometry/segment';
 import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import type { EnemyType } from '../materials/enemy-table';
 import type { BlastSize } from './blasts';
 
 /**
@@ -53,7 +54,7 @@ export type Why =
   | 'left'
   /** An Enemy reached the Ink Core. */
   | 'reached'
-  /** An Enemy died: it fell below the bottom of the screen. */
+  /** An Enemy died: its HP ran out, or it fell below the bottom of the screen. It popped. */
   | 'died'
   /** A Patch was used up. */
   | 'used-up'
@@ -81,6 +82,17 @@ export type Happening =
       readonly outline: Polygon;
       readonly velocity: Vec2;
       readonly colours: readonly Colour[];
+    }
+  /**
+   * An Enemy died and pops: a burst of its body, in world coordinates,
+   * visual only. It goes (`died`) straight after.
+   */
+  | {
+      readonly kind: 'popped';
+      readonly id: number;
+      readonly type: EnemyType;
+      readonly outline: Polygon;
+      readonly velocity: Vec2;
     }
   /** A Blast started. */
   | {

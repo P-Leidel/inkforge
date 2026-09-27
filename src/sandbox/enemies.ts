@@ -89,6 +89,8 @@ export interface Walker {
   readonly id: number;
   readonly body: BodyId;
   readonly type: EnemyType;
+  /** Damage taken so far: it dies once this reaches its type's HP. */
+  damage: number;
 }
 
 export interface EnemyView extends Poses {
@@ -100,6 +102,10 @@ export interface EnemyView extends Poses {
   readonly height: number;
   /** Linear velocity, px/s. */
   readonly velocity: Vec2;
+  /** HP left, never below 0. */
+  readonly hp: number;
+  /** HP when whole, from the enemy table as it is now. */
+  readonly fullHp: number;
 }
 
 /** An Enemy's record. */
@@ -116,9 +122,11 @@ type SavedEnemy = Omit<EnemyRecord, 'body'> & { readonly motion: Motion };
 
 /**
  * The Enemies in the Arena, oldest first. Each is a Party of its own to the
- * Contact ledger, with no target yet: it deals damage by the normal rule,
- * as its own hitter. Enemy ids are never reused, not even after R or
- * Clear. What it walks toward is the Ink Core's side of it.
+ * Contact ledger, with no target: it is no Breakable, but has HP of its
+ * own, which the Material rules take damage off by the one hit rule, and
+ * it deals damage by that rule as its own hitter. Enemy ids are never
+ * reused, not even after R or Clear. What it walks toward is the Ink
+ * Core's side of it.
  */
 export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly EnemyView[]> {
   readonly name = 'enemies';
@@ -141,7 +149,12 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
   ) {}
 
   get views(): readonly EnemyView[] {
-    return this.enemies.map(({ id, type, width, height, body }) => ({
+    return this.enemies.map((enemy) => this.viewOf(enemy));
+  }
+
+  private viewOf({ id, type, width, height, body, damage }: EnemyRecord): EnemyView {
+    const fullHp = this.numbers.enemy(type).hp;
+    return {
       id,
       type,
       outline: enemyOutline(width, height),
@@ -149,7 +162,25 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
       height,
       ...this.poses.of(body),
       velocity: this.physics.getVelocity(body),
-    }));
+      hp: Math.max(0, fullHp - damage),
+      fullHp,
+    };
+  }
+
+  /** An Enemy's view by its id; undefined if it is gone. */
+  view(id: number): EnemyView | undefined {
+    const enemy = this.enemies.find((enemy) => enemy.id === id);
+    return enemy && this.viewOf(enemy);
+  }
+
+  /** Whether an Enemy's damage has reached its type's HP, as the table is now. */
+  isDead(enemy: Walker): boolean {
+    return enemy.damage >= this.numbers.enemy(enemy.type).hp;
+  }
+
+  /** The Enemy whose Party this is, if any. */
+  byParty(party: PartyId): EnemyRecord | undefined {
+    return this.enemies.find((enemy) => enemy.party === party);
   }
 
   /** Every Enemy, oldest first. */
@@ -159,20 +190,21 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
 
   /**
    * Sends in an Enemy of `type` from the Spawn: it stands at the lane's far
-   * end, its back to the wall, or on top of what already stands there.
-   * Returns its id.
+   * end, its back to the wall, or on top of what already stands there. Or,
+   * given `at`, it appears with its centre there, whatever is in the way
+   * (for tests and demos). Returns its id.
    */
-  spawn(type: EnemyType): number {
+  spawn(type: EnemyType, at?: Vec2): number {
     const numbers = this.numbers.enemy(type);
     const { width, height } = numbers;
     const outline = enemyOutline(width, height);
-    const x = this.arena.spawn.x + width / 2 + SPAWN_GAP;
-    let y = this.arena.spawn.y - height / 2 - SPAWN_GAP;
+    const x = at?.x ?? this.arena.spawn.x + width / 2 + SPAWN_GAP;
+    let y = at?.y ?? this.arena.spawn.y - height / 2 - SPAWN_GAP;
     const blocked = () => this.query.blocksEnemy(transformPoints(outline, { x, y, angle: 0 }));
-    while (y - height > 0 && blocked()) y -= height + SPAWN_GAP;
+    while (!at && y - height > 0 && blocked()) y -= height + SPAWN_GAP;
     const id = this.nextId++;
     const mass = enemyMass(numbers, this.materials);
-    const enemy = { id, party: this.bodies.newId(), type, width, height, mass };
+    const enemy = { id, party: this.bodies.newId(), type, width, height, mass, damage: 0 };
     this.addBody(enemy, {
       transform: { x, y, angle: 0 },
       velocity: { x: 0, y: 0 },

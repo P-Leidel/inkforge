@@ -1,5 +1,7 @@
 import type Phaser from 'phaser';
 import { transformPoints } from '../../geometry/transform';
+import type { Vec2 } from '../../geometry/vec2';
+import type { EnemyType } from '../../materials/enemy-table';
 import type { EnemyView } from '../../sandbox/sandbox-world';
 import { fillPolygon, strokePolygon } from '../draw';
 import { PALETTE } from '../palette';
@@ -13,11 +15,23 @@ const EDGE_WIDTH = 2;
 const EYE_SIZE = 4;
 const EYE_IN = 7;
 const EYE_DOWN = 9;
+/** The HP bar: its height, how far (px) above the Enemy it floats, and its border. */
+const BAR_HEIGHT = 4;
+const BAR_GAP = 6;
+const BAR_BORDER = 1;
+/** Below this share of its HP left, the bar shows red. */
+const LOW_HP = 0.3;
+
+/** The colours an Enemy's pop bursts in, by its type, taken in turn: its body, edge and eyes. */
+export const POP_HUES: Readonly<Record<EnemyType, readonly number[]>> = {
+  crawler: [PALETTE.crawler, PALETTE.crawler, PALETTE.crawlerEdge, PALETTE.enemyEye],
+};
 
 /**
- * The Enemies, each as its body's outline, redrawn every frame. Placeholder
- * art: a Crawler is a low grey-brown box with two eyes on the side it walks
- * toward, the Ink Core's, which is to the right.
+ * The Enemies, each as its body's outline, redrawn every frame, with a thin
+ * HP bar above it once it is hurt. Placeholder art: a Crawler is a low
+ * grey-brown box with two eyes on the side it walks toward, the Ink Core's,
+ * which is to the right. Its pop is Debris, which the renderer bursts.
  */
 export class EnemiesDrawing implements DrawnKind {
   private readonly graphics: Phaser.GameObjects.Graphics;
@@ -49,6 +63,23 @@ export class EnemiesDrawing implements DrawnKind {
       g.fillStyle(PALETTE.enemyEye, 1);
       g.fillRect(front - EYE_SIZE, top, EYE_SIZE, EYE_SIZE);
       g.fillRect(front - 3 * EYE_SIZE, top, EYE_SIZE, EYE_SIZE);
+      if (enemy.hp < enemy.fullHp) this.drawHpBar(g, enemy, transform);
     }
+  }
+
+  /** A thin bar above the Enemy, as wide as it is: the share of its HP left. */
+  private drawHpBar(g: Phaser.GameObjects.Graphics, enemy: EnemyView, { x, y }: Vec2): void {
+    const left = enemy.fullHp > 0 ? Math.min(1, Math.max(0, enemy.hp / enemy.fullHp)) : 0;
+    const minX = x - enemy.width / 2;
+    const top = y - enemy.height / 2 - BAR_GAP - BAR_HEIGHT;
+    g.fillStyle(PALETTE.hpEmpty, 1);
+    g.fillRect(
+      minX - BAR_BORDER,
+      top - BAR_BORDER,
+      enemy.width + 2 * BAR_BORDER,
+      BAR_HEIGHT + 2 * BAR_BORDER,
+    );
+    g.fillStyle(left < LOW_HP ? PALETTE.hpLow : PALETTE.hpFull, 1);
+    g.fillRect(minX, top, enemy.width * left, BAR_HEIGHT);
   }
 }

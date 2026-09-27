@@ -38,8 +38,9 @@ const REACH_DOT = 3;
  * render load, redrawn four times a second from one font texture and plain
  * rectangles; it costs next to nothing, so it can stay on while measuring.
  * **Debug** adds
- * collider outlines, each Piece's and Object's durability and Blast rings
- * with their full reach; Rubble never breaks, so it gets no label. The
+ * collider outlines, each Piece's and Object's durability, each Enemy's HP
+ * and Blast rings with their full reach; Rubble never breaks, so it gets no
+ * label. The
  * labels are BitmapText in one font texture. The stats end with each Ink
  * Tank in px². F3 copies the readings.
  */
@@ -171,6 +172,13 @@ export class DebugOverlay {
       this.label(k++)
         .setText(` ${Math.ceil(object.durability)}${impacts} `)
         .setPosition(object.transform.x, object.transform.y)
+        .setVisible(true);
+    }
+    for (const enemy of this.world.enemies) {
+      strokePolygon(g, transformPoints(enemy.outline, enemy.transform));
+      this.label(k++)
+        .setText(` ${Math.ceil(enemy.hp)} HP `)
+        .setPosition(enemy.transform.x, enemy.transform.y)
         .setVisible(true);
     }
     for (; k < this.labels.length; k++) this.labels[k]!.setVisible(false);

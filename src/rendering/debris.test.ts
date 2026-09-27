@@ -13,7 +13,7 @@ const square = [
 describe('Debris', () => {
   it('falls, collides with nothing and fades out over its life', () => {
     const debris = new Debris(new Random(1), 1000, STEP);
-    debris.burst(square, { x: 0, y: 0 }, ['red']);
+    debris.burst(square, { x: 0, y: 0 }, [0xff0000]);
     const burst = debris.views.map((p) => p.position.y);
 
     debris.advance(30);
@@ -29,12 +29,12 @@ describe('Debris', () => {
   it('moves a burst from steps ago on that far, and nothing else', () => {
     const now = new Debris(new Random(1), 1000, STEP);
     const late = new Debris(new Random(1), 1000, STEP);
-    now.burst(square, { x: 0, y: 0 }, ['grey']);
+    now.burst(square, { x: 0, y: 0 }, [0x808080]);
     now.advance(5);
-    late.burst(square, { x: 0, y: 0 }, ['grey'], 5);
+    late.burst(square, { x: 0, y: 0 }, [0x808080], 5);
     expect(late.views).toEqual(now.views);
 
-    late.burst(square, { x: 0, y: 0 }, ['blue'], 0);
+    late.burst(square, { x: 0, y: 0 }, [0x0000ff], 0);
     expect(late.views.slice(0, now.count)).toEqual(now.views);
   });
 });
