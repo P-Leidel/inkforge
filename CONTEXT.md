@@ -15,7 +15,8 @@ The structure the player defends. Only an Enemy reaching it damages it; the run 
 _Avoid_: Base, tower, heart
 
 **Spawn**:
-The arena edge where enemies enter.
+Where Enemies appear: beyond the Arena's edge, out of view and out of reach of drawing, so they walk in over the edge. The player can build right up to it, but never on it.
+_Avoid_: Spawn point, gate, portal
 
 **Pit**:
 A gap in the Terrain open to the bottom of the screen. An Enemy that falls in leaves the Arena and dies.
