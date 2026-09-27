@@ -8,11 +8,11 @@ import type { Colour } from '../materials/colour';
 import { fillInk, lineInk, outlineInk } from '../materials/ink';
 import { fillMass, outlineMass } from '../materials/mass';
 import type { MaterialTable } from '../materials/material-table';
-import type { BodyId, ObjectBodyDef, PhysicsWorld } from '../physics';
+import type { BodyId, PhysicsWorld } from '../physics';
 import { pieceCentre } from '../stroke/pieces';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
 import type { Arena } from './arena';
-import type { ArenaBodies } from './arena-bodies';
+import type { ArenaBodies, ObjectBody } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
 import type { ArenaQuery, Capsule } from './arena-query';
 import type { PartyId } from './contact-ledger';
@@ -432,10 +432,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   }
 
   /** Adds an Object's body, as `def` has it. */
-  private addObject(
-    saved: Omit<ObjectStroke, 'body'>,
-    def: Omit<ObjectBodyDef, 'surface'>,
-  ): ObjectStroke {
+  private addObject(saved: Omit<ObjectStroke, 'body'>, def: ObjectBody): ObjectStroke {
     const { colour, outline, party, id } = saved;
     const what = { thing: 'object', id } as const;
     return this.bodies.addObject(def, colour, outline, what, (body) => ({

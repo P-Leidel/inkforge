@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Polygon } from '../../geometry/polygon';
 import type { PhysicsWorld, Surface } from '../physics-world';
+import { circleDef, lineDef, objectDef, terrainDef } from '../test-bodies';
 import { createBox2dPhysicsWorld, readEngineBody, type EngineBody } from './box2d-physics-world';
 
 const worlds: PhysicsWorld[] = [];
@@ -39,47 +40,68 @@ function attachments(body: EngineBody) {
   return {
     bullet: body.bullet,
     angularDamping: body.angularDamping,
+    upright: body.upright,
     shapes: body.shapes,
     joints: body.joints,
   };
 }
 
 describe('Rebuilt bodies', () => {
+  it('stay upright when they are described upright', () => {
+    const world = createWorld();
+    const walker = world.addBody({
+      shapes: { kind: 'polygons', polygons: [square(20)] },
+      surface: DEAD,
+      position: { x: 300, y: 300 },
+      motion: { mass: 2, frozen: true, upright: true, driven: true },
+    });
+    expect(readEngineBody(world, walker).upright).toBe(true);
+
+    world.release(walker); // rebuilt
+    expect(readEngineBody(world, walker)).toMatchObject({ type: 'moving', upright: true });
+  });
+
   it('keep every attachment, after a Release and after a slide ends', () => {
     const world = createWorld();
-    const terrain = world.addTerrain([GROUND], DEAD);
+    const terrain = world.addBody(terrainDef([GROUND], DEAD));
     // A Frozen Object with a Patch, bonded to a moving one.
-    const frozen = world.addObject({
-      position: { x: 300, y: 300 },
-      parts: [square(20)],
-      frozen: true,
-      surface: { friction: 0.3, restitution: 0.2 },
-      mass: 2,
-      angle: 0.4,
-    });
+    const frozen = world.addBody(
+      objectDef({
+        position: { x: 300, y: 300 },
+        parts: [square(20)],
+        frozen: true,
+        surface: { friction: 0.3, restitution: 0.2 },
+        mass: 2,
+        angle: 0.4,
+      }),
+    );
     world.addCapsule(frozen, { a: { x: -20, y: -20 }, b: { x: 20, y: -20 } }, 1.5, BOUNCY);
-    const partner = world.addObject({
-      position: { x: 300, y: 250 },
-      parts: [square(10)],
-      frozen: false,
-      surface: DEAD,
-      mass: 1,
-    });
+    const partner = world.addBody(
+      objectDef({
+        position: { x: 300, y: 250 },
+        parts: [square(10)],
+        frozen: false,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
     world.addBond(partner, frozen, {
       onA: { x: 0, y: 10 },
       onB: { x: 0, y: -40 },
       angle: 0.4,
     });
     // A circle with every option, a Patch and a bond to the Terrain.
-    const circle = world.addCircle({
-      position: { x: 700, y: 300 },
-      radius: 6,
-      surface: { friction: 0.1, restitution: 0.5 },
-      mass: 1,
-      group: 3,
-      wakes: false,
-      bullet: true,
-    });
+    const circle = world.addBody(
+      circleDef({
+        position: { x: 700, y: 300 },
+        radius: 6,
+        surface: { friction: 0.1, restitution: 0.5 },
+        mass: 1,
+        group: 3,
+        wakes: false,
+        bullet: true,
+      }),
+    );
     world.addCapsule(circle, { a: { x: -4, y: -6 }, b: { x: 4, y: -6 } }, 1, BOUNCY);
     const bond = world.addBond(circle, terrain, {
       onA: { x: 0, y: 0 },
@@ -111,13 +133,15 @@ describe('Rebuilt bodies', () => {
 
     // Let go, the circle drops onto a light Frozen Object and doesn't wake it.
     world.removeBond(bond);
-    const light = world.addObject({
-      position: { x: 700, y: 400 },
-      parts: [square(20)],
-      frozen: true,
-      surface: DEAD,
-      mass: 0.01,
-    });
+    const light = world.addBody(
+      objectDef({
+        position: { x: 700, y: 400 },
+        parts: [square(20)],
+        frozen: true,
+        surface: DEAD,
+        mass: 0.01,
+      }),
+    );
     let hit = false;
     for (let step = 0; step < 60 && !hit; step++) {
       hit = world
@@ -136,28 +160,36 @@ describe('Surfaces', () => {
   it('are the body’s own: editing the one given changes nothing until it is set again', () => {
     const world = createWorld();
     const table = { friction: 0.5, restitution: 0.1 };
-    const terrain = world.addTerrain([GROUND], table);
-    const line = world.addLine([{ a: { x: 100, y: 200 }, b: { x: 200, y: 200 } }], 8, table);
-    const frozen = world.addObject({
-      position: { x: 300, y: 300 },
-      parts: [square(20)],
-      frozen: true,
-      surface: table,
-      mass: 1,
-    });
-    const moving = world.addObject({
-      position: { x: 500, y: 300 },
-      parts: [square(20)],
-      frozen: false,
-      surface: table,
-      mass: 1,
-    });
-    const circle = world.addCircle({
-      position: { x: 700, y: 300 },
-      radius: 6,
-      surface: table,
-      mass: 1,
-    });
+    const terrain = world.addBody(terrainDef([GROUND], table));
+    const line = world.addBody(
+      lineDef([{ a: { x: 100, y: 200 }, b: { x: 200, y: 200 } }], 8, table),
+    );
+    const frozen = world.addBody(
+      objectDef({
+        position: { x: 300, y: 300 },
+        parts: [square(20)],
+        frozen: true,
+        surface: table,
+        mass: 1,
+      }),
+    );
+    const moving = world.addBody(
+      objectDef({
+        position: { x: 500, y: 300 },
+        parts: [square(20)],
+        frozen: false,
+        surface: table,
+        mass: 1,
+      }),
+    );
+    const circle = world.addBody(
+      circleDef({
+        position: { x: 700, y: 300 },
+        radius: 6,
+        surface: table,
+        mass: 1,
+      }),
+    );
     const patch = world.addCapsule(
       frozen,
       { a: { x: -20, y: -20 }, b: { x: 20, y: -20 } },

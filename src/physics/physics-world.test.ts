@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Polygon } from '../geometry/polygon';
-import { createPhysicsWorld, type PhysicsWorld, type StepReport } from '.';
+import {
+  createPhysicsWorld,
+  type BodyId,
+  type BodyMotion,
+  type PhysicsWorld,
+  type StepReport,
+} from '.';
+import { circleDef, lineDef, objectDef, terrainDef, type TestCircle } from './test-bodies';
 
 const worlds: PhysicsWorld[] = [];
 afterEach(() => {
@@ -44,15 +51,17 @@ function stepUntilHit(world: PhysicsWorld): StepReport {
 describe('Physics step reports', () => {
   it('reports a landing with the impulse that stopped it: mass × approach speed', () => {
     const world = createWorld();
-    const ground = world.addTerrain([GROUND], DEAD);
-    const box = world.addObject({
-      position: { x: 500, y: 470 },
-      parts: [square(20)],
-      frozen: false,
-      surface: DEAD,
-      mass: 2,
-      velocity: { x: 0, y: 600 },
-    });
+    const ground = world.addBody(terrainDef([GROUND], DEAD));
+    const box = world.addBody(
+      objectDef({
+        position: { x: 500, y: 470 },
+        parts: [square(20)],
+        frozen: false,
+        surface: DEAD,
+        mass: 2,
+        velocity: { x: 0, y: 600 },
+      }),
+    );
 
     const [hit] = stepUntilHit(world).hits;
 
@@ -66,15 +75,17 @@ describe('Physics step reports', () => {
   it('doubles the impulse of a full bounce', () => {
     function impulse(restitution: number): number {
       const world = createWorld();
-      world.addTerrain([GROUND], { friction: 0.6, restitution });
-      world.addObject({
-        position: { x: 500, y: 470 },
-        parts: [square(20)],
-        frozen: false,
-        surface: DEAD,
-        mass: 2,
-        velocity: { x: 0, y: 600 },
-      });
+      world.addBody(terrainDef([GROUND], { friction: 0.6, restitution }));
+      world.addBody(
+        objectDef({
+          position: { x: 500, y: 470 },
+          parts: [square(20)],
+          frozen: false,
+          surface: DEAD,
+          mass: 2,
+          velocity: { x: 0, y: 600 },
+        }),
+      );
       const [hit] = stepUntilHit(world).hits;
       return hit!.impulse / hit!.speed;
     }
@@ -85,21 +96,25 @@ describe('Physics step reports', () => {
   it('counts a Frozen Object the hit does not wake as immovable, and one it wakes by its mass', () => {
     function hitOnFrozen(mass: number) {
       const world = createWorld();
-      world.addObject({
-        position: { x: 500, y: 300 },
-        parts: [square(20)],
-        frozen: true,
-        surface: DEAD,
-        mass,
-      });
-      world.addObject({
-        position: { x: 500, y: 250 },
-        parts: [square(10)],
-        frozen: false,
-        surface: DEAD,
-        mass: 1,
-        velocity: { x: 0, y: 400 },
-      });
+      world.addBody(
+        objectDef({
+          position: { x: 500, y: 300 },
+          parts: [square(20)],
+          frozen: true,
+          surface: DEAD,
+          mass,
+        }),
+      );
+      world.addBody(
+        objectDef({
+          position: { x: 500, y: 250 },
+          parts: [square(10)],
+          frozen: false,
+          surface: DEAD,
+          mass: 1,
+          velocity: { x: 0, y: 400 },
+        }),
+      );
       const [hit] = stepUntilHit(world).hits;
       return { ratio: hit!.impulse / hit!.speed };
     }
@@ -112,19 +127,21 @@ describe('Physics step reports', () => {
 
   it('reports contacts beginning and ending per shape, and which are touching', () => {
     const world = createWorld();
-    world.addTerrain([GROUND], DEAD);
-    const box = world.addObject({
-      position: { x: 500, y: 470 },
-      parts: [square(20)],
-      frozen: false,
-      surface: DEAD,
-      mass: 1,
-    });
+    world.addBody(terrainDef([GROUND], DEAD));
+    const box = world.addBody(
+      objectDef({
+        position: { x: 500, y: 470 },
+        parts: [square(20)],
+        frozen: false,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
 
     const begins = [];
     for (let step = 0; step < 60; step++) begins.push(...world.step().begins);
     expect(begins).toHaveLength(1);
-    expect(world.touchingPairs()).toEqual(begins);
+    expect(world.touchingPairs()).toMatchObject(begins);
 
     world.removeBody(box);
     const { ends } = world.step();
@@ -134,21 +151,25 @@ describe('Physics step reports', () => {
 
   it('keeps shape ids and contacts when a Frozen Object is released', () => {
     const world = createWorld();
-    world.addTerrain([GROUND], DEAD);
-    const resting = world.addObject({
-      position: { x: 300, y: 470 },
-      parts: [square(20)],
-      frozen: false,
-      surface: DEAD,
-      mass: 1,
-    });
-    const pinned = world.addObject({
-      position: { x: 500, y: 400 },
-      parts: [square(20)],
-      frozen: true,
-      surface: DEAD,
-      mass: 1,
-    });
+    world.addBody(terrainDef([GROUND], DEAD));
+    const resting = world.addBody(
+      objectDef({
+        position: { x: 300, y: 470 },
+        parts: [square(20)],
+        frozen: false,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
+    const pinned = world.addBody(
+      objectDef({
+        position: { x: 500, y: 400 },
+        parts: [square(20)],
+        frozen: true,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
     for (let step = 0; step < 30; step++) world.step();
     const before = world.touchingPairs();
 
@@ -163,15 +184,17 @@ describe('Physics step reports', () => {
 
   it('slides a moving Object through Lines, then restarts it from rest', () => {
     const world = createWorld();
-    world.addLine([{ a: { x: 300, y: 300 }, b: { x: 700, y: 300 } }], 8, DEAD);
-    const box = world.addObject({
-      position: { x: 500, y: 300 },
-      parts: [square(20)],
-      frozen: false,
-      surface: DEAD,
-      mass: 1,
-      velocity: { x: 100, y: 0 },
-    });
+    world.addBody(lineDef([{ a: { x: 300, y: 300 }, b: { x: 700, y: 300 } }], 8, DEAD));
+    const box = world.addBody(
+      objectDef({
+        position: { x: 500, y: 300 },
+        parts: [square(20)],
+        frozen: false,
+        surface: DEAD,
+        mass: 1,
+        velocity: { x: 100, y: 0 },
+      }),
+    );
 
     world.slideOut(box, { x: 0, y: -30 }, 250);
     expect(world.getSlide(box)!.y).toBeCloseTo(-30, 5);
@@ -196,13 +219,15 @@ describe('Physics placement', () => {
       velocity: { x: 33.3 * k - 700, y: 12.7 * k },
     }));
     const bodies = placed.map((p) =>
-      world.addObject({
-        ...p,
-        parts: [square(10)],
-        frozen: false,
-        surface: DEAD,
-        mass: 1,
-      }),
+      world.addBody(
+        objectDef({
+          ...p,
+          parts: [square(10)],
+          frozen: false,
+          surface: DEAD,
+          mass: 1,
+        }),
+      ),
     );
 
     bodies.forEach((body, k) => {
@@ -220,7 +245,7 @@ describe('Physics placement', () => {
 });
 
 describe('Circle bodies', () => {
-  const circle = (overrides: Partial<Parameters<PhysicsWorld['addCircle']>[0]> = {}) => ({
+  const circle = (overrides: Partial<TestCircle> = {}) => ({
     position: { x: 500, y: 250 },
     radius: 6,
     surface: DEAD,
@@ -230,9 +255,9 @@ describe('Circle bodies', () => {
 
   it('fall, weigh what they were given and report their landing', () => {
     const world = createWorld();
-    const ground = world.addTerrain([GROUND], DEAD);
-    const pebble = world.addCircle(
-      circle({ position: { x: 500, y: 470 }, velocity: { x: 0, y: 600 } }),
+    const ground = world.addBody(terrainDef([GROUND], DEAD));
+    const pebble = world.addBody(
+      circleDef(circle({ position: { x: 500, y: 470 }, velocity: { x: 0, y: 600 } })),
     );
 
     expect(world.getMass(pebble)).toBeCloseTo(0.2, 9);
@@ -247,20 +272,22 @@ describe('Circle bodies', () => {
 
   it('report hitting a Line, and hit a moving Object with both masses', () => {
     const world = createWorld();
-    world.addLine([{ a: { x: 300, y: 400 }, b: { x: 700, y: 400 } }], 8, DEAD);
-    world.addCircle(circle({ position: { x: 400, y: 380 }, velocity: { x: 0, y: 500 } }));
+    world.addBody(lineDef([{ a: { x: 300, y: 400 }, b: { x: 700, y: 400 } }], 8, DEAD));
+    world.addBody(circleDef(circle({ position: { x: 400, y: 380 }, velocity: { x: 0, y: 500 } })));
     const [onLine] = stepUntilHit(world).hits;
     expect(onLine!.impulse / onLine!.speed).toBeCloseTo(0.2, 2);
 
     const other = createWorld();
-    other.addObject({
-      position: { x: 500, y: 300 },
-      parts: [square(20)],
-      frozen: false,
-      surface: DEAD,
-      mass: 0.2,
-    });
-    other.addCircle(circle({ position: { x: 500, y: 250 }, velocity: { x: 0, y: 400 } }));
+    other.addBody(
+      objectDef({
+        position: { x: 500, y: 300 },
+        parts: [square(20)],
+        frozen: false,
+        surface: DEAD,
+        mass: 0.2,
+      }),
+    );
+    other.addBody(circleDef(circle({ position: { x: 500, y: 250 }, velocity: { x: 0, y: 400 } })));
     const [onObject] = stepUntilHit(other).hits;
     // Two equal masses, head on: each counts half.
     expect(onObject!.impulse / onObject!.speed).toBeCloseTo(0.1, 1);
@@ -269,14 +296,18 @@ describe('Circle bodies', () => {
   it('wake a Frozen Object light enough, and not one too heavy', () => {
     function wakes(frozenMass: number): boolean {
       const world = createWorld();
-      const box = world.addObject({
-        position: { x: 500, y: 300 },
-        parts: [square(20)],
-        frozen: true,
-        surface: DEAD,
-        mass: frozenMass,
-      });
-      world.addCircle(circle({ position: { x: 500, y: 270 }, velocity: { x: 0, y: 800 } }));
+      const box = world.addBody(
+        objectDef({
+          position: { x: 500, y: 300 },
+          parts: [square(20)],
+          frozen: true,
+          surface: DEAD,
+          mass: frozenMass,
+        }),
+      );
+      world.addBody(
+        circleDef(circle({ position: { x: 500, y: 270 }, velocity: { x: 0, y: 800 } })),
+      );
       stepUntilHit(world);
       return !world.isFrozen(box);
     }
@@ -287,29 +318,31 @@ describe('Circle bodies', () => {
 
   it('wake a Frozen Object of several parts, and every hit between the two plays out as a free collision', () => {
     const world = createWorld();
-    const box = world.addObject({
-      position: { x: 500, y: 300 },
-      // Two halves meeting under the circle: it hits both in one step.
-      parts: [
-        [
-          { x: -20, y: -20 },
-          { x: 0, y: -20 },
-          { x: 0, y: 20 },
-          { x: -20, y: 20 },
+    const box = world.addBody(
+      objectDef({
+        position: { x: 500, y: 300 },
+        // Two halves meeting under the circle: it hits both in one step.
+        parts: [
+          [
+            { x: -20, y: -20 },
+            { x: 0, y: -20 },
+            { x: 0, y: 20 },
+            { x: -20, y: 20 },
+          ],
+          [
+            { x: 0, y: -20 },
+            { x: 20, y: -20 },
+            { x: 20, y: 20 },
+            { x: 0, y: 20 },
+          ],
         ],
-        [
-          { x: 0, y: -20 },
-          { x: 20, y: -20 },
-          { x: 20, y: 20 },
-          { x: 0, y: 20 },
-        ],
-      ],
-      frozen: true,
-      surface: DEAD,
-      mass: 1,
-    });
-    const ball = world.addCircle(
-      circle({ position: { x: 500, y: 260 }, mass: 1, velocity: { x: 0, y: 600 } }),
+        frozen: true,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
+    const ball = world.addBody(
+      circleDef(circle({ position: { x: 500, y: 260 }, mass: 1, velocity: { x: 0, y: 600 } })),
     );
 
     const { hits } = stepUntilHit(world);
@@ -326,12 +359,14 @@ describe('Circle bodies', () => {
     function meet(groups: [number | undefined, number | undefined]): boolean {
       const world = createWorld();
       const [a, b] = groups.map((group, k) =>
-        world.addCircle(
-          circle({
-            position: { x: 480 + 40 * k, y: 250 },
-            velocity: { x: k === 0 ? 300 : -300, y: 0 },
-            ...(group !== undefined && { group }),
-          }),
+        world.addBody(
+          circleDef(
+            circle({
+              position: { x: 480 + 40 * k, y: 250 },
+              velocity: { x: k === 0 ? 300 : -300, y: 0 },
+              ...(group !== undefined && { group }),
+            }),
+          ),
         ),
       );
       for (let step = 0; step < 10; step++) world.step();
@@ -345,15 +380,24 @@ describe('Circle bodies', () => {
 
   it('never wake a Frozen Object if they are made not to, however hard they hit', () => {
     const world = createWorld();
-    const box = world.addObject({
-      position: { x: 500, y: 300 },
-      parts: [square(20)],
-      frozen: true,
-      surface: DEAD,
-      mass: 0.2,
-    });
-    world.addCircle(
-      circle({ position: { x: 500, y: 250 }, velocity: { x: 0, y: 3000 }, wakes: false, mass: 5 }),
+    const box = world.addBody(
+      objectDef({
+        position: { x: 500, y: 300 },
+        parts: [square(20)],
+        frozen: true,
+        surface: DEAD,
+        mass: 0.2,
+      }),
+    );
+    world.addBody(
+      circleDef(
+        circle({
+          position: { x: 500, y: 250 },
+          velocity: { x: 0, y: 3000 },
+          wakes: false,
+          mass: 5,
+        }),
+      ),
     );
 
     const [hit] = stepUntilHit(world).hits;
@@ -365,9 +409,9 @@ describe('Circle bodies', () => {
 
   it('roll to a stop on flat ground', () => {
     const world = createWorld();
-    world.addTerrain([GROUND], DEAD);
-    const pebble = world.addCircle(
-      circle({ position: { x: 200, y: 494 }, velocity: { x: 300, y: 0 } }),
+    world.addBody(terrainDef([GROUND], DEAD));
+    const pebble = world.addBody(
+      circleDef(circle({ position: { x: 200, y: 494 }, velocity: { x: 300, y: 0 } })),
     );
 
     for (let step = 0; step < 60 * 8; step++) world.step();
@@ -384,7 +428,7 @@ describe('Circle bodies', () => {
       velocity: { x: -321.1, y: 17.3 },
       angularVelocity: 3.3,
     });
-    const pebble = world.addCircle(def);
+    const pebble = world.addBody(circleDef(def));
 
     expect(world.getTransform(pebble)).toEqual({ ...def.position, angle: def.angle });
     expect(world.getVelocity(pebble)).toEqual(def.velocity);
@@ -395,26 +439,32 @@ describe('Circle bodies', () => {
 describe('Pushes', () => {
   it('change a free body’s momentum and spin, and leave anything else alone', () => {
     const world = createWorld();
-    const terrain = world.addTerrain([GROUND], DEAD);
-    const line = world.addLine([{ a: { x: 100, y: 100 }, b: { x: 300, y: 100 } }], 8, DEAD);
+    const terrain = world.addBody(terrainDef([GROUND], DEAD));
+    const line = world.addBody(
+      lineDef([{ a: { x: 100, y: 100 }, b: { x: 300, y: 100 } }], 8, DEAD),
+    );
     const add = (x: number, frozen: boolean) =>
-      world.addObject({
-        position: { x, y: 300 },
-        parts: [square(20)],
-        frozen,
-        surface: DEAD,
-        mass: 2,
-      });
+      world.addBody(
+        objectDef({
+          position: { x, y: 300 },
+          parts: [square(20)],
+          frozen,
+          surface: DEAD,
+          mass: 2,
+        }),
+      );
     const moving = add(500, false);
     const frozen = add(700, true);
     const sliding = add(900, false);
     world.slideOut(sliding, { x: 0, y: -40 }, 250);
-    const pebble = world.addCircle({
-      position: { x: 300, y: 300 },
-      radius: 6,
-      surface: DEAD,
-      mass: 0.5,
-    });
+    const pebble = world.addBody(
+      circleDef({
+        position: { x: 300, y: 300 },
+        radius: 6,
+        surface: DEAD,
+        mass: 0.5,
+      }),
+    );
 
     expect([terrain, line, frozen, sliding].map((id) => world.isFree(id))).toEqual([
       false,
@@ -438,13 +488,15 @@ describe('Pushes', () => {
 
 describe('Bonds', () => {
   const box = (world: PhysicsWorld, x: number, y: number, frozen = false) =>
-    world.addObject({
-      position: { x, y },
-      parts: [square(20)],
-      frozen,
-      surface: DEAD,
-      mass: 1,
-    });
+    world.addBody(
+      objectDef({
+        position: { x, y },
+        parts: [square(20)],
+        frozen,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
   /** Anchors that hold two unrotated bodies at `a` and `b` together at `point`. */
   const at = (a: { x: number; y: number }, b: { x: number; y: number }, point = a) => ({
     onA: { x: point.x - a.x, y: point.y - a.y },
@@ -454,7 +506,7 @@ describe('Bonds', () => {
 
   it('hold a moving Object where it is when bonded to the Terrain', () => {
     const world = createWorld();
-    const terrain = world.addTerrain([GROUND], DEAD);
+    const terrain = world.addBody(terrainDef([GROUND], DEAD));
     const hanging = box(world, 500, 300);
 
     world.addBond(hanging, terrain, at({ x: 500, y: 300 }, { x: 0, y: 0 }));
@@ -466,14 +518,14 @@ describe('Bonds', () => {
 
   it('stop the two touching, and let go when removed', () => {
     const world = createWorld();
-    const terrain = world.addTerrain([GROUND], DEAD);
+    const terrain = world.addBody(terrainDef([GROUND], DEAD));
     const resting = box(world, 500, 480);
     for (let step = 0; step < 30; step++) world.step();
     const touching = world.touchingPairs();
     expect(touching).toHaveLength(1);
 
     const bond = world.addBond(resting, terrain, at({ x: 500, y: 480 }, { x: 0, y: 0 }));
-    expect(world.step().ends).toEqual(touching);
+    expect(touching).toMatchObject(world.step().ends);
     expect(world.touchingPairs()).toEqual([]);
 
     world.removeBond(bond);
@@ -503,7 +555,7 @@ describe('Bonds', () => {
 
   it('are carried along by a slide, and go with either body', () => {
     const world = createWorld();
-    const terrain = world.addTerrain([GROUND], DEAD);
+    const terrain = world.addBody(terrainDef([GROUND], DEAD));
     const stuck = box(world, 500, 300);
     const bond = world.addBond(stuck, terrain, at({ x: 500, y: 300 }, { x: 0, y: 0 }));
 
@@ -525,7 +577,7 @@ describe('Added capsules', () => {
 
   it('bounce with their own surface where they lie, and go when removed', () => {
     const world = createWorld();
-    const ground = world.addTerrain([GROUND], DEAD);
+    const ground = world.addBody(terrainDef([GROUND], DEAD));
     const patch = world.addCapsule(
       ground,
       { a: { x: 400, y: 500 }, b: { x: 600, y: 500 } },
@@ -533,14 +585,16 @@ describe('Added capsules', () => {
       BOUNCY,
     );
     const drop = () =>
-      world.addObject({
-        position: { x: 500, y: 400 },
-        parts: [square(20)],
-        frozen: false,
-        surface: DEAD,
-        mass: 1,
-        velocity: { x: 0, y: 500 },
-      });
+      world.addBody(
+        objectDef({
+          position: { x: 500, y: 400 },
+          parts: [square(20)],
+          frozen: false,
+          surface: DEAD,
+          mass: 1,
+          velocity: { x: 0, y: 500 },
+        }),
+      );
 
     const box = drop();
     const [hit] = stepUntilHit(world).hits;
@@ -559,14 +613,16 @@ describe('Added capsules', () => {
 
   it('leave a body’s mass alone, keep their surface through setSurface, and stay through a wake', () => {
     const world = createWorld();
-    const ground = world.addTerrain([GROUND], DEAD);
-    const box = world.addObject({
-      position: { x: 500, y: 300 },
-      parts: [square(20)],
-      frozen: true,
-      surface: DEAD,
-      mass: 1,
-    });
+    const ground = world.addBody(terrainDef([GROUND], DEAD));
+    const box = world.addBody(
+      objectDef({
+        position: { x: 500, y: 300 },
+        parts: [square(20)],
+        frozen: true,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
     const patch = world.addCapsule(box, strip, 1.5, BOUNCY);
     world.setSurface(box, DEAD);
     world.setMass(box, 2);
@@ -577,14 +633,16 @@ describe('Added capsules', () => {
     expect(world.getInertia(box)).toBeCloseTo((2 * 40 * 40) / 6, 6);
     // Turned over, it lands on the patch, which bounces it off the ground.
     world.removeBody(box);
-    const flipped = world.addObject({
-      position: { x: 500, y: 400 },
-      parts: [square(20)],
-      frozen: true,
-      surface: DEAD,
-      mass: 1,
-      angle: Math.PI,
-    });
+    const flipped = world.addBody(
+      objectDef({
+        position: { x: 500, y: 400 },
+        parts: [square(20)],
+        frozen: true,
+        surface: DEAD,
+        mass: 1,
+        angle: Math.PI,
+      }),
+    );
     const onFlipped = world.addCapsule(flipped, strip, 1.5, BOUNCY);
     world.setSurface(flipped, DEAD);
     world.setMass(flipped, 1);
@@ -601,20 +659,22 @@ describe('Added capsules', () => {
 
   it('end their contacts when removed', () => {
     const world = createWorld();
-    const ground = world.addTerrain([GROUND], DEAD);
+    const ground = world.addBody(terrainDef([GROUND], DEAD));
     const patch = world.addCapsule(
       ground,
       { a: { x: 400, y: 500 }, b: { x: 600, y: 500 } },
       1.5,
       DEAD,
     );
-    world.addObject({
-      position: { x: 500, y: 470 },
-      parts: [square(20)],
-      frozen: false,
-      surface: DEAD,
-      mass: 1,
-    });
+    world.addBody(
+      objectDef({
+        position: { x: 500, y: 470 },
+        parts: [square(20)],
+        frozen: false,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
     for (let step = 0; step < 30; step++) world.step();
     const onPatch = () =>
       world.touchingPairs().some((pair) => pair.shapeA === patch || pair.shapeB === patch);
@@ -631,14 +691,16 @@ describe('Added capsules', () => {
 describe('Touch points', () => {
   it('say where two shapes began touching in the last step, and nothing for others', () => {
     const world = createWorld();
-    world.addTerrain([GROUND], DEAD);
-    world.addObject({
-      position: { x: 500, y: 470 },
-      parts: [square(20)],
-      frozen: false,
-      surface: DEAD,
-      mass: 1,
-    });
+    world.addBody(terrainDef([GROUND], DEAD));
+    world.addBody(
+      objectDef({
+        position: { x: 500, y: 470 },
+        parts: [square(20)],
+        frozen: false,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
 
     let report = world.step();
     for (let step = 0; step < 60 && report.begins.length === 0; step++) report = world.step();
@@ -655,28 +717,34 @@ describe('Touch points', () => {
 describe('Bodies within a radius', () => {
   it('are measured to their nearest point, of any kind, leaving out added capsules', () => {
     const world = createWorld();
-    const ground = world.addTerrain([GROUND], DEAD);
-    const line = world.addLine(
-      [
-        { a: { x: 100, y: 300 }, b: { x: 200, y: 300 } },
-        { a: { x: 200, y: 300 }, b: { x: 300, y: 300 } },
-      ],
-      8,
-      DEAD,
+    const ground = world.addBody(terrainDef([GROUND], DEAD));
+    const line = world.addBody(
+      lineDef(
+        [
+          { a: { x: 100, y: 300 }, b: { x: 200, y: 300 } },
+          { a: { x: 200, y: 300 }, b: { x: 300, y: 300 } },
+        ],
+        8,
+        DEAD,
+      ),
     );
-    const frozen = world.addObject({
-      position: { x: 500, y: 300 },
-      parts: [square(20)],
-      frozen: true,
-      surface: DEAD,
-      mass: 1,
-    });
-    const pebble = world.addCircle({
-      position: { x: 400, y: 200 },
-      radius: 5,
-      surface: DEAD,
-      mass: 1,
-    });
+    const frozen = world.addBody(
+      objectDef({
+        position: { x: 500, y: 300 },
+        parts: [square(20)],
+        frozen: true,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
+    const pebble = world.addBody(
+      circleDef({
+        position: { x: 400, y: 200 },
+        radius: 5,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
     // A capsule added to the Terrain, reaching up near the centre: not the Terrain's own.
     world.addCapsule(ground, { a: { x: 300, y: 480 }, b: { x: 300, y: 380 } }, 2, DEAD);
 
@@ -710,15 +778,19 @@ describe('Shapes near a box', () => {
 
   it('names every shape, added capsules too, whose bounds overlap the box, and the body it is on', () => {
     const world = createWorld();
-    const ground = world.addTerrain([GROUND], DEAD);
-    const line = world.addLine([{ a: { x: 100, y: 300 }, b: { x: 300, y: 300 } }], 8, DEAD);
-    const frozen = world.addObject({
-      position: { x: 500, y: 300 },
-      parts: [square(20)],
-      frozen: true,
-      surface: DEAD,
-      mass: 1,
-    });
+    const ground = world.addBody(terrainDef([GROUND], DEAD));
+    const line = world.addBody(
+      lineDef([{ a: { x: 100, y: 300 }, b: { x: 300, y: 300 } }], 8, DEAD),
+    );
+    const frozen = world.addBody(
+      objectDef({
+        position: { x: 500, y: 300 },
+        parts: [square(20)],
+        frozen: true,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
     const patch = world.addCapsule(
       frozen,
       { a: { x: -20, y: -20 }, b: { x: 20, y: -20 } },
@@ -740,14 +812,16 @@ describe('Shapes near a box', () => {
 
   it('follows a moving body, and one rebuilt by a Release', () => {
     const world = createWorld();
-    world.addTerrain([GROUND], DEAD);
-    const box20 = world.addObject({
-      position: { x: 400, y: 100 },
-      parts: [square(20)],
-      frozen: true,
-      surface: DEAD,
-      mass: 1,
-    });
+    world.addBody(terrainDef([GROUND], DEAD));
+    const box20 = world.addBody(
+      objectDef({
+        position: { x: 400, y: 100 },
+        parts: [square(20)],
+        frozen: true,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
     world.release(box20);
     for (let step = 0; step < 30; step++) world.step();
     const { x, y } = world.getTransform(box20);
@@ -755,5 +829,120 @@ describe('Shapes near a box', () => {
     expect(y).toBeGreaterThan(200);
     expect(world.shapesNear(box(x - 1, y - 1, x + 1, y + 1)).map((f) => f.body)).toEqual([box20]);
     expect(world.shapesNear(box(399, 99, 401, 101))).toEqual([]);
+  });
+});
+
+describe('Walkers', () => {
+  const ICE = { friction: 0, restitution: 0 };
+  /** A 40 px box on the ground, moving; upright and driven if asked. */
+  function walker(world: PhysicsWorld, x: number, motion: Partial<BodyMotion> = {}) {
+    return world.addBody({
+      shapes: { kind: 'polygons', polygons: [square(20)] },
+      surface: ICE,
+      position: { x, y: 480 },
+      motion: { mass: 2, wakes: true, ...motion },
+      reportsHits: true,
+    });
+  }
+
+  it('stay upright when hit off-centre', () => {
+    const angles = [false, true].map((upright) => {
+      const world = createWorld();
+      world.addBody(terrainDef([GROUND], DEAD));
+      const box = walker(world, 500, { upright });
+      // A heavy ball flying in level with its top corner.
+      world.addBody(
+        circleDef({
+          position: { x: 400, y: 465 },
+          radius: 5,
+          surface: DEAD,
+          mass: 5,
+          velocity: { x: 800, y: 0 },
+        }),
+      );
+      let turned = 0;
+      for (let step = 0; step < 60; step++) {
+        world.step();
+        turned = Math.max(turned, Math.abs(world.getTransform(box).angle));
+      }
+      return { turned, spin: world.getAngularVelocity(box), moved: world.getTransform(box).x };
+    });
+    const [free, upright] = angles;
+
+    expect(free!.turned).toBeGreaterThan(0.1); // the hit is off-centre
+    expect(upright!.turned).toBe(0);
+    expect(upright!.spin).toBe(0);
+    expect(upright!.moved).toBeGreaterThan(500); // it was hit
+  });
+
+  it('are moved by a force: mass × acceleration, used up by one step', () => {
+    const world = createWorld();
+    world.addBody(terrainDef([GROUND], ICE));
+    const box = walker(world, 300, { upright: true, driven: true });
+    for (let step = 0; step < 10; step++) world.step(); // settle
+
+    for (let step = 0; step < 60; step++) {
+      world.applyForce(box, { x: 500, y: 0 });
+      world.step();
+    }
+    // 500 / 2 = 250 px/s² for one second.
+    expect(world.getVelocity(box).x).toBeCloseTo(250, 0);
+    world.step();
+    expect(world.getVelocity(box).x).toBeCloseTo(250, 0); // no force, no change on ice
+  });
+
+  it('are the only bodies a force can push', () => {
+    const world = createWorld();
+    const box = walker(world, 300);
+    expect(() => world.applyForce(box, { x: 100, y: 0 })).toThrow();
+  });
+
+  it('can tell standing on the ground from pressing against a wall, by the normal', () => {
+    const world = createWorld();
+    const WALL: Polygon = [
+      { x: 600, y: 300 },
+      { x: 700, y: 300 },
+      { x: 700, y: 500 },
+      { x: 600, y: 500 },
+    ];
+    const ground = world.addBody(terrainDef([GROUND], DEAD));
+    const wall = world.addBody(terrainDef([WALL], DEAD));
+    // Right up against the wall, at rest.
+    const box = walker(world, 580, { upright: true, driven: true });
+    const hits: StepReport['hits'][number][] = [];
+    for (let step = 0; step < 60; step++) {
+      world.applyForce(box, { x: 400, y: 0 }); // pressing slowly into the wall
+      hits.push(...world.step().hits.filter((hit) => hit.bodyA === wall || hit.bodyB === wall));
+    }
+
+    /** The normal of `box` touching `other`, pointing from `other` towards `box`. */
+    const normalFrom = (other: BodyId) => {
+      const pair = world.touchingPairs().find((p) => p.bodyA === other || p.bodyB === other)!;
+      expect(world.touchNormal(pair)).toEqual(pair.normal);
+      const flip = pair.bodyA === other ? 1 : -1;
+      return { x: flip * pair.normal.x, y: flip * pair.normal.y };
+    };
+    const up = normalFrom(ground);
+    expect(up.x).toBeCloseTo(0, 6);
+    expect(up.y).toBeCloseTo(-1, 6);
+    const sideways = normalFrom(wall);
+    expect(sideways.x).toBeCloseTo(-1, 6);
+    expect(sideways.y).toBeCloseTo(0, 6);
+    expect(hits).toEqual([]); // pressing slowly makes no hits: only the normal tells
+  });
+
+  it('report no normal for shapes that do not touch', () => {
+    const world = createWorld();
+    const ground = world.addBody(terrainDef([GROUND], DEAD));
+    const box = walker(world, 300);
+    const shapes = world.shapesNear({ minX: 0, minY: 0, maxX: 1000, maxY: 600 });
+    const shapeOf = (body: BodyId) => shapes.find((s) => s.body === body)!.shape;
+    const pair = { bodyA: ground, bodyB: box, shapeA: shapeOf(ground), shapeB: shapeOf(box) };
+    for (let step = 0; step < 30; step++) world.step();
+    expect(world.touchNormal(pair)).not.toBeNull();
+
+    world.setVelocity(box, { x: 0, y: -600 });
+    for (let step = 0; step < 5; step++) world.step();
+    expect(world.touchNormal(pair)).toBeNull();
   });
 });

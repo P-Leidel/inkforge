@@ -39,51 +39,71 @@ export interface Surface {
   readonly restitution: number;
 }
 
-export interface ObjectBodyDef {
-  /** World position of the body's origin. */
-  readonly position: Vec2;
-  /** Convex parts relative to the origin, together forming one rigid body. */
-  readonly parts: readonly Polygon[];
-  /** Whether the Object starts Frozen: it collides but ignores gravity and doesn't move. */
-  readonly frozen: boolean;
-  /** The surface of every part. It stays with the Object when it unfreezes. */
-  readonly surface: Surface;
-  /** Its mass, spread evenly over the parts. It stays with the Object when it unfreezes. */
+/**
+ * A body's own shapes, in its own coordinates (px, relative to its origin,
+ * unrotated).
+ */
+export type BodyShapes =
+  /** Convex polygons, together forming one rigid body. */
+  | { readonly kind: 'polygons'; readonly polygons: readonly Polygon[] }
+  /** One capsule of `radius` around each segment, colliding from both sides. */
+  | { readonly kind: 'capsules'; readonly segments: readonly Segment[]; readonly radius: number }
+  /**
+   * A circle about the origin. On flat ground it rolls to a stop, as a
+   * pebble does, rather than rolling for ever.
+   */
+  | { readonly kind: 'circle'; readonly radius: number };
+
+/**
+ * How a moving body moves. A body without one is fixed (the Terrain, a
+ * Line): it never moves and has no mass.
+ */
+export interface BodyMotion {
+  /** Its mass, spread evenly over its own shapes. It stays when it unfreezes. */
   readonly mass: number;
-  /** Rotation about `position`, radians; 0 by default. */
-  readonly angle?: number;
   /** Linear velocity, px/s, if it starts moving (not Frozen). */
   readonly velocity?: Vec2;
   /** Angular velocity, rad/s, if it starts moving (not Frozen). */
   readonly angularVelocity?: number;
-}
-
-/**
- * A movable circle (Rubble, Droplets). It never starts Frozen, and like an
- * Object it reports its hits.
- */
-export interface CircleBodyDef {
-  /** World position of its centre. */
-  readonly position: Vec2;
-  /** px. */
-  readonly radius: number;
-  readonly surface: Surface;
-  readonly mass: number;
-  /** Rotation, radians; 0 by default. */
-  readonly angle?: number;
-  /** Linear velocity, px/s. */
-  readonly velocity?: Vec2;
-  /** Angular velocity, rad/s. */
-  readonly angularVelocity?: number;
-  /** Circles of the same group (a positive number) never touch each other. None by default. */
-  readonly group?: number;
-  /** False if its hits never wake a Frozen Object (Droplets). True by default. */
+  /**
+   * True if it starts Frozen (an Object): it collides but ignores gravity and
+   * doesn't move until a hit wakes it, `release` or `slideOut`. False by
+   * default.
+   */
+  readonly frozen?: boolean;
+  /** True if its hits can wake a Frozen body (Objects, Rubble). False by default. */
   readonly wakes?: boolean;
+  /** True if it never rotates, however it is hit (an Enemy). False by default. */
+  readonly upright?: boolean;
+  /** True if it can be pushed along by `applyForce` (an Enemy). False by default. */
+  readonly driven?: boolean;
   /**
    * True for continuous collision against moving bodies too, not only fixed
-   * ones, so a small fast circle can't pass through a moving Object.
+   * ones, so a small fast body can't pass through a moving Object. False by
+   * default.
    */
   readonly bullet?: boolean;
+}
+
+/** A body, described once: its shapes, and what it does. */
+export interface BodyDef {
+  readonly shapes: BodyShapes;
+  /** The surface of every shape. It stays with the body when it unfreezes. */
+  readonly surface: Surface;
+  /** World position of the body's origin; the world origin by default. */
+  readonly position?: Vec2;
+  /** Rotation about `position`, radians; 0 by default. */
+  readonly angle?: number;
+  /** How it moves; none for a fixed body. */
+  readonly motion?: BodyMotion;
+  /**
+   * True if its shapes, and those `addCapsule` adds to it, report hits
+   * (Objects, Rubble, Droplets, Enemies). A hit is reported when either
+   * shape reports them. False by default.
+   */
+  readonly reportsHits?: boolean;
+  /** Bodies of the same group (a positive number) never touch each other. None by default. */
+  readonly group?: number;
 }
 
 /**
@@ -113,6 +133,12 @@ export interface ContactPair {
   readonly bodyB: BodyId;
   readonly shapeA: ShapeId;
   readonly shapeB: ShapeId;
+}
+
+/** Two shapes touching now, and which way they face each other. */
+export interface TouchingPair extends ContactPair {
+  /** Unit contact normal, from A towards B. */
+  readonly normal: Vec2;
 }
 
 /** A hit reported by a step: two shapes meeting at speed. */
@@ -150,7 +176,7 @@ export interface BodyShape {
 
 /** What one step did to contacts. */
 export interface StepReport {
-  /** Every hit between shapes of which at least one belongs to an Object or a circle. */
+  /** Every hit between shapes of which at least one reports hits. */
   readonly hits: readonly ContactHit[];
   /** Pairs of shapes that started touching. */
   readonly begins: readonly ContactPair[];
@@ -161,18 +187,12 @@ export interface StepReport {
 export interface PhysicsWorld {
   readonly bodyCount: number;
 
-  /** Adds fixed Terrain made of convex polygons in world coordinates. */
-  addTerrain(polygons: readonly Polygon[], surface: Surface): BodyId;
-  /** Adds a fixed Line: one capsule of the given thickness per segment, colliding from both sides. */
-  addLine(segments: readonly Segment[], thickness: number, surface: Surface): BodyId;
-  /** Adds a movable Object. */
-  addObject(def: ObjectBodyDef): BodyId;
   /**
-   * Adds a moving circle. It moves and hits like a moving Object, and its
-   * hits can wake a Frozen Object. On flat ground it rolls to a stop, as a
-   * pebble does, rather than rolling for ever.
+   * Adds a body as `def` describes it. A moving body falls and hits; a
+   * Frozen one is held until a hit wakes it (see `wakeSpeed`), `release`
+   * or `slideOut`.
    */
-  addCircle(def: CircleBodyDef): BodyId;
+  addBody(def: BodyDef): BodyId;
   removeBody(id: BodyId): void;
 
   /**
@@ -192,15 +212,21 @@ export interface PhysicsWorld {
   setShapeSurface(id: ShapeId, surface: Surface): void;
 
   /**
-   * Advances the simulation by one fixed step. A Frozen Object hit hard
-   * enough by a moving body (see `wakeSpeed`) wakes, and the hit plays out as
+   * Advances the simulation by one fixed step. A Frozen body hit hard
+   * enough by a moving body that wakes (see `wakeSpeed`) wakes, and the hit plays out as
    * if it had been free. Reports the step's hits and the contacts that
    * began and ended.
    */
   step(): StepReport;
 
-  /** Every pair of shapes touching now. */
-  touchingPairs(): readonly ContactPair[];
+  /** Every pair of shapes touching now, with its normal. */
+  touchingPairs(): readonly TouchingPair[];
+  /**
+   * The unit contact normal of two shapes touching now, from `pair.shapeA`
+   * towards `pair.shapeB`; null if they don't touch now. It changes as
+   * they move: read it when it is needed.
+   */
+  touchNormal(pair: ContactPair): Vec2 | null;
   /**
    * Every body, of any kind, with one of its own shapes (not those
    * `addCapsule` added) within `radius` px of `centre`, measured to that
@@ -222,14 +248,14 @@ export interface PhysicsWorld {
 
   isFrozen(id: BodyId): boolean;
   /**
-   * Whether a body moves freely: a moving Object or a circle. Terrain,
-   * Lines, Frozen Objects and Objects sliding off a Line don't.
+   * Whether a body moves freely: a moving body that isn't Frozen or sliding
+   * off a Line. Fixed bodies (Terrain, Lines) don't.
    */
   isFree(id: BodyId): boolean;
-  /** Unfreezes an Object so it falls and moves freely. */
+  /** Unfreezes a Frozen body so it falls and moves freely. */
   release(id: BodyId): void;
   /**
-   * Slides an Object, Frozen or moving, `displacement` px in a straight line
+   * Slides a moving body (an Object), Frozen or not, `displacement` px in a straight line
    * at `speed` px/s, passing through fixed bodies (Terrain, Lines) but
    * pushing moving ones, then lets it move freely from rest. A Frozen Object
    * is unfrozen.
@@ -246,10 +272,10 @@ export interface PhysicsWorld {
   /** Changes `minBounceSpeed` from the next step. */
   setMinBounceSpeed(speed: number): void;
 
-  /** An Object's or a circle's mass. */
+  /** A moving body's mass. */
   getMass(id: BodyId): number;
   /**
-   * Sets an Object's or a circle's mass, spread evenly over its own shapes
+   * Sets a moving body's mass, spread evenly over its own shapes
    * (not those `addCapsule` added). Never wakes a Frozen Object.
    */
   setMass(id: BodyId, mass: number): void;
@@ -267,7 +293,10 @@ export interface PhysicsWorld {
 
   /** Angular velocity, rad/s. */
   getAngularVelocity(id: BodyId): number;
-  /** An Object's or a circle's rotational inertia about its centre of mass (mass × px²). */
+  /**
+   * A moving body's rotational inertia about its centre of mass (mass × px²),
+   * as if it could rotate: an upright body never does.
+   */
   getInertia(id: BodyId): number;
 
   /**
@@ -278,6 +307,13 @@ export interface PhysicsWorld {
   applyImpulse(id: BodyId, impulse: Vec2): void;
   /** Changes a free body's angular momentum by `impulse` (mass × px² / s), like `applyImpulse`. */
   applyAngularImpulse(id: BodyId, impulse: number): void;
+  /**
+   * Pushes a driven body with `force` (mass × px/s²) at its centre of mass
+   * through the next step, and wakes it if it sleeps. Forces added before a
+   * step add up; the step uses them up. Does nothing to a driven body that
+   * isn't free; throws for a body that isn't driven.
+   */
+  applyForce(id: BodyId, force: Vec2): void;
 
   /**
    * Holds two bodies together as they are, with a rigid joint at `anchors`
@@ -303,5 +339,3 @@ export interface PhysicsWorld {
   /** Frees the world. It must not be used afterwards. */
   destroy(): void;
 }
-
-export type PhysicsWorldFactory = (options: PhysicsWorldOptions) => PhysicsWorld;

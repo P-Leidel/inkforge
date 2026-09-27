@@ -57,6 +57,8 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     enableSleep: boolean;
     isAwake: boolean;
     isBullet: boolean;
+    /** The body never rotates: it has no rotational inertia. */
+    fixedRotation: boolean;
   }
 
   export class b2JointId {
@@ -131,6 +133,9 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
 
   export class b2Manifold {
     points: b2ManifoldPoint[];
+    /** Unit normal, pointing from shape A to shape B. */
+    normalX: number;
+    normalY: number;
     pointCount: number;
   }
 
@@ -217,6 +222,7 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   export function b2Body_GetMass(bodyId: b2BodyId): number;
   export function b2Body_GetAngularDamping(bodyId: b2BodyId): number;
   export function b2Body_IsBullet(bodyId: b2BodyId): boolean;
+  export function b2Body_IsFixedRotation(bodyId: b2BodyId): boolean;
   export function b2Body_GetJointCount(bodyId: b2BodyId): number;
   /** Rotational inertia about the centre of mass. */
   export function b2Body_GetInertiaTensor(bodyId: b2BodyId): number;
@@ -236,6 +242,8 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
     impulse: b2Vec2,
     wake: boolean,
   ): void;
+  /** Applied through the next step; the step clears it. */
+  export function b2Body_ApplyForceToCenter(bodyId: b2BodyId, force: b2Vec2, wake: boolean): void;
   export function b2Body_ApplyAngularImpulse(
     bodyId: b2BodyId,
     impulse: number,

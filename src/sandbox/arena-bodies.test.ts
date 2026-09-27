@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Segment } from '../geometry/segment';
 import type { Vec2 } from '../geometry/vec2';
 import { createMaterialTable } from '../materials/material-table';
-import type { BodyId, ShapeId, StepReport, Surface } from '../physics';
+import type { BodyDef, BodyId, ShapeId, StepReport, Surface } from '../physics';
 import { ArenaBodies, type BodiesPhysics } from './arena-bodies';
 import { ContactLedger, TERRAIN_PARTY, type Party, type PartyId } from './contact-ledger';
 import type { Happening, Thing } from './happenings';
@@ -24,10 +24,16 @@ class StubPhysics implements BodiesPhysics {
     return body;
   }
 
-  addTerrain = () => this.add('terrain');
-  addLine = () => this.add('line');
-  addObject = () => this.add('object');
-  addCircle = () => this.add('circle');
+  addBody = ({ shapes, motion }: BodyDef) =>
+    this.add(
+      shapes.kind === 'capsules'
+        ? 'line'
+        : shapes.kind === 'circle'
+          ? 'circle'
+          : motion
+            ? 'object'
+            : 'terrain',
+    );
 
   getTransform = (body: BodyId) => ({ x: body, y: 0, angle: 0 });
   getVelocity = () => ({ x: 0, y: 5 });
@@ -89,6 +95,7 @@ function setup() {
   const physics = new StubPhysics();
   const contacts = new ContactLedger<string>({
     getSlide: (body) => physics.slides.get(body) ?? null,
+    touchNormal: () => null,
   });
   const materials = createMaterialTable();
   /** Each call to the gone hearer: what went, and what the ledger and engine held then. */
