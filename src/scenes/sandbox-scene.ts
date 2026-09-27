@@ -1,14 +1,15 @@
 import Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
 import { GALLERY, type Demo } from '../gallery/gallery';
+import { Game } from '../game/game';
+import { DrawingInput } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
 import { DebugOverlay } from '../rendering/debug-overlay';
 import { FrameRecorder } from '../rendering/frame-times';
-import { Game } from '../game/game';
-import { flashRejection, notEnough, REJECTION_MESSAGES } from '../rendering/rejection-flash';
+import { flashRejection } from '../rendering/rejection-flash';
 import { Hud } from '../rendering/hud';
 import type { Menu } from '../rendering/menu';
-import { ERASER_RADIUS, PaletteBar, type Tool } from '../rendering/palette-bar';
+import { PaletteBar } from '../rendering/palette-bar';
 import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../rendering/toolbar';
 import { TuningPanel } from '../rendering/tuning-panel';
@@ -18,22 +19,22 @@ import { BallCannon } from '../stress-tests/ball-cannon';
 import { BoxTower } from '../stress-tests/box-tower';
 import { PebbleDrop } from '../stress-tests/pebble-drop';
 import type { StressTest } from '../stress-tests/stress-test';
-import { isClosingStroke } from '../stroke/close-detection';
-import { isFillClick } from '../stroke/fill-click';
 
 /** Keys 1–5 pick the Colours in palette order. */
 const COLOUR_KEYS = new Map(COLOURS.map((colour, k) => [String(k + 1), colour]));
 
 /**
- * The sandbox scene: turns pointer and keyboard input into commands to the
- * Game, and draws the Sandbox world's state and the Ink Tanks. The rules live
- * in the Game and the Sandbox world below it. The scene remembers the picked
- * tool, a Colour or the Eraser, and hands the Colour to every command.
+ * The sandbox scene: forwards pointer and tool events to drawing input,
+ * which turns them into commands to the Game, and draws the Sandbox world's
+ * state, the Ink Tanks and what drawing input says to preview and flash. The
+ * rules live in the Game and the Sandbox world below it.
  */
 export class SandboxScene extends Phaser.Scene {
+  /** The rules layer: Phaser's own `game` is the Phaser game. */
   private gameLayer!: Game;
   /** The Sandbox world below the Game: what is drawn, and what demos build on. */
   private world!: SandboxWorld;
+  private drawing!: DrawingInput;
   private worldView!: WorldRenderer;
   private overlay!: DebugOverlay;
   private hud!: Hud;
@@ -41,18 +42,6 @@ export class SandboxScene extends Phaser.Scene {
   private palette!: PaletteBar;
   private tuning!: TuningPanel;
   private gallery!: Menu;
-  /** The Colour new Strokes are drawn in, or the Eraser. */
-  private tool: Tool = 'grey';
-  /** Whether the pointer is over the game canvas. */
-  private pointerInside = false;
-  /** Pointer samples of the Stroke being drawn, or null. */
-  private stroke: Vec2[] | null = null;
-  /** The Eraser's path since it last erased, while its button is held, or null. */
-  private erasing: Vec2[] | null = null;
-  /** Whether the Stroke being drawn would be refused as an overlapping Object. */
-  private strokeRefused = false;
-  /** Sample count the refusal was last checked at. */
-  private checkedSamples = 0;
   private stressTest: StressTest | null = null;
   /** Every frame's timings, for the F1 stats. */
   private readonly frames = new FrameRecorder();
@@ -65,6 +54,7 @@ export class SandboxScene extends Phaser.Scene {
     // Ink is unlimited until Ink costs is turned on in F2.
     this.gameLayer = new Game({ inkCosts: false });
     this.world = this.gameLayer.world;
+    this.drawing = new DrawingInput(this.gameLayer);
     this.tuning = new TuningPanel(this.world.materials, this.gameLayer);
     this.worldView = new WorldRenderer(this, this.world);
     this.preview = new StrokePreview(this);
@@ -85,7 +75,7 @@ export class SandboxScene extends Phaser.Scene {
       this.gameLayer.dispose();
     });
     this.hud = new Hud(this, this.world);
-    this.palette = new PaletteBar(this, (tool) => this.pick(tool));
+    this.palette = new PaletteBar(this, (tool) => this.drawing.pick(tool));
     const toolbar = new Toolbar(this);
     this.gallery = toolbar.addMenu(
       'Gallery',
@@ -130,19 +120,13 @@ export class SandboxScene extends Phaser.Scene {
     this.frames.sinceStart.restart();
   }
 
-  /** Picks a Colour to draw in, or the Eraser. A Stroke being drawn carries on in a new Colour. */
-  private pick(tool: Tool): void {
-    this.tool = tool;
-    if (tool !== 'eraser') this.erasing = null;
-  }
-
   private bindKeys(): void {
     const keyboard = this.input.keyboard!;
     keyboard.on('keydown', (event: KeyboardEvent) => {
       const colour = COLOUR_KEYS.get(event.key);
-      if (colour) this.pick(colour);
+      if (colour) this.drawing.pick(colour);
       else if (event.key.toLowerCase() === 'e' && !event.ctrlKey && !event.metaKey) {
-        this.pick('eraser');
+        this.drawing.pick('eraser');
       }
     });
     keyboard
@@ -157,14 +141,13 @@ export class SandboxScene extends Phaser.Scene {
     keyboard.on('keydown-Z', (event: KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      this.gameLayer.undo();
+      this.drawing.undo();
     });
   }
 
   private bindPointer(): void {
     this.input.mouse?.disableContextMenu();
-    this.input.on(Phaser.Input.Events.GAME_OVER, () => (this.pointerInside = true));
-    this.input.on(Phaser.Input.Events.GAME_OUT, () => (this.pointerInside = false));
+    this.input.on(Phaser.Input.Events.GAME_OUT, () => this.drawing.leave());
     this.input.on(
       Phaser.Input.Events.POINTER_DOWN,
       (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
@@ -174,98 +157,42 @@ export class SandboxScene extends Phaser.Scene {
           this.gallery.close();
           return;
         }
-        const point = { x: pointer.worldX, y: pointer.worldY };
-        if (pointer.leftButtonDown()) {
-          if (this.tool === 'eraser') {
-            this.erasing = [point];
-            this.erase();
-          } else {
-            this.stroke = [point];
-          }
-        } else if (pointer.rightButtonDown()) this.gameLayer.releaseAt(point);
+        if (pointer.leftButtonDown()) this.drawing.press(at(pointer), 'left');
+        else if (pointer.rightButtonDown()) this.drawing.press(at(pointer), 'right');
       },
     );
-    this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
-      this.pointerInside = true;
-      this.stroke?.push({ x: pointer.worldX, y: pointer.worldY });
-      this.erasing?.push({ x: pointer.worldX, y: pointer.worldY });
-    });
-    const finish = () => {
-      this.erase();
-      this.erasing = null;
-      this.finishStroke();
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) =>
+      this.drawing.move(at(pointer)),
+    );
+    const release = () => {
+      const flash = this.drawing.release();
+      if (flash) flashRejection(this, flash.path, flash.message, flash.pointer);
     };
-    this.input.on(Phaser.Input.Events.POINTER_UP, finish);
-    this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, finish);
-  }
-
-  /**
-   * Erases along the Eraser's path since it last erased, and carries on from
-   * its end. Held still, it keeps erasing what moves into the brush.
-   */
-  private erase(): void {
-    const path = this.erasing;
-    if (!path) return;
-    this.gameLayer.eraseAlong(path, ERASER_RADIUS);
-    this.erasing = [path[path.length - 1]!];
-  }
-
-  /** A press and release: a click fills the Object under it, anything longer is a Stroke. */
-  private finishStroke(): void {
-    const stroke = this.stroke;
-    this.stroke = null;
-    // One picked the Eraser while drawing: the Stroke is dropped.
-    const colour = this.tool;
-    if (!stroke || colour === 'eraser') return;
-    const pointer = stroke[stroke.length - 1]!;
-    if (isFillClick(stroke)) {
-      const outcome = this.gameLayer.fillAt(stroke[0]!, colour);
-      if (outcome.kind !== 'already-filled' && outcome.kind !== 'refused') return;
-      const { outline } = outcome;
-      const message = outcome.kind === 'refused' ? notEnough(colour) : 'Already filled';
-      flashRejection(this, [...outline, outline[0]!], message, pointer);
-      return;
-    }
-    const outcome = this.gameLayer.submitStroke(stroke, colour);
-    if (outcome.kind === 'rejected') {
-      flashRejection(this, outcome.path, REJECTION_MESSAGES[outcome.reason], pointer);
-    } else if (outcome.kind === 'refused') {
-      flashRejection(this, outcome.path, notEnough(colour), pointer);
-    }
-  }
-
-  /** Re-checks, at most once per frame, whether the Stroke being drawn would be refused. */
-  private updateRefusal(): void {
-    const stroke = this.stroke;
-    if (!stroke || !isClosingStroke(stroke)) {
-      this.strokeRefused = false;
-      this.checkedSamples = 0;
-      return;
-    }
-    if (stroke.length === this.checkedSamples) return;
-    this.checkedSamples = stroke.length;
-    const preview = this.world.previewStroke(stroke);
-    this.strokeRefused = preview.kind === 'rejected' && preview.reason === 'overlaps';
+    this.input.on(Phaser.Input.Events.POINTER_UP, release);
+    this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, release);
   }
 
   override update(_time: number, deltaMs: number): void {
     // Phaser smooths `deltaMs` over several frames, which would hide a long one.
     this.frames.begin(this.game.loop.rawDelta, this.world.isRunning);
-    this.erase();
+    this.drawing.tick();
     const start = performance.now();
     const steps = this.gameLayer.advance(deltaMs / 1000);
     this.frames.physics(performance.now() - start, steps);
     this.stressTest?.update();
     const drawStart = performance.now();
     this.worldView.draw();
-    this.updateRefusal();
-    const pointer = this.input.activePointer;
-    const at = this.pointerInside ? { x: pointer.worldX, y: pointer.worldY } : null;
-    if (this.tool === 'eraser') this.preview.drawBrush(at);
-    else this.preview.draw(this.stroke, this.tool, this.strokeRefused, at);
-    this.palette.show(this.tool, this.gameLayer);
+    const preview = this.drawing.preview();
+    if (preview.kind === 'brush') this.preview.drawBrush(preview.pointer);
+    else this.preview.draw(preview.samples, preview.colour, preview.refused, preview.pointer);
+    this.palette.show(this.drawing.tool, this.gameLayer);
     this.overlay.draw();
     this.hud.draw(this.stressTest?.status());
     this.frames.draw(performance.now() - drawStart);
   }
+}
+
+/** Where the pointer is in the world. */
+function at(pointer: Phaser.Input.Pointer): Vec2 {
+  return { x: pointer.worldX, y: pointer.worldY };
 }

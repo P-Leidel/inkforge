@@ -107,11 +107,12 @@ Performance is judged on one baseline machine: a desktop with an NVIDIA GeForce 
 │   ├── game/            Headless Game over the Sandbox world: Ink Tanks, prices, undo and refunds (ADR 0009)
 │   ├── stress-tests/    Scripted engine stress tests (ball cannon, box tower, pebbles)
 │   ├── gallery/         Colour gallery demos, built through the Sandbox world
-│   ├── scenes/          Phaser scenes: input → Game commands
+│   ├── input/           Drawing input: a press, a drag and a release → Game commands, previews and flashes
+│   ├── scenes/          Phaser scenes: forward events to Drawing input, draw what it and the world show
 │   └── rendering/       Phaser drawing: world, debug overlay, toolbar, feedback
 ├── scripts/             Developer scripts (engine verdict)
 ├── index.html
 └── CONTEXT.md           Domain glossary
 ```
 
-`geometry/`, `materials/`, `stroke/`, `physics/`, `sandbox/`, `game/` and `gallery/` have no Phaser dependency and run headless under Vitest. Tests live next to the code they cover as `*.test.ts`.
+`geometry/`, `materials/`, `stroke/`, `physics/`, `sandbox/`, `game/`, `input/` and `gallery/` have no Phaser dependency and run headless under Vitest. Tests live next to the code they cover as `*.test.ts`.

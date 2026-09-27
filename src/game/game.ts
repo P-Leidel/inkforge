@@ -12,6 +12,7 @@ import {
   type StrokeId,
   type StrokeOutcome,
 } from '../sandbox/sandbox-world';
+import type { StrokeResult } from '../stroke/stroke-pipeline';
 import { createInkTable, fromLineLength, type InkTable } from './ink-table';
 
 /** What a Stroke the Game was asked for became. */
@@ -215,6 +216,14 @@ export class Game {
     }
     this.catchUp();
     return outcome;
+  }
+
+  /**
+   * What a Stroke would become if it were submitted now, without adding it:
+   * drawing input shows a refused Object in red while drawing.
+   */
+  previewStroke(samples: readonly Vec2[]): StrokeResult {
+    return this.world.previewStroke(samples);
   }
 
   /** Releases the Frozen Object under `point`, if physics is running. */

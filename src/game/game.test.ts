@@ -1,24 +1,16 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
 import { GALLERY } from '../gallery/gallery';
 import { COLOURS, type Colour } from '../materials/colour';
 import { dragAlong, dragBox, dragCircle } from '../stroke/pointer-paths';
 import { ARENA_HEIGHT, ARENA_WIDTH } from '../sandbox/arena';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
-import { Game, type GameOptions } from './game';
+import type { Game } from './game';
 import { fromLineLength, inLineLength } from './ink-table';
-
-const created: Game[] = [];
-afterEach(() => {
-  for (const game of created.splice(0)) game.dispose();
-});
+import { games } from './test-support';
 
 /** A Game over a new Sandbox world. Every test says whether Ink costs are on. */
-function createGame(inkCosts: boolean, options: Omit<GameOptions, 'inkCosts'> = {}): Game {
-  const game = new Game({ inkCosts, worldOptions: { seed: 1 }, ...options });
-  created.push(game);
-  return game;
-}
+const createGame = games();
 
 /** What `colour`'s Tank has spent, in Line length. */
 const spent = (game: Game, colour: Colour) =>

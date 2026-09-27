@@ -2,7 +2,8 @@ import type Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
 import type { Game } from '../game/game';
 import { inLineLength } from '../game/ink-table';
-import { COLOURS, type Colour } from '../materials/colour';
+import { ERASER_RADIUS, type Tool } from '../input/drawing-input';
+import { COLOURS } from '../materials/colour';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { BakedDrawing, bakingGraphics } from './baked-textures';
 import { drawInk, INK_HUES } from './ink';
@@ -16,12 +17,6 @@ const GAP = 10;
 /** Each Colour's gauge: a bar under its swatch, with the Ink left under it. */
 const GAUGE_TOP = TOP + HEIGHT + 6;
 const GAUGE_HEIGHT = 8;
-/** Radius (px) of the Eraser's brush, shown on its swatch and at the pointer. */
-export const ERASER_RADIUS = 12;
-
-/** What the pointer does: draw and fill in a Colour, or erase. */
-export type Tool = Colour | 'eraser';
-
 /** The swatches in order: the five Colours, then the Eraser. */
 const TOOLS: readonly Tool[] = [...COLOURS, 'eraser'];
 
