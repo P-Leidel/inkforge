@@ -4,7 +4,7 @@ A 2D side-view physics defense game: the player draws lines and objects with sca
 
 **Play the latest build:** https://p-leidel.github.io/inkforge/
 
-The project has finished **milestone 3, Ink costs** ([spec](docs/specs/m3-ink-costs.md)), built on [milestone 2, Colours](docs/specs/m2-colours.md) and [milestone 1, the physics sandbox](docs/specs/m1-physics-sandbox.md); milestone 4, enemies and the Ink Core, is next. See the [game design document](docs/gdd.md) for the full picture and [`CONTEXT.md`](CONTEXT.md) for the glossary.
+The project has finished **milestone 3, Ink costs** ([spec](docs/specs/m3-ink-costs.md)), built on [milestone 2, Colours](docs/specs/m2-colours.md) and [milestone 1, the physics sandbox](docs/specs/m1-physics-sandbox.md); milestone 4, enemies and the Ink Core ([spec](docs/specs/m4-enemies-and-ink-core.md)), is next. See the [game design document](docs/gdd.md) for the full picture and [`CONTEXT.md`](CONTEXT.md) for the glossary.
 
 ## Getting started
 

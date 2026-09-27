@@ -11,11 +11,16 @@ One fixed, non-scrolling screen seen from the side, with gravity, terrain, a Spa
 _Avoid_: Map, level screen
 
 **Ink Core**:
-The structure the player defends. The run is lost when its HP reaches zero.
+The structure the player defends. Only an Enemy reaching it damages it; the run is lost when its HP reaches zero.
 _Avoid_: Base, tower, heart
 
 **Spawn**:
-The arena edge where enemies enter.
+Where Enemies appear: beyond the Arena's edge, out of view and out of reach of drawing, so they walk in over the edge. The player can build right up to it, but never on it.
+_Avoid_: Spawn point, gate, portal
+
+**Pit**:
+A gap in the Terrain open to the bottom of the screen. An Enemy that falls in dies when it drops below the screen.
+_Avoid_: Hole, chasm, dip (a gap with a floor is not a Pit)
 
 **Terrain**:
 The arena's own, hand-built ground and walls. Not drawn by the player and never breaks.
@@ -30,7 +35,7 @@ The untimed phase before a Wave. Physics is paused, the player can draw anywhere
 _Avoid_: Prep phase, planning phase
 
 **Wave**:
-The phase in which physics runs and enemies walk toward the Ink Core. No undo.
+The phase in which physics runs and enemies walk toward the Ink Core. No undo. Pausing does not end it; it ends when no Enemy is left to spawn or alive, or when the Ink Core is destroyed.
 _Avoid_: Round, combat phase
 
 **Campaign**:
@@ -127,7 +132,15 @@ Ink left over from the Build Phase. It stays in the Ink Tank but cannot be spent
 **Wave Ink**:
 Ink dropped by enemies killed during the current Wave, spendable immediately inside the Core Zone.
 
+**Drop**:
+The Ink of every Colour an Enemy lets out when it dies, picked up into the Ink Tanks at once. An Enemy that reaches the Ink Core drops nothing.
+_Avoid_: Loot, reward
+
 ### Enemies
+
+**Enemy**:
+An upright physics body that walks toward the Ink Core over whatever it stands on, pushing with a force up to its type's limit. It dies when its HP runs out, from hits, falls, Blasts and the like, or when it falls below the bottom of the screen, and disappears when it reaches the Ink Core.
+_Avoid_: Mob, unit, creep, walker (in player-facing text)
 
 **Crawler**:
 The basic slow walker.
@@ -137,6 +150,10 @@ A fast walker.
 
 **Heavy**:
 A slow, heavy walker that wears down Lines quickly.
+
+**Pressing**:
+An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate; what it stands on wears at a small fraction of that.
+_Avoid_: Attacking, wall (a Line is never called a wall)
 
 **Siege Walker**:
 The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with physics rather than raw damage.
