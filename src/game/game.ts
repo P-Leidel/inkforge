@@ -197,8 +197,10 @@ export class Game {
   /**
    * Turns one Stroke's raw pointer samples, drawn in `colour`, into a Line,
    * an Object, a rejection or nothing, and charges its price to `colour`'s
-   * Tank: `linePrice` × its Ink, a Line's split over its Pieces by their Ink.
-   * A Stroke that costs more than the Tank holds is refused whole.
+   * Tank: `linePrice` × its Ink, a Line's Piece by Piece. The parts of a Line
+   * lying on another Line are free, found once, as it is made; an Object
+   * pays for all of its Outline. A Stroke that costs more than the Tank holds
+   * is refused whole.
    */
   submitStroke(samples: readonly Vec2[], colour: Colour): GameStrokeOutcome {
     this.catchUp();
@@ -257,15 +259,16 @@ export class Game {
   /**
    * What a Stroke with these raw samples would cost in `colour`, estimated
    * without the Stroke pipeline: a closing Stroke as an Object, its ring's
-   * Outline, anything else as a Line along the samples. Null with Ink costs
-   * off, or with too few samples to be anything.
+   * Outline, anything else as a Line along the samples, but for the part
+   * lying on another Line. Null with Ink costs off, or with too few samples
+   * to be anything.
    */
   estimateStroke(samples: readonly Vec2[], colour: Colour): CostEstimate | null {
     if (!this.costs || samples.length < 2) return null;
     const ink = isClosingStroke(samples)
       ? outlineInk(closeRing(samples))
-      : pathLength(samples) * LINE_THICKNESS;
-    return this.estimate(colour, this.linePrice(ink));
+      : pathLength(samples) * LINE_THICKNESS - this.world.inkOnLinesAlong(samples);
+    return this.estimate(colour, this.linePrice(Math.max(0, ink)));
   }
 
   /**
@@ -400,7 +403,15 @@ export class Game {
   /** What a Stroke costs: `linePrice` × its Ink, a Line's Piece by Piece; 0 with costs off. */
   private priceOf(made: MadeStroke): number {
     if (made.kind === 'object') return this.linePrice(made.ink);
-    return made.pieces.reduce((sum, ink) => sum + this.linePrice(ink), 0);
+    return this.piecePrices(made).reduce((sum, price) => sum + price, 0);
+  }
+
+  /**
+   * What each Piece of a Line costs, in order: `linePrice` × its Ink that
+   * doesn't lie on another Line. A Piece lying wholly on one costs nothing.
+   */
+  private piecePrices({ pieces, onLines }: Extract<MadeStroke, { kind: 'line' }>): number[] {
+    return pieces.map((ink, index) => this.linePrice(Math.max(0, ink - onLines[index]!)));
   }
 
   private linePrice(ink: number): number {
@@ -416,7 +427,11 @@ export class Game {
     return !this.costs || price <= this.tanks[colour] + EPSILON;
   }
 
-  /** Charges a Stroke just made its price, Piece by Piece for a Line, and adds it to the history. */
+  /**
+   * Charges a Stroke just made its price, Piece by Piece for a Line, and adds
+   * it to the history. What each paid is fixed now: undoing or breaking the
+   * Line under a free part later charges nothing.
+   */
   private charge(stroke: AddedStroke): void {
     const { id, colour } = stroke;
     if (stroke.kind === 'object') {
@@ -424,7 +439,7 @@ export class Game {
       this.spend(colour, price);
       this.strokes.set(id, { kind: 'object', paid: { colour, price } });
     } else {
-      const pieces = new Map(stroke.pieces.map((ink, index) => [index, this.linePrice(ink)]));
+      const pieces = new Map(this.piecePrices(stroke).map((price, index) => [index, price]));
       for (const price of pieces.values()) this.spend(colour, price);
       this.strokes.set(id, { kind: 'line', colour, pieces });
     }
