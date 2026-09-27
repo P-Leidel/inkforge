@@ -265,7 +265,7 @@
     <!-- C1 -->
     <article id="c1" class="cand">
       <div class="cand-head">
-        <span class="label">Candidate 1 · new · before milestone 4's Locked and Wave Ink</span>
+        <span class="label">Candidate 1 · #72 · before milestone 4's Locked and Wave Ink</span>
         <h2>Keep the Ink Tanks in one module</h2>
         <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">ADR 0005 lands here</span></div>
       </div>
@@ -341,7 +341,7 @@
     <!-- C2 -->
     <article id="c2" class="cand">
       <div class="cand-head">
-        <span class="label">Candidate 2 · reopens C4 of the review after #50</span>
+        <span class="label">Candidate 2 · #75 · reopens C4 of the review after #50</span>
         <h2>Let the Material rules own the order of a step</h2>
         <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">settle in the milestone 4 spec</span></div>
       </div>
@@ -403,7 +403,7 @@ sequenceDiagram
     <!-- C3 -->
     <article id="c3" class="cand">
       <div class="cand-head">
-        <span class="label">Candidate 3 · new · settle before the enemy kind is built</span>
+        <span class="label">Candidate 3 · #76 · settle before the enemy kind is built</span>
         <h2>Say what a thing is in one place: its numbers, and what breaking it lets out</h2>
         <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">enemies take damage by type</span></div>
       </div>
@@ -477,7 +477,7 @@ sequenceDiagram
     <!-- C4 -->
     <article id="c4" class="cand">
       <div class="cand-head">
-        <span class="label">Candidate 4 · new</span>
+        <span class="label">Candidate 4 · #73</span>
         <h2>Answer "what would this Stroke do" in one Game query</h2>
         <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">Strong if the Core Zone refuses while drawing</span></div>
       </div>
@@ -559,7 +559,7 @@ flowchart LR
     <!-- C5 -->
     <article id="c5" class="cand">
       <div class="cand-head">
-        <span class="label">Candidate 5 · new · before the first walker</span>
+        <span class="label">Candidate 5 · #77 · before the first walker</span>
         <h2>Shape the physics seam for walkers: describe a body once, and say how things touch</h2>
         <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process · one adapter</span><span class="badge b-tag">ADR 0001 holds</span></div>
       </div>
@@ -638,7 +638,7 @@ flowchart LR
     <!-- C6 -->
     <article id="c6" class="cand">
       <div class="cand-head">
-        <span class="label">Candidate 6 · new</span>
+        <span class="label">Candidate 6 · #78</span>
         <h2>Draw each kind of Arena contents in one place</h2>
         <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">enemies and the Ink Core are drawn next</span></div>
       </div>
@@ -713,7 +713,7 @@ flowchart LR
     <!-- C7 -->
     <article id="c7" class="cand">
       <div class="cand-head">
-        <span class="label">Candidate 7 · new</span>
+        <span class="label">Candidate 7 · #79</span>
         <h2>Ask the Arena query what a new Stroke meets</h2>
         <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">GDD: Lines are cut at enemies and the Ink Core</span></div>
       </div>
@@ -776,7 +776,7 @@ flowchart LR
   <section class="panel also" aria-labelledby="also-h">
     <span id="also-h" class="label">Also noticed, not candidates</span>
     <ul>
-      <li><b>Cheap, before milestone 4:</b> several switches over <code>Thing</code> return nothing (<code>sandbox-world.ts:428</code>, <code>world-renderer.ts:282, 309</code>), and <code>tsconfig.json</code> has no <code>noImplicitReturns</code>, so a new Thing compiles with cases missing. <code>ERASE_ORDER.indexOf</code> gives -1 for an unlisted Thing, which sorts it first. Making these exhaustive lets the compiler list the enemy touch points.</li>
+      <li><b>Cheap, before milestone 4 (#74):</b> several switches over <code>Thing</code> return nothing (<code>sandbox-world.ts:428</code>, <code>world-renderer.ts:282, 309</code>), and <code>tsconfig.json</code> has no <code>noImplicitReturns</code>, so a new Thing compiles with cases missing. <code>ERASE_ORDER.indexOf</code> gives -1 for an unlisted Thing, which sorts it first. Making these exhaustive lets the compiler list the enemy touch points.</li>
       <li>The Game's snapshot and the world's are kept in step by convention. Five demo and stress-test sites start physics below the Game, and the box tower and pebbles Release after starting, so the two snapshots are taken at different moments. That's harmless only because undo skips what's gone. Each new piece of Game state (the phase, Locked Ink, Ink Core HP) must go into five places. C1 takes the Tanks' share.</li>
       <li>The scene, the HUD and F1 read <code>world.isRunning</code>, while <code>Game.isRunning</code> is read only by tests. ADR 0009 puts the Build Phase and the Wave in the Game, so route them through it when they arrive.</li>
       <li>The Arena definition holds only Terrain and size. Milestone 4 needs a Spawn, the Ink Core and the Core Zone, and Droplets already work out "left the Arena" themselves. The ground level (880) is typed again in two stress tests and nine test files.</li>
