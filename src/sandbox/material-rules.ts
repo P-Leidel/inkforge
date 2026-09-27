@@ -34,8 +34,9 @@ import { Sticking, type Sticker } from './sticking';
  * breaks, what a break lets out (Debris, Rubble, a Spill, a Blast), what a
  * Blast wakes and pushes, glue drag and wear, Patch wear, what sticks and
  * where a Droplet lands. For Enemies they decide whether one stands on
- * something it can walk on, before each step, and what follows from where
- * it is after: reaching the Ink Core, dying below the screen. What a
+ * something it can walk on, before each step, and what follows from what
+ * it touches and where it is after: pressing and floor wear, reaching the
+ * Ink Core, dying below the screen. What a
  * thing's numbers are they ask `Numbers`. They carry their decisions out
  * through two narrow ports the world wires up: the physics module, and the
  * Arena (its kinds and Debris). Glue drag (`Glue`) and sticking (`Sticking`)
@@ -82,6 +83,17 @@ export const STEEPEST_FLOOR = Math.PI / 4;
  */
 export function isFloor(normal: Vec2): boolean {
   return -normal.y >= Math.cos(STEEPEST_FLOOR) - 1e-9;
+}
+
+/**
+ * Whether an Enemy walking along x toward `heading` (+1 or -1) presses a
+ * surface it touches, given the unit contact normal pointing from the
+ * surface towards the Enemy: one steeper than `STEEPEST_FLOOR` in its way,
+ * facing it within 45° of head-on. A ceiling above it or a wall behind it
+ * isn't in its way.
+ */
+export function isPressed(normal: Vec2, heading: number): boolean {
+  return -heading * normal.x > Math.sin(STEEPEST_FLOOR) + 1e-9;
 }
 
 /** What damages a Breakable. */
@@ -210,8 +222,14 @@ export interface RulesArena<T, S, W> {
   spreadBlasts(seconds: number, act: (reached: readonly Reach<T>[]) => void): void;
   /** Every Enemy, oldest first. */
   walkers(): Iterable<W>;
-  /** Pushes an Enemy through the next step of `seconds` toward its walking speed: it walks. */
-  walk(walker: W, seconds: number): void;
+  /**
+   * Pushes an Enemy through the next step of `seconds` toward its walking
+   * speed: it walks. Returns its drive state: true if it pushes as hard as
+   * it will without getting past.
+   */
+  walk(walker: W, seconds: number): boolean;
+  /** Which way along x an Enemy walks: +1 or -1, toward the Ink Core's side of it. */
+  heading(walker: W): number;
   /** Whether a Party is the Ink Core. */
   isInkCore(party: Party<unknown>): boolean;
   /** Takes `damage` off the Ink Core's HP. */
@@ -251,6 +269,8 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
   private readonly arena: RulesArena<T, S, W>;
   private readonly glueDrag: Glue;
   private readonly sticking: Sticking;
+  /** The Enemies stalled in their walking this step, by id: they press an Object in their way. */
+  private readonly stalled = new Set<number>();
 
   constructor({
     materials,
@@ -273,11 +293,13 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
   /**
    * Before each physics step of `seconds`: every Enemy standing on
    * something it can walk on walks, oldest first. One in the air, or only
-   * on what is too steep, doesn't push.
+   * on what is too steep, doesn't push. Each says whether it is stalled,
+   * for pressing after the step.
    */
   walk(seconds: number): void {
+    this.stalled.clear();
     for (const walker of this.arena.walkers()) {
-      if (this.stands(walker)) this.arena.walk(walker, seconds);
+      if (this.stands(walker) && this.arena.walk(walker, seconds)) this.stalled.add(walker.id);
     }
   }
 
@@ -297,7 +319,9 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
    * in an order that must not change: exact replays depend on every engine
    * call and every draw from the generator coming in the same order.
    *
-   * What the hits broke breaks only after sticking and landing: a green
+   * Pressing and floor wear are a breaking cause like hits: what they wore
+   * out joins what the hits broke. What the hits broke breaks only after
+   * sticking and landing: a green
    * Object sticks to its first new contact even if that breaks in this step
    * (it then falls free at once, as when its host breaks later), and a Patch
    * laid on something broken goes with it. Then glue drags and wears, which
@@ -306,12 +330,12 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
    *
    * Then come the Enemies' phases: Enemies reaching the Ink Core, kills
    * below the screen, and removing what went out over the Spawn edge, in
-   * that order. (Pressing and floor wear, a breaking cause like hits, will
-   * join `broken` before sticking; Drops, which draw from the generator,
-   * will come after kills.)
+   * that order. (Drops, which draw from the generator, will come after
+   * kills.)
    */
   step(seconds: number): void {
     const broken = this.impacts();
+    for (const target of this.press(seconds)) if (!broken.includes(target)) broken.push(target);
     this.stick(seconds);
     this.land(); // Droplets land by new contacts, then Patches wear by hits
     for (const target of broken) this.breakTarget(target);
@@ -321,6 +345,44 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     this.reachInkCore();
     this.killBelowScreen();
     this.removeBeyondSpawnEdge();
+  }
+
+  /**
+   * Pressing and floor wear over a step of `seconds`, Enemy by Enemy, oldest
+   * first: every Piece or Object an Enemy presses loses durability at its
+   * type's pressing rate per second, and what it stands on at `floorWear`
+   * times that. A Piece is pressed when it is in the Enemy's way
+   * (`isPressed`); an Object only when the Enemy is also stalled, since one
+   * it can shove is pushed, not pressed. Wear depends on the time in
+   * contact alone, and never wakes a Frozen Object. The Terrain, Rubble, the
+   * Ink Core and other Enemies take no damage, so they never wear. Returns
+   * what wore out, not yet broken, in the order it did.
+   */
+  private press(seconds: number): T[] {
+    const worn: T[] = [];
+    const { floorWear } = this.numbers;
+    for (const walker of this.arena.walkers()) {
+      const rate = this.numbers.enemy(walker.type).pressing * seconds;
+      const heading = this.arena.heading(walker);
+      const stalled = this.stalled.has(walker.id);
+      for (const { party, pairs } of this.contacts.touching(walker.body)) {
+        const { target } = party;
+        if (!target) continue;
+        let pressed = false;
+        let floor = false;
+        for (const pair of pairs) {
+          const normal = this.contacts.normal(walker.body, pair);
+          if (!normal) continue;
+          if (isFloor(normal)) floor = true;
+          else if (isPressed(normal, heading)) pressed = true;
+        }
+        if (pressed && !this.numbers.of(target).fixed && !stalled) pressed = false;
+        const amount = pressed ? rate : floor ? floorWear * rate : 0;
+        if (amount > 0 && this.damage(target, amount, 'wear') && !worn.includes(target))
+          worn.push(target);
+      }
+    }
+    return worn;
   }
 
   /**

@@ -122,6 +122,11 @@ export class Numbers {
     return this.enemies.types[type];
   }
 
+  /** What an Enemy stands on wears at this times its type's pressing rate, as it is now. */
+  get floorWear(): number {
+    return this.enemies.floorWear;
+  }
+
   /** A thing's surface, from the tables as they are now. */
   surface(type: ThingType): SurfaceMaterial {
     return this.of(type).surface;

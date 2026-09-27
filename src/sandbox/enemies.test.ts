@@ -3,6 +3,7 @@ import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { DEFAULT_ENEMY_TABLE, editEnemies } from '../materials/enemy-table';
+import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import { SANDBOX_ARENA, type Arena } from './arena';
 import { enemyOutline, walkingForce } from './enemies';
@@ -204,16 +205,14 @@ describe('Enemies walk', () => {
 
   it('walks an Enemy thrown back over the left edge in again', () => {
     const world = createWorld();
-    // A big red bomb in the Crawler's way, and a ball above it to set it off.
+    const heard = hear(world);
+    // A big red bomb in the Crawler's way: pressing it sets it off.
     drawObject(world, dragCircle({ x: 300, y: GROUND_Y - 31 }, 30), 'red');
     world.fillAt({ x: 300, y: GROUND_Y - 31 }, 'red');
-    const ball = drawObject(world, dragCircle({ x: 300, y: 500 }, 20), 'grey');
-    world.fillAt({ x: 300, y: 500 }, 'grey');
     world.spawn('crawler');
-    runFor(world, 10); // it walks up to the bomb and presses it
-    expect(onlyEnemy(world).transform.x).toBeGreaterThan(200);
+    stepUntil(world, 15, () => entriesOf(heard(), 'exploded').length > 0);
+    expect(world.objects).toEqual([]); // the bomb went off
 
-    world.release(ball);
     let furthestBack = Infinity;
     stepUntil(world, 2, () => {
       furthestBack = Math.min(furthestBack, onlyEnemy(world).transform.x);
@@ -221,7 +220,6 @@ describe('Enemies walk', () => {
     });
     runFor(world, 10);
 
-    expect(world.blasts.length + world.objects.length).toBeLessThan(2); // the bomb went off
     expect(furthestBack + CRAWLER.width / 2).toBeLessThan(0); // wholly out of view
     expect(onlyEnemy(world).transform.x).toBeGreaterThan(100); // back in
   });
@@ -321,6 +319,133 @@ describe('Enemies walk', () => {
     runFor(world, 3);
 
     expect(world.inkCore.hp).toBe(10);
+  });
+});
+
+describe('Pressing wear', () => {
+  /** A grey Line standing upright on the ground at `x`, `height` px tall. */
+  const post = (world: SandboxWorld, x: number, height: number, colour: Colour = 'grey') =>
+    drawLine(
+      world,
+      [
+        { x, y: GROUND_Y - 4 },
+        { x, y: GROUND_Y - 4 - height },
+      ],
+      colour,
+    );
+  const durabilities = (world: SandboxWorld) =>
+    world.lines.map(({ pieces }) => pieces.map(({ durability }) => durability));
+
+  it('lets a Crawler against a grey Line wear one Piece through in about 20 s; the Piece breaks and the Crawler walks on', () => {
+    const world = createWorld();
+    const heard = hear(world);
+    const line = post(world, 300, 86); // two Pieces: the Crawler presses the lower one
+    world.spawn('crawler');
+    let pressedFrom: number | null = null;
+    let broke: number | null = null;
+
+    stepUntil(world, 45, () => {
+      const [lower] = world.lines[0]!.pieces;
+      if (pressedFrom === null && lower!.durability < 6000) pressedFrom = world.time;
+      if (broke === null && world.lines[0]!.pieces.length < 2) broke = world.time;
+      return broke !== null;
+    });
+
+    expect(wentOf(heard())).toEqual([`piece ${line}.0 broke`]);
+    expect(broke! - pressedFrom!).toBeCloseTo(6000 / CRAWLER.pressing, 0);
+    expect(durabilities(world)).toEqual([[6000]]); // the upper Piece, out of its reach
+    runFor(world, 3);
+    expect(onlyEnemy(world).transform.x).toBeGreaterThan(400);
+  });
+
+  it('wears and breaks a Frozen Object in its way, and never wakes it', () => {
+    const world = createWorld();
+    const heard = hear(world);
+    const box = drawObject(world, dragBox(300, GROUND_Y - 60, 50, 56), 'grey');
+    world.spawn('crawler');
+    let wornWhileFrozen = false;
+
+    const broke = stepUntil(world, 30, () => {
+      const object = world.objects[0];
+      if (!object) return true;
+      expect(object.frozen).toBe(true);
+      if (object.durability < DEFAULT_MATERIAL_TABLE.colours.grey.outline.durability)
+        wornWhileFrozen = true;
+      return false;
+    });
+
+    expect(broke).toBe(true);
+    expect(wornWhileFrozen).toBe(true);
+    expect(wentOf(heard())).toEqual([`object ${box} broke`]);
+    runFor(world, 3);
+    expect(onlyEnemy(world).transform.x).toBeGreaterThan(400);
+  });
+
+  it('sets off a red Line on the floor under a Crawler within about a second', () => {
+    const world = createWorld();
+    const heard = hear(world);
+    floorLine(world, 200, 200, 'red');
+    world.spawn('crawler');
+    let steppedOn: number | null = null;
+
+    stepUntil(world, 20, () => {
+      const pieces = world.lines[0]?.pieces ?? [];
+      if (steppedOn === null && pieces.some(({ durability }) => durability < 250))
+        steppedOn = world.time;
+      return entriesOf(heard(), 'exploded').length > 0;
+    });
+
+    expect(steppedOn).not.toBeNull();
+    expect(entriesOf(heard(), 'exploded').length).toBeGreaterThan(0);
+    expect(world.time - steppedOn!).toBeLessThan(1.2);
+  });
+
+  it('lets a queue of Crawlers standing on a grey bridge wear it through', () => {
+    const world = createWorld({ arena: PIT_ARENA });
+    const heard = hear(world);
+    const bridge = drawLine(world, [
+      { x: 380, y: GROUND_Y - 4 },
+      { x: 540, y: GROUND_Y - 4 },
+    ]);
+    post(world, 520, 190, 'black'); // it stops them on the bridge
+    for (let k = 0; k < 4; k++) {
+      world.spawn('crawler');
+      runFor(world, 1.5);
+    }
+
+    const through = stepUntil(world, 40, () => world.enemies.length === 0);
+
+    expect(through).toBe(true);
+    const went = wentOf(heard());
+    expect(went.filter((what) => what.startsWith(`piece ${bridge}.`))).toHaveLength(3);
+    expect(went.filter((what) => what.endsWith(' died'))).toHaveLength(4);
+  });
+
+  it('wears nothing on the Terrain and nothing when no Enemy is there', () => {
+    const world = createWorld();
+    post(world, 300, 86);
+    runFor(world, 30);
+    expect(durabilities(world)).toEqual([[6000, 6000]]);
+  });
+
+  it('lets R bring back what pressing had worn, and a retry plays out the same', () => {
+    const world = createWorld();
+    post(world, 300, 86);
+    world.spawn('crawler');
+    runFor(world, 14); // pressing for some seconds already
+    world.togglePause();
+    world.togglePause(); // the snapshot
+    const started = durabilities(world);
+    expect(started[0]![0]).toBeLessThan(6000);
+    runFor(world, 16);
+    const first = { lines: durabilities(world), enemies: world.enemies };
+    expect(first.lines).toEqual([[6000]]); // worn through
+
+    world.reset();
+    expect(durabilities(world)).toEqual(started);
+    runFor(world, 16);
+
+    expect({ lines: durabilities(world), enemies: world.enemies }).toEqual(first);
   });
 });
 
