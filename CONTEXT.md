@@ -11,11 +11,15 @@ One fixed, non-scrolling screen seen from the side, with gravity, terrain, a Spa
 _Avoid_: Map, level screen
 
 **Ink Core**:
-The structure the player defends. The run is lost when its HP reaches zero.
+The structure the player defends. Only an Enemy reaching it damages it; the run is lost when its HP reaches zero.
 _Avoid_: Base, tower, heart
 
 **Spawn**:
 The arena edge where enemies enter.
+
+**Pit**:
+A gap in the Terrain open to the bottom of the screen. An Enemy that falls in leaves the Arena and dies.
+_Avoid_: Hole, chasm, dip (a gap with a floor is not a Pit)
 
 **Terrain**:
 The arena's own, hand-built ground and walls. Not drawn by the player and never breaks.
@@ -128,6 +132,10 @@ Ink left over from the Build Phase. It stays in the Ink Tank but cannot be spent
 Ink dropped by enemies killed during the current Wave, spendable immediately inside the Core Zone.
 
 ### Enemies
+
+**Enemy**:
+An upright physics body that walks toward the Ink Core over whatever it stands on, pushing with a force up to its type's limit. It dies when its HP runs out or it leaves the Arena, and disappears when it reaches the Ink Core.
+_Avoid_: Mob, unit, creep, walker (in player-facing text)
 
 **Crawler**:
 The basic slow walker.
