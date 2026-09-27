@@ -1,6 +1,7 @@
 import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import type { EnemyTable } from '../materials/enemy-table';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, ContactPair, ShapeId } from '../physics';
 import type { HostSurface } from './arena-contents';
@@ -134,7 +135,9 @@ export interface FakeDroplet {
  * `log`: `break`, `burst`, `rubble`, `droplets`, `blast`, `bond`, `land`,
  * `patch` and `use`, each with what it was handed; `reach` when a Blast
  * spreading reached something, and `used-up` for each Patch removed;
- * `walk`, `core` (damage to the Ink Core) and `remove`.
+ * `walk`, `core` (damage to the Ink Core) and `remove`. An Enemy walks
+ * right unless `headings` says otherwise, and gets past unless it is among
+ * the `stalled`.
  */
 export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
   /** What breaking each target lets out; a target not in it is already gone. */
@@ -153,6 +156,10 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
   reaching: Reach<T>[][] = [];
   /** The Enemies. */
   walking: W[] = [];
+  /** The Enemies stalled in their walking; the rest get past. */
+  stalled = new Set<W>();
+  /** Which way each Enemy walks; +1 if not set. */
+  headings = new Map<W, number>();
   /** The Ink Core's Party id. */
   inkCore = -1;
   /** What lies below the screen, and beyond the Spawn edge. */
@@ -254,8 +261,13 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
     return this.walking;
   }
 
-  walk(walker: W): void {
+  walk(walker: W): boolean {
     this.log.push({ what: 'walk', with: walker });
+    return this.stalled.has(walker);
+  }
+
+  heading(walker: W): number {
+    return this.headings.get(walker) ?? 1;
   }
 
   isInkCore(party: Party<unknown>): boolean {
@@ -279,19 +291,22 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
   }
 }
 
-/** The Material rules over fake ports, with the simulation's generator seeded 1. */
+/**
+ * The Material rules over fake ports, with the simulation's generator seeded
+ * 1, reading `enemies` or a fresh copy of the default enemy table.
+ */
 export function fakeRules<
   T extends Breakable,
   S extends Sticker = Sticker,
   W extends Walker = Walker,
->(materials: MaterialTable) {
+>(materials: MaterialTable, enemies?: EnemyTable) {
   const physics = new FakePhysics();
   const contacts = new FakeContacts<T>();
   const arena = new FakeArena<T, S, W>();
   const random = new Random(1);
   const rules = new MaterialRules<T, S, W>({
     materials,
-    numbers: new Numbers(materials),
+    numbers: new Numbers(materials, enemies),
     random,
     physics,
     contacts,

@@ -36,6 +36,11 @@ const BEVEL_HEIGHT = 12;
 const BEVEL_RUN = 4 / 3;
 /** Size (px) of the cut at each top corner. */
 const TOP_CUT = 4;
+/**
+ * An Enemy walking toward the Ink Core slower than this share of its
+ * walking speed isn't getting past what is in its way: it presses it.
+ */
+const STALLED_SPEED = 0.1;
 
 /**
  * An Enemy's body, `width` × `height` about its centre: an upright box with
@@ -192,20 +197,28 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     this.enemies.push({ ...enemy, body });
   }
 
+  /** Which way along x an Enemy walks: +1 or -1, toward the Ink Core's side of it. */
+  heading(enemy: EnemyRecord): number {
+    const { x } = this.physics.getTransform(enemy.body);
+    const core = this.arena.core;
+    return (core.minX + core.maxX) / 2 < x ? -1 : 1;
+  }
+
   /**
    * Pushes an Enemy through the next step toward its walking speed, toward
    * the Ink Core's side, never harder than its push: its walking. The
-   * Material rules call it for each one that stands on something.
+   * Material rules call it for each one that stands on something. Returns
+   * its drive state: true if it is stalled, pushing as hard as it will
+   * without getting past, so it presses what is in its way (ADR 0010).
    */
-  walk(enemy: EnemyRecord, seconds: number): void {
+  walk(enemy: EnemyRecord, seconds: number): boolean {
     const { walkingSpeed, push } = this.numbers.enemy(enemy.type);
-    const { x } = this.physics.getTransform(enemy.body);
-    const core = this.arena.core;
-    const toward = Math.sign((core.minX + core.maxX) / 2 - x);
+    const toward = this.heading(enemy);
     const velocity = this.physics.getVelocity(enemy.body).x;
     const most = push * enemy.mass * this.gravity;
     const force = walkingForce(velocity, toward * walkingSpeed, most, enemy.mass, seconds);
     this.physics.applyForce(enemy.body, { x: force, y: 0 });
+    return toward * velocity < STALLED_SPEED * walkingSpeed;
   }
 
   /** Removes Enemy `id` at once, for `why`. */

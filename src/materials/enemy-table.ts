@@ -37,7 +37,7 @@ export interface EnemyMaterial {
   walkingSpeed: number;
   /** The most its walking force can be, in multiples of its own weight. */
   push: number;
-  /** Durability per second it wears off what it presses (from #86). */
+  /** Durability per second it wears off what it presses. */
   pressing: number;
   /** Damage it takes before it dies (from #87). */
   hp: number;
@@ -51,7 +51,7 @@ export interface EnemyMaterial {
 
 export interface EnemyTable {
   types: Record<EnemyType, EnemyMaterial>;
-  /** What an Enemy stands on wears at this times its pressing rate (from #86). */
+  /** What an Enemy stands on wears at this times its pressing rate. */
   floorWear: number;
   /** The Ink Core's HP when it is whole. */
   coreHp: number;

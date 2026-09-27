@@ -302,6 +302,7 @@ export class SandboxWorld {
         spreadBlasts: (seconds, act) => this.blastsKind.spread(seconds, act),
         walkers: () => this.enemiesKind.walkers(),
         walk: (enemy, seconds) => this.enemiesKind.walk(enemy, seconds),
+        heading: (enemy) => this.enemiesKind.heading(enemy),
         isInkCore: (party) => this.inkCoreKind.is(party.id),
         damageInkCore: (damage) => this.inkCoreKind.damage(damage),
         belowScreen: () => this.query.below(this.arena.height),

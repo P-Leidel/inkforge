@@ -152,7 +152,7 @@ A fast walker.
 A slow, heavy walker that wears down Lines quickly.
 
 **Pressing**:
-An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate; what it stands on wears at a small fraction of that.
+An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate; what it stands on wears at the floor wear times that. Wear goes by time in contact, not force, and never wakes a Frozen Object.
 _Avoid_: Attacking, wall (a Line is never called a wall)
 
 **Siege Walker**:
