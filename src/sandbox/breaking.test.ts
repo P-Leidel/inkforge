@@ -8,6 +8,7 @@ import {
   drawLine,
   drawObject,
   entriesOf,
+  FIXED_BODIES,
   hear,
   objectById,
   runFor,
@@ -301,7 +302,7 @@ describe('Taking back, Clear and Reset after breaking', () => {
 
     expect(world.objects).toHaveLength(0);
     expect(heard().map((entry) => entry.kind)).toEqual(['start-over']);
-    expect(world.bodyCount).toBe(1); // the Terrain
+    expect(world.bodyCount).toBe(FIXED_BODIES);
   });
 
   it('Reset brings back what broke, and its damage and blue counter', () => {

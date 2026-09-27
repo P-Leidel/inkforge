@@ -12,6 +12,7 @@ import {
   drawLine,
   drawObject,
   entriesOf,
+  FIXED_BODIES,
   hear,
   objectById,
   reboundHeight,
@@ -277,11 +278,12 @@ describe('Patches', () => {
     const onGround = on(100, 300);
     expect(onGround).toBeGreaterThan(0);
 
-    // The shelf breaks under a boulder; the Line is taken back.
+    // The shelf, knocked down onto the ground by the green box, breaks under a
+    // boulder; the Line is taken back.
     world.materials.colours.grey.outline.durability = 1;
     const boulder = drawObject(world, dragBox(1080, 560, 40, 40), 'black');
     world.release(boulder);
-    runFor(world, 0.5);
+    runFor(world, 1);
     expect(world.objects.some((o) => o.id === shelf)).toBe(false);
     expect(on(1000, 1200)).toBe(0);
     world.removeStroke(boulder);
@@ -495,6 +497,6 @@ describe('Spills and Reset', () => {
 
     expect(world.droplets).toHaveLength(0);
     expect(world.patches).toHaveLength(0);
-    expect(world.bodyCount).toBe(1); // the Terrain
+    expect(world.bodyCount).toBe(FIXED_BODIES);
   });
 });

@@ -39,6 +39,8 @@ export type { Capsule } from '../geometry/overlap';
  * It is the one answer to what a new Stroke meets: what cuts a new Line,
  * what blocks a new Object, and what a squeezed Object must end clear of.
  * Whatever kind of body Arena bodies holds takes part as its form says.
+ * Beyond the Spawn edge, the screen's left edge, is out of reach of
+ * drawing: a new Line is cut there, and a new Object may not reach past it.
  */
 
 /** What the query asks of the physics module. */
@@ -48,6 +50,7 @@ export type QueryPhysics = Pick<PhysicsWorld, 'shapesNear' | 'getTransform' | 'b
 export type FoundObject = Extract<Thing, { readonly thing: 'object' }>;
 
 type ObjectForm = Extract<Form, { readonly kind: 'object' }>;
+type EnemyForm = Extract<Form, { readonly kind: 'enemy' }>;
 
 /**
  * How far (px) outside the engine's shapes what the query tests may reach:
@@ -71,6 +74,23 @@ const grow = ({ minX, minY, maxX, maxY }: Bounds, by: number): Bounds => ({
 const RUN_SPAN = 32;
 
 const ends = ({ a, b }: Segment): Vec2[] => [a, b];
+
+/** Far enough (px) to stand for "without end" around the Arena. */
+const FAR = 1e5;
+
+/** The Spawn edge: the screen's left edge, beyond which the lane runs out of view. */
+const SPAWN_EDGE = 0;
+
+/**
+ * Everything beyond the Spawn edge, out of view: out of reach of drawing,
+ * so it cuts a new Line like the Terrain and blocks a new Object.
+ */
+const BEYOND_SPAWN_EDGE: Polygon = [
+  { x: -FAR, y: -FAR },
+  { x: SPAWN_EDGE, y: -FAR },
+  { x: SPAWN_EDGE, y: FAR },
+  { x: -FAR, y: FAR },
+];
 
 /** A path's segments in runs of consecutive ones, each within `RUN_SPAN` px across. */
 function runs(path: readonly Segment[]): Segment[][] {
@@ -127,6 +147,70 @@ export class ArenaQuery {
     return { x, y };
   }
 
+  /** An Enemy's outline where it is now: it never rotates. */
+  private enemyOutline(body: BodyId, { outline }: EnemyForm): Polygon {
+    return transformPoints(outline, this.physics.getTransform(body));
+  }
+
+  /**
+   * What a figure covers where it is now, in world coordinates; null for a
+   * Patch, which goes with its host.
+   */
+  private extent({ body, form }: Figure): Bounds | null {
+    switch (form.kind) {
+      case 'terrain':
+        return polygonBounds(form.polygons.flat());
+      case 'object':
+        return polygonBounds(this.outline(body, form));
+      case 'enemy':
+        return polygonBounds(this.enemyOutline(body, form));
+      case 'capsules':
+        return grow(polygonBounds(form.segments.flatMap(ends)), form.radius);
+      case 'circle': {
+        const { x, y } = this.centre(body);
+        return {
+          minX: x - form.radius,
+          minY: y - form.radius,
+          maxX: x + form.radius,
+          maxY: y + form.radius,
+        };
+      }
+      case 'capsule':
+        return null;
+    }
+  }
+
+  /** What there is, not a Patch, whose extent near `region` passes `test`, oldest first. */
+  private wholly(region: Bounds, test: (extent: Bounds) => boolean): Thing[] {
+    const found: Thing[] = [];
+    for (const figure of this.near(region, 0)) {
+      if (!figure.what) continue;
+      const extent = this.extent(figure);
+      if (extent && test(extent)) found.push(figure.what);
+    }
+    return found;
+  }
+
+  /**
+   * Out over the Spawn edge: everything, but the Terrain, the Ink Core and
+   * the Patches on things, that lies wholly beyond the screen's left edge,
+   * out of view. Oldest first.
+   */
+  beyondSpawnEdge(): Thing[] {
+    const region = { minX: -FAR, minY: -FAR, maxX: SPAWN_EDGE, maxY: FAR };
+    return this.wholly(region, ({ maxX }) => maxX < SPAWN_EDGE);
+  }
+
+  /**
+   * Below the screen: everything, but the Terrain, the Ink Core and the
+   * Patches on things, that lies wholly below `bottom`, the bottom of the
+   * screen. Oldest first.
+   */
+  below(bottom: number): Thing[] {
+    const region = { minX: -FAR, minY: bottom, maxX: FAR, maxY: FAR };
+    return this.wholly(region, ({ minY }) => minY > bottom);
+  }
+
   /**
    * Point: the Objects whose Outline, where it is now, holds `point`,
    * oldest first. The last is the topmost.
@@ -142,30 +226,35 @@ export class ArenaQuery {
 
   /**
    * Cutting: the convex polygons, in world coordinates, that a new Line
-   * drawn along `path` is cut at, near it: the Terrain's. Objects, Lines,
-   * Rubble, Droplets and Patches don't cut one.
+   * drawn along `path` is cut at, near it: the Terrain's and the Ink
+   * Core's, and everything beyond the Spawn edge. Objects, Lines, Rubble,
+   * Droplets and Patches don't cut one, nor yet do Enemies (#88).
    */
   lineCutters(path: readonly Vec2[]): Polygon[] {
-    return this.near(polygonBounds(path), 0).flatMap(({ form }) => {
+    const near = this.near(polygonBounds(path), 0).flatMap(({ form }) => {
       switch (form.kind) {
         case 'terrain':
           return form.polygons;
         case 'object':
+        case 'enemy':
         case 'capsules':
         case 'circle':
         case 'capsule':
           return [];
       }
     });
+    return [...near, BEYOND_SPAWN_EDGE];
   }
 
   /**
    * Overlap: whether a convex part of a new Object, in world coordinates,
    * overlaps something solid by more than `TOUCH_TOLERANCE`: the Terrain,
-   * an Object's collider parts, or Rubble. Lines aren't solid (an Object
-   * drawn over one is squeezed off it), nor are Droplets or Patches.
+   * the Ink Core, an Object's collider parts, Rubble, or what lies beyond
+   * the Spawn edge. Lines aren't solid (an Object drawn over one is
+   * squeezed off it), nor are Droplets or Patches, nor yet Enemies (#88).
    */
   overlapsSolid(part: Polygon): boolean {
+    if (convexPolygonsOverlap(part, BEYOND_SPAWN_EDGE)) return true;
     return this.near(polygonBounds(part), 0).some(({ what, body, form }) => {
       switch (form.kind) {
         case 'terrain':
@@ -175,9 +264,35 @@ export class ArenaQuery {
         case 'circle':
           if (what?.thing !== 'rubble') return false;
           return circleOverlapsPolygon({ centre: this.centre(body), radius: form.radius }, part);
+        case 'enemy':
         case 'capsules':
         case 'capsule':
           // Lines and Patches aren't solid.
+          return false;
+      }
+    });
+  }
+
+  /**
+   * Room for an Enemy: whether its body, a convex polygon in world
+   * coordinates, would overlap by more than `TOUCH_TOLERANCE` the Terrain,
+   * the Ink Core, an Object's collider parts, Rubble or another Enemy.
+   * Lines, Droplets and Patches don't count.
+   */
+  blocksEnemy(outline: Polygon): boolean {
+    return this.near(polygonBounds(outline), 0).some(({ what, body, form }) => {
+      switch (form.kind) {
+        case 'terrain':
+          return form.polygons.some((solid) => convexPolygonsOverlap(outline, solid));
+        case 'object':
+          return this.parts(body, form).some((solid) => convexPolygonsOverlap(outline, solid));
+        case 'enemy':
+          return convexPolygonsOverlap(outline, this.enemyOutline(body, form));
+        case 'circle':
+          if (what?.thing !== 'rubble') return false;
+          return circleOverlapsPolygon({ centre: this.centre(body), radius: form.radius }, outline);
+        case 'capsules':
+        case 'capsule':
           return false;
       }
     });
@@ -205,8 +320,9 @@ export class ArenaQuery {
         case 'circle':
           if (what?.thing !== 'rubble') return false;
           return circleOverlapsPolygon({ centre: this.centre(body), radius: form.radius }, part);
+        case 'enemy':
         case 'capsule':
-          // Patches don't count.
+          // Enemies move out of its way, and Patches don't count.
           return false;
       }
     });
@@ -260,7 +376,8 @@ export class ArenaQuery {
 
   /**
    * Brush: everything the Eraser's brush touches, oldest first: Objects by
-   * their Outline, Pieces, Rubble, Droplets and Patches. Never the Terrain.
+   * their Outline, Pieces, Rubble, Droplets and Patches. Never the Terrain,
+   * the Ink Core or an Enemy.
    */
   touchedBy(brush: Brush): Thing[] {
     const bounds = polygonBounds(brush.path);
@@ -274,6 +391,7 @@ export class ArenaQuery {
   private touches(brush: Brush, { body, form }: Figure): boolean {
     switch (form.kind) {
       case 'terrain':
+      case 'enemy':
         return false;
       case 'object':
         return brushTouchesPolygon(brush, this.outline(body, form));

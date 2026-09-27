@@ -121,8 +121,8 @@ export const KNOCK_DEMO: Demo = {
 /**
  * A 60 px box of each Outline Colour dropped from high up: red explodes,
  * grey and green crack, black barely notices, and blue cracks and bounces
- * until its third impact breaks it. The red one lands across the pit, out
- * of the others' way. F1 shows what durability each has left.
+ * until its third impact breaks it. The red one lands well to the right,
+ * out of the others' way. F1 shows what durability each has left.
  */
 export const DROP_DEMO: Demo = {
   name: 'Drop',

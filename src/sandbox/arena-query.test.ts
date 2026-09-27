@@ -27,6 +27,14 @@ afterEach(() => {
   for (const world of worlds.splice(0)) world.destroy();
 });
 
+/** Everything beyond the Spawn edge, the screen's left edge, as the query has it. */
+const BEYOND_SPAWN_EDGE: Polygon = [
+  { x: -1e5, y: -1e5 },
+  { x: 0, y: -1e5 },
+  { x: 0, y: 1e5 },
+  { x: -1e5, y: 1e5 },
+];
+
 const square = (half: number): Polygon => [
   { x: -half, y: -half },
   { x: half, y: -half },
@@ -91,12 +99,22 @@ function setup() {
     );
     return { what, body: party.body };
   };
+  const enemy = (position: Vec2, outline: Polygon) => {
+    const what = { thing: 'enemy', id: ++things } as const;
+    const party = bodies.addEnemy(
+      { position, outline, mass: 1 },
+      { kind: 'enemy', type: 'crawler' },
+      what,
+      own(),
+    );
+    return { what, body: party.body };
+  };
   const patch = (host: Party<null>, segment: Segment, thickness = 3) => {
     const what = { thing: 'patch', id: ++things, colour: 'blue', segment, thickness } as const;
     bodies.addShape(host.id, segment, thickness / 2, { kind: 'patch', colour: 'blue' }, what);
     return { what };
   };
-  return { physics, bodies, query, object, piece, circle, patch };
+  return { physics, bodies, query, object, piece, circle, enemy, patch };
 }
 
 const click = (x: number, y: number, radius = 12): Brush => ({ path: [{ x, y }], radius });
@@ -163,7 +181,7 @@ describe('Arena query', () => {
     expect(query.overlapsSolid(at(816, 400))).toBe(false); // touching the Rubble
   });
 
-  it('cuts a new Line at the Terrain only; not at Objects, Lines, Rubble, Droplets or Patches', () => {
+  it('cuts a new Line at the Terrain and beyond the Spawn edge only; not at Objects, Lines, Rubble, Droplets or Patches', () => {
     const { query, object, piece, circle, patch } = setup();
     const host = object({ x: 400, y: 400 }, square(20));
     piece([{ a: { x: 600, y: 380 }, b: { x: 600, y: 420 } }]);
@@ -176,13 +194,54 @@ describe('Arena query', () => {
         { x: 300, y: 400 },
         { x: 1100, y: 400 },
       ]),
-    ).toEqual([]);
+    ).toEqual([BEYOND_SPAWN_EDGE]);
     expect(
       query.lineCutters([
         { x: 300, y: 900 },
         { x: 600, y: 900 },
       ]),
-    ).toEqual(SANDBOX_ARENA.terrain);
+    ).toEqual([...SANDBOX_ARENA.terrain, BEYOND_SPAWN_EDGE]);
+  });
+
+  it('blocks a new Object reaching past the Spawn edge, out of view', () => {
+    const { query } = setup();
+    const at = (x: number, y: number) => square(10).map((p) => ({ x: p.x + x, y: p.y + y }));
+
+    expect(query.overlapsSolid(at(5, 400))).toBe(true);
+    expect(query.overlapsSolid(at(10, 400))).toBe(false); // touching the edge
+  });
+
+  it('finds what lies wholly beyond the Spawn edge, and wholly below the screen, oldest first', () => {
+    const { query, object, circle, patch } = setup();
+    const out = object({ x: -40, y: 400 }, square(30));
+    object({ x: 20, y: 400 }, square(30)); // half out
+    patch(out.party, { a: { x: -20, y: -32 }, b: { x: 20, y: -32 } });
+    const rubble = circle({ x: -7, y: 600 }, 6);
+    circle({ x: -5, y: 700 }, 6); // just over the edge
+    const fallen = object({ x: 400, y: 1115 }, square(30));
+    object({ x: 600, y: 1100 }, square(30)); // not quite below
+
+    expect(query.beyondSpawnEdge()).toEqual([out.what, rubble.what]);
+    expect(query.below(1080)).toEqual([fallen.what]);
+  });
+
+  it('finds room for an Enemy clear of the Terrain, Objects, Rubble and other Enemies; not Lines, Droplets or Patches', () => {
+    const { query, object, piece, circle, enemy } = setup();
+    const at = (x: number, y: number) => square(10).map((p) => ({ x: p.x + x, y: p.y + y }));
+    object({ x: 400, y: 400 }, square(20));
+    piece([{ a: { x: 600, y: 380 }, b: { x: 600, y: 420 } }]);
+    circle({ x: 800, y: 400 }, 6);
+    circle({ x: 1000, y: 400 }, 6, true);
+    enemy({ x: 1200, y: 400 }, square(20));
+
+    expect(query.blocksEnemy(at(300, 875))).toBe(true); // the ground
+    expect(query.blocksEnemy(at(300, 869))).toBe(false); // standing on it
+    expect(query.blocksEnemy(at(425, 400))).toBe(true);
+    expect(query.blocksEnemy(at(600, 400))).toBe(false);
+    expect(query.blocksEnemy(at(813, 400))).toBe(true);
+    expect(query.blocksEnemy(at(1000, 400))).toBe(false);
+    expect(query.blocksEnemy(at(1225, 400))).toBe(true);
+    expect(query.blocksEnemy(at(1230, 400))).toBe(false); // touching the Enemy's side
   });
 
   it('keeps a squeezed Object clear of the Terrain, other Objects, Rubble and Lines; not itself, Droplets or Patches', () => {
@@ -400,6 +459,7 @@ function everyBody(bodies: ArenaBodies<null>, physics: PhysicsWorld) {
         .filter(({ parts }) => parts.some((part) => capsuleOverlapsPolygon(a, b, radius, part)))
         .map(({ what }) => what),
     overlapsSolid: (part: Polygon) =>
+      convexPolygonsOverlap(part, BEYOND_SPAWN_EDGE) ||
       figures().some(({ what, body, form }) => {
         if (form.kind === 'terrain')
           return form.polygons.some((p) => convexPolygonsOverlap(part, p));
@@ -415,10 +475,10 @@ function everyBody(bodies: ArenaBodies<null>, physics: PhysicsWorld) {
         return false;
       }),
     lineCut: (path: readonly Vec2[]) =>
-      cutPolylineOutside(
-        path,
-        figures().flatMap(({ form }) => (form.kind === 'terrain' ? form.polygons : [])),
-      ),
+      cutPolylineOutside(path, [
+        ...figures().flatMap(({ form }) => (form.kind === 'terrain' ? form.polygons : [])),
+        BEYOND_SPAWN_EDGE,
+      ]),
     blocksSqueezed: (part: Polygon, squeezed: BodyId) =>
       figures().some(({ what, body, form }) => {
         if (form.kind === 'terrain')

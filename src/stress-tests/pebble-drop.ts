@@ -1,6 +1,6 @@
 import type { Vec2 } from '../geometry/vec2';
 import { GRAVITY, type SandboxWorld, type StrokeId } from '../sandbox/sandbox-world';
-import { dragPolygon } from '../stroke/pointer-paths';
+import { dragAlong, dragPolygon } from '../stroke/pointer-paths';
 import { SettleWatch, speedOf } from './settling';
 import type { StressTest } from './stress-test';
 
@@ -10,6 +10,8 @@ const SPACING = 44;
 const LEFT = 90;
 const TOP = 150;
 const GROUND_Y = 880;
+/** The pile's wall: a black Line standing on the ground here, since the left edge is open. */
+const WALL_X = 55;
 const MIN_RADIUS = 14;
 const MAX_RADIUS = 17;
 /** Pebble outlines wobble by up to this fraction of their radius. */
@@ -18,8 +20,9 @@ const PEBBLE_VERTICES = 12;
 
 /**
  * Engine verdict check 3 (and part of 4): drops 100 small, irregular drawn
- * Objects into a pile against the left wall. The frame rate is read from the
- * debug overlay; this readout tracks the fastest pebble against free fall.
+ * Objects into a pile against a wall, a black Line near the left edge (the
+ * Spawn edge is open). The frame rate is read from the debug overlay; this
+ * readout tracks the fastest pebble against free fall.
  */
 export class PebbleDrop implements StressTest {
   readonly name = 'Pebbles';
@@ -34,6 +37,11 @@ export class PebbleDrop implements StressTest {
   readonly freeFallSpeed = Math.sqrt(2 * GRAVITY * (GROUND_Y - TOP));
 
   constructor(private readonly world: SandboxWorld) {
+    const wall = [
+      { x: WALL_X, y: GROUND_Y - 4 },
+      { x: WALL_X, y: TOP - SPACING },
+    ];
+    world.submitStroke(dragAlong(wall), 'black');
     for (let row = 0; row < ROWS; row++) {
       for (let column = 0; column < COLUMNS; column++) {
         const centre = { x: LEFT + column * SPACING, y: TOP + row * SPACING };

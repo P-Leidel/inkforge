@@ -1,6 +1,12 @@
 import type { Game } from '../game/game';
 import { DEFAULT_INK_TABLE } from '../game/ink-table';
-import { COLOURS, type Colour } from '../materials/colour';
+import { COLOURS } from '../materials/colour';
+import {
+  DEFAULT_ENEMY_TABLE,
+  editEnemies,
+  ENEMY_TYPES,
+  type EnemyTable,
+} from '../materials/enemy-table';
 import {
   DEFAULT_MATERIAL_TABLE,
   editMaterials,
@@ -17,18 +23,34 @@ interface Tuned {
   edit(write: (table: object) => void): void;
 }
 
-/** One row of a per-Colour grid: its label, and the path of its value for each Colour. */
-interface ColourRow {
-  readonly label: string;
-  path(colour: Colour): string[];
+/** A column of a grid: a Colour or an Enemy type, and how its heading looks. */
+interface Column {
+  readonly name: string;
+  /** The heading's classes. */
+  readonly look: string;
 }
+
+/** One row of a grid: its label, and the path of its value for each column. */
+interface Row {
+  readonly label: string;
+  path(column: string): string[];
+}
+
+const COLOUR_COLUMNS: readonly Column[] = COLOURS.map((colour) => ({
+  name: colour,
+  look: `tuning-colour ${colour}`,
+}));
+const ENEMY_COLUMNS: readonly Column[] = ENEMY_TYPES.map((type) => ({
+  name: type,
+  look: 'tuning-enemy',
+}));
 
 /**
  * The F2 tuning panel. Its Ink section holds the **Ink costs** switch and
  * the Game's Ink table: the prices and the Tank maximums. Below it is every
- * number of the material table. All are editable while the sandbox runs,
- * and "Copy as JSON" copies both tables to paste back over their defaults in
- * the code. It lists whatever the tables hold, so values added later appear
+ * number of the material table, and then of the enemy table. All are
+ * editable while the sandbox runs, and "Copy as JSON" copies the three
+ * tables to paste back over their defaults in the code. It lists whatever the tables hold, so values added later appear
  * without changes here. Edits go straight into the tables the Game and the
  * Sandbox world read, so they survive R and Clear.
  *
@@ -40,6 +62,7 @@ export class TuningPanel {
   private readonly status: HTMLElement;
   private readonly materials: Tuned;
   private readonly ink: Tuned;
+  private readonly enemies: Tuned;
   private readonly inputs: { tuned: Tuned; path: string[]; input: HTMLInputElement }[] = [];
   /** Clicking the game gives the keys back to it. */
   private readonly giveKeysBack = (event: PointerEvent) => {
@@ -50,6 +73,7 @@ export class TuningPanel {
 
   constructor(
     private readonly table: MaterialTable,
+    private readonly enemyTable: EnemyTable,
     /** Where the Ink costs switch and the Ink table's edits go. */
     private readonly game: Pick<Game, 'inkCosts' | 'ink' | 'editInk'>,
   ) {
@@ -57,6 +81,11 @@ export class TuningPanel {
       table,
       defaults: DEFAULT_MATERIAL_TABLE,
       edit: (write) => editMaterials(table, write),
+    };
+    this.enemies = {
+      table: enemyTable,
+      defaults: DEFAULT_ENEMY_TABLE,
+      edit: (write) => editEnemies(enemyTable, write),
     };
     // Through the Game, which empties a Tank down to a lowered maximum at once.
     this.ink = {
@@ -80,19 +109,30 @@ export class TuningPanel {
       header,
       element('div', 'tuning-section', 'Ink'),
       this.inkCosts(),
-      this.colourGrid(this.ink, [
+      this.grid(this.ink, COLOUR_COLUMNS, [
         { label: 'tank maximum (Line length)', path: (colour) => ['tanks', colour] },
       ]),
       this.sharedValues(this.ink, (path) => path[0] !== 'tanks'),
       element('div', 'tuning-section', 'Material table'),
-      this.colourGrid(
+      this.grid(
         this.materials,
+        COLOUR_COLUMNS,
         numberPaths(table.colours[COLOURS[0]]).map((row) => ({
           label: row.join(' '),
           path: (colour) => ['colours', colour, ...row],
         })),
       ),
       this.sharedValues(this.materials, (path) => path[0] !== 'colours'),
+      element('div', 'tuning-section', 'Enemies'),
+      this.grid(
+        this.enemies,
+        ENEMY_COLUMNS,
+        numberPaths(enemyTable.types[ENEMY_TYPES[0]]).map((row) => ({
+          label: row.join(' '),
+          path: (type) => ['types', type, ...row],
+        })),
+      ),
+      this.sharedValues(this.enemies, (path) => path[0] !== 'types'),
     );
 
     // Phaser also listens for mouse presses on the window, so a click on the
@@ -132,19 +172,19 @@ export class TuningPanel {
     return row;
   }
 
-  /** Per-Colour values as a grid: one row per value, one column per Colour. */
-  private colourGrid(tuned: Tuned, rows: readonly ColourRow[]): HTMLElement {
+  /** Per-Colour or per-type values as a grid: one row per value, one column per Colour or type. */
+  private grid(tuned: Tuned, columns: readonly Column[], rows: readonly Row[]): HTMLElement {
     const grid = element('table', 'tuning-grid');
     const head = element('tr');
     head.append(element('th'));
-    for (const colour of COLOURS) head.append(element('th', `tuning-colour ${colour}`, colour));
+    for (const { name, look } of columns) head.append(element('th', look, name));
     grid.append(head);
     for (const row of rows) {
       const tr = element('tr');
       tr.append(element('th', 'tuning-label', row.label));
-      for (const colour of COLOURS) {
+      for (const { name } of columns) {
         const cell = element('td');
-        cell.append(this.input(tuned, row.path(colour)));
+        cell.append(this.input(tuned, row.path(name)));
         tr.append(cell);
       }
       grid.append(tr);
@@ -192,7 +232,7 @@ export class TuningPanel {
   }
 
   private restoreDefaults(): void {
-    for (const tuned of [this.materials, this.ink]) {
+    for (const tuned of [this.materials, this.ink, this.enemies]) {
       const paths = this.inputs.filter((entry) => entry.tuned === tuned).map(({ path }) => path);
       tuned.edit((table) => {
         for (const path of paths) writePath(table, path, readPath(tuned.defaults, path));
@@ -207,13 +247,17 @@ export class TuningPanel {
   }
 
   private async copy(): Promise<void> {
-    const json = tablesAsJson({ materials: this.table, ink: this.game.ink });
+    const json = tablesAsJson({
+      materials: this.table,
+      ink: this.game.ink,
+      enemies: this.enemyTable,
+    });
     try {
       await navigator.clipboard.writeText(json);
       this.say('Copied');
     } catch {
       // No clipboard access: show the JSON to copy by hand.
-      window.prompt('Copy the material and Ink tables:', json);
+      window.prompt('Copy the material, Ink and enemy tables:', json);
     }
   }
 

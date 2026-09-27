@@ -1,4 +1,10 @@
 import type { Colour } from '../materials/colour';
+import {
+  createEnemyTable,
+  type EnemyMaterial,
+  type EnemyTable,
+  type EnemyType,
+} from '../materials/enemy-table';
 import type { MaterialTable, SurfaceMaterial } from '../materials/material-table';
 
 /**
@@ -10,8 +16,8 @@ import type { MaterialTable, SurfaceMaterial } from '../materials/material-table
  * tables as they are now, so an edit counts from the next question.
  *
  * Ink things take their numbers from the material table, by their Colour.
- * Milestone 4's Enemies take theirs from the enemy table, by their type: a
- * second source, and a second kind of `ThingType`.
+ * Enemies take theirs from the enemy table, by their type: a second source,
+ * and a second kind of `ThingType`.
  */
 
 /** What an ink thing is: which of its Colour's numbers it takes. */
@@ -30,8 +36,14 @@ export interface InkThingType {
   readonly colour: Colour;
 }
 
+/** What an Enemy is: which of the enemy table's rows it takes. */
+export interface EnemyThingType {
+  readonly kind: 'enemy';
+  readonly type: EnemyType;
+}
+
 /** What a thing is, as far as its numbers go. */
-export type ThingType = InkThingType;
+export type ThingType = InkThingType | EnemyThingType;
 
 /** A thing that takes damage and breaks. */
 export type BreakingType = ThingType & { readonly kind: 'piece' | 'object' };
@@ -76,12 +88,20 @@ export interface BreakingNumbers extends ThingNumbers {
 
 /** The one answer to what a thing's numbers are, from the tables it reads. */
 export class Numbers {
-  constructor(private readonly materials: MaterialTable) {}
+  constructor(
+    private readonly materials: MaterialTable,
+    /** The enemy table to read; a fresh copy of the defaults if none is given. */
+    private readonly enemies: EnemyTable = createEnemyTable(),
+  ) {}
 
   /** A thing's numbers, from the tables as they are now. */
   of(type: BreakingType): BreakingNumbers;
   of(type: ThingType): ThingNumbers;
   of(type: ThingType): ThingNumbers {
+    if (type.kind === 'enemy') {
+      // An Enemy's HP is its own (#87): it takes damage, but never breaks.
+      return { surface: this.enemy(type.type), fixed: false, toughness: null };
+    }
     const { line, outline } = this.materials.colours[type.colour];
     switch (type.kind) {
       case 'piece':
@@ -95,6 +115,11 @@ export class Numbers {
       case 'patch':
         return { surface: line, fixed: false, toughness: null };
     }
+  }
+
+  /** An Enemy type's row of the enemy table, as it is now. */
+  enemy(type: EnemyType): EnemyMaterial {
+    return this.enemies.types[type];
   }
 
   /** A thing's surface, from the tables as they are now. */
