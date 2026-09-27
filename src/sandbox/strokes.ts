@@ -11,6 +11,7 @@ import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, ObjectBodyDef, PhysicsWorld } from '../physics';
 import { pieceCentre } from '../stroke/pieces';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
+import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import type { Arena } from './arena';
 import type { ArenaBodies } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
@@ -96,6 +97,12 @@ export type MadeStroke =
       readonly ink: number;
       /** Each Piece's Ink, in order along the Line: together they are `ink`. */
       readonly pieces: readonly number[];
+      /**
+       * Of each Piece's Ink, in the same order, what lies on a Line that was
+       * standing when it was made: where its centre line is inside that
+       * Line's band.
+       */
+      readonly onLines: readonly number[];
     }
   | {
       readonly kind: 'object';
@@ -286,7 +293,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     private readonly materials: MaterialTable,
     private readonly arena: Arena,
     private readonly bodies: ArenaBodies<StrokeTarget>,
-    private readonly query: Pick<ArenaQuery, 'objectsAt' | 'objectsCrossing'>,
+    private readonly query: Pick<ArenaQuery, 'objectsAt' | 'objectsCrossing' | 'lyingOnLines'>,
     private readonly poses: Pick<PreviousPoses, 'of'>,
     /** Appends to the list of what happened: a Fill and a Release. */
     private readonly say: (happening: Happening) => void,
@@ -332,7 +339,11 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     };
   }
 
-  /** What the Line or Object the Stroke pipeline made would be in `colour`, and its Ink. */
+  /**
+   * What the Line or Object the Stroke pipeline made would be in `colour`,
+   * and its Ink: a Line's Pieces' each, and how much of each lies on a Line
+   * standing now.
+   */
   measure(result: DrawnStroke, colour: Colour): MadeStroke {
     if (result.kind === 'object')
       return { kind: 'object', colour, ink: outlineInk(result.outline) };
@@ -342,7 +353,18 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       colour,
       ink: lineInk(result.segments, thickness),
       pieces: result.pieces.map((piece) => lineInk(piece, thickness)),
+      onLines: result.pieces.map((piece) => lineInk(this.query.lyingOnLines(piece), thickness)),
     };
+  }
+
+  /**
+   * The Ink of the part of a Line along raw pointer `samples`, in the Line
+   * thickness, that would lie on a standing Line: without the Stroke
+   * pipeline, to estimate what a Stroke costs while it is drawn.
+   */
+  inkOnLinesAlong(samples: readonly Vec2[]): number {
+    const path = samples.slice(1).map((b, k) => ({ a: samples[k]!, b }));
+    return lineInk(this.query.lyingOnLines(path), LINE_THICKNESS);
   }
 
   /**
@@ -352,6 +374,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
    */
   add(result: DrawnStroke, colour: Colour, running: boolean): AddedStroke {
     const id = this.nextId++;
+    // Measured before its Pieces are added, so that it never lies on itself.
     const made = this.measure(result, colour);
     if (result.kind === 'line') {
       const { thickness } = result;

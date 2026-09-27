@@ -1,7 +1,9 @@
+import { partsInsideCapsules } from '../geometry/clip';
 import {
   capsuleOverlapsPolygon,
   circleOverlapsPolygon,
   convexPolygonsOverlap,
+  type Capsule,
 } from '../geometry/overlap';
 import {
   polygonBounds,
@@ -18,6 +20,8 @@ import type { ArenaBodies, Figure, Form } from './arena-bodies';
 import { brushTouchesCapsules, brushTouchesCircle, brushTouchesPolygon, type Brush } from './brush';
 import type { Thing } from './happenings';
 
+export type { Capsule } from '../geometry/overlap';
+
 /**
  * The Arena query: what is where. It answers every question about place,
  * over every body's shapes and every Patch's capsule, as Arena bodies holds
@@ -28,7 +32,8 @@ import type { Thing } from './happenings';
  * Each question tests the shapes it always has: which Object is under a
  * point, and what the Eraser's brush touches, go by an Object's Outline;
  * where an Object may go, and what a Line crosses, go by its collider
- * parts, the Outline simplified by up to `COLLIDER_TOLERANCE`.
+ * parts, the Outline simplified by up to `COLLIDER_TOLERANCE`; what lies on
+ * a Line goes by each Piece's band.
  */
 
 /** What the query asks of the physics module. */
@@ -38,12 +43,6 @@ export type QueryPhysics = Pick<PhysicsWorld, 'shapesNear' | 'getTransform' | 'b
 export type FoundObject = Extract<Thing, { readonly thing: 'object' }>;
 
 type ObjectForm = Extract<Form, { readonly kind: 'object' }>;
-
-/** A capsule in world coordinates: a segment thickened by `radius`. */
-export interface Capsule {
-  readonly segment: Segment;
-  readonly radius: number;
-}
 
 /**
  * How far (px) outside the engine's shapes what the query tests may reach:
@@ -58,6 +57,42 @@ const grow = ({ minX, minY, maxX, maxY }: Bounds, by: number): Bounds => ({
   maxX: maxX + by,
   maxY: maxY + by,
 });
+
+/**
+ * How far (px) a run of a path's segments may spread before the query looks
+ * near it again: raw pointer samples are a pixel or two apart, and testing
+ * a few more bands costs less than asking the broadphase at each of them.
+ */
+const RUN_SPAN = 32;
+
+const ends = ({ a, b }: Segment): Vec2[] => [a, b];
+
+/** A path's segments in runs of consecutive ones, each within `RUN_SPAN` px across. */
+function runs(path: readonly Segment[]): Segment[][] {
+  const found: Segment[][] = [];
+  let run: Segment[] = [];
+  let bounds: Bounds | null = null;
+  for (const segment of path) {
+    const { a, b } = segment;
+    const grown: Bounds = {
+      minX: Math.min(bounds?.minX ?? Infinity, a.x, b.x),
+      minY: Math.min(bounds?.minY ?? Infinity, a.y, b.y),
+      maxX: Math.max(bounds?.maxX ?? -Infinity, a.x, b.x),
+      maxY: Math.max(bounds?.maxY ?? -Infinity, a.y, b.y),
+    };
+    const wide = Math.max(grown.maxX - grown.minX, grown.maxY - grown.minY) > RUN_SPAN;
+    if (run.length > 0 && wide) {
+      found.push(run);
+      run = [];
+      bounds = polygonBounds([a, b]);
+    } else {
+      bounds = grown;
+    }
+    run.push(segment);
+  }
+  if (run.length > 0) found.push(run);
+  return found;
+}
 
 export class ArenaQuery {
   constructor(
@@ -147,6 +182,25 @@ export class ArenaQuery {
       ),
     );
     return found.map(([what]) => what).sort((p, q) => p.id - q.id);
+  }
+
+  /**
+   * Lying on a Line: the parts of `path`, centre lines in world coordinates,
+   * that lie on a Line: inside a standing Piece's band, within half its
+   * thickness of its centre line. Any Colour counts; the Terrain, Objects,
+   * Rubble, Droplets and Patches don't. In order along `path`.
+   */
+  lyingOnLines(path: readonly Segment[]): Segment[] {
+    const found: Segment[] = [];
+    for (const run of runs(path)) {
+      const bands: Capsule[] = [];
+      for (const { what, form } of this.near(polygonBounds(run.flatMap(ends)), 0)) {
+        if (form.kind !== 'capsules' || what?.thing !== 'piece') continue;
+        for (const segment of form.segments) bands.push({ segment, radius: form.radius });
+      }
+      for (const { a, b } of run) found.push(...partsInsideCapsules(a, b, bands));
+    }
+    return found;
   }
 
   /**

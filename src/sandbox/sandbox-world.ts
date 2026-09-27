@@ -71,8 +71,8 @@ const MAX_STEPS_PER_ADVANCE = 8;
 
 /**
  * What a submitted Stroke became. A Line or an Object carries its Colour
- * and the Ink (px²) it took: a Line's as drawn, with each Piece's, and an
- * Object's Outline's.
+ * and the Ink (px²) it took: a Line's as drawn, with each Piece's and how
+ * much of each lies on a Line already standing, and an Object's Outline's.
  */
 export type StrokeOutcome =
   | AddedStroke
@@ -373,6 +373,15 @@ export class SandboxWorld {
    */
   fillInkAt(point: Vec2): number | null {
     return this.strokes.fillInkAt(point);
+  }
+
+  /**
+   * The Ink of the part of a Line along raw pointer `samples` that would lie
+   * on a standing Line, without the Stroke pipeline or adding anything: to
+   * estimate what a Stroke costs while it is drawn.
+   */
+  inkOnLinesAlong(samples: readonly Vec2[]): number {
+    return this.strokes.inkOnLinesAlong(samples);
   }
 
   /**

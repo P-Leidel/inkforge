@@ -310,6 +310,23 @@ describe('Drawing input', () => {
       expect(late.over).toBe(false);
     });
 
+    it('leaves out the part lying on another Line', () => {
+      const game = createGame(true);
+      const { input } = drawingOver(game);
+      drawLine(game.world, [
+        { x: 200, y: 300 },
+        { x: 500, y: 300 },
+      ]);
+      input.press(line[0]!, 'left');
+      for (const sample of line.slice(1, 140)) input.move(sample);
+      const along = costOf(input)!;
+      for (const sample of line.slice(140)) input.move(sample);
+
+      expect(along.price).toBeCloseTo(0, 6);
+      // Free as far as the Line's round end reaches, 4 px past it.
+      expect(inLineLength(costOf(input)!.price)).toBeCloseTo(600 - 304, 0);
+    });
+
     it('prices a closing path as an Object', () => {
       const game = createGame(true);
       const { input } = drawingOver(game);

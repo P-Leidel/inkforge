@@ -7,7 +7,9 @@ import {
 import { polygonContainsPoint, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import { applyTransform, transformPoints } from '../geometry/transform';
-import type { Vec2 } from '../geometry/vec2';
+import { distance, type Vec2 } from '../geometry/vec2';
+import { partsInsideCapsules } from '../geometry/clip';
+import type { Colour } from '../materials/colour';
 import { createMaterialTable } from '../materials/material-table';
 import { createPhysicsWorld, type BodyId, type PhysicsWorld } from '../physics';
 import { SANDBOX_ARENA } from './arena';
@@ -69,9 +71,10 @@ function setup() {
     );
     return { what, body: party.body, party };
   };
-  const piece = (segments: readonly Segment[], thickness = 8) => {
+  const piece = (segments: readonly Segment[], thickness = 8, colour: Colour = 'grey') => {
     const what = { thing: 'piece', id: ++things, index: 0 } as const;
-    return { what, body: bodies.addLine(segments, thickness, 'grey', what, own()).body };
+    const party = bodies.addLine(segments, thickness, colour, what, own());
+    return { what, body: party.body, party };
   };
   const circle = (position: Vec2, radius: number, droplet = false) => {
     const id = ++things;
@@ -95,6 +98,14 @@ function setup() {
 }
 
 const click = (x: number, y: number, radius = 12): Brush => ({ path: [{ x, y }], radius });
+
+/** A polyline's segments. */
+const along = (...points: Vec2[]): Segment[] =>
+  points.slice(1).map((b, k) => ({ a: points[k]!, b }));
+
+/** How long `segments` are together. */
+const lengthOf = (segments: readonly Segment[]) =>
+  segments.reduce((sum, { a, b }) => sum + distance(a, b), 0);
 
 describe('Arena query', () => {
   it('finds the Objects under a point by their Outline, oldest first', () => {
@@ -173,6 +184,69 @@ describe('Arena query', () => {
     expect(query.touchedBy(click(340, 400, 1))).toEqual([droplet.what]);
   });
 
+  it('finds the part of a path lying on a Line of any Colour, within half its thickness', () => {
+    const { query, piece } = setup();
+    // Two Pieces of a red Line, end to end, from x = 300 to x = 500.
+    piece(along({ x: 300, y: 400 }, { x: 400, y: 400 }), 8, 'red');
+    piece(along({ x: 400, y: 400 }, { x: 500, y: 400 }), 8, 'red');
+
+    // Along it, and 3 px off it: all of it.
+    expect(lengthOf(query.lyingOnLines(along({ x: 300, y: 400 }, { x: 500, y: 400 })))).toBe(200);
+    expect(lengthOf(query.lyingOnLines(along({ x: 320, y: 403 }, { x: 480, y: 403 })))).toBe(160);
+    // Half along it: as far as its round end reaches, 4 px past its last point.
+    const half = query.lyingOnLines(along({ x: 300, y: 400 }, { x: 700, y: 400 }));
+    expect(half).toHaveLength(1);
+    expect(half[0]!.a).toEqual({ x: 300, y: 400 });
+    expect(half[0]!.b.x).toBeCloseTo(504, 6);
+    // Across it at a right angle: its band, 8 px.
+    const across = query.lyingOnLines(along({ x: 450, y: 300 }, { x: 450, y: 500 }));
+    expect(lengthOf(across)).toBeCloseTo(8, 6);
+    expect(across[0]!.a.y).toBeCloseTo(396, 6);
+    // Beside it, 5 px off: none of it.
+    expect(query.lyingOnLines(along({ x: 300, y: 405 }, { x: 500, y: 405 }))).toEqual([]);
+  });
+
+  it("finds each part along a path's segments, in order, and nothing for a path of no length", () => {
+    const { query, piece } = setup();
+    piece(along({ x: 300, y: 400 }, { x: 400, y: 400 }));
+    piece(along({ x: 600, y: 400 }, { x: 700, y: 400 }), 8, 'blue');
+
+    const found = query.lyingOnLines(
+      along({ x: 250, y: 400 }, { x: 500, y: 400 }, { x: 800, y: 400 }),
+    );
+
+    expect(found.map(({ a, b }) => [a.x, b.x].map((x) => Math.round(x)))).toEqual([
+      [296, 404],
+      [596, 704],
+    ]);
+    expect(query.lyingOnLines(along({ x: 350, y: 400 }, { x: 350, y: 400 }))).toEqual([]);
+  });
+
+  it('counts only standing Pieces: not the Terrain, an Outline, Rubble, a Patch or a broken Piece', () => {
+    const { bodies, query, object, piece, circle, patch } = setup();
+    object({ x: 400, y: 400 }, square(30));
+    const shelf = piece(along({ x: 600, y: 600 }, { x: 800, y: 600 }));
+    patch(shelf.party, { a: { x: 620, y: 605.5 }, b: { x: 780, y: 605.5 } });
+    circle({ x: 1000, y: 600 }, 6);
+    piece(along({ x: 1200, y: 500 }, { x: 1300, y: 500 }));
+    const broken = piece(along({ x: 1300, y: 500 }, { x: 1400, y: 500 }));
+    bodies.removeBody(broken.body, 'broke');
+
+    // Along the ground's surface, and 3 px into the ground.
+    expect(query.lyingOnLines(along({ x: 200, y: 880 }, { x: 800, y: 880 }))).toEqual([]);
+    expect(query.lyingOnLines(along({ x: 200, y: 883 }, { x: 800, y: 883 }))).toEqual([]);
+    // Along an Object's top edge, and through it.
+    expect(query.lyingOnLines(along({ x: 370, y: 370 }, { x: 430, y: 370 }))).toEqual([]);
+    expect(query.lyingOnLines(along({ x: 300, y: 400 }, { x: 500, y: 400 }))).toEqual([]);
+    // Along the Patch below the shelf, 5.5 px off its centre line.
+    expect(query.lyingOnLines(along({ x: 620, y: 605.5 }, { x: 780, y: 605.5 }))).toEqual([]);
+    // Through Rubble.
+    expect(query.lyingOnLines(along({ x: 950, y: 600 }, { x: 1050, y: 600 }))).toEqual([]);
+    // Along a Line one of whose Pieces broke: only the standing Piece.
+    const standing = query.lyingOnLines(along({ x: 1200, y: 500 }, { x: 1400, y: 500 }));
+    expect(lengthOf(standing)).toBeCloseTo(104, 6);
+  });
+
   it('gives the same answers as testing every body, in a heap that has settled', () => {
     const { physics, bodies, query, object, piece, circle, patch } = setup();
     const random = new Random(7);
@@ -190,6 +264,11 @@ describe('Arena query', () => {
       const y = at(300, 800);
       piece([{ a: { x, y }, b: { x: x + at(40, 120), y: y + at(-40, 40) } }]);
     }
+    for (let k = 0; k < 40; k++) {
+      const x = at(100, 1700);
+      const y = at(100, 900);
+      piece(along({ x, y }, { x: x + at(20, 60), y: y + at(-20, 20) }), at(2, 8));
+    }
     for (let k = 0; k < 30; k++)
       circle({ x: at(100, 1800), y: at(100, 600) }, at(2, 8), k % 3 === 0);
     for (const { party } of objects.slice(0, 10)) {
@@ -199,6 +278,7 @@ describe('Arena query', () => {
 
     // What testing every body finds, from the bodies' shapes where they are now.
     const all = everyBody(bodies, physics);
+    let lyingFound = 0;
     for (let k = 0; k < 200; k++) {
       const point = { x: at(0, 1920), y: at(0, 1080) };
       const end = { x: point.x + at(-80, 80), y: point.y + at(-20, 20) };
@@ -209,7 +289,12 @@ describe('Arena query', () => {
       expect(query.overlapsSolid(part)).toBe(all.overlapsSolid(part));
       const capsule: Capsule = { segment: { a: point, b: end }, radius: 3 };
       expect(query.objectsCrossing([capsule])).toEqual(all.objectsCrossing(capsule));
+      const path = along(point, end, { x: end.x + at(-80, 80), y: end.y + at(-20, 20) });
+      const lying = query.lyingOnLines(path);
+      expect(lying).toEqual(all.lyingOnLines(path));
+      lyingFound += lying.length;
     }
+    expect(lyingFound).toBeGreaterThan(10);
   });
 });
 
@@ -238,6 +323,14 @@ function everyBody(bodies: ArenaBodies<null>, physics: PhysicsWorld) {
       objects()
         .filter(({ outline }) => polygonContainsPoint(outline, point))
         .map(({ what }) => what),
+    lyingOnLines: (path: readonly Segment[]) => {
+      const bands = figures().flatMap(({ form }) =>
+        form.kind === 'capsules'
+          ? form.segments.map((segment) => ({ segment, radius: form.radius }))
+          : [],
+      );
+      return path.flatMap(({ a, b }) => partsInsideCapsules(a, b, bands));
+    },
     objectsCrossing: ({ segment: { a, b }, radius }: Capsule) =>
       objects()
         .filter(({ parts }) => parts.some((part) => capsuleOverlapsPolygon(a, b, radius, part)))

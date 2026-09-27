@@ -234,6 +234,28 @@ describe('Cost estimates, with Ink costs on', () => {
     expect(game.estimateFill({ x: 900, y: 200 }, 'black')).toBeNull();
   });
 
+  it('estimates a Line drawn along another, or half along it, within 5% of what it is charged', () => {
+    const game = createGame(true);
+    drawLine(game, 300, 200, 400);
+    const exactly = dragAlong([
+      { x: 200, y: 300 },
+      { x: 600, y: 300 },
+    ]);
+    const half = dragAlong([
+      { x: 200, y: 300 },
+      { x: 1000, y: 300 },
+    ]);
+    const estimates = [game.estimateStroke(exactly, 'blue')!, game.estimateStroke(half, 'green')!];
+
+    game.submitStroke(exactly, 'blue');
+    game.submitStroke(half, 'green');
+
+    // Drawn exactly along, it is charged next to nothing, and estimated so: within 5% of its length.
+    const charged = game.maximum('blue') - game.tank('blue');
+    expect(Math.abs(estimates[0]!.price - charged)).toBeLessThan(0.05 * fromLineLength(400));
+    expect(off(estimates[1]!.price, game.maximum('green') - game.tank('green'))).toBeLessThan(0.05);
+  });
+
   it('says a Stroke is over when it costs more than its Tank holds', () => {
     const game = createGame(true);
     const long = dragAlong([
@@ -247,6 +269,91 @@ describe('Cost estimates, with Ink costs on', () => {
   it('estimates nothing with Ink costs off', () => {
     const game = createGame(false);
     expect(game.estimateStroke(dragBox(400, 300, 100, 100), 'grey')).toBeNull();
+  });
+});
+
+describe('Overlap charging, with Ink costs on', () => {
+  it('charges nothing for a Line drawn exactly along another, and half for one half along it', () => {
+    const game = createGame(true);
+    drawLine(game, 300, 200, 400); // grey, from x = 200 to x = 600
+
+    const exactly = drawLine(game, 300, 200, 400, 'blue');
+    drawLine(game, 300, 200, 800, 'green');
+
+    expect(spent(game, 'blue')).toBeCloseTo(0, 6);
+    expect(inLineLength(exactly.ink)).toBeCloseTo(400, 0); // it holds its Ink all the same
+    // Free as far as the grey Line's round end reaches, 4 px past it.
+    expect(spent(game, 'green')).toBeCloseTo(800 - 404, 0);
+  });
+
+  it('prices each Piece by its own part: one lying wholly on another Line costs nothing', () => {
+    const game = createGame(true);
+    drawLine(game, 700, 200, 240); // five grey Pieces, from x = 200 to x = 440
+    const shelf = drawLine(game, 700, 200, 480, 'green'); // ten green Pieces, five on the grey
+    expect(shelf.pieces).toHaveLength(10);
+    const green = game.tank('green');
+
+    game.eraseAlong([{ x: 200 + 48 * 2 + 24, y: 700 }], 12); // Piece 2 of each
+    expect(game.tank('green')).toBeCloseTo(green, 6);
+    expect(spent(game, 'grey')).toBeCloseTo(4 * 48, 0);
+
+    game.eraseAlong([{ x: 200 + 48 * 7 + 24, y: 700 }], 12); // green Piece 7, on nothing
+    expect(game.tank('green') - green).toBeCloseTo(shelf.pieces[7]!, 6);
+  });
+
+  it('charges full along the Terrain and an Outline, and across an Object along the Object', () => {
+    const game = createGame(true);
+    drawBox(game, 300, 400, 100); // grey, its top edge along y = 400
+    drawLine(game, 600, 200, 300); // grey, from x = 200 to x = 500
+    drawBox(game, 700, 550, 100); // grey, from x = 700 to x = 800
+
+    drawLine(game, 880, 200, 400, 'blue'); // along the ground
+    drawLine(game, 400, 300, 100, 'green'); // along the box's top edge
+    drawLine(game, 600, 200, 700, 'red'); // along the grey Line, then across the box
+
+    expect(spent(game, 'blue')).toBeCloseTo(400, 0);
+    expect(spent(game, 'green')).toBeCloseTo(100, 0);
+    // Free as far as x = 504; the 100 px across the box cost like the rest.
+    expect(spent(game, 'red')).toBeCloseTo(900 - 504, 0);
+  });
+
+  it('keeps the free part free after the Line underneath is gone, and refunds only what was paid', () => {
+    const game = createGame(true);
+    const under = drawLine(game, 500, 200, 480); // grey, along y = 500
+    drawLine(game, 503, 200, 480, 'green'); // 3 px below it: inside its band
+    expect(spent(game, 'green')).toBeCloseTo(0, 6);
+
+    // A thin brush above the grey Line, out of the green one's reach, erases the grey.
+    game.eraseAlong(
+      [
+        { x: 150, y: 496.5 },
+        { x: 750, y: 496.5 },
+      ],
+      0.5,
+    );
+    expect(game.world.lines.map((line) => line.id)).not.toContain(under.id);
+    expect(game.world.lines).toHaveLength(1);
+    expect(game.tank('grey')).toBeCloseTo(game.maximum('grey'), 6);
+    expect(game.tank('green')).toBeCloseTo(game.maximum('green'), 6);
+
+    game.undo(); // the green Line: it paid nothing, and gets nothing back
+    expect(game.world.lines).toEqual([]);
+    expect(game.tank('green')).toBeCloseTo(game.maximum('green'), 6);
+    expect(game.history).toEqual([]);
+  });
+
+  it('refunds only what was paid on undoing a Line that was half free', () => {
+    const game = createGame(true);
+    drawLine(game, 700, 200, 500, 'green'); // 500 spent elsewhere, so a refund can show
+    drawLine(game, 300, 200, 400); // grey, from x = 200 to x = 600
+    drawLine(game, 300, 200, 800, 'green');
+    const paid = game.paid('green') - fromLineLength(500);
+    expect(inLineLength(paid)).toBeCloseTo(800 - 404, 0);
+
+    game.undo();
+
+    expect(spent(game, 'green')).toBeCloseTo(500, 6);
+    expect(game.paid('green')).toBeCloseTo(fromLineLength(500), 6);
   });
 });
 

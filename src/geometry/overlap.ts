@@ -1,10 +1,16 @@
 import { polygonBounds, polygonContainsPoint, boundsOverlap, type Polygon } from './polygon';
-import { distanceSegmentToSegment, segmentsIntersect } from './segment';
+import { distanceSegmentToSegment, segmentsIntersect, type Segment } from './segment';
 import type { Vec2 } from './vec2';
 
 /** A circle in world coordinates. */
 export interface Circle {
   readonly centre: Vec2;
+  readonly radius: number;
+}
+
+/** A capsule in world coordinates: a segment thickened by `radius`. */
+export interface Capsule {
+  readonly segment: Segment;
   readonly radius: number;
 }
 
