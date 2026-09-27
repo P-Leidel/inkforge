@@ -5,10 +5,11 @@ import {
   convexPolygonsOverlap,
 } from '../geometry/overlap';
 import { polygonContainsPoint, type Polygon } from '../geometry/polygon';
+import { capsulePolygon } from '../geometry/separation';
 import type { Segment } from '../geometry/segment';
 import { applyTransform, transformPoints } from '../geometry/transform';
 import { distance, type Vec2 } from '../geometry/vec2';
-import { partsInsideCapsules } from '../geometry/clip';
+import { cutPolylineOutside, partsInsideCapsules } from '../geometry/clip';
 import type { Colour } from '../materials/colour';
 import { createMaterialTable } from '../materials/material-table';
 import { createPhysicsWorld, type BodyId, type PhysicsWorld } from '../physics';
@@ -150,6 +151,61 @@ describe('Arena query', () => {
     expect(query.overlapsSolid(at(400, 360))).toBe(false); // on the Patch, above the host
   });
 
+  it('counts only overlapping as blocking a new Object, not touching', () => {
+    const { query, object, circle } = setup();
+    const at = (x: number, y: number) => square(10).map((p) => ({ x: p.x + x, y: p.y + y }));
+    object({ x: 400, y: 400 }, square(20));
+    circle({ x: 800, y: 400 }, 6);
+
+    expect(query.overlapsSolid(at(428, 400))).toBe(true);
+    expect(query.overlapsSolid(at(430, 400))).toBe(false); // touching the Object's side
+    expect(query.overlapsSolid(at(813, 400))).toBe(true);
+    expect(query.overlapsSolid(at(816, 400))).toBe(false); // touching the Rubble
+  });
+
+  it('cuts a new Line at the Terrain only; not at Objects, Lines, Rubble, Droplets or Patches', () => {
+    const { query, object, piece, circle, patch } = setup();
+    const host = object({ x: 400, y: 400 }, square(20));
+    piece([{ a: { x: 600, y: 380 }, b: { x: 600, y: 420 } }]);
+    circle({ x: 800, y: 400 }, 6);
+    circle({ x: 1000, y: 400 }, 6, true);
+    patch(host.party, { a: { x: -20, y: -24 }, b: { x: 20, y: -24 } });
+
+    expect(
+      query.lineCutters([
+        { x: 300, y: 400 },
+        { x: 1100, y: 400 },
+      ]),
+    ).toEqual([]);
+    expect(
+      query.lineCutters([
+        { x: 300, y: 900 },
+        { x: 600, y: 900 },
+      ]),
+    ).toEqual(SANDBOX_ARENA.terrain);
+  });
+
+  it('keeps a squeezed Object clear of the Terrain, other Objects and Lines; not itself, Droplets or Patches', () => {
+    const { query, object, piece, circle, patch } = setup();
+    const at = (x: number, y: number) => square(10).map((p) => ({ x: p.x + x, y: p.y + y }));
+    const squeezed = object({ x: 400, y: 400 }, square(20));
+    object({ x: 500, y: 400 }, square(20));
+    piece([{ a: { x: 600, y: 380 }, b: { x: 600, y: 420 } }]);
+    circle({ x: 1000, y: 400 }, 6, true);
+    patch(squeezed.party, { a: { x: -20, y: -24 }, b: { x: 20, y: -24 } });
+    const blocks = (x: number, y: number) => query.blocksSqueezed(at(x, y), squeezed.body);
+
+    expect(blocks(300, 880)).toBe(true); // the ground
+    expect(blocks(300, 869)).toBe(false); // resting on it
+    expect(blocks(400, 400)).toBe(false); // itself
+    expect(blocks(515, 400)).toBe(true);
+    expect(blocks(530, 400)).toBe(false); // touching another Object
+    expect(blocks(610, 400)).toBe(true);
+    expect(blocks(616, 400)).toBe(false); // clear of the Line
+    expect(blocks(1000, 400)).toBe(false);
+    expect(blocks(400, 360)).toBe(false); // on the Patch, above the host
+  });
+
   it('finds the Objects capsules cross by their collider parts, oldest first', () => {
     const { query, object } = setup();
     const low = object({ x: 400, y: 400 }, square(30), [square(28)]);
@@ -288,6 +344,10 @@ describe('Arena query', () => {
       expect(query.touchedBy(brush)).toEqual(all.touchedBy(brush));
       const part = square(at(5, 40)).map((p) => ({ x: p.x + point.x, y: p.y + point.y }));
       expect(query.overlapsSolid(part)).toBe(all.overlapsSolid(part));
+      const squeezed = objects[k % objects.length]!.body;
+      expect(query.blocksSqueezed(part, squeezed)).toBe(all.blocksSqueezed(part, squeezed));
+      const drawn = [point, end, { x: end.x + 4 * (end.x - point.x), y: end.y + 200 }];
+      expect(cutPolylineOutside(drawn, query.lineCutters(drawn))).toEqual(all.lineCut(drawn));
       const capsule: Capsule = { segment: { a: point, b: end }, radius: 3 };
       expect(query.objectsCrossing([capsule])).toEqual(all.objectsCrossing(capsule));
       const path = along(point, end, { x: end.x + at(-80, 80), y: end.y + at(-20, 20) });
@@ -348,6 +408,27 @@ function everyBody(bodies: ArenaBodies<null>, physics: PhysicsWorld) {
         if (form.kind === 'circle' && what?.thing === 'rubble') {
           const { x, y } = transform(body);
           return circleOverlapsPolygon({ centre: { x, y }, radius: form.radius }, part);
+        }
+        return false;
+      }),
+    lineCut: (path: readonly Vec2[]) =>
+      cutPolylineOutside(
+        path,
+        figures().flatMap(({ form }) => (form.kind === 'terrain' ? form.polygons : [])),
+      ),
+    blocksSqueezed: (part: Polygon, squeezed: BodyId) =>
+      figures().some(({ body, form }) => {
+        if (form.kind === 'terrain')
+          return form.polygons.some((p) => convexPolygonsOverlap(part, p));
+        if (form.kind === 'object' && body !== squeezed) {
+          return form.parts.some((p) =>
+            convexPolygonsOverlap(part, transformPoints(p, transform(body))),
+          );
+        }
+        if (form.kind === 'capsules') {
+          return form.segments.some((segment) =>
+            convexPolygonsOverlap(part, capsulePolygon(segment, form.radius)),
+          );
         }
         return false;
       }),

@@ -218,7 +218,7 @@ export class SandboxWorld {
     this.poses = new PreviousPoses(this.physics);
     this.bodies.addTerrain(this.arena.terrain);
     const { physics, materials, numbers, arena, bodies, query, poses } = this;
-    this.strokes = new Strokes(physics, materials, numbers, arena, bodies, query, poses, say);
+    this.strokes = new Strokes(physics, materials, numbers, bodies, query, poses, say);
     this.rubbleKind = new Rubble(physics, materials, bodies, poses);
     this.bondsKind = new Bonds(physics, this.contacts, poses);
     this.dropletsKind = new Droplets(physics, materials, arena, bodies, poses);
@@ -375,11 +375,11 @@ export class SandboxWorld {
     return processStroke(samples, this.strokeContext({}));
   }
 
-  /** The Arena as the Stroke pipeline sees it: the Terrain, and what is solid by the Arena query. */
+  /** The Arena as the Stroke pipeline sees it: what the Arena query says a new Stroke meets. */
   private strokeContext(options: StrokeOptions): StrokeContext {
     return {
-      terrain: this.arena.terrain,
       pieceLength: this.materials.pieceLength,
+      lineCutters: (path) => this.query.lineCutters(path),
       overlapsSolid: (part) => this.query.overlapsSolid(part),
       ...(options.lineThickness !== undefined && { lineThickness: options.lineThickness }),
     };

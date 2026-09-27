@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Segment } from '../geometry/segment';
 import { distance, type Vec2 } from '../geometry/vec2';
-import { SANDBOX_ARENA } from '../sandbox/arena';
 import { pieceCentre, splitIntoPieces } from './pieces';
 import { dragAlong } from './pointer-paths';
 import { processStroke } from './stroke-pipeline';
+import { terrainOnly } from './test-support';
 
 const lengthOf = (segments: readonly Segment[]) =>
   segments.reduce((sum, s) => sum + distance(s.a, s.b), 0);
@@ -126,7 +126,7 @@ describe('Stroke pipeline: Pieces', () => {
         { x: 200, y: 600 },
         { x: 700, y: 600 },
       ]),
-      { terrain: SANDBOX_ARENA.terrain, objects: [], pieceLength: 48 },
+      { ...terrainOnly(), pieceLength: 48 },
     );
     if (result.kind !== 'line') throw new Error(`expected a Line, got ${result.kind}`);
 

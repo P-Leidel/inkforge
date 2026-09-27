@@ -1,6 +1,5 @@
 import { cutPolylineOutside } from '../geometry/clip';
 import { decomposeConvex } from '../geometry/convex-decomposition';
-import { circleOverlapsPolygon, convexPolygonsOverlap, type Circle } from '../geometry/overlap';
 import {
   isSelfIntersecting,
   polygonArea,
@@ -32,20 +31,18 @@ import {
   SMOOTHING_SIGMA,
 } from './stroke-rules';
 
-/** A read-only view of what already exists in the Arena. */
+/** A read-only view of what already exists in the Arena: the Arena query's answers. */
 export interface StrokeContext {
-  /** Lines are cut where they cross it. */
-  readonly terrain: readonly Polygon[];
+  /**
+   * The convex polygons, in world coordinates, that a new Line drawn along
+   * `path` is cut at where it crosses them: the Terrain, for one.
+   */
+  readonly lineCutters: (path: readonly Vec2[]) => readonly Polygon[];
   /**
    * Whether a convex part of a new Object, in world coordinates, would
-   * overlap something solid: the Arena's answer, the Terrain included.
-   * Without it, the pipeline checks `terrain`, `objects` and `rubble`.
+   * overlap something solid, the Terrain included.
    */
-  readonly overlapsSolid?: (part: Polygon) => boolean;
-  /** Solid bodies (Objects), each as its convex parts in world coordinates, without `overlapsSolid`. */
-  readonly objects?: readonly (readonly Polygon[])[];
-  /** Solid circles (Rubble), in world coordinates, without `overlapsSolid`. */
-  readonly rubble?: readonly Circle[];
+  readonly overlapsSolid: (part: Polygon) => boolean;
   /** Thickness of a Line; defaults to LINE_THICKNESS. */
   readonly lineThickness?: number;
   /**
@@ -61,7 +58,7 @@ export type RejectionReason = 'too-small' | 'self-crossing' | 'overlaps';
 export type StrokeResult =
   | {
       readonly kind: 'line';
-      /** Capsule centre lines, after cutting at Terrain: every Piece's, in order. */
+      /** Capsule centre lines, after cutting where the Line crosses the Terrain: every Piece's, in order. */
       readonly segments: readonly Segment[];
       /** The Line's Pieces in order along it, each as its capsule centre lines. */
       readonly pieces: readonly (readonly Segment[])[];
@@ -155,21 +152,11 @@ function scaleToArea(ring: readonly Vec2[], area: number): Vec2[] {
 }
 
 /**
- * Whether an Object would overlap Terrain, another Object or Rubble.
- * Touching is fine; overlapping Lines is allowed (physics squeezes the
- * Object out).
+ * Whether an Object would overlap something solid. Touching is fine;
+ * overlapping Lines is allowed (physics squeezes the Object out).
  */
 function overlapsSolid(parts: readonly Polygon[], context: StrokeContext): boolean {
-  return parts.some(context.overlapsSolid ?? overlapsListed(context));
-}
-
-/** Whether a convex part overlaps the Terrain, `objects` or `rubble` the context lists. */
-function overlapsListed(context: StrokeContext): (part: Polygon) => boolean {
-  const solids = [...context.terrain, ...(context.objects ?? []).flat()];
-  const rubble = context.rubble ?? [];
-  return (part) =>
-    solids.some((solid) => convexPolygonsOverlap(part, solid)) ||
-    rubble.some((circle) => circleOverlapsPolygon(circle, part));
+  return parts.some(context.overlapsSolid);
 }
 
 function processOpenStroke(samples: readonly Vec2[], context: StrokeContext): StrokeResult {
@@ -183,7 +170,7 @@ function processOpenStroke(samples: readonly Vec2[], context: StrokeContext): St
   const sharpened = sharpenCorners(flattened, corners, false);
   const smoothed = smoothBetweenCorners(sharpened, corners, SAMPLE_SPACING, SMOOTHING_SIGMA, false);
   const simplified = simplifyCapped(smoothed, SIMPLIFY_TOLERANCE, MAX_STROKE_POINTS, false);
-  const cut = cutPolylineOutside(simplified, context.terrain);
+  const cut = cutPolylineOutside(simplified, context.lineCutters(simplified));
   const total = cut.reduce((sum, s) => sum + distance(s.a, s.b), 0);
   if (total < MIN_LINE_LENGTH) return { kind: 'dropped' };
   const pieces = splitIntoPieces(cut, context.pieceLength, MAX_LINE_SEGMENT_LENGTH);

@@ -11,7 +11,6 @@ import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import { pieceCentre } from '../stroke/pieces';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
-import type { Arena } from './arena';
 import type { ArenaBodies, ObjectBody } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
 import type { ArenaQuery, Capsule } from './arena-query';
@@ -246,9 +245,11 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
     private readonly numbers: Numbers,
-    private readonly arena: Arena,
     private readonly bodies: ArenaBodies<StrokeTarget>,
-    private readonly query: Pick<ArenaQuery, 'objectsAt' | 'objectsCrossing' | 'lyingOnLines'>,
+    private readonly query: Pick<
+      ArenaQuery,
+      'objectsAt' | 'objectsCrossing' | 'lyingOnLines' | 'blocksSqueezed'
+    >,
     private readonly poses: Pick<PreviousPoses, 'of'>,
     /** Appends to the list of what happened: a Fill and a Release. */
     private readonly say: (happening: Happening) => void,
@@ -469,16 +470,10 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
         parts.some((part) => capsuleOverlapsPolygon(a, b, radius - SQUEEZE_TOLERANCE, part));
       const crossing = capsules.filter(crosses);
       if (crossing.length === 0) continue;
-      const others = this.objectStrokes()
-        .filter((o) => o !== object)
-        .flatMap((o) => this.worldParts(o));
-      const clearOf = capsules
-        .filter((c) => !crossing.includes(c))
-        .map((c) => capsulePolygon(c.segment, c.radius));
       const move = shortestWayOut(
         parts,
         crossing.map((c) => capsulePolygon(c.segment, c.radius)),
-        [...this.arena.terrain, ...others, ...clearOf],
+        (part) => this.query.blocksSqueezed(part, object.body),
         SQUEEZE_MARGIN,
       );
       if (move) this.bodies.slideOut(object.body, move, SLIDE_OUT_SPEED);
