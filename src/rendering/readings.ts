@@ -1,3 +1,4 @@
+import type { TankReadings } from '../game/ink-tanks';
 import { COLOURS, type Colour } from '../materials/colour';
 import { LONG_FRAME_MS, SLOW_FRAME_MS, type FrameTimes, type RecentSummary } from './frame-times';
 
@@ -38,8 +39,8 @@ export interface RenderLoad {
 
 /** The Ink Tanks. */
 export interface InkReadings {
-  /** Each Tank's Ink, px². */
-  readonly tanks: Readonly<Record<Colour, number>>;
+  /** Each Tank's reading. */
+  readonly tanks: TankReadings;
   /** Whether Strokes and Fills cost Ink. */
   readonly costs: boolean;
 }
@@ -62,7 +63,7 @@ export function readingLines({ recent, sinceStart, bodies, render, ink }: Readin
   const phase = ({ mean, max }: { mean: number; max: number }) =>
     `${mean.toFixed(1)} (max ${max.toFixed(1)})`;
   const row = (label: string, text: string) => label.padEnd(13) + text;
-  const tank = (colour: Colour) => `${colour} ${number(Math.round(ink.tanks[colour]))}`;
+  const tank = (colour: Colour) => `${colour} ${number(Math.round(ink.tanks[colour].spendable))}`;
   const [first, second] = [COLOURS.slice(0, 3), COLOURS.slice(3)];
   return [
     row('last 1 s', recent ? `${fps(recent.fps)}   longest ${ms(recent.longestMs)}` : '-'),

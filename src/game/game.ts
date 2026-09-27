@@ -1,6 +1,6 @@
 import type { Polygon } from '../geometry/polygon';
 import { pathLength, type Vec2 } from '../geometry/vec2';
-import { COLOURS, type Colour } from '../materials/colour';
+import type { Colour } from '../materials/colour';
 import {
   SandboxWorld,
   type AddedStroke,
@@ -16,7 +16,8 @@ import { outlineInk } from '../materials/ink';
 import { closeRing, isClosingStroke } from '../stroke/close-detection';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
-import { createInkTable, fromLineLength, type InkTable, type ReadonlyInkTable } from './ink-table';
+import { createInkTable, type InkTable, type ReadonlyInkTable } from './ink-table';
+import { InkTanks, type TankReadings, type TanksState } from './ink-tanks';
 
 /** What a Stroke the Game was asked for became. */
 export type GameStrokeOutcome =
@@ -79,7 +80,7 @@ type Charge =
 
 /** Everything R brings back of the Game: the Tanks, what was paid and the undo history. */
 interface Snapshot {
-  readonly tanks: Readonly<Record<Colour, number>>;
+  readonly tanks: TanksState;
   readonly strokes: ReadonlyMap<StrokeId, Charge>;
   readonly fills: ReadonlyMap<StrokeId, Paid>;
   readonly history: readonly Action[];
@@ -95,16 +96,14 @@ export interface GameOptions {
   readonly ink?: InkTable;
 }
 
-/** Leeway for rounding when a price is set against what a Tank holds, px². */
-const EPSILON = 1e-6;
-
 /**
  * The Game: the rules layer over the Sandbox world (ADR 0009). It owns the
  * Ink Tanks, the Ink table and the Ink costs switch, what each Stroke, Piece
  * and Fill paid, the undo history, and the snapshot of all of these that R
  * goes back to. It issues the Sandbox world's commands, prices the Ink they
  * report and refuses what a Tank can't pay for, and reads the list of what
- * happened to learn what broke or was erased. It never measures Ink itself.
+ * happened to learn what broke or was erased. It never measures Ink itself,
+ * and leaves the Tank arithmetic to the Ink Tanks.
  *
  * Strokes and Fills made below it, by a demo or a stress test, join the
  * undo history at price 0 when it reads that they were added.
@@ -112,8 +111,7 @@ const EPSILON = 1e-6;
 export class Game {
   readonly world: SandboxWorld;
   private readonly table: InkTable;
-  /** Each Tank's Ink now, px². */
-  private tanks: Record<Colour, number>;
+  private readonly inkTanks: InkTanks;
   private costs: boolean;
   /** What each Stroke still in the Arena paid, by id. */
   private strokes = new Map<StrokeId, Charge>();
@@ -129,7 +127,7 @@ export class Game {
     this.world = options.world ?? new SandboxWorld(options.worldOptions);
     this.table = options.ink ?? createInkTable();
     this.costs = options.inkCosts;
-    this.tanks = this.fullTanks();
+    this.inkTanks = new InkTanks(this.table);
     this.reader = this.world.happenings.reader();
   }
 
@@ -155,17 +153,12 @@ export class Game {
    */
   editInk(edit: (table: InkTable) => void): void {
     edit(this.table);
-    this.tanks = this.withinMaximums(this.tanks);
+    this.inkTanks.fitMaximums();
   }
 
-  /** The Ink in `colour`'s Tank now, px². */
-  tank(colour: Colour): number {
-    return this.tanks[colour];
-  }
-
-  /** The most `colour`'s Tank holds, px². */
-  maximum(colour: Colour): number {
-    return fromLineLength(this.table.tanks[colour]);
+  /** Each Tank as the player reads it: what it holds and its maximum, worked out now. */
+  get tanks(): TankReadings {
+    return this.inkTanks.reading();
   }
 
   /**
@@ -242,7 +235,7 @@ export class Game {
       }
       case 'filled': {
         const price = this.fillPrice(outcome.ink);
-        this.spend(colour, price);
+        this.inkTanks.spend(colour, price);
         this.fills.set(outcome.id, { colour, price });
         this.undoHistory.push({ kind: 'fill', id: outcome.id });
         break;
@@ -377,7 +370,7 @@ export class Game {
   clear(build?: (world: SandboxWorld) => void): void {
     this.world.clear();
     this.reader.read();
-    this.tanks = this.fullTanks();
+    this.inkTanks.fill();
     this.strokes.clear();
     this.fills.clear();
     this.undoHistory = [];
@@ -430,9 +423,9 @@ export class Game {
     return this.costs ? this.table.fillPrice * ink : 0;
   }
 
-  /** Whether `colour`'s Tank can pay `price`; always, with costs off. */
+  /** Whether `colour`'s Tank can pay `price`; always with costs off, where every price is 0. */
   private affords(colour: Colour, price: number): boolean {
-    return !this.costs || price <= this.tanks[colour] + EPSILON;
+    return this.inkTanks.canPay(colour, price);
   }
 
   /**
@@ -444,25 +437,20 @@ export class Game {
     const { id, colour } = stroke;
     if (stroke.kind === 'object') {
       const price = this.linePrice(stroke.ink);
-      this.spend(colour, price);
+      this.inkTanks.spend(colour, price);
       this.strokes.set(id, { kind: 'object', paid: { colour, price } });
     } else {
       const pieces = new Map(this.piecePrices(stroke).map((price, index) => [index, price]));
-      for (const price of pieces.values()) this.spend(colour, price);
+      for (const price of pieces.values()) this.inkTanks.spend(colour, price);
       this.strokes.set(id, { kind: 'line', colour, pieces });
     }
     this.undoHistory.push({ kind: 'stroke', id });
   }
 
-  private spend(colour: Colour, price: number): void {
-    this.tanks[colour] = Math.max(0, this.tanks[colour] - price);
-  }
-
   /** Gives back what was paid, never filling a Tank beyond its maximum. */
   private refund(paid: Paid | undefined): void {
     if (!paid?.colour || paid.price === 0) return;
-    const { colour, price } = paid;
-    this.tanks[colour] = Math.min(this.maximum(colour), this.tanks[colour] + price);
+    this.inkTanks.refund(paid.colour, paid.price);
   }
 
   /** Refunds what a Stroke still there paid: an Object's Outline and Fill, a Line's Pieces. */
@@ -508,7 +496,8 @@ export class Game {
         if (entry.why !== 'undone') this.heardWent(entry.what, entry.why === 'erased');
         return;
       case 'start-over':
-        // Something below the Game started over: nothing it knew of is left.
+        // Something below the Game started over: nothing it knew of is left, as after a clear.
+        this.inkTanks.fill();
         this.strokes.clear();
         this.fills.clear();
         this.undoHistory = [];
@@ -550,23 +539,9 @@ export class Game {
     }
   }
 
-  private fullTanks(): Record<Colour, number> {
-    return Object.fromEntries(COLOURS.map((colour) => [colour, this.maximum(colour)])) as Record<
-      Colour,
-      number
-    >;
-  }
-
-  /** `tanks`, each emptied down to its maximum if it holds more. */
-  private withinMaximums(tanks: Readonly<Record<Colour, number>>): Record<Colour, number> {
-    return Object.fromEntries(
-      COLOURS.map((colour) => [colour, Math.max(0, Math.min(tanks[colour], this.maximum(colour)))]),
-    ) as Record<Colour, number>;
-  }
-
   private takeSnapshot(): Snapshot {
     return {
-      tanks: { ...this.tanks },
+      tanks: this.inkTanks.snapshot(),
       strokes: copyCharges(this.strokes),
       fills: new Map(this.fills),
       history: [...this.undoHistory],
@@ -575,7 +550,7 @@ export class Game {
 
   private restore(snapshot: Snapshot): void {
     // A maximum lowered since the snapshot still holds: edits survive R.
-    this.tanks = this.withinMaximums(snapshot.tanks);
+    this.inkTanks.restore(snapshot.tanks);
     this.strokes = copyCharges(snapshot.strokes);
     this.fills = new Map(snapshot.fills);
     this.undoHistory = [...snapshot.history];

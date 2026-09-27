@@ -1,7 +1,6 @@
 import type Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
 import type { CostEstimate, Game } from '../game/game';
-import { inLineLength } from '../game/ink-table';
 import { ERASER_RADIUS, type Tool } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
@@ -24,7 +23,39 @@ const TOOLS: readonly Tool[] = [...COLOURS, 'eraser'];
 const label = (tool: Tool, k: number) => (tool === 'eraser' ? 'E eraser' : `${k + 1} ${tool}`);
 
 /** What the gauges read: each Colour's Tank, and whether Ink costs anything. */
-export type Tanks = Pick<Game, 'inkCosts' | 'tank' | 'maximum'>;
+export type Tanks = Pick<Game, 'inkCosts' | 'tanks'>;
+
+/** What one gauge draws. */
+export interface GaugeView {
+  /** How full it is, 0–1, to the nearest half pixel. */
+  readonly filled: number;
+  /** The pending cost, greyed out at the top of `filled`, to the nearest half pixel. */
+  readonly pending: number;
+  /** Whether the pending cost is more than is left, so all of `filled` is red. */
+  readonly over: boolean;
+  /** The whole units left, under it; ∞ while Ink costs nothing. */
+  readonly amount: string;
+}
+
+/**
+ * What each Colour's gauge draws, in palette order: its Tank's reading
+ * rounded to what the gauge can show, and `cost` on its own Colour's gauge,
+ * clamped to what is left. The gauges are baked again only when this changes.
+ */
+export function gaugeViews(tanks: Tanks, cost: CostEstimate | null): GaugeView[] {
+  const halfPixels = (ink: number, maximum: number) =>
+    maximum > 0 ? Math.round((ink / maximum) * WIDTH * 2) / (WIDTH * 2) : 0;
+  const readings = tanks.tanks;
+  return COLOURS.map((colour) => {
+    if (!tanks.inkCosts) return { filled: 1, pending: 0, over: false, amount: '∞' };
+    const { spendable, maximum, units } = readings[colour];
+    const filled = halfPixels(spendable, maximum);
+    const priced = cost?.colour === colour ? cost : null;
+    const pending = priced ? Math.min(filled, halfPixels(priced.price, maximum)) : 0;
+    const over = priced?.over ?? false;
+    return { filled, pending, over, amount: String(units) };
+  });
+}
 
 /**
  * The palette: one swatch per Colour in the top-left corner, each showing a
@@ -140,18 +171,7 @@ export class PaletteBar {
 
   /** Each gauge filled as its Tank is, to the nearest half pixel, and the whole units left. */
   private showGauges(tanks: Tanks, cost: CostEstimate | null): void {
-    const halfPixels = (ink: number, maximum: number) =>
-      maximum > 0 ? Math.round((ink / maximum) * WIDTH * 2) / (WIDTH * 2) : 0;
-    const gauges = COLOURS.map((colour) => {
-      if (!tanks.inkCosts) return { filled: 1, pending: 0, over: false, amount: '∞' };
-      const left = tanks.tank(colour);
-      const maximum = tanks.maximum(colour);
-      const filled = halfPixels(left, maximum);
-      const priced = cost?.colour === colour ? cost : null;
-      const pending = priced ? Math.min(filled, halfPixels(priced.price, maximum)) : 0;
-      const over = priced?.over ?? false;
-      return { filled, pending, over, amount: String(Math.floor(inLineLength(left) + 1e-6)) };
-    });
+    const gauges = gaugeViews(tanks, cost);
     const key = gauges
       .map(({ filled, pending, over, amount }) => `${filled}:${pending}:${over}:${amount}`)
       .join(' ');
