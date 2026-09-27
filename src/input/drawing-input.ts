@@ -1,6 +1,6 @@
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import type { GameFillOutcome, GameStrokeOutcome } from '../game/game';
+import type { CostEstimate, GameFillOutcome, GameStrokeOutcome } from '../game/game';
 import { isClosingStroke } from '../stroke/close-detection';
 import { isFillClick } from '../stroke/fill-click';
 import type { RejectionReason, StrokeResult } from '../stroke/stroke-pipeline';
@@ -31,6 +31,10 @@ export interface DrawingCommands {
   /** What a Stroke would become if it were submitted now, without adding it. */
   previewStroke(samples: readonly Vec2[]): StrokeResult;
   fillAt(point: Vec2, colour: Colour): GameFillOutcome;
+  /** What a Stroke with these raw samples would cost, or null if nothing is shown. */
+  estimateStroke(samples: readonly Vec2[], colour: Colour): CostEstimate | null;
+  /** What a Fill clicked at `point` would cost, or null if there is nothing to fill. */
+  estimateFill(point: Vec2, colour: Colour): CostEstimate | null;
   releaseAt(point: Vec2): void;
   eraseAlong(path: readonly Vec2[], radius: number): void;
   undo(): void;
@@ -57,6 +61,12 @@ export type DrawingPreview =
       readonly samples: readonly Vec2[] | null;
       readonly refused: boolean;
       readonly pointer: Vec2 | null;
+      /**
+       * The pending cost to grey out on its Colour's gauge: the Stroke being
+       * drawn, or between Strokes, the Fill of the hollow Object under the
+       * pointer. Null with nothing to price or Ink costs off.
+       */
+      readonly cost: CostEstimate | null;
     };
 
 /**
@@ -77,6 +87,10 @@ export class DrawingInput {
   private refused = false;
   /** Sample count the refusal was last worked out at. */
   private checkedSamples = 0;
+  /** The pending cost of the Stroke being drawn, and the sample count and Colour it was worked out at. */
+  private strokeCost: CostEstimate | null = null;
+  private pricedSamples = 0;
+  private pricedColour: Colour | null = null;
 
   constructor(private readonly commands: DrawingCommands) {}
 
@@ -178,7 +192,27 @@ export class DrawingInput {
     if (this.picked === 'eraser') return { kind: 'brush', pointer };
     this.updateRefusal();
     const { stroke: samples, refused } = this;
-    return { kind: 'stroke', colour: this.picked, samples, refused, pointer };
+    const cost = this.pendingCost(this.picked);
+    return { kind: 'stroke', colour: this.picked, samples, refused, pointer, cost };
+  }
+
+  /**
+   * The Stroke's estimate, asked again only when it has new samples or a new
+   * Colour; between Strokes, the Fill's under the pointer.
+   */
+  private pendingCost(colour: Colour): CostEstimate | null {
+    const stroke = this.stroke;
+    if (!stroke) {
+      this.pricedSamples = 0;
+      this.pricedColour = null;
+      return this.pointer ? this.commands.estimateFill(this.pointer, colour) : null;
+    }
+    if (stroke.length !== this.pricedSamples || colour !== this.pricedColour) {
+      this.pricedSamples = stroke.length;
+      this.pricedColour = colour;
+      this.strokeCost = this.commands.estimateStroke(stroke, colour);
+    }
+    return this.strokeCost;
   }
 
   private erase(): void {

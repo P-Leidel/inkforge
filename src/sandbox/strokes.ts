@@ -531,6 +531,15 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     return null;
   }
 
+  /**
+   * The Ink a Fill clicked at `point` would take: the topmost Object under
+   * it, if that Object is hollow. Null over nothing or over a filled Object.
+   */
+  fillInkAt(point: Vec2): number | null {
+    const object = this.objectAt(point);
+    return object && !object.fill ? fillInk(object.outline) : null;
+  }
+
   /** Releases the Frozen Object under `point`, if any. Returns whether one was Released. */
   releaseAt(point: Vec2): boolean {
     const object = this.objectAt(point, (s) => this.physics.isFrozen(s.body));
