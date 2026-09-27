@@ -11,7 +11,6 @@ import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, ObjectBodyDef, PhysicsWorld } from '../physics';
 import { pieceCentre } from '../stroke/pieces';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
-import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import type { Arena } from './arena';
 import type { ArenaBodies } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
@@ -355,16 +354,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       pieces: result.pieces.map((piece) => lineInk(piece, thickness)),
       onLines: result.pieces.map((piece) => lineInk(this.query.lyingOnLines(piece), thickness)),
     };
-  }
-
-  /**
-   * The Ink of the part of a Line along raw pointer `samples`, in the Line
-   * thickness, that would lie on a standing Line: without the Stroke
-   * pipeline, to estimate what a Stroke costs while it is drawn.
-   */
-  inkOnLinesAlong(samples: readonly Vec2[]): number {
-    const path = samples.slice(1).map((b, k) => ({ a: samples[k]!, b }));
-    return lineInk(this.query.lyingOnLines(path), LINE_THICKNESS);
   }
 
   /**

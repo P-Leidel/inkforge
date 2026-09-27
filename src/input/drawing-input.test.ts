@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
 import type { Game } from '../game/game';
 import { inLineLength } from '../game/ink-table';
@@ -11,23 +11,25 @@ import { DrawingInput, ERASER_RADIUS, type DrawingCommands, type Flash } from '.
 const createGame = games();
 
 /**
- * Drawing input over a real Game, with a count of the refusal previews it
- * asked for and every path it erased along.
+ * Drawing input over a real Game, with a count of the looks it took, of the
+ * Stroke pipeline's runs behind them, and every path it erased along.
  */
 function drawingOver(game: Game) {
-  const asked = { previews: 0, estimates: 0, erased: [] as Vec2[][] };
+  const asked = { strokeLooks: 0, fillLooks: 0, erased: [] as Vec2[][] };
+  const pipeline = vi.spyOn(game.world, 'previewStroke');
   const commands: DrawingCommands = {
     submitStroke: (samples, colour) => game.submitStroke(samples, colour),
-    previewStroke: (samples) => {
-      asked.previews++;
-      return game.previewStroke(samples);
-    },
     fillAt: (point, colour) => game.fillAt(point, colour),
-    estimateStroke: (samples, colour) => {
-      asked.estimates++;
-      return game.estimateStroke(samples, colour);
+    lookAtStroke: (samples) => {
+      asked.strokeLooks++;
+      return game.lookAtStroke(samples);
     },
-    estimateFill: (point, colour) => game.estimateFill(point, colour),
+    lookAtFill: (point) => {
+      asked.fillLooks++;
+      return game.lookAtFill(point);
+    },
+    prospect: (look, colour) => game.prospect(look, colour),
+    world: game.world,
     releaseAt: (point) => game.releaseAt(point),
     eraseAlong: (path, radius) => {
       asked.erased.push([...path]);
@@ -35,7 +37,12 @@ function drawingOver(game: Game) {
     },
     undo: () => game.undo(),
   };
-  return { input: new DrawingInput(commands), asked };
+  return {
+    input: new DrawingInput(commands),
+    asked,
+    /** How many times the Stroke pipeline ran for a preview. */
+    pipelineRuns: () => pipeline.mock.calls.length,
+  };
 }
 
 /** Presses the left button at the first sample, moves through the rest and lets go. */
@@ -234,25 +241,31 @@ describe('Drawing input', () => {
     it('shows a closing Stroke over an Object as refused, worked out again only on new samples', () => {
       const game = createGame(false);
       const world = game.world;
-      const { input, asked } = drawingOver(game);
+      const { input, pipelineRuns } = drawingOver(game);
       box(world, input);
       const over = dragBox(390, 420, 60, 60);
       const half = over.length / 2;
+      const before = pipelineRuns();
 
       input.press(over[0]!, 'left');
       for (const sample of over.slice(1, half)) input.move(sample);
-      // Still open: nothing to refuse, and nothing asked.
-      expect(input.preview()).toMatchObject({ kind: 'stroke', refused: false });
-      expect(asked.previews).toBe(0);
+      // Still open: nothing to refuse, and the Stroke pipeline doesn't run.
+      expect(input.preview()).toMatchObject({ kind: 'stroke', closes: false, refused: false });
+      expect(pipelineRuns()).toBe(before);
 
       for (const sample of over.slice(half)) input.move(sample);
-      expect(input.preview()).toMatchObject({ kind: 'stroke', samples: over, refused: true });
+      expect(input.preview()).toMatchObject({
+        kind: 'stroke',
+        samples: over,
+        closes: true,
+        refused: true,
+      });
       expect(input.preview()).toMatchObject({ refused: true });
-      expect(asked.previews).toBe(1);
+      expect(pipelineRuns()).toBe(before + 1);
 
       input.move(over[1]!);
       input.preview();
-      expect(asked.previews).toBe(2);
+      expect(pipelineRuns()).toBe(before + 2);
     });
 
     it('shows a closing Stroke in the open as not refused', () => {
@@ -262,7 +275,12 @@ describe('Drawing input', () => {
       input.press({ x: 600, y: 300 }, 'left');
       for (const sample of dragBox(600, 300, 60, 60).slice(1)) input.move(sample);
 
-      expect(input.preview()).toMatchObject({ kind: 'stroke', colour: 'grey', refused: false });
+      expect(input.preview()).toMatchObject({
+        kind: 'stroke',
+        colour: 'grey',
+        closes: true,
+        refused: false,
+      });
     });
 
     it('shows a dab of the Colour at the pointer between Strokes, and nothing off the canvas', () => {
@@ -275,6 +293,7 @@ describe('Drawing input', () => {
         kind: 'stroke',
         colour: 'black',
         samples: null,
+        closes: false,
         refused: false,
         pointer: { x: 300, y: 200 },
         cost: null,
@@ -338,17 +357,21 @@ describe('Drawing input', () => {
       expect(inLineLength(costOf(input)!.price)).toBeCloseTo(400, -1);
     });
 
-    it('is worked out again only on new samples', () => {
+    it('looks at the Stroke again only on new samples, and prices it in a new Colour at once', () => {
       const game = createGame(true);
       const { input, asked } = drawingOver(game);
       input.press(line[0]!, 'left');
       input.move(line[1]!);
       input.preview();
       input.preview();
-      expect(asked.estimates).toBe(1);
+      expect(asked.strokeLooks).toBe(1);
       input.move(line[2]!);
       input.preview();
-      expect(asked.estimates).toBe(2);
+      expect(asked.strokeLooks).toBe(2);
+
+      input.pick('red');
+      expect(costOf(input)!.colour).toBe('red');
+      expect(asked.strokeLooks).toBe(2);
     });
 
     it("shows a hollow Object's Fill cost on hover, and none over a filled one or nothing", () => {
@@ -367,6 +390,70 @@ describe('Drawing input', () => {
       expect(costOf(input)).toBeNull();
       input.move({ x: 900, y: 200 });
       expect(costOf(input)).toBeNull();
+    });
+
+    it('looks for the Fill under a still pointer again only when the pointer or the world changes', () => {
+      const game = createGame(true);
+      const { input, asked } = drawingOver(game);
+      box(game.world, input);
+
+      input.move(inBox);
+      const grey = costOf(input)!;
+      input.preview();
+      expect(asked.fillLooks).toBe(1);
+
+      // A new Colour, or a new price in F2, shows at once, without looking again.
+      input.pick('black');
+      expect(costOf(input)).toMatchObject({ colour: 'black', price: grey.price });
+      game.editInk((table) => (table.fillPrice *= 2));
+      expect(costOf(input)!.price).toBeCloseTo(2 * grey.price, 6);
+      expect(asked.fillLooks).toBe(1);
+
+      input.move({ x: 401, y: 430 });
+      input.preview();
+      expect(asked.fillLooks).toBe(2);
+    });
+
+    it('updates the Fill cost under a still pointer when an undo refunds Ink or takes the Object', () => {
+      const game = createGame(true);
+      const { input } = drawingOver(game);
+      box(game.world, input);
+      game.editInk((table) => (table.tanks.black = 200));
+      input.pick('black');
+      // 150 of the 200 in the black Tank: too little left for the box's Fill.
+      drag(
+        input,
+        dragAlong([
+          { x: 200, y: 700 },
+          { x: 350, y: 700 },
+        ]),
+      );
+      input.move(inBox);
+      expect(costOf(input)).toMatchObject({ colour: 'black', over: true });
+
+      input.undo();
+      expect(costOf(input)).toMatchObject({ colour: 'black', over: false });
+
+      input.undo();
+      expect(costOf(input)).toBeNull();
+    });
+
+    it('follows a moving Object under a still pointer as the world steps', () => {
+      const game = createGame(true);
+      const { input, asked } = drawingOver(game);
+      box(game.world, input);
+      game.togglePause();
+      input.press(inBox, 'right');
+      input.release();
+      // Below the box: it falls into the pointer.
+      input.move({ x: 400, y: 540 });
+      expect(costOf(input)).toBeNull();
+
+      let steps = 0;
+      while (costOf(input) === null && steps++ < 60) game.step();
+
+      expect(costOf(input)).toMatchObject({ colour: 'grey' });
+      expect(asked.fillLooks).toBeGreaterThan(steps);
     });
 
     it('is red when it is more than the Tank holds', () => {

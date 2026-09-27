@@ -1,9 +1,14 @@
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import type { CostEstimate, GameFillOutcome, GameStrokeOutcome } from '../game/game';
-import { isClosingStroke } from '../stroke/close-detection';
+import type {
+  CostEstimate,
+  GameFillOutcome,
+  GameStrokeOutcome,
+  Look,
+  Prospect,
+} from '../game/game';
 import { isFillClick } from '../stroke/fill-click';
-import type { RejectionReason, StrokeResult } from '../stroke/stroke-pipeline';
+import type { RejectionReason } from '../stroke/stroke-pipeline';
 
 /** Radius (px) of the Eraser's brush: what it erases, shown on its swatch and at the pointer. */
 export const ERASER_RADIUS = 12;
@@ -22,19 +27,21 @@ export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
 export const notEnough = (colour: Colour) => `Not enough ${colour}`;
 
 /**
- * The commands drawing input issues: the Game implements them. Drawing
- * input never works out what a Stroke becomes, what it costs or whether it
- * is refused: it asks.
+ * The commands drawing input issues, and the questions it asks: the Game
+ * implements them. Drawing input never works out what a Stroke becomes,
+ * whether it closes, what it costs or whether it is refused: it asks.
  */
 export interface DrawingCommands {
   submitStroke(samples: readonly Vec2[], colour: Colour): GameStrokeOutcome;
-  /** What a Stroke would become if it were submitted now, without adding it. */
-  previewStroke(samples: readonly Vec2[]): StrokeResult;
   fillAt(point: Vec2, colour: Colour): GameFillOutcome;
-  /** What a Stroke with these raw samples would cost, or null if nothing is shown. */
-  estimateStroke(samples: readonly Vec2[], colour: Colour): CostEstimate | null;
-  /** What a Fill clicked at `point` would cost, or null if there is nothing to fill. */
-  estimateFill(point: Vec2, colour: Colour): CostEstimate | null;
+  /** Looks at what a Stroke with these raw samples would be now; null if it would be nothing yet. */
+  lookAtStroke(samples: readonly Vec2[]): Look | null;
+  /** Looks at the Fill a click at `point` would make now; null with nothing to fill there. */
+  lookAtFill(point: Vec2): Look | null;
+  /** What a look would do in `colour`, priced now. */
+  prospect(look: Look, colour: Colour): Prospect;
+  /** The Sandbox world, as far as drawing input reads it: whether it changed. */
+  readonly world: { readonly changes: number };
   releaseAt(point: Vec2): void;
   eraseAlong(path: readonly Vec2[], radius: number): void;
   undo(): void;
@@ -59,6 +66,9 @@ export type DrawingPreview =
       readonly kind: 'stroke';
       readonly colour: Colour;
       readonly samples: readonly Vec2[] | null;
+      /** Whether the Stroke being drawn would close into an Object if let go now. */
+      readonly closes: boolean;
+      /** Whether it would be refused as an Object overlapping the Terrain or an Object. */
       readonly refused: boolean;
       readonly pointer: Vec2 | null;
       /**
@@ -72,8 +82,9 @@ export type DrawingPreview =
 /**
  * Drawing input: turns a press, a drag and a release into commands, and
  * says what the preview and the flash show. It remembers the picked tool, a
- * Colour or the Eraser, the Stroke being drawn and the Eraser's path. The
- * scene forwards pointer and tool events to it and draws what it is told.
+ * Colour or the Eraser, the Stroke being drawn, the Eraser's path and its
+ * last look at what is pending. The scene forwards pointer and tool events
+ * to it and draws what it is told.
  */
 export class DrawingInput {
   private picked: Tool = 'grey';
@@ -83,14 +94,10 @@ export class DrawingInput {
   private stroke: Vec2[] | null = null;
   /** The Eraser's path since it last erased, while its button is held, or null. */
   private erasing: Vec2[] | null = null;
-  /** Whether the Stroke being drawn would be refused as an overlapping Object. */
-  private refused = false;
-  /** Sample count the refusal was last worked out at. */
-  private checkedSamples = 0;
-  /** The pending cost of the Stroke being drawn, and the sample count and Colour it was worked out at. */
-  private strokeCost: CostEstimate | null = null;
-  private pricedSamples = 0;
-  private pricedColour: Colour | null = null;
+  /** The last look at the Stroke being drawn or the Fill under the pointer, or null. */
+  private look: Look | null = null;
+  /** What `look` was taken at: see `pendingLook`. */
+  private lookedAt: readonly unknown[] = [];
 
   constructor(private readonly commands: DrawingCommands) {}
 
@@ -184,35 +191,60 @@ export class DrawingInput {
   }
 
   /**
-   * What the preview shows now. Whether a closing Stroke would be refused is
-   * worked out again only when it has new samples.
+   * What the preview shows now: the Stroke being drawn, whether it closes
+   * and is refused, and its pending cost; between Strokes, the pending cost
+   * of the Fill under the pointer. The looks behind them are taken again
+   * only as `pendingLook` says, and priced afresh each time, so an undo or an
+   * F2 edit shows at once.
    */
   preview(): DrawingPreview {
     const pointer = this.pointer;
     if (this.picked === 'eraser') return { kind: 'brush', pointer };
-    this.updateRefusal();
-    const { stroke: samples, refused } = this;
-    const cost = this.pendingCost(this.picked);
-    return { kind: 'stroke', colour: this.picked, samples, refused, pointer, cost };
+    const colour = this.picked;
+    const samples = this.stroke;
+    const look = this.pendingLook();
+    const prospect = look && this.commands.prospect(look, colour);
+    return {
+      kind: 'stroke',
+      colour,
+      samples,
+      closes: prospect?.kind === 'object',
+      refused: prospect?.refusal === 'overlaps',
+      pointer,
+      cost: prospect?.cost ?? null,
+    };
   }
 
   /**
-   * The Stroke's estimate, asked again only when it has new samples or a new
-   * Colour; between Strokes, the Fill's under the pointer.
+   * The look at what is pending: the Stroke being drawn, or between Strokes,
+   * the Fill under the pointer. The one throttle rule: a look is taken again
+   * only when what it was taken at changed. For a Stroke, that is its
+   * samples; for a Fill, the pointer or the Sandbox world, since Objects
+   * move while physics runs. Neither look depends on the Colour, which only
+   * the price does.
    */
-  private pendingCost(colour: Colour): CostEstimate | null {
-    const stroke = this.stroke;
-    if (!stroke) {
-      this.pricedSamples = 0;
-      this.pricedColour = null;
-      return this.pointer ? this.commands.estimateFill(this.pointer, colour) : null;
+  private pendingLook(): Look | null {
+    const { stroke, pointer } = this;
+    if (stroke) {
+      return this.lookAgain(['stroke', stroke, stroke.length], () =>
+        this.commands.lookAtStroke(stroke),
+      );
     }
-    if (stroke.length !== this.pricedSamples || colour !== this.pricedColour) {
-      this.pricedSamples = stroke.length;
-      this.pricedColour = colour;
-      this.strokeCost = this.commands.estimateStroke(stroke, colour);
+    if (!pointer) return this.lookAgain(['nothing'], () => null);
+    const { x, y } = pointer;
+    return this.lookAgain(['fill', x, y, this.commands.world.changes], () =>
+      this.commands.lookAtFill(pointer),
+    );
+  }
+
+  /** The last look, or a new one if it was taken at anything other than `at`. */
+  private lookAgain(at: readonly unknown[], look: () => Look | null): Look | null {
+    const same = at.length === this.lookedAt.length && at.every((v, k) => v === this.lookedAt[k]);
+    if (!same) {
+      this.lookedAt = at;
+      this.look = look();
     }
-    return this.strokeCost;
+    return this.look;
   }
 
   private erase(): void {
@@ -220,18 +252,5 @@ export class DrawingInput {
     if (!path) return;
     this.commands.eraseAlong(path, ERASER_RADIUS);
     this.erasing = [path[path.length - 1]!];
-  }
-
-  private updateRefusal(): void {
-    const stroke = this.stroke;
-    if (!stroke || !isClosingStroke(stroke)) {
-      this.refused = false;
-      this.checkedSamples = 0;
-      return;
-    }
-    if (stroke.length === this.checkedSamples) return;
-    this.checkedSamples = stroke.length;
-    const preview = this.commands.previewStroke(stroke);
-    this.refused = preview.kind === 'rejected' && preview.reason === 'overlaps';
   }
 }

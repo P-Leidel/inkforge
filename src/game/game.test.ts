@@ -191,9 +191,15 @@ describe('Not enough Ink, with Ink costs on', () => {
   });
 });
 
-describe('Cost estimates, with Ink costs on', () => {
+describe('What a Stroke or a Fill would do, with Ink costs on', () => {
   /** How far `estimate` is from `charged`, as a fraction of it. */
   const off = (estimate: number, charged: number) => Math.abs(estimate - charged) / charged;
+  /** What a Stroke with these raw samples would do in `colour`. */
+  const stroke = (game: Game, samples: readonly Vec2[], colour: Colour) =>
+    game.prospect(game.lookAtStroke(samples)!, colour);
+  /** What a Stroke with these raw samples would cost in `colour`. */
+  const strokeCost = (game: Game, samples: readonly Vec2[], colour: Colour) =>
+    stroke(game, samples, colour).cost!;
 
   it('estimates a straight Line within 5% of what it is charged', () => {
     const game = createGame(true);
@@ -201,7 +207,7 @@ describe('Cost estimates, with Ink costs on', () => {
       { x: 200, y: 300 },
       { x: 700, y: 420 },
     ]);
-    const estimate = game.estimateStroke(samples, 'blue')!;
+    const estimate = strokeCost(game, samples, 'blue');
     const before = game.tanks.blue.spendable;
 
     game.submitStroke(samples, 'blue');
@@ -212,7 +218,7 @@ describe('Cost estimates, with Ink costs on', () => {
   it('estimates a box within 5% of what it is charged', () => {
     const game = createGame(true);
     const samples = dragBox(400, 300, 120, 80);
-    const estimate = game.estimateStroke(samples, 'green')!;
+    const estimate = strokeCost(game, samples, 'green');
     const before = game.tanks.green.spendable;
 
     expect(game.submitStroke(samples, 'green').kind).toBe('object');
@@ -224,14 +230,15 @@ describe('Cost estimates, with Ink costs on', () => {
     const game = createGame(true);
     game.submitStroke(dragBox(400, 300, 100, 100), 'grey');
     const point = { x: 450, y: 350 };
-    const estimate = game.estimateFill(point, 'black')!;
+    const prospect = game.prospect(game.lookAtFill(point)!, 'black');
     const before = game.tanks.black.spendable;
 
     game.fillAt(point, 'black');
 
-    expect(estimate.price).toBeCloseTo(before - game.tanks.black.spendable, 6);
-    expect(game.estimateFill(point, 'black')).toBeNull();
-    expect(game.estimateFill({ x: 900, y: 200 }, 'black')).toBeNull();
+    expect(prospect).toMatchObject({ kind: 'fill', refusal: null });
+    expect(prospect.cost!.price).toBeCloseTo(before - game.tanks.black.spendable, 6);
+    expect(game.lookAtFill(point)).toBeNull();
+    expect(game.lookAtFill({ x: 900, y: 200 })).toBeNull();
   });
 
   it('estimates a Line drawn along another, or half along it, within 5% of what it is charged', () => {
@@ -245,7 +252,7 @@ describe('Cost estimates, with Ink costs on', () => {
       { x: 200, y: 300 },
       { x: 1000, y: 300 },
     ]);
-    const estimates = [game.estimateStroke(exactly, 'blue')!, game.estimateStroke(half, 'green')!];
+    const estimates = [strokeCost(game, exactly, 'blue'), strokeCost(game, half, 'green')];
 
     game.submitStroke(exactly, 'blue');
     game.submitStroke(half, 'green');
@@ -258,19 +265,58 @@ describe('Cost estimates, with Ink costs on', () => {
     ).toBeLessThan(0.05);
   });
 
-  it('says a Stroke is over when it costs more than its Tank holds', () => {
+  it('says a Stroke is over, and refused for it, when it costs more than its Tank holds', () => {
     const game = createGame(true);
     const long = dragAlong([
       { x: 200, y: 300 },
       { x: 1400, y: 300 },
     ]);
-    expect(game.estimateStroke(long, 'red')!.over).toBe(true);
-    expect(game.estimateStroke(long, 'grey')!.over).toBe(false);
+    expect(stroke(game, long, 'red')).toMatchObject({
+      kind: 'line',
+      refusal: 'not-enough',
+      cost: { colour: 'red', over: true },
+    });
+    expect(stroke(game, long, 'grey')).toMatchObject({ refusal: null, cost: { over: false } });
   });
 
-  it('estimates nothing with Ink costs off', () => {
+  it('says a closing Stroke makes an Object, refused first for overlapping one', () => {
+    const game = createGame(true);
+    drawBox(game, 400, 300, 100);
+    const over = dragBox(420, 320, 100, 100);
+    const clear = dragBox(700, 300, 100, 100);
+
+    expect(stroke(game, clear, 'grey')).toMatchObject({ kind: 'object', refusal: null });
+    expect(stroke(game, over, 'grey')).toMatchObject({ kind: 'object', refusal: 'overlaps' });
+    game.editInk((table) => (table.tanks.grey = 10));
+    expect(stroke(game, over, 'grey')).toMatchObject({
+      refusal: 'overlaps',
+      cost: { over: true },
+    });
+    expect(stroke(game, clear, 'grey').refusal).toBe('not-enough');
+  });
+
+  it('prices a look as the Tanks and the Ink table are now, not as they were when it was taken', () => {
+    const game = createGame(true);
+    const look = game.lookAtStroke(dragBox(400, 300, 100, 100))!;
+    const before = game.prospect(look, 'grey').cost!.price;
+
+    game.editInk((table) => (table.linePrice = 2));
+
+    expect(game.prospect(look, 'grey').cost!.price).toBeCloseTo(2 * before, 6);
+  });
+
+  it('prices nothing with Ink costs off, and still says what it would make', () => {
     const game = createGame(false);
-    expect(game.estimateStroke(dragBox(400, 300, 100, 100), 'grey')).toBeNull();
+    expect(stroke(game, dragBox(400, 300, 100, 100), 'grey')).toEqual({
+      kind: 'object',
+      refusal: null,
+      cost: null,
+    });
+  });
+
+  it('looks at nothing with too few samples to be anything', () => {
+    const game = createGame(true);
+    expect(game.lookAtStroke([{ x: 400, y: 300 }])).toBeNull();
   });
 });
 

@@ -87,6 +87,34 @@ describe('Sandbox world: pause and stepping', () => {
   });
 });
 
+describe('Sandbox world: changes', () => {
+  it('counts every step and everything that happens, and never a question', () => {
+    const world = createWorld();
+    const seen = [world.changes];
+    const changed = () => {
+      seen.push(world.changes);
+      return seen.at(-1)! > seen.at(-2)!;
+    };
+    const box = dragBox(400, 300, 60, 60);
+
+    world.previewStroke(box);
+    world.measureSamples(box);
+    world.fillInkAt({ x: 430, y: 330 });
+    world.step(); // paused: no step is taken
+    expect(changed()).toBe(false);
+
+    world.submitStroke(box, 'grey');
+    expect(changed()).toBe(true);
+    world.fillAt({ x: 430, y: 330 }, 'black');
+    expect(changed()).toBe(true);
+    world.togglePause();
+    world.step();
+    expect(changed()).toBe(true);
+    world.reset();
+    expect(changed()).toBe(true);
+  });
+});
+
 describe('Sandbox world: randomness', () => {
   it('gives the same random sequence for the same seed', () => {
     const a = createWorld(42);

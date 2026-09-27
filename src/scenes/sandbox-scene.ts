@@ -184,7 +184,10 @@ export class SandboxScene extends Phaser.Scene {
     this.worldView.draw();
     const preview = this.drawing.preview();
     if (preview.kind === 'brush') this.preview.drawBrush(preview.pointer);
-    else this.preview.draw(preview.samples, preview.colour, preview.refused, preview.pointer);
+    else {
+      const { samples, colour, closes, refused, pointer } = preview;
+      this.preview.draw(samples, colour, closes, refused, pointer);
+    }
     const cost = preview.kind === 'stroke' ? preview.cost : null;
     this.palette.show(this.drawing.tool, this.gameLayer, cost);
     this.overlay.draw();
