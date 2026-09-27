@@ -1,5 +1,6 @@
 import type { Game } from '../game/game';
-import { COLOURS } from '../materials/colour';
+import { DEFAULT_INK_TABLE } from '../game/ink-table';
+import { COLOURS, type Colour } from '../materials/colour';
 import {
   DEFAULT_MATERIAL_TABLE,
   editMaterials,
@@ -7,14 +8,29 @@ import {
 } from '../materials/material-table';
 import { numberPaths, readPath, writePath } from '../materials/table-paths';
 import { element } from './dom';
+import { tablesAsJson } from './tuning-copy';
+
+/** A table the panel edits: the table, its defaults in the code, and how an edit reaches it. */
+interface Tuned {
+  readonly table: object;
+  readonly defaults: object;
+  edit(write: (table: object) => void): void;
+}
+
+/** One row of a per-Colour grid: its label, and the path of its value for each Colour. */
+interface ColourRow {
+  readonly label: string;
+  path(colour: Colour): string[];
+}
 
 /**
- * The F2 tuning panel: the **Ink costs** switch, every number of the
- * material table, editable while the sandbox runs, and "Copy as JSON" to
- * paste the table back into src/materials/material-table.ts. It lists
- * whatever the table holds, so values added later appear without changes
- * here. Edits go straight into the table the Sandbox world reads, so they
- * survive R and Clear.
+ * The F2 tuning panel. Its Ink section holds the **Ink costs** switch and
+ * the Game's Ink table: the prices and the Tank maximums. Below it is every
+ * number of the material table. All are editable while the sandbox runs,
+ * and "Copy as JSON" copies both tables to paste back over their defaults in
+ * the code. It lists whatever the tables hold, so values added later appear
+ * without changes here. Edits go straight into the tables the Game and the
+ * Sandbox world read, so they survive R and Clear.
  *
  * A plain HTML overlay (styles in index.html). Keys typed into it don't reach
  * the game; clicking the game gives the keys back.
@@ -22,7 +38,9 @@ import { element } from './dom';
 export class TuningPanel {
   private readonly root: HTMLElement;
   private readonly status: HTMLElement;
-  private readonly inputs: { path: string[]; input: HTMLInputElement }[] = [];
+  private readonly materials: Tuned;
+  private readonly ink: Tuned;
+  private readonly inputs: { tuned: Tuned; path: string[]; input: HTMLInputElement }[] = [];
   /** Clicking the game gives the keys back to it. */
   private readonly giveKeysBack = (event: PointerEvent) => {
     if (!this.root.contains(event.target as Node)) {
@@ -32,21 +50,50 @@ export class TuningPanel {
 
   constructor(
     private readonly table: MaterialTable,
-    /** Where the Ink costs switch goes. */
-    private readonly game: Pick<Game, 'inkCosts'>,
+    /** Where the Ink costs switch and the Ink table's edits go. */
+    private readonly game: Pick<Game, 'inkCosts' | 'ink' | 'editInk'>,
   ) {
+    this.materials = {
+      table,
+      defaults: DEFAULT_MATERIAL_TABLE,
+      edit: (write) => editMaterials(table, write),
+    };
+    // Through the Game, which empties a Tank down to a lowered maximum at once.
+    this.ink = {
+      table: game.ink,
+      defaults: DEFAULT_INK_TABLE,
+      edit: (write) => game.editInk(write),
+    };
+
     this.root = element('div', 'tuning-panel');
     this.root.hidden = true;
 
     const header = element('div', 'tuning-header');
-    header.append(element('span', 'tuning-title', 'Material table (F2)'));
+    header.append(element('span', 'tuning-title', 'Tuning (F2)'));
     const copy = element('button', '', 'Copy as JSON');
     copy.addEventListener('click', () => void this.copy());
     const defaults = element('button', '', 'Defaults');
     defaults.addEventListener('click', () => this.restoreDefaults());
     this.status = element('span', 'tuning-status');
     header.append(copy, defaults, this.status);
-    this.root.append(header, this.inkCosts(), this.colourGrid(), this.sharedValues());
+    this.root.append(
+      header,
+      element('div', 'tuning-section', 'Ink'),
+      this.inkCosts(),
+      this.colourGrid(this.ink, [
+        { label: 'tank maximum (Line length)', path: (colour) => ['tanks', colour] },
+      ]),
+      this.sharedValues(this.ink, (path) => path[0] !== 'tanks'),
+      element('div', 'tuning-section', 'Material table'),
+      this.colourGrid(
+        this.materials,
+        numberPaths(table.colours[COLOURS[0]]).map((row) => ({
+          label: row.join(' '),
+          path: (colour) => ['colours', colour, ...row],
+        })),
+      ),
+      this.sharedValues(this.materials, (path) => path[0] !== 'colours'),
+    );
 
     // Phaser also listens for mouse presses on the window, so a click on the
     // panel would otherwise hit whatever game button lies under it.
@@ -85,19 +132,19 @@ export class TuningPanel {
     return row;
   }
 
-  /** The per-Colour values as a grid: one row per value, one column per Colour. */
-  private colourGrid(): HTMLElement {
+  /** Per-Colour values as a grid: one row per value, one column per Colour. */
+  private colourGrid(tuned: Tuned, rows: readonly ColourRow[]): HTMLElement {
     const grid = element('table', 'tuning-grid');
     const head = element('tr');
     head.append(element('th'));
     for (const colour of COLOURS) head.append(element('th', `tuning-colour ${colour}`, colour));
     grid.append(head);
-    for (const row of numberPaths(this.table.colours[COLOURS[0]])) {
+    for (const row of rows) {
       const tr = element('tr');
-      tr.append(element('th', 'tuning-label', row.join(' ')));
+      tr.append(element('th', 'tuning-label', row.label));
       for (const colour of COLOURS) {
         const cell = element('td');
-        cell.append(this.input(['colours', colour, ...row]));
+        cell.append(this.input(tuned, row.path(colour)));
         tr.append(cell);
       }
       grid.append(tr);
@@ -105,66 +152,68 @@ export class TuningPanel {
     return grid;
   }
 
-  /** The values shared by all Colours. */
-  private sharedValues(): HTMLElement {
+  /** The values of `tuned` that `shown` picks, one per row. */
+  private sharedValues(tuned: Tuned, shown: (path: string[]) => boolean): HTMLElement {
     const list = element('table', 'tuning-grid');
-    for (const path of numberPaths(this.table)) {
-      if (path[0] === 'colours') continue;
+    for (const path of numberPaths(tuned.table)) {
+      if (!shown(path)) continue;
       const tr = element('tr');
       tr.append(element('th', 'tuning-label', path.join(' ')));
       const cell = element('td');
-      cell.append(this.input(path));
+      cell.append(this.input(tuned, path));
       tr.append(cell);
       list.append(tr);
     }
     return list;
   }
 
-  private input(path: string[]): HTMLInputElement {
+  private input(tuned: Tuned, path: string[]): HTMLInputElement {
     const input = element('input');
     input.type = 'number';
     input.step = 'any';
-    input.value = String(readPath(this.table, path));
+    input.value = String(readPath(tuned.table, path));
     input.title = path.join('.');
     input.addEventListener('input', () => {
       const value = Number(input.value);
       const valid = input.value.trim() !== '' && Number.isFinite(value);
       input.classList.toggle('invalid', !valid);
-      if (valid) editMaterials(this.table, (table) => writePath(table, path, value));
-      this.markModified(path, input);
+      if (valid) tuned.edit((table) => writePath(table, path, value));
+      this.markModified(tuned, path, input);
     });
-    this.inputs.push({ path, input });
-    this.markModified(path, input);
+    this.inputs.push({ tuned, path, input });
+    this.markModified(tuned, path, input);
     return input;
   }
 
   /** Highlights a value that differs from the code's default. */
-  private markModified(path: string[], input: HTMLInputElement): void {
-    const changed = readPath(this.table, path) !== readPath(DEFAULT_MATERIAL_TABLE, path);
+  private markModified(tuned: Tuned, path: string[], input: HTMLInputElement): void {
+    const changed = readPath(tuned.table, path) !== readPath(tuned.defaults, path);
     input.classList.toggle('modified', changed);
   }
 
   private restoreDefaults(): void {
-    editMaterials(this.table, (table) => {
-      for (const { path } of this.inputs)
-        writePath(table, path, readPath(DEFAULT_MATERIAL_TABLE, path));
-    });
-    for (const { path, input } of this.inputs) {
-      input.value = String(readPath(this.table, path));
+    for (const tuned of [this.materials, this.ink]) {
+      const paths = this.inputs.filter((entry) => entry.tuned === tuned).map(({ path }) => path);
+      tuned.edit((table) => {
+        for (const path of paths) writePath(table, path, readPath(tuned.defaults, path));
+      });
+    }
+    for (const { tuned, path, input } of this.inputs) {
+      input.value = String(readPath(tuned.table, path));
       input.classList.remove('invalid');
-      this.markModified(path, input);
+      this.markModified(tuned, path, input);
     }
     this.say('Defaults restored');
   }
 
   private async copy(): Promise<void> {
-    const json = JSON.stringify(this.table, null, 2);
+    const json = tablesAsJson({ materials: this.table, ink: this.game.ink });
     try {
       await navigator.clipboard.writeText(json);
       this.say('Copied');
     } catch {
       // No clipboard access: show the JSON to copy by hand.
-      window.prompt('Copy the material table:', json);
+      window.prompt('Copy the material and Ink tables:', json);
     }
   }
 

@@ -13,7 +13,7 @@ import {
   type StrokeOutcome,
 } from '../sandbox/sandbox-world';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
-import { createInkTable, fromLineLength, type InkTable } from './ink-table';
+import { createInkTable, fromLineLength, type InkTable, type ReadonlyInkTable } from './ink-table';
 
 /** What a Stroke the Game was asked for became. */
 export type GameStrokeOutcome =
@@ -79,7 +79,7 @@ export interface GameOptions {
   /** The Sandbox world to run; a new one from `worldOptions` by default. */
   readonly world?: SandboxWorld;
   readonly worldOptions?: SandboxWorldOptions;
-  /** The Ink table to read; defaults to a fresh copy of the defaults. */
+  /** The Ink table to read and edit; defaults to a fresh copy of the defaults. */
   readonly ink?: InkTable;
 }
 
@@ -99,7 +99,7 @@ const EPSILON = 1e-6;
  */
 export class Game {
   readonly world: SandboxWorld;
-  readonly ink: InkTable;
+  private readonly table: InkTable;
   /** Each Tank's Ink now, px². */
   private tanks: Record<Colour, number>;
   private costs: boolean;
@@ -115,7 +115,7 @@ export class Game {
 
   constructor(options: GameOptions) {
     this.world = options.world ?? new SandboxWorld(options.worldOptions);
-    this.ink = options.ink ?? createInkTable();
+    this.table = options.ink ?? createInkTable();
     this.costs = options.inkCosts;
     this.tanks = this.fullTanks();
     this.reader = this.world.happenings.reader();
@@ -130,6 +130,22 @@ export class Game {
     this.costs = on;
   }
 
+  /** The Ink table: the prices and the Tank maximums. Edit it with `editInk`. */
+  get ink(): ReadonlyInkTable {
+    return this.table;
+  }
+
+  /**
+   * Edits the Ink table, as the F2 tuning panel does. A new price applies to
+   * the next Stroke or Fill: what was already charged keeps its price, so
+   * undo refunds what was paid. Lowering a maximum empties the Tank down to
+   * it at once; raising one leaves the Tank as it is.
+   */
+  editInk(edit: (table: InkTable) => void): void {
+    edit(this.table);
+    this.tanks = this.withinMaximums(this.tanks);
+  }
+
   /** The Ink in `colour`'s Tank now, px². */
   tank(colour: Colour): number {
     return this.tanks[colour];
@@ -137,7 +153,7 @@ export class Game {
 
   /** The most `colour`'s Tank holds, px². */
   maximum(colour: Colour): number {
-    return fromLineLength(this.ink.tanks[colour]);
+    return fromLineLength(this.table.tanks[colour]);
   }
 
   /**
@@ -348,11 +364,11 @@ export class Game {
   }
 
   private linePrice(ink: number): number {
-    return this.costs ? this.ink.linePrice * ink : 0;
+    return this.costs ? this.table.linePrice * ink : 0;
   }
 
   private fillPrice(ink: number): number {
-    return this.costs ? this.ink.fillPrice * ink : 0;
+    return this.costs ? this.table.fillPrice * ink : 0;
   }
 
   /** Whether `colour`'s Tank can pay `price`; always, with costs off. */
@@ -473,6 +489,13 @@ export class Game {
     >;
   }
 
+  /** `tanks`, each emptied down to its maximum if it holds more. */
+  private withinMaximums(tanks: Readonly<Record<Colour, number>>): Record<Colour, number> {
+    return Object.fromEntries(
+      COLOURS.map((colour) => [colour, Math.max(0, Math.min(tanks[colour], this.maximum(colour)))]),
+    ) as Record<Colour, number>;
+  }
+
   private takeSnapshot(): Snapshot {
     return {
       tanks: { ...this.tanks },
@@ -483,7 +506,8 @@ export class Game {
   }
 
   private restore(snapshot: Snapshot): void {
-    this.tanks = { ...snapshot.tanks };
+    // A maximum lowered since the snapshot still holds: edits survive R.
+    this.tanks = this.withinMaximums(snapshot.tanks);
     this.strokes = copyCharges(snapshot.strokes);
     this.fills = new Map(snapshot.fills);
     this.undoHistory = [...snapshot.history];
