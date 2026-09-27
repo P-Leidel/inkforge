@@ -151,7 +151,9 @@ export class ArenaQuery {
         case 'circle':
           if (what?.thing !== 'rubble') return false;
           return circleOverlapsPolygon({ centre: this.centre(body), radius: form.radius }, part);
-        default:
+        case 'capsules':
+        case 'capsule':
+          // Lines and Patches aren't solid.
           return false;
       }
     });

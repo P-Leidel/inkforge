@@ -216,6 +216,10 @@ export class Game {
       case 'object':
         this.charge(outcome);
         break;
+      case 'rejected':
+      case 'dropped':
+        // Nothing was made, so nothing is charged.
+        break;
     }
     this.catchUp();
     return outcome;
@@ -243,6 +247,10 @@ export class Game {
         this.undoHistory.push({ kind: 'fill', id: outcome.id });
         break;
       }
+      case 'already-filled':
+      case 'missed':
+        // Nothing was filled, so nothing is charged.
+        break;
     }
     this.catchUp();
     return outcome;
@@ -504,6 +512,11 @@ export class Game {
         this.strokes.clear();
         this.fills.clear();
         this.undoHistory = [];
+        return;
+      case 'released':
+      case 'burst':
+      case 'exploded':
+        // Neither makes nor takes away a Stroke or a Fill.
         return;
     }
   }
