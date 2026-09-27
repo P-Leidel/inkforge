@@ -1,4 +1,4 @@
-# INKFORGE: Game Design Document v0.4
+# INKFORGE: Game Design Document v0.5
 
 English rewrite of the v0.2 concept, updated with the design decisions made since. Terms in **bold** are defined in [`CONTEXT.md`](../CONTEXT.md); the reasoning behind the larger decisions is in [`docs/adr/`](adr/).
 
@@ -171,8 +171,8 @@ Arenas assembled by a seed from handmade modules, not random geometry.
 
 1. **Physics sandbox** ([spec](specs/m1-physics-sandbox.md)). Stroke-to-physics pipeline (pointer input → sampling → smoothing → simplification → geometry validation → collider → body), Lines and Objects, Frozen state. Includes the engine stress test: fast balls vs thin Lines, stacked boxes, 100 pebbles.
 2. **Colours** ([spec](specs/m2-colours.md)). All five, Outline and Fill, Spills, Blasts, breaking.
-3. **Ink economy.** Tanks, costs, overlap charging, Locked and Wave Ink, drops.
-4. **Enemies and Ink Core.** Walkers, wall pressing, damage, the Core Zone.
+3. **Ink costs** ([spec](specs/m3-ink-costs.md)). Tanks, costs, overlap charging, refunds.
+4. **Enemies and Ink Core.** Walkers, wall pressing, damage, the Core Zone, Locked and Wave Ink, drops.
 5. **Defence loop.** Build Phase → Wave → Aftermath, three arenas.
 6. **Boss and content.** Siege Walker, tuning, then Roguelite Mode and procedural arenas after the go/no-go test.
 
