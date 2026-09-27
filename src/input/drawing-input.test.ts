@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
 import type { Game } from '../game/game';
+import { inLineLength } from '../game/ink-table';
 import { games } from '../game/test-support';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { drawLine, objectById } from '../sandbox/test-support';
@@ -14,7 +15,7 @@ const createGame = games();
  * asked for and every path it erased along.
  */
 function drawingOver(game: Game) {
-  const asked = { previews: 0, erased: [] as Vec2[][] };
+  const asked = { previews: 0, estimates: 0, erased: [] as Vec2[][] };
   const commands: DrawingCommands = {
     submitStroke: (samples, colour) => game.submitStroke(samples, colour),
     previewStroke: (samples) => {
@@ -22,6 +23,11 @@ function drawingOver(game: Game) {
       return game.previewStroke(samples);
     },
     fillAt: (point, colour) => game.fillAt(point, colour),
+    estimateStroke: (samples, colour) => {
+      asked.estimates++;
+      return game.estimateStroke(samples, colour);
+    },
+    estimateFill: (point, colour) => game.estimateFill(point, colour),
     releaseAt: (point) => game.releaseAt(point),
     eraseAlong: (path, radius) => {
       asked.erased.push([...path]);
@@ -271,10 +277,103 @@ describe('Drawing input', () => {
         samples: null,
         refused: false,
         pointer: { x: 300, y: 200 },
+        cost: null,
       });
 
       input.leave();
       expect(input.preview()).toMatchObject({ pointer: null });
+    });
+  });
+
+  describe('the cost preview', () => {
+    const line = dragAlong([
+      { x: 200, y: 300 },
+      { x: 800, y: 300 },
+    ]);
+    const costOf = (input: DrawingInput) => {
+      const preview = input.preview();
+      return preview.kind === 'stroke' ? preview.cost : null;
+    };
+
+    it('grows with the path while drawing', () => {
+      const game = createGame(true);
+      const { input } = drawingOver(game);
+      input.press(line[0]!, 'left');
+      for (const sample of line.slice(1, 100)) input.move(sample);
+      const early = costOf(input)!;
+      for (const sample of line.slice(100)) input.move(sample);
+      const late = costOf(input)!;
+
+      expect(early.colour).toBe('grey');
+      expect(late.price).toBeGreaterThan(early.price);
+      expect(inLineLength(late.price)).toBeCloseTo(600, -1);
+      expect(late.over).toBe(false);
+    });
+
+    it('prices a closing path as an Object', () => {
+      const game = createGame(true);
+      const { input } = drawingOver(game);
+      const samples = dragBox(370, 400, 100, 100);
+      input.press(samples[0]!, 'left');
+      for (const sample of samples.slice(1)) input.move(sample);
+
+      // An open path of the same samples would cost its length, not the ring's perimeter.
+      expect(inLineLength(costOf(input)!.price)).toBeCloseTo(400, -1);
+    });
+
+    it('is worked out again only on new samples', () => {
+      const game = createGame(true);
+      const { input, asked } = drawingOver(game);
+      input.press(line[0]!, 'left');
+      input.move(line[1]!);
+      input.preview();
+      input.preview();
+      expect(asked.estimates).toBe(1);
+      input.move(line[2]!);
+      input.preview();
+      expect(asked.estimates).toBe(2);
+    });
+
+    it("shows a hollow Object's Fill cost on hover, and none over a filled one or nothing", () => {
+      const game = createGame(true);
+      const world = game.world;
+      const { input } = drawingOver(game);
+      box(world, input);
+
+      input.move(inBox);
+      const hover = costOf(input)!;
+      const flash = click(input, inBox);
+      expect(flash).toBeNull();
+      expect(hover.price).toBeCloseTo(game.ink.fillPrice * 3600, -2);
+
+      input.move(inBox);
+      expect(costOf(input)).toBeNull();
+      input.move({ x: 900, y: 200 });
+      expect(costOf(input)).toBeNull();
+    });
+
+    it('is red when it is more than the Tank holds', () => {
+      const game = createGame(true);
+      const { input } = drawingOver(game);
+      input.pick('red');
+      const long = dragAlong([
+        { x: 200, y: 300 },
+        { x: 1400, y: 300 },
+      ]);
+      input.press(long[0]!, 'left');
+      for (const sample of long.slice(1, 200)) input.move(sample);
+      expect(costOf(input)!.over).toBe(false);
+      for (const sample of long.slice(200)) input.move(sample);
+      expect(costOf(input)!.over).toBe(true);
+      expect(input.release()!.message).toBe('Not enough red');
+    });
+
+    it('shows nothing with Ink costs off', () => {
+      const game = createGame(false);
+      const { input } = drawingOver(game);
+      input.press(line[0]!, 'left');
+      for (const sample of line.slice(1)) input.move(sample);
+      expect(costOf(input)).toBeNull();
     });
   });
 

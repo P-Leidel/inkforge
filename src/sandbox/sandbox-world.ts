@@ -368,6 +368,14 @@ export class SandboxWorld {
   }
 
   /**
+   * The Ink a Fill clicked at `point` would take, without filling: null over
+   * nothing, or over an Object that is already filled.
+   */
+  fillInkAt(point: Vec2): number | null {
+    return this.strokes.fillInkAt(point);
+  }
+
+  /**
    * Fills the Object under `point` with `colour`: its mass becomes its
    * Outline's plus its Fill's. Works paused and running, on Frozen and moving
    * Objects, and never wakes a Frozen one. An Object holds one Fill. A Fill

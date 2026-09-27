@@ -1,5 +1,5 @@
 import type { Polygon } from '../geometry/polygon';
-import type { Vec2 } from '../geometry/vec2';
+import { pathLength, type Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
 import {
   SandboxWorld,
@@ -12,7 +12,10 @@ import {
   type StrokeId,
   type StrokeOutcome,
 } from '../sandbox/sandbox-world';
+import { outlineInk } from '../materials/ink';
+import { closeRing, isClosingStroke } from '../stroke/close-detection';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
+import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { createInkTable, fromLineLength, type InkTable, type ReadonlyInkTable } from './ink-table';
 
 /** What a Stroke the Game was asked for became. */
@@ -39,6 +42,15 @@ export type GameFillOutcome =
       readonly price: number;
       readonly outline: Polygon;
     };
+
+/** What something would cost before it is made, and whether its Tank can pay for it. */
+export interface CostEstimate {
+  readonly colour: Colour;
+  /** Its price, px². */
+  readonly price: number;
+  /** Whether it costs more than `colour`'s Tank holds, so it would be refused. */
+  readonly over: boolean;
+}
 
 /** One undo step: a Stroke, or the Fill of an Object. */
 export interface Action {
@@ -240,6 +252,34 @@ export class Game {
    */
   previewStroke(samples: readonly Vec2[]): StrokeResult {
     return this.world.previewStroke(samples);
+  }
+
+  /**
+   * What a Stroke with these raw samples would cost in `colour`, estimated
+   * without the Stroke pipeline: a closing Stroke as an Object, its ring's
+   * Outline, anything else as a Line along the samples. Null with Ink costs
+   * off, or with too few samples to be anything.
+   */
+  estimateStroke(samples: readonly Vec2[], colour: Colour): CostEstimate | null {
+    if (!this.costs || samples.length < 2) return null;
+    const ink = isClosingStroke(samples)
+      ? outlineInk(closeRing(samples))
+      : pathLength(samples) * LINE_THICKNESS;
+    return this.estimate(colour, this.linePrice(ink));
+  }
+
+  /**
+   * What a Fill clicked at `point` in `colour` would cost. Null with Ink
+   * costs off, over nothing, or over an Object that is already filled.
+   */
+  estimateFill(point: Vec2, colour: Colour): CostEstimate | null {
+    if (!this.costs) return null;
+    const ink = this.world.fillInkAt(point);
+    return ink === null ? null : this.estimate(colour, this.fillPrice(ink));
+  }
+
+  private estimate(colour: Colour, price: number): CostEstimate {
+    return { colour, price, over: !this.affords(colour, price) };
   }
 
   /** Releases the Frozen Object under `point`, if physics is running. */

@@ -191,6 +191,65 @@ describe('Not enough Ink, with Ink costs on', () => {
   });
 });
 
+describe('Cost estimates, with Ink costs on', () => {
+  /** How far `estimate` is from `charged`, as a fraction of it. */
+  const off = (estimate: number, charged: number) => Math.abs(estimate - charged) / charged;
+
+  it('estimates a straight Line within 5% of what it is charged', () => {
+    const game = createGame(true);
+    const samples = dragAlong([
+      { x: 200, y: 300 },
+      { x: 700, y: 420 },
+    ]);
+    const estimate = game.estimateStroke(samples, 'blue')!;
+    const before = game.tank('blue');
+
+    game.submitStroke(samples, 'blue');
+
+    expect(off(estimate.price, before - game.tank('blue'))).toBeLessThan(0.05);
+  });
+
+  it('estimates a box within 5% of what it is charged', () => {
+    const game = createGame(true);
+    const samples = dragBox(400, 300, 120, 80);
+    const estimate = game.estimateStroke(samples, 'green')!;
+    const before = game.tank('green');
+
+    expect(game.submitStroke(samples, 'green').kind).toBe('object');
+
+    expect(off(estimate.price, before - game.tank('green'))).toBeLessThan(0.05);
+  });
+
+  it("estimates a Fill at what it is charged, and nothing once it's filled or over nothing", () => {
+    const game = createGame(true);
+    game.submitStroke(dragBox(400, 300, 100, 100), 'grey');
+    const point = { x: 450, y: 350 };
+    const estimate = game.estimateFill(point, 'black')!;
+    const before = game.tank('black');
+
+    game.fillAt(point, 'black');
+
+    expect(estimate.price).toBeCloseTo(before - game.tank('black'), 6);
+    expect(game.estimateFill(point, 'black')).toBeNull();
+    expect(game.estimateFill({ x: 900, y: 200 }, 'black')).toBeNull();
+  });
+
+  it('says a Stroke is over when it costs more than its Tank holds', () => {
+    const game = createGame(true);
+    const long = dragAlong([
+      { x: 200, y: 300 },
+      { x: 1400, y: 300 },
+    ]);
+    expect(game.estimateStroke(long, 'red')!.over).toBe(true);
+    expect(game.estimateStroke(long, 'grey')!.over).toBe(false);
+  });
+
+  it('estimates nothing with Ink costs off', () => {
+    const game = createGame(false);
+    expect(game.estimateStroke(dragBox(400, 300, 100, 100), 'grey')).toBeNull();
+  });
+});
+
 describe('Undo refunds exactly what was paid, with Ink costs on', () => {
   it('for a Line, an Object and a Fill, newest first', () => {
     const game = createGame(true);

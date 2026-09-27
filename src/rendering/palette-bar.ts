@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
-import type { Game } from '../game/game';
+import type { CostEstimate, Game } from '../game/game';
 import { inLineLength } from '../game/ink-table';
 import { ERASER_RADIUS, type Tool } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
@@ -94,10 +94,13 @@ export class PaletteBar {
     });
   }
 
-  /** Highlights the picked tool, and shows each Colour's Tank. */
-  show(picked: Tool, tanks: Tanks): void {
+  /**
+   * Highlights the picked tool, and shows each Colour's Tank, with `cost`
+   * greyed out at the top of its Colour's gauge, red if it is more than is left.
+   */
+  show(picked: Tool, tanks: Tanks, cost: CostEstimate | null = null): void {
     this.showSwatches(picked);
-    this.showGauges(tanks);
+    this.showGauges(tanks, cost);
   }
 
   private showSwatches(picked: Tool): void {
@@ -136,25 +139,40 @@ export class PaletteBar {
   }
 
   /** Each gauge filled as its Tank is, to the nearest half pixel, and the whole units left. */
-  private showGauges(tanks: Tanks): void {
+  private showGauges(tanks: Tanks, cost: CostEstimate | null): void {
+    const halfPixels = (ink: number, maximum: number) =>
+      maximum > 0 ? Math.round((ink / maximum) * WIDTH * 2) / (WIDTH * 2) : 0;
     const gauges = COLOURS.map((colour) => {
-      if (!tanks.inkCosts) return { filled: 1, amount: '∞' };
+      if (!tanks.inkCosts) return { filled: 1, pending: 0, over: false, amount: '∞' };
       const left = tanks.tank(colour);
       const maximum = tanks.maximum(colour);
-      const filled = maximum > 0 ? Math.round((left / maximum) * WIDTH * 2) / (WIDTH * 2) : 0;
-      return { filled, amount: String(Math.floor(inLineLength(left) + 1e-6)) };
+      const filled = halfPixels(left, maximum);
+      const priced = cost?.colour === colour ? cost : null;
+      const pending = priced ? Math.min(filled, halfPixels(priced.price, maximum)) : 0;
+      const over = priced?.over ?? false;
+      return { filled, pending, over, amount: String(Math.floor(inLineLength(left) + 1e-6)) };
     });
-    const key = gauges.map(({ filled, amount }) => `${filled}:${amount}`).join(' ');
+    const key = gauges
+      .map(({ filled, pending, over, amount }) => `${filled}:${pending}:${over}:${amount}`)
+      .join(' ');
     if (key === this.shownGauges) return;
     this.shownGauges = key;
     const g = bakingGraphics(this.scene);
-    gauges.forEach(({ filled, amount }, k) => {
+    gauges.forEach(({ filled, pending, over, amount }, k) => {
       const x = LEFT + k * (WIDTH + GAP);
       g.fillStyle(0x2c313b, 1);
       g.fillRoundedRect(x, GAUGE_TOP, WIDTH, GAUGE_HEIGHT, 3);
       if (filled > 0) {
         g.fillStyle(INK_HUES[COLOURS[k]!], 1);
         g.fillRoundedRect(x, GAUGE_TOP, Math.max(WIDTH * filled, 2), GAUGE_HEIGHT, 3);
+      }
+      // The pending cost, greyed out at the top of what is left; all of it red when over.
+      if (over) {
+        g.fillStyle(PALETTE.rejected, 1);
+        g.fillRect(x, GAUGE_TOP, Math.max(WIDTH * filled, 2), GAUGE_HEIGHT);
+      } else if (pending > 0) {
+        g.fillStyle(0x8a8f99, 0.85);
+        g.fillRect(x + WIDTH * (filled - pending), GAUGE_TOP, WIDTH * pending, GAUGE_HEIGHT);
       }
       g.lineStyle(1, 0x4f5666, 1);
       g.strokeRoundedRect(x, GAUGE_TOP, WIDTH, GAUGE_HEIGHT, 3);
