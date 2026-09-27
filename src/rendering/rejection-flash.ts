@@ -1,16 +1,8 @@
 import type Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
-import type { RejectionReason } from '../stroke/stroke-pipeline';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { strokePolyline } from './draw';
 import { FONT_FAMILY, PALETTE } from './palette';
-
-/** What a flash says about a refused Stroke. */
-export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
-  'too-small': 'Too small',
-  'self-crossing': 'Shape crosses itself',
-  overlaps: 'Overlaps Terrain or an Object',
-};
 
 const FADE_MS = 900;
 
