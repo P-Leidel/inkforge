@@ -1,6 +1,6 @@
-# INKFORGE: Game Design Document v0.5
+# INKFORGE: Game Design Document v0.6
 
-English rewrite of the v0.2 concept, updated with the design decisions made since. Terms in **bold** are defined in [`CONTEXT.md`](../CONTEXT.md); the reasoning behind the larger decisions is in [`docs/adr/`](adr/).
+English rewrite of the v0.2 concept, updated with the design decisions made since (v0.6: milestone 4's enemy rules). Terms in **bold** are defined in [`CONTEXT.md`](../CONTEXT.md); the reasoning behind the larger decisions is in [`docs/adr/`](adr/).
 
 ## 1. Vision
 
@@ -27,7 +27,8 @@ Tagline: *Draw it. Build it. Break physics. Survive the wave.*
 ## 4. World
 
 - 2D side view, gravity down, one fixed, non-scrolling **Arena**.
-- Enemies enter at the **Spawn** and walk toward the **Ink Core**. The run ends when the Ink Core reaches 0 HP.
+- Enemies enter from the **Spawn**, beyond the arena's edge and out of reach of drawing, and walk toward the **Ink Core**. The run ends when the Ink Core reaches 0 HP.
+- A **Pit** is a gap in the Terrain open to the bottom of the screen.
 - The arena has **Terrain** (never breaks) and may have props such as rocks, crates and pendulums.
 
 ## 5. Core loop
@@ -91,7 +92,7 @@ Details:
 - **Green** glue is a drag on anything moving that touches green ink, not only on enemies ([ADR 0007](adr/0007-glue-drags-every-moving-body.md)). The drag isn't scaled by weight, so Heavies are slowed less than lighter enemies. Green Lines and Patches wear down as their glue slows things.
 - A **green Object** sticks once, to the first new thing it touches after it starts moving. Stuck to Terrain or a Line, it becomes fixed; stuck to a moving body, the two move as one. It falls free if either side breaks and never sticks again. A green Object stuck to an enemy weighs it down.
 - **Black** is expensive and rare. It buys time rather than winning: every wall gets worn down eventually.
-- **Red** has very low durability and explodes when it is destroyed: by an enemy touching it, or by a hit or another Blast strong enough to break it ([ADR 0008](adr/0008-red-explodes-when-destroyed.md)). A red bomb survives a roll down a ramp or a short drop, so it can still be aimed. A red Line goes off Piece by Piece, like a fuse.
+- **Red** has very low durability and explodes when it is destroyed: worn away by an enemy on it (section 8), or by a hit or another Blast strong enough to break it ([ADR 0008](adr/0008-red-explodes-when-destroyed.md)). A red bomb survives a roll down a ramp or a short drop, so it can still be aimed. A red Line goes off Piece by Piece, like a fuse.
 - The **Blast** is a ring that spreads out from the red ink and weakens with distance. Wherever it is still strong enough when it arrives, it pushes things, damages enemies and the player's own Lines and Objects, wakes Frozen Objects and destroys other red, which chains. Walls don't block it. More red ink makes a bigger Blast; a red Outline with a red Fill makes one combined Blast.
 - **Spills** (blue and green Fills): 10–15 **Droplets** fly out; each sticks to the first enemy or surface it hits and leaves a **Patch**. Patch size matches the amount of ink that was in the Object. A Patch behaves like its Colour and wears down with use: a blue Patch with each bounce it gives, a green Patch as its glue slows things. A blue Patch on Terrain is a small trampoline; an enemy coated in blue bounces off whatever it hits. A green Patch is glue. Droplets deal no damage.
 - **Rubble** (grey and black Fills): a grey Fill releases up to 18 pebbles, a black Fill up to 8 heavier stones, more for a bigger Fill. Their total weight matches the Fill's. Rubble rolls, piles up and damages what it hits, but never breaks.
@@ -99,17 +100,17 @@ Details:
 ## 8. Damage and breaking
 
 - One rule covers every hit: a hit above the receiver's threshold deals damage that grows with its strength, to both sides of the collision. Heavier and faster things hit harder; there is no Colour-versus-Colour table. Resting weight and sliding deal no damage, and neither does physics pushing apart a Line and an Object drawn over each other.
-- **Enemies** take damage from hits above an impact threshold, scaled by the mass and speed of what hit them, and from Blasts. Falling into a pit or off the screen kills instantly.
+- **Enemies** take damage from hits above an impact threshold, scaled by the mass and speed of what hit them, and from Blasts. A fall is a hit on what they land on, so long drops hurt. Falling below the bottom of the screen, as into a Pit, kills instantly.
 - An enemy that reaches the Ink Core deals its damage and disappears, dropping no ink.
 - **Lines** are split into **Pieces** about one enemy wide. Each Piece has durability set by its Colour and cracks visibly as it loses durability.
-- Lines take damage from hard hits, Blasts, and enemies pressing against them. Pressing wears a Line down at a rate set by enemy type: slowly for Crawlers, fast for Heavies. Green Lines also wear down as their glue slows things.
+- Lines and Objects take damage from hard hits, Blasts, and enemies **Pressing** against them: anything an enemy can't shove or climb wears at a rate set by enemy type, slowly for Crawlers, fast for Heavies, Frozen Objects included. What an enemy stands on wears too. Green Lines also wear down as their glue slows things.
 - A Piece at zero durability breaks off as **Debris**; the rest of the Line stays fixed. Debris is purely visual and fades after a few seconds.
 - **Objects** have durability too and break into Debris; their Fill comes out (section 6.3).
 - There is no repair mechanic. Damage carries over between Waves.
 
 ## 9. Enemies
 
-Enemies are physics bodies. They always walk toward the Ink Core over whatever they stand on and climb slopes up to about 45°. Anything steeper is a wall they push against and wear down. There is no pathfinding.
+Enemies are upright physics bodies pushed along by a capped force ([ADR 0010](adr/0010-enemies-walk-by-capped-force.md)), so glue, bounce and Blasts act on them through the simulation. They always walk toward the Ink Core over whatever they stand on and climb slopes up to about 45°. Anything steeper, or an Object they can't shove, they press against and wear down. There is no pathfinding.
 
 | Enemy | Role | In MVP |
 |---|---|---|
@@ -126,7 +127,7 @@ Enemies are physics bodies. They always walk toward the Ink Core over whatever t
 - **Overlap charging:** only the parts of a Line that lie on another Line are free. Where a Line crosses an Object, or an Object is drawn over a Line, it costs full price, since the Object is about to be pushed away.
 - **Build Phase:** draw anywhere at the normal cost. Undo refunds fully. Erasing a Stroke from an earlier Wave gives no ink back.
 - **Wave:** Build Phase leftovers become **Locked Ink**. They stay in the Tank but can't be spent. The player can only spend **Wave Ink** (dropped by kills in this Wave), and only inside the **Core Zone**, a visible circle about a quarter of the screen wide ([ADR 0005](adr/0005-wave-drawing-uses-wave-ink.md)).
-- **Drops:** enemies drop random amounts of every Colour, weighted by enemy type. Drops are picked up automatically on death. Drops that don't fit in the Tank are lost, so saving ink leaves less room for drops.
+- **Drops:** enemies drop random amounts of every Colour, weighted by enemy type, on every death except reaching the Ink Core, Pit kills included. Drops are picked up automatically on death. Drops that don't fit in the Tank are lost, so saving ink leaves less room for drops.
 - Leftover Wave Ink stays in the Tank.
 
 ## 11. Modes
@@ -172,8 +173,8 @@ Arenas assembled by a seed from handmade modules, not random geometry.
 1. **Physics sandbox** ([spec](specs/m1-physics-sandbox.md)). Stroke-to-physics pipeline (pointer input → sampling → smoothing → simplification → geometry validation → collider → body), Lines and Objects, Frozen state. Includes the engine stress test: fast balls vs thin Lines, stacked boxes, 100 pebbles.
 2. **Colours** ([spec](specs/m2-colours.md)). All five, Outline and Fill, Spills, Blasts, breaking.
 3. **Ink costs** ([spec](specs/m3-ink-costs.md)). Tanks, costs, overlap charging, refunds.
-4. **Enemies and Ink Core.** Walkers, wall pressing, damage, the Core Zone, Locked and Wave Ink, drops.
-5. **Defence loop.** Build Phase → Wave → Aftermath, three arenas.
+4. **Enemies and Ink Core** ([spec](specs/m4-enemies-and-ink-core.md)). Crawler, Runner and Heavy, Pressing, damage, a minimal Build Phase and Wave, the Core Zone, Locked and Wave Ink, Drops.
+5. **Defence loop.** Analysis → Build Phase → Wave → Aftermath, sequences of Waves, three arenas.
 6. **Boss and content.** Siege Walker, tuning, then Roguelite Mode and procedural arenas after the go/no-go test.
 
 ## 16. Main risk
