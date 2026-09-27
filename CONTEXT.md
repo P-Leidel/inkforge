@@ -75,7 +75,7 @@ What happens to an Object a new Line is drawn across: it slides the shortest way
 _Avoid_: Push-out, overlap
 
 **Eraser**:
-A sandbox tool for testing, not part of the game: it quietly removes whatever its brush passes over, whole Objects with their Fills, the Pieces of Lines, Rubble, Droplets and Patches. Erasing is not breaking: nothing bursts into Debris, releases its Fill or sets off a Blast.
+A sandbox tool for testing, not part of the game: it quietly removes whatever its brush passes over, whole Objects with their Fills, the Pieces of Lines, Rubble, Droplets and Patches. Erasing is not breaking: nothing bursts into Debris, releases its Fill or sets off a Blast. It refunds the Ink paid for what it removes, like undo.
 _Avoid_: Delete, rubber
 
 ### Breaking
@@ -142,6 +142,10 @@ A slow, heavy walker that wears down Lines quickly.
 The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with physics rather than raw damage.
 
 ### Simulation
+
+**Game**:
+The rules layer over the Sandbox world: the Ink Tanks, what Strokes and Fills cost, and undo; later the Build Phase and Wave. The gallery and the stress tests build below it, for free.
+_Avoid_: Controller, manager
 
 **Arena contents**:
 Everything the simulation tracks and Reset brings back: Strokes (with their Pieces and Fills), Rubble, Bonds, Droplets, Patches, Blasts still spreading, and later enemies. Debris is not part of it.
