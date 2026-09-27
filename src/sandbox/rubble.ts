@@ -1,9 +1,4 @@
-import {
-  polygonArea,
-  polygonBounds,
-  polygonContainsPoint,
-  type Polygon,
-} from '../geometry/polygon';
+import { polygonBounds, polygonContainsPoint, type Polygon } from '../geometry/polygon';
 import { distancePointToSegment } from '../geometry/segment';
 import type { Transform } from '../geometry/transform';
 import { rotate, type Vec2 } from '../geometry/vec2';
@@ -47,7 +42,7 @@ const MIN_RADIUS = 0.5;
 
 /**
  * Packs the Rubble a Fill releases inside its Object's Outline: about one
- * piece per `rubbleArea` of Fill, at least 1 and at most `rubbleMax`, as
+ * piece per `rubbleArea` of the Fill's Ink, `ink`, at least 1 and at most `rubbleMax`, as
  * circles on a hex grid that keep clear of the Outline and of each other.
  * The pieces are picked from the grid by `random`; if fewer fit, fewer come
  * out, and if none fits, one shrinks to fit at the deepest point. Together
@@ -56,6 +51,7 @@ const MIN_RADIUS = 0.5;
  */
 export function packRubble(
   outline: Polygon,
+  ink: number,
   fill: Colour | null,
   mass: number,
   table: MaterialTable,
@@ -64,8 +60,7 @@ export function packRubble(
   if (!fill) return [];
   const { rubbleMax, rubbleRadius, rubbleArea } = table.colours[fill].fill;
   if (rubbleMax < 1 || rubbleRadius <= 0) return [];
-  const wanted =
-    rubbleArea > 0 ? Math.round(polygonArea(outline) / rubbleArea) : Math.floor(rubbleMax);
+  const wanted = rubbleArea > 0 ? Math.round(ink / rubbleArea) : Math.floor(rubbleMax);
   const count = Math.min(Math.floor(rubbleMax), Math.max(1, wanted));
 
   let radius = rubbleRadius;

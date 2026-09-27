@@ -1,4 +1,3 @@
-import { polygonArea } from '../geometry/polygon';
 import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
@@ -391,8 +390,8 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
   }
 
   /** Throws out a Spill, drawing from the generator: the count and spots, then the kick. */
-  private releaseSpill({ colour, outline, from }: ReleasedFill): void {
-    const { centres, length } = packSpill(outline, this.materials, this.random);
+  private releaseSpill({ colour, outline, ink, from }: ReleasedFill): void {
+    const { centres, length } = packSpill(outline, ink, this.materials, this.random);
     const launched = launchRubble(
       centres.map((centre) => ({ centre })),
       from,
@@ -410,9 +409,9 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
   }
 
   /** Packs Rubble inside the Outline and kicks it out, drawing from the generator in that order. */
-  private releaseRubble({ colour, mass, outline, from }: ReleasedFill): void {
+  private releaseRubble({ colour, mass, outline, ink, from }: ReleasedFill): void {
     const fill = this.materials.colours[colour].fill;
-    const pieces = packRubble(outline, colour, mass, this.materials, this.random);
+    const pieces = packRubble(outline, ink, colour, mass, this.materials, this.random);
     const launched = launchRubble(
       pieces,
       from,
@@ -436,14 +435,10 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
 
   /**
    * Starts a Blast at a broken Object's centre if its Outline or Fill is
-   * red: one Blast of all its red ink.
+   * red: one Blast of all its red Ink.
    */
   private explode(outline: BrokenOutline, fill: ReleasedFill | null): void {
-    const ink = blastInk(
-      outline,
-      fill && { colour: fill.colour, area: polygonArea(fill.outline) },
-      this.materials,
-    );
+    const ink = blastInk(outline, fill, this.materials);
     if (ink > 0) this.arena.addBlast(outline.centre, blastSize(ink, this.materials));
   }
 

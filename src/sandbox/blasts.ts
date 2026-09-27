@@ -2,7 +2,6 @@ import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, NearBody } from '../physics';
-import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import type { Kind } from './arena-contents';
 import type { ArenaQuery } from './arena-query';
 import { TERRAIN_PARTY, type Party, type PartyId } from './contact-ledger';
@@ -24,19 +23,18 @@ export interface BlastSize {
 }
 
 /**
- * The red ink (px²) a broken Object puts into its Blast: its Outline's
- * (length × Line thickness) if its Outline explodes, plus its Fill's (the
- * Object's area) if its Fill does. A red Outline with a red Fill makes one
- * combined Blast.
+ * The red Ink (px²) a broken Object puts into its Blast: its Outline's Ink
+ * if its Outline explodes, plus its Fill's if its Fill does. A red Outline
+ * with a red Fill makes one combined Blast.
  */
 export function blastInk(
-  outline: { readonly colour: Colour; readonly length: number },
-  fill: { readonly colour: Colour; readonly area: number } | null,
+  outline: { readonly colour: Colour; readonly ink: number },
+  fill: { readonly colour: Colour; readonly ink: number } | null,
   table: MaterialTable,
 ): number {
-  const fromOutline = table.colours[outline.colour].outline.explodes > 0 ? outline.length : 0;
-  const fromFill = fill && table.colours[fill.colour].fill.explodes > 0 ? fill.area : 0;
-  return fromOutline * LINE_THICKNESS + fromFill;
+  const fromOutline = table.colours[outline.colour].outline.explodes > 0 ? outline.ink : 0;
+  const fromFill = fill && table.colours[fill.colour].fill.explodes > 0 ? fill.ink : 0;
+  return fromOutline + fromFill;
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
