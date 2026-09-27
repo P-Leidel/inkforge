@@ -3,7 +3,15 @@ import { rotate, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import type { SandboxWorld } from './sandbox-world';
-import { drawLine, drawObject, objectById, runFor, sandboxWorlds } from './test-support';
+import {
+  drawLine,
+  drawObject,
+  entriesOf,
+  hear,
+  objectById,
+  runFor,
+  sandboxWorlds,
+} from './test-support';
 
 const createWorld = sandboxWorlds();
 
@@ -61,6 +69,7 @@ describe('Glue drag', () => {
     ballOnFloor(world, 1100, 'black');
     for (const ball of world.objects) launch(world, ball.id, { x: 400, y: 0 });
 
+    const heard = hear(world);
     runFor(world, 0.2);
     const pieces = (id: number) => world.lines.find((l) => l.id === id)?.pieces ?? [];
     // Rolling starts no impact: the grey Line under the other ball is untouched.
@@ -70,7 +79,10 @@ describe('Glue drag', () => {
     runFor(world, 1);
     expect(pieces(green).length).toBeLessThan(count[0]!);
     expect(pieces(grey)).toHaveLength(count[1]!);
-    expect(world.debrisParticles.length).toBeGreaterThan(0);
+    const broke = entriesOf(heard(), 'went').filter(({ why }) => why === 'broke');
+    expect(broke.length).toBeGreaterThan(0);
+    expect(broke.every(({ what }) => what.thing === 'piece' && what.id === green)).toBe(true);
+    expect(entriesOf(heard(), 'burst')).toHaveLength(broke.length);
     expect(objectById(world, onGreen).velocity.x).toBeLessThan(100);
   });
 

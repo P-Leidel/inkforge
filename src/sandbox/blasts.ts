@@ -122,17 +122,19 @@ export class Blasts<T> implements Kind<'blasts', readonly SavedBlast[], readonly
     }));
   }
 
-  /** Starts a Blast of `size` at `centre`; its ring grows from the next `spread`. */
-  add(centre: Vec2, { reach, strength }: BlastSize): void {
+  /** Starts a Blast of `size` at `centre`; its ring grows from the next `spread`. Returns its id. */
+  add(centre: Vec2, { reach, strength }: BlastSize): number {
     const { x, y } = centre;
+    const id = this.nextId++;
     this.blasts.push({
-      id: this.nextId++,
+      id,
       centre: { x, y },
       radius: 0,
       reach,
       strength,
       acted: new Set(),
     });
+    return id;
   }
 
   /**
@@ -185,8 +187,6 @@ export class Blasts<T> implements Kind<'blasts', readonly SavedBlast[], readonly
 
   /** A Blast still spreading can't be erased. */
   erase(): void {}
-
-  dropVisuals(): void {}
 
   clear(): void {
     this.blasts = [];

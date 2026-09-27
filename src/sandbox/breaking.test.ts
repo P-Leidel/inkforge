@@ -4,7 +4,15 @@ import { transformPoints } from '../geometry/transform';
 import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
 import type { SandboxWorld } from './sandbox-world';
-import { drawLine, drawObject, objectById, runFor, sandboxWorlds } from './test-support';
+import {
+  drawLine,
+  drawObject,
+  entriesOf,
+  hear,
+  objectById,
+  runFor,
+  sandboxWorlds,
+} from './test-support';
 
 const createWorld = sandboxWorlds();
 
@@ -68,29 +76,33 @@ describe('Breaking', () => {
     const cracked = objectById(world, box);
     expect(cracked.durability).toBeLessThan(GREY_DURABILITY);
     expect(cracked.wear).toBeGreaterThan(0.25);
+    const heard = hear(world);
     expect(stepsUntilBroken(world, box)).not.toBeNull();
-    expect(world.debrisParticles.length).toBeGreaterThan(0);
+    expect(entriesOf(heard(), 'burst')).toHaveLength(1);
   });
 
-  it('breaks into Debris that falls, collides with nothing and fades in about 2 s', () => {
+  it('bursts into Debris from where it broke, and adds no body', () => {
     const world = createWorld();
     const ball = drawObject(world, dragCircle({ x: 300, y: 300 }, 20), 'red');
     world.togglePause();
     world.release(ball);
-    stepsUntilBroken(world, ball);
+    const heard = hear(world);
+    let last = objectById(world, ball);
+    while (world.objects.some((o) => o.id === ball)) {
+      last = objectById(world, ball);
+      world.step();
+    }
     const bodies = world.bodyCount;
-    const burst = world.debrisParticles.map((p) => p.position.y);
 
     runFor(world, 0.5);
-    expect(world.bodyCount).toBe(bodies);
-    // Falling through the ground: nothing stops them.
-    expect(Math.max(...world.debrisParticles.map((p) => p.position.y))).toBeGreaterThan(
-      Math.max(...burst) + 50,
-    );
-    expect(world.debrisParticles.every((p) => p.opacity < 1)).toBe(true);
 
-    runFor(world, 1.6);
-    expect(world.debrisParticles).toHaveLength(0);
+    expect(world.bodyCount).toBe(bodies);
+    const [burst, ...more] = entriesOf(heard(), 'burst');
+    expect(more).toEqual([]);
+    expect(burst!.colours).toEqual(['red']);
+    // Around the ball as it broke: within a step's fall of where it was the step before.
+    const xs = burst!.outline.map((p) => p.x);
+    expect(Math.abs((Math.min(...xs) + Math.max(...xs)) / 2 - last.transform.x)).toBeLessThan(3);
   });
 
   it('a blue Object breaks on its third impact, before its durability runs out', () => {
@@ -279,14 +291,15 @@ describe('Undo, Clear and Reset after breaking', () => {
     world.undo(); // nothing left: does nothing
   });
 
-  it('Clear removes everything, Debris included, after things have broken', () => {
+  it('Clear removes everything after things have broken, and starts over', () => {
     const world = createWorld();
     breakSomething(world);
+    const heard = hear(world);
 
     world.clear();
 
     expect(world.objects).toHaveLength(0);
-    expect(world.debrisParticles).toHaveLength(0);
+    expect(heard().map((entry) => entry.kind)).toEqual(['start-over']);
     expect(world.bodyCount).toBe(1); // the Terrain
   });
 
@@ -301,13 +314,18 @@ describe('Undo, Clear and Reset after breaking', () => {
     const saved = objectById(world, ball);
     const steps = stepsUntilBroken(world, ball);
     expect(steps).not.toBeNull();
+    const heard = hear(world);
 
     world.reset();
 
     const restored = objectById(world, ball);
     expect(restored.impacts).toBe(2);
     expect(restored.durability).toBe(saved.durability);
-    expect(world.debrisParticles).toHaveLength(0);
+    // It starts over, and the ball comes back as added.
+    expect(heard()).toMatchObject([
+      { kind: 'start-over' },
+      { kind: 'added', what: { thing: 'object', id: ball } },
+    ]);
     expect(stepsUntilBroken(world, ball)).toBe(steps);
   });
 });

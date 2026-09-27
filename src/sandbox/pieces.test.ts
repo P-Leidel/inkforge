@@ -3,7 +3,16 @@ import type { Vec2 } from '../geometry/vec2';
 import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import type { LineView, SandboxWorld } from './sandbox-world';
-import { drawLine, drawObject, objectById, runFor, sandboxWorlds } from './test-support';
+import {
+  drawLine,
+  drawObject,
+  entriesOf,
+  hear,
+  objectById,
+  runFor,
+  sandboxWorlds,
+  wentOf,
+} from './test-support';
 
 const createWorld = sandboxWorlds();
 
@@ -98,10 +107,12 @@ describe('Lines break Piece by Piece', () => {
     // The balls break too, into Rubble: count the other bodies.
     const bodiesBesidesRubble = () => world.bodyCount - world.rubble.length;
     const bodies = bodiesBesidesRubble();
+    const heard = hear(world);
     throwBall();
     expect(pieceIndexes(world, wall)).not.toContain(target);
     expect(bodiesBesidesRubble()).toBeLessThan(bodies);
-    expect(world.debrisParticles.length).toBeGreaterThan(0);
+    expect(wentOf(heard())).toContain(`piece ${wall}.${target} broke`);
+    expect(entriesOf(heard(), 'burst').length).toBeGreaterThanOrEqual(2); // the Piece and the ball
     // Every other Piece is still there, exactly where it was drawn.
     expect(lineById(world, wall).pieces.map((p) => p.segments)).toEqual(
       before.filter((p) => p.index !== target).map((p) => p.segments),
@@ -262,11 +273,17 @@ describe('Undo, Clear and Reset after a Piece has broken', () => {
     world.togglePause(); // the snapshot: shelf cracked, boulder let go
     runFor(world, 1.5);
     expect(lineById(world, id).pieces.length).toBeLessThan(10);
+    const heard = hear(world);
 
     world.reset();
 
     expect(lineById(world, id).pieces.map((p) => p.durability)).toEqual(cracked);
-    expect(world.debrisParticles).toHaveLength(0);
+    // It starts over, and every Piece comes back as added.
+    const [start, ...added] = heard();
+    expect(start!.kind).toBe('start-over');
+    expect(
+      entriesOf(added, 'added').filter(({ what }) => what.thing === 'piece' && what.id === id),
+    ).toHaveLength(10);
   });
 
   it('Reset replays a Piece breaking exactly', () => {
@@ -290,10 +307,12 @@ describe('Undo, Clear and Reset after a Piece has broken', () => {
     const world = createWorld();
     brokenShelf(world);
 
+    const heard = hear(world);
+
     world.clear();
 
     expect(world.lines).toHaveLength(0);
     expect(world.bodyCount).toBe(1);
-    expect(world.debrisParticles).toHaveLength(0);
+    expect(heard().map((entry) => entry.kind)).toEqual(['start-over']);
   });
 });

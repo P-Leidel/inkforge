@@ -11,6 +11,8 @@ import type { PatchView, SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
+  entriesOf,
+  hear,
   objectById,
   reboundHeight,
   runFor,
@@ -181,10 +183,14 @@ describe('Patches', () => {
     const ball = drawObject(world, dragCircle({ x: 500, y: 600 }, 20));
     world.fillAt({ x: 500, y: 600 }, 'black');
     world.release(ball);
+    const heard = hear(world);
     runFor(world, 1);
 
     expect(world.patches.length).toBeLessThan(count);
-    expect(world.debrisParticles.some((p) => p.colour === 'blue')).toBe(true);
+    // The renderer bursts a puff of Debris where each used-up Patch was.
+    const usedUp = entriesOf(heard(), 'went').filter(({ why }) => why === 'used-up');
+    expect(usedUp).toHaveLength(count - world.patches.length);
+    expect(usedUp.every(({ what }) => what.thing === 'patch' && what.colour === 'blue')).toBe(true);
   });
 
   it('slow a ball rolling over green, and wear as they work', () => {

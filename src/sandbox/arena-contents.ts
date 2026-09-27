@@ -14,7 +14,9 @@ import type { PartyId } from './contact-ledger';
  * and each step once over every kind, in one fixed order. Kinds never call
  * each other, and never decide a Material rule: a kind reports what
  * happened, the Material rules decide what follows, and the world wires
- * their decisions back to the kinds. Debris is visual only and is not a kind.
+ * their decisions back to the kinds. What is visual only (Debris, Rubble
+ * fading out, a Patch's puff) is the renderer's, drawn from the list of
+ * what happened; it is not a kind.
  */
 
 /** Shapes a new Object may not overlap, in world coordinates. */
@@ -55,8 +57,6 @@ export interface Kind<Name extends string, Saved, Views> {
   save(): Saved;
   /** Adds its bodies again from its part of a snapshot, after `physics.reset()`, in a fixed order. */
   restore(saved: Saved): void;
-  /** Drops whatever of it is visual only, as R does with Debris. */
-  dropVisuals(): void;
   /** Forgets all of it: Clear, after Arena bodies has removed every body and shape. */
   clear(): void;
   /** What of it new Objects may not overlap. */

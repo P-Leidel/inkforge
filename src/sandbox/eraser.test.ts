@@ -3,7 +3,16 @@ import type { Segment } from '../geometry/segment';
 import type { Vec2 } from '../geometry/vec2';
 import { dragBox } from '../stroke/pointer-paths';
 import type { SandboxWorld } from './sandbox-world';
-import { drawLine, drawObject, objectById, runFor, sandboxWorlds } from './test-support';
+import {
+  drawLine,
+  drawObject,
+  entriesOf,
+  hear,
+  objectById,
+  runFor,
+  sandboxWorlds,
+  wentOf,
+} from './test-support';
 
 const createWorld = sandboxWorlds();
 
@@ -47,6 +56,7 @@ describe('Eraser', () => {
     const neighbour = boxOnGround(world, 580);
     const durability = objectById(world, neighbour).durability;
     runFor(world, 0.5);
+    const heard = hear(world);
 
     eraseAt(world, { x: 500, y: 848 });
     runFor(world, 1);
@@ -54,7 +64,8 @@ describe('Eraser', () => {
     expect(world.objects.map((o) => o.id)).toEqual([neighbour]);
     expect(world.objects.some((o) => o.id === red)).toBe(false);
     expect(world.blasts).toEqual([]);
-    expect(world.debrisParticles).toEqual([]);
+    expect(heard().map((entry) => entry.kind)).toEqual(['went']);
+    expect(wentOf(heard())).toEqual([`object ${red} erased`]);
     expect(world.rubble).toEqual([]);
     expect(world.droplets).toEqual([]);
     expect(objectById(world, neighbour).durability).toBe(durability);
@@ -65,6 +76,7 @@ describe('Eraser', () => {
     const line = shelf(world, 'red');
     const before = world.lines[0]!.pieces;
     runFor(world, 0.2);
+    const heard = hear(world);
 
     eraseAt(world, onPiece(4));
     runFor(world, 1);
@@ -73,7 +85,8 @@ describe('Eraser', () => {
     expect(pieces.map((p) => p.index)).toEqual([0, 1, 2, 3, 5, 6, 7, 8, 9]);
     expect(pieces).toEqual(before.filter((p) => p.index !== 4));
     expect(world.blasts).toEqual([]);
-    expect(world.debrisParticles).toEqual([]);
+    expect(heard().map((entry) => entry.kind)).toEqual(['went']);
+    expect(wentOf(heard())).toEqual([`piece ${line}.4 erased`]);
   });
 
   it('erases every Piece a drag passes over, and the Line with its last', () => {
@@ -136,7 +149,7 @@ describe('Eraser', () => {
     expect(world.rubble.length).toBeGreaterThan(0);
     const patches = world.patches.length;
     expect(patches).toBeGreaterThan(0);
-    expect(world.debrisParticles).toEqual([]);
+    const heard = hear(world);
 
     // Over the whole ground, but not down in the pit.
     world.eraseAlong(
@@ -152,7 +165,10 @@ describe('Eraser', () => {
     const lowest = ({ a, b }: Segment) => Math.min(a.y, b.y);
     expect(world.patches.length).toBeLessThan(patches);
     expect(world.patches.every((p) => lowest(p.segment) > 920)).toBe(true);
-    expect(world.debrisParticles).toEqual([]);
+    // Nothing bursts, and what went, went erased or with erased Rubble: no puff.
+    expect(entriesOf(heard(), 'burst')).toEqual([]);
+    const why = new Set(entriesOf(heard(), 'went').map((entry) => entry.why));
+    expect(why).toEqual(new Set(['erased', 'with-host']));
 
     // A Spill caught in flight lays no Patches.
     const another = drawObject(world, dragBox(600, 500, 60, 60), 'blue');

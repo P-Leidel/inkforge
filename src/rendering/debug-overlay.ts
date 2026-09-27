@@ -9,6 +9,7 @@ import { readingLines, type Readings } from './readings';
 import { StatsPanel } from './stats-panel';
 import { addMonoFont } from './mono-font';
 import { bakedTextureUse } from './baked-textures';
+import type { WorldRenderer } from './world-renderer';
 
 /** F1 cycles through these. */
 const LEVELS = ['off', 'stats', 'debug'] as const;
@@ -54,6 +55,8 @@ export class DebugOverlay {
     private readonly scene: Phaser.Scene,
     private readonly world: SandboxWorld,
     private readonly frames: FrameRecorder,
+    /** Draws the Debris, which is visual only. */
+    private readonly worldView: Pick<WorldRenderer, 'debrisCount'>,
   ) {
     this.colliders = scene.add.graphics().setDepth(100);
     this.panel = new StatsPanel(scene, PANEL_AT, () => void this.copyReadings());
@@ -205,7 +208,7 @@ export class DebugOverlay {
         droplets: world.droplets.length,
         patches: world.patches.length,
         blasts: world.blasts.length,
-        debris: world.debrisParticles.length,
+        debris: this.worldView.debrisCount,
       },
       render: {
         graphics,

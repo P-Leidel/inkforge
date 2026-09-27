@@ -256,26 +256,29 @@ describe('Colour gallery', () => {
     const world = createWorld();
     DEMOLITION_DEMO.build(world);
     const { rubbleCap } = world.materials;
-    // By distinct ids: a Droplet turns into a Patch as it lands, and ids are never reused.
-    const blasts = new Set<number>();
-    const rubble = new Set<number>();
-    const droplets = new Set<number>();
+    // By the list of what happened: a Droplet turns into a Patch as it lands.
+    const heard = world.happenings.reader();
+    let blasts = 0;
+    let rubble = 0;
+    let droplets = 0;
 
     for (let step = 0; step < 300; step++) {
       world.step();
-      const { contents } = world;
-      for (const { id } of contents.blasts) blasts.add(id);
-      for (const { id } of contents.rubble) rubble.add(id);
-      for (const { id } of contents.droplets) droplets.add(id);
-      expect(contents.rubble.length).toBeLessThan(rubbleCap);
+      for (const entry of heard.read()) {
+        if (entry.kind === 'exploded') blasts++;
+        else if (entry.kind === 'added' && entry.what.thing === 'rubble') rubble++;
+        else if (entry.kind === 'added' && entry.what.thing === 'droplet') droplets++;
+      }
+      expect(world.rubble.length).toBeLessThan(rubbleCap);
     }
+    heard.close();
 
-    expect(blasts.size).toBe(5);
+    expect(blasts).toBe(5);
     expect(world.blasts).toHaveLength(0);
-    expect(rubble.size).toBeGreaterThanOrEqual(55);
-    expect(rubble.size).toBeLessThanOrEqual(65);
-    expect(droplets.size).toBeGreaterThanOrEqual(20); // two Spills of 10 to 15
-    expect(droplets.size).toBeLessThanOrEqual(30);
+    expect(rubble).toBeGreaterThanOrEqual(55);
+    expect(rubble).toBeLessThanOrEqual(65);
+    expect(droplets).toBeGreaterThanOrEqual(20); // two Spills of 10 to 15
+    expect(droplets).toBeLessThanOrEqual(30);
     expect(world.objects).toHaveLength(0); // every bomb, box and Spill went
   });
 });

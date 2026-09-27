@@ -8,6 +8,7 @@ import type { ArenaBodies } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses, type Solids } from './arena-contents';
 import { brushTouchesCircle, type Brush } from './brush';
 import type { Party, PartyId } from './contact-ledger';
+import type { Why } from './happenings';
 import type { PreviousPoses } from './previous-poses';
 import type { Random } from './random';
 import { deepestPoint, hexSpots } from './rubble';
@@ -145,7 +146,7 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
   }
 
   private addBody(droplet: Omit<DropletRecord, 'body'>, motion: Motion): void {
-    const { party } = droplet;
+    const { id, party } = droplet;
     const { body } = this.bodies.addCircle(
       {
         position: { x: motion.transform.x, y: motion.transform.y },
@@ -159,6 +160,7 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
         bullet: true,
       },
       { colour: droplet.colour, role: 'line' },
+      { thing: 'droplet', id },
       (body) => ({ id: party, stroke: party, body, target: null, harmless: true }),
     );
     const record = { ...droplet, body };
@@ -166,9 +168,9 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
     this.byBody.set(body, record);
   }
 
-  private removeBody(body: BodyId): void {
+  private removeBody(body: BodyId, why: Why): void {
     this.byBody.delete(body);
-    this.bodies.removeBody(body);
+    this.bodies.removeBody(body, why);
   }
 
   /** Whether a body is a Droplet's. */
@@ -185,7 +187,7 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
     const droplet = this.byBody.get(body);
     if (!droplet) throw new Error(`no Droplet has body ${body}`);
     const { x, y } = this.physics.getTransform(body);
-    this.removeBody(body);
+    this.removeBody(body, 'landed');
     this.droplets.splice(this.droplets.indexOf(droplet), 1);
     return { colour: droplet.colour, length: droplet.length, centre: { x, y }, host };
   }
@@ -212,12 +214,10 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
     this.droplets = this.droplets.filter(({ body, radius }) => {
       const { x, y } = this.physics.getTransform(body);
       if (!brushTouchesCircle(brush, { x, y }, radius)) return true;
-      this.removeBody(body);
+      this.removeBody(body, 'erased');
       return false;
     });
   }
-
-  dropVisuals(): void {}
 
   clear(): void {
     this.droplets = [];
@@ -237,7 +237,7 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
       return x < -radius || x > width + radius || y < -radius || y > height + radius;
     });
     if (left.length === 0) return;
-    for (const { body } of left) this.removeBody(body);
+    for (const { body } of left) this.removeBody(body, 'left');
     this.droplets = this.droplets.filter((d) => this.byBody.has(d.body));
   }
 }

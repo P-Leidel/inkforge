@@ -5,6 +5,7 @@ import { dragAlong } from '../stroke/pointer-paths';
 import {
   SandboxWorld,
   STEP_SECONDS,
+  type Entry,
   type ObjectView,
   type SandboxWorldOptions,
 } from './sandbox-world';
@@ -74,4 +75,36 @@ export function reboundHeight(world: SandboxWorld, id: number): number {
   }
   if (landedAt === null) throw new Error('the Object never landed');
   return Math.max(0, landedAt - apex);
+}
+
+/**
+ * Hears what the world says happens from now on: returns a function that
+ * gives every entry so far, oldest first.
+ */
+export function hear(world: SandboxWorld): () => readonly Entry[] {
+  const reader = world.happenings.reader();
+  const heard: Entry[] = [];
+  return () => {
+    heard.push(...reader.read());
+    return heard;
+  };
+}
+
+/** The entries of one kind. */
+export function entriesOf<K extends Entry['kind']>(
+  entries: readonly Entry[],
+  kind: K,
+): Extract<Entry, { readonly kind: K }>[] {
+  return entries.filter(
+    (entry): entry is Extract<Entry, { readonly kind: K }> => entry.kind === kind,
+  );
+}
+
+/** What went, as `thing id why` (a Piece as `piece line.index why`). */
+export function wentOf(entries: readonly Entry[]): string[] {
+  return entriesOf(entries, 'went').map(({ what, why }) =>
+    what.thing === 'piece'
+      ? `piece ${what.id}.${what.index} ${why}`
+      : `${what.thing} ${what.id} ${why}`,
+  );
 }

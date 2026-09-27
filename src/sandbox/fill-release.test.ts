@@ -6,7 +6,16 @@ import { fillMass } from '../materials/mass';
 import { createMaterialTable, DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import type { ObjectView, RubbleView, SandboxWorld } from './sandbox-world';
-import { drawLine, drawObject, objectById, runFor, sandboxWorlds } from './test-support';
+import {
+  drawLine,
+  drawObject,
+  entriesOf,
+  hear,
+  objectById,
+  runFor,
+  sandboxWorlds,
+  wentOf,
+} from './test-support';
 
 const createWorld = sandboxWorlds();
 
@@ -140,10 +149,12 @@ describe('Fill release: Rubble', () => {
     const blue = smashable(world, 700, 'blue', { anvilY: 700, drop: 500 }); // lighter
     const hollow = drawObject(world, dragCircle({ x: 1250, y: 300 }, 20), 'blue'); // bounces thrice
 
+    const heard = hear(world);
     smash(world, [green, red, blue, hollow]);
 
     expect(world.rubble).toHaveLength(0);
-    expect(world.debrisParticles.length).toBeGreaterThan(0);
+    expect(entriesOf(heard(), 'burst').length).toBeGreaterThanOrEqual(4);
+    expect(entriesOf(heard(), 'added').some(({ what }) => what.thing === 'rubble')).toBe(false);
   });
 
   it('Rubble rolls and piles up, never breaks, and is not Frozen, filled or Released', () => {
@@ -226,7 +237,7 @@ describe('The Rubble cap', () => {
     expect(DEFAULT_MATERIAL_TABLE.rubbleCap).toBe(150);
   });
 
-  it('fades out the oldest Rubble when a release would go over it', () => {
+  it('removes the oldest Rubble when a release would go over it', () => {
     const materials = createMaterialTable();
     materials.rubbleCap = 20;
     const world = createWorld({ materials });
@@ -237,6 +248,7 @@ describe('The Rubble cap', () => {
     smash(world, [first]);
     const older = world.rubble.map((r) => r.id);
     const bodies = world.bodyCount;
+    const heard = hear(world);
     smash(world, [second]);
 
     const kept = world.rubble.map((r) => r.id);
@@ -245,14 +257,12 @@ describe('The Rubble cap', () => {
     // The oldest went first: what is left of the first release is its newest.
     expect(kept).toEqual([...older.slice(older.length - (20 - newer.length)), ...newer]);
     const gone = older.filter((id) => !kept.includes(id));
-    expect(world.fadingRubble.map((r) => r.id)).toEqual(gone);
-    expect(world.fadingRubble.every((r) => r.opacity > 0 && r.opacity <= 1)).toBe(true);
-    // The cap is a limit on bodies: faded Rubble has none. (The second box
-    // broke too.)
+    // Capped, oldest first: the renderer fades it out where it was.
+    expect(wentOf(heard()).filter((went) => went.startsWith('rubble'))).toEqual(
+      gone.map((id) => `rubble ${id} capped`),
+    );
+    // The cap is a limit on bodies. (The second box broke too.)
     expect(world.bodyCount).toBe(bodies - 1 + newer.length - gone.length);
-
-    runFor(world, 0.6);
-    expect(world.fadingRubble).toHaveLength(0);
   });
 });
 

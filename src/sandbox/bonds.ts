@@ -105,8 +105,6 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
     for (const bond of saved) this.attach(bond);
   }
 
-  dropVisuals(): void {}
-
   /** Every bond went with the bodies it held. */
   clear(): void {
     this.bonds = [];

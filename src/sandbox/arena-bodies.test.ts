@@ -5,6 +5,7 @@ import { createMaterialTable } from '../materials/material-table';
 import type { BodyId, ShapeId, StepReport, Surface } from '../physics';
 import { ArenaBodies, type BodiesPhysics } from './arena-bodies';
 import { ContactLedger, TERRAIN_PARTY, type Party, type PartyId } from './contact-ledger';
+import type { Happening, Thing } from './happenings';
 
 /** A physics module that only numbers bodies and shapes, and logs every call. */
 class StubPhysics implements BodiesPhysics {
@@ -27,6 +28,9 @@ class StubPhysics implements BodiesPhysics {
   addLine = () => this.add('line');
   addObject = () => this.add('object');
   addCircle = () => this.add('circle');
+
+  getTransform = (body: BodyId) => ({ x: body, y: 0, angle: 0 });
+  getVelocity = () => ({ x: 0, y: 5 });
 
   removeBody = (body: BodyId) => {
     this.capsules.delete(body);
@@ -89,13 +93,21 @@ function setup() {
   const materials = createMaterialTable();
   /** Each call to the gone hearer: what went, and what the ledger and engine held then. */
   const heard: { parties: PartyId[]; registered: boolean; log: string[] }[] = [];
-  const bodies = new ArenaBodies<string>(physics, contacts, materials, (parties) => {
-    heard.push({
-      parties: [...parties],
-      registered: [...parties].some((id) => contacts.party(id) !== undefined),
-      log: [...physics.log],
-    });
-  });
+  /** What it said happened. */
+  const said: Happening[] = [];
+  const bodies = new ArenaBodies<string>(
+    physics,
+    contacts,
+    materials,
+    (parties) => {
+      heard.push({
+        parties: [...parties],
+        registered: [...parties].some((id) => contacts.party(id) !== undefined),
+        log: [...physics.log],
+      });
+    },
+    (happening) => said.push(happening),
+  );
   bodies.addTerrain([square]);
 
   /** A Party of its own, with `target` as its name. */
@@ -105,21 +117,29 @@ function setup() {
       const id = bodies.newId();
       return { id, stroke: id, body, target, ...extra };
     };
-  const line = () => bodies.addLine([segment], 8, 'grey', own('line'));
+  let things = 0;
+  const line = () =>
+    bodies.addLine([segment], 8, 'grey', { thing: 'piece', id: ++things, index: 0 }, own('line'));
   const object = () =>
     bodies.addObject(
       { position: { x: 0, y: 0 }, parts: [square], frozen: true, mass: 1 },
       'blue',
       square,
+      { thing: 'object', id: ++things },
       own('object'),
     );
   const pebble = (extra: Partial<Party<string>> = {}) =>
     bodies.addCircle(
       { position: { x: 0, y: 0 }, radius: 6, mass: 1 },
       { colour: 'grey', role: 'outline' },
+      { thing: 'rubble', id: ++things, colour: 'grey', radius: 6 },
       own('pebble', extra),
     );
-  return { physics, contacts, materials, bodies, heard, line, object, pebble };
+  const patchOn = (host: PartyId, colour: 'green' | 'blue' = 'blue') => {
+    const what: Thing = { thing: 'patch', id: ++things, colour, segment, thickness: 3 };
+    return bodies.addShape(host, segment, 1.5, colour, what);
+  };
+  return { physics, contacts, materials, bodies, heard, said, line, object, pebble, patchOn };
 }
 
 describe('Arena bodies', () => {
@@ -136,7 +156,7 @@ describe('Arena bodies', () => {
     const { physics, contacts, bodies, heard, object } = setup();
     const box = object();
 
-    bodies.removeBody(box.body);
+    bodies.removeBody(box.body, 'broke');
 
     expect(contacts.partyOf(box.body)).toBeUndefined();
     expect(heard).toEqual([
@@ -150,26 +170,26 @@ describe('Arena bodies', () => {
   it('does nothing to a body already gone, and tells no one again', () => {
     const { physics, bodies, heard, pebble } = setup();
     const { body } = pebble();
-    bodies.removeBody(body);
+    bodies.removeBody(body, 'broke');
     const calls = physics.log.length;
 
-    bodies.removeBody(body);
+    bodies.removeBody(body, 'broke');
 
     expect(physics.log).toHaveLength(calls);
     expect(heard).toHaveLength(1);
   });
 
   it('removes the Patch shapes on a host with it, and leaves those on others', () => {
-    const { physics, bodies, line, object } = setup();
+    const { physics, bodies, line, object, patchOn } = setup();
     const host = object();
     const other = line();
-    const onHost = bodies.addShape(host.id, segment, 1.5, 'green')!;
-    const onOther = bodies.addShape(other.id, segment, 1.5, 'blue')!;
+    const onHost = patchOn(host.id, 'green')!;
+    const onOther = patchOn(other.id, 'blue')!;
     expect(onHost.body).toBe(host.body);
 
-    bodies.removeBody(host.body);
+    bodies.removeBody(host.body, 'broke');
     physics.log.length = 0;
-    bodies.removeShape(onHost.shape); // already gone with its host
+    bodies.removeShape(onHost.shape, 'used-up'); // already gone with its host
     bodies.applySurfaces();
 
     expect(physics.shapesOn(host.body)).toEqual([]);
@@ -181,12 +201,12 @@ describe('Arena bodies', () => {
   });
 
   it('adds no shape on a host that is gone', () => {
-    const { bodies, physics, pebble } = setup();
+    const { bodies, physics, pebble, patchOn } = setup();
     const rock = pebble();
-    bodies.removeBody(rock.body);
+    bodies.removeBody(rock.body, 'broke');
     const calls = physics.log.length;
 
-    expect(bodies.addShape(rock.id, segment, 1.5, 'blue')).toBeNull();
+    expect(patchOn(rock.id, 'blue')).toBeNull();
     expect(physics.log).toHaveLength(calls);
   });
 
@@ -231,16 +251,16 @@ describe('Arena bodies', () => {
     // Nothing lands on a Droplet.
     expect(bodies.surfaceOf(pebble({ harmless: true }).id)).toBeNull();
     const gone = pebble();
-    bodies.removeBody(gone.body);
+    bodies.removeBody(gone.body, 'broke');
     expect(bodies.surfaceOf(gone.id)).toBeNull();
   });
 
   it('re-applies every body’s and Patch shape’s surface from the table after an edit', () => {
-    const { physics, materials, bodies, line, object, pebble } = setup();
+    const { physics, materials, bodies, line, object, pebble, patchOn } = setup();
     const a = line();
     const b = object();
     const c = pebble();
-    const patch = bodies.addShape(b.id, segment, 1.5, 'green')!;
+    const patch = patchOn(b.id, 'green')!;
     materials.colours.grey.line.friction = 0.2;
     materials.colours.blue.outline.restitution = 0.5;
     materials.colours.green.line.restitution = 0.3;
@@ -258,15 +278,15 @@ describe('Arena bodies', () => {
   });
 
   it('makes its engine calls in a fixed order', () => {
-    const { physics, bodies, line, object, pebble } = setup();
+    const { physics, bodies, line, object, pebble, patchOn } = setup();
 
     const a = line();
     const b = object();
-    const patch = bodies.addShape(b.id, segment, 1.5, 'blue')!;
+    const patch = patchOn(b.id, 'blue')!;
     const c = pebble();
     bodies.slideOut(b.body, { x: 0, y: -10 }, 250);
-    bodies.removeShape(patch.shape);
-    bodies.removeBody(a.body);
+    bodies.removeShape(patch.shape, 'used-up');
+    bodies.removeBody(a.body, 'broke');
     bodies.clear();
 
     expect(physics.log).toEqual([
@@ -284,9 +304,9 @@ describe('Arena bodies', () => {
   });
 
   it('clears every shape and body but the Terrain, telling no one', () => {
-    const { physics, contacts, bodies, heard, object } = setup();
+    const { physics, contacts, bodies, heard, object, patchOn } = setup();
     const box = object();
-    const onTerrain = bodies.addShape(TERRAIN_PARTY, segment, 1.5, 'blue')!;
+    const onTerrain = patchOn(TERRAIN_PARTY, 'blue')!;
     physics.log.length = 0;
 
     bodies.clear();
@@ -297,12 +317,69 @@ describe('Arena bodies', () => {
     expect(contacts.party(TERRAIN_PARTY)).toBeDefined();
   });
 
+  it('says what it added, and what went and why, with where its body was', () => {
+    const { bodies, said, object, pebble, patchOn } = setup();
+    const box = object();
+    const rock = pebble();
+    patchOn(box.id);
+    const onRock = patchOn(rock.id)!;
+
+    bodies.removeShape(onRock.shape, 'used-up');
+    bodies.removeBody(rock.body, 'capped');
+    bodies.removeBody(box.body, 'broke');
+
+    const [boxThing, rockThing, onBox, onRockThing] = said
+      .slice(0, 4)
+      .map((h) => (h.kind === 'added' ? h.what : null));
+    expect(said.slice(0, 4).map((h) => h.kind)).toEqual(['added', 'added', 'added', 'added']);
+    expect([boxThing?.thing, rockThing?.thing, onBox?.thing, onRockThing?.thing]).toEqual([
+      'object',
+      'rubble',
+      'patch',
+      'patch',
+    ]);
+    const went = (what: Thing | null | undefined, why: string, body: BodyId) => ({
+      kind: 'went',
+      what,
+      why,
+      transform: { x: body, y: 0, angle: 0 },
+      velocity: { x: 0, y: 5 },
+    });
+    expect(said.slice(4)).toEqual([
+      // A Patch goes where its host is, moving as its host moves.
+      went(onRockThing, 'used-up', rock.body),
+      went(rockThing, 'capped', rock.body),
+      // The shapes on a body go first, with their host.
+      went(onBox, 'with-host', box.body),
+      went(boxThing, 'broke', box.body),
+    ]);
+  });
+
+  it('says nothing for the Terrain, for what is already gone, or on Clear and reset', () => {
+    const { bodies, said, object, patchOn } = setup();
+    const box = object();
+    patchOn(TERRAIN_PARTY);
+    bodies.removeBody(box.body, 'broke');
+    const before = said.length;
+
+    bodies.removeBody(box.body, 'broke');
+    patchOn(box.id);
+    object();
+    const after = said.length;
+    bodies.clear();
+    bodies.reset({ settled: [] });
+
+    expect(said.slice(0, before).map((h) => h.kind)).toEqual(['added', 'added', 'went']);
+    expect(after).toBe(before + 1); // the second Object
+    expect(said).toHaveLength(after);
+  });
+
   it('forgets every body on a reset, so the rebuild adds them all again', () => {
     const { physics, contacts, bodies, heard, object } = setup();
     const box = object();
 
     bodies.reset({ settled: [] });
-    bodies.removeBody(box.body);
+    bodies.removeBody(box.body, 'broke');
 
     expect(physics.log.slice(-1)).toEqual(['reset']);
     expect(contacts.partyOf(box.body)).toBeUndefined();

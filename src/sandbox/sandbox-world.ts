@@ -18,13 +18,13 @@ import type { Kind } from './arena-contents';
 import { Blasts, type BlastView } from './blasts';
 import { Bonds, type BondView } from './bonds';
 import { ContactLedger, type PartyId, type SavedContacts } from './contact-ledger';
-import { Debris, type DebrisParticle } from './debris';
 import { Droplets, type DropletView } from './droplets';
+import { Happenings } from './happenings';
 import { MaterialRules } from './material-rules';
-import { Patches, type PatchView, type Puff } from './patches';
+import { Patches, type PatchView } from './patches';
 import { PreviousPoses } from './previous-poses';
 import { Random } from './random';
-import { Rubble, type FadingRubbleView, type RubbleView } from './rubble';
+import { Rubble, type RubbleView } from './rubble';
 import {
   Strokes,
   type FillOutcome,
@@ -39,8 +39,9 @@ export type { BlastView } from './blasts';
 export type { Poses } from './arena-contents';
 export type { BondView } from './bonds';
 export type { DropletView } from './droplets';
+export type { Entry, Happening, Reader, Thing, Why } from './happenings';
 export type { PatchView } from './patches';
-export type { FadingRubbleView, RubbleView } from './rubble';
+export type { RubbleView } from './rubble';
 export {
   SLIDE_OUT_SPEED,
   type FillOutcome,
@@ -54,8 +55,6 @@ export {
 export const STEP_SECONDS = 1 / 60;
 /** Gravity, px/s². */
 export const GRAVITY = 1000;
-/** Seed of the Debris' own random generator, apart from the simulation's. */
-const DEBRIS_SEED = 0x0deb415;
 /** At most this many steps per `advance`, so a long frame can't stall the game. */
 const MAX_STEPS_PER_ADVANCE = 8;
 
@@ -115,19 +114,21 @@ export interface SandboxWorldOptions {
  * fixed order. They add and remove bodies through Arena bodies, which tells
  * every kind what went as it goes. The Contact ledger decides which contacts count, and the
  * Material rules read it and decide every consequence: the world runs their
- * phases in its step order and wires their decisions to the kinds, the
- * Debris and the physics module. Each Stroke is drawn in a Colour given with
- * the command; the world holds no selected Colour.
+ * phases in its step order and wires their decisions to the kinds and the
+ * physics module. Each step and command appends what happened to
+ * `happenings`, which the renderer reads. Each Stroke is drawn in a Colour
+ * given with the command; the world holds no selected Colour.
  */
 export class SandboxWorld {
   readonly arena: Arena;
   readonly random: Random;
   readonly materials: MaterialTable;
+  /** What happened, in order: read it through a reader of your own. */
+  readonly happenings = new Happenings(() => this.elapsed);
   private readonly physics: PhysicsWorld;
   private readonly contacts: ContactLedger<StrokeTarget>;
   private readonly bodies: ArenaBodies<StrokeTarget>;
   private readonly rules: MaterialRules<StrokeTarget, ObjectStroke>;
-  private readonly debris = new Debris(new Random(DEBRIS_SEED), GRAVITY);
   /** Each body's pose as the latest step began, for drawing: the simulation never reads it. */
   private readonly poses: PreviousPoses;
   private readonly strokes: Strokes;
@@ -157,13 +158,18 @@ export class SandboxWorld {
       minBounceSpeed: this.materials.minBounceSpeed,
     });
     this.contacts = new ContactLedger(this.physics);
-    this.bodies = new ArenaBodies(this.physics, this.contacts, this.materials, (parties) =>
-      this.passOnGone(parties),
+    const say = this.happenings.say.bind(this.happenings);
+    this.bodies = new ArenaBodies(
+      this.physics,
+      this.contacts,
+      this.materials,
+      (parties) => this.passOnGone(parties),
+      say,
     );
     this.poses = new PreviousPoses(this.physics);
     this.bodies.addTerrain(this.arena.terrain);
     const { physics, materials, arena, bodies, poses } = this;
-    this.strokes = new Strokes(physics, materials, arena, bodies, poses);
+    this.strokes = new Strokes(physics, materials, arena, bodies, poses, say);
     this.rubbleKind = new Rubble(physics, materials, bodies, poses);
     this.bondsKind = new Bonds(physics, this.contacts, poses);
     this.dropletsKind = new Droplets(physics, materials, arena, bodies, poses);
@@ -185,17 +191,19 @@ export class SandboxWorld {
       contacts: this.contacts,
       arena: {
         break: (target) => this.strokes.break(target),
-        burst: ({ outline, velocity, colours }) => this.debris.burst(outline, velocity, colours),
+        burst: ({ outline, velocity, colours }) =>
+          say({ kind: 'burst', outline, velocity, colours }),
         addRubble: (rubble) => this.rubbleKind.add(rubble),
         addDroplets: (droplets) => this.dropletsKind.add(droplets),
-        addBlast: (centre, size) => this.blastsKind.add(centre, size),
+        addBlast: (centre, size) =>
+          say({ kind: 'exploded', id: this.blastsKind.add(centre, size), centre, size }),
         bond: (sticker, host, point) =>
           this.bondsKind.add(sticker.id, sticker.party, host.id, point),
         isDroplet: (body) => this.dropletsKind.isDroplet(body),
         landDroplet: (body, host) => this.dropletsKind.land(body, host),
         surfaceOf: (host) => this.bodies.surfaceOf(host.id),
         layPatch: ({ host, centre, colour, length }, surface) =>
-          this.puff(this.patchesKind.add(host, surface, centre, colour, length)),
+          this.patchesKind.add(host, surface, centre, colour, length),
         patchOf: (shape) => this.patchesKind.patchOf(shape),
         usePatch: (patch, amount) => this.patchesKind.use(patch, amount),
       },
@@ -240,19 +248,9 @@ export class SandboxWorld {
     return this.strokes.objects;
   }
 
-  /** Debris particles in flight. */
-  get debrisParticles(): readonly DebrisParticle[] {
-    return this.debris.views;
-  }
-
   /** Rubble, oldest first. */
   get rubble(): readonly RubbleView[] {
     return this.rubbleKind.views;
-  }
-
-  /** Rubble the cap removed, fading out. */
-  get fadingRubble(): readonly FadingRubbleView[] {
-    return this.rubbleKind.fadingViews;
   }
 
   /** Green Objects stuck to what they touched. */
@@ -344,7 +342,7 @@ export class SandboxWorld {
 
   /** Removes one Stroke with its Fill, e.g. a spent stress-test ball. */
   remove(id: StrokeId): void {
-    this.strokes.remove(id);
+    this.strokes.remove(id, 'removed');
   }
 
   /**
@@ -372,16 +370,17 @@ export class SandboxWorld {
   }
 
   /**
-   * Removes every Stroke and Fill, the Rubble, Droplets, Patches, Blasts and
-   * the Debris; the Terrain stays. R has nothing to go back to. Nothing is left
-   * touching or Settled, since every kind unregisters its bodies.
+   * Removes every Stroke and Fill, the Rubble, Droplets, Patches and Blasts;
+   * the Terrain stays. R has nothing to go back to. Nothing is left touching
+   * or Settled, since every kind unregisters its bodies. It starts over: the
+   * Debris goes too.
    */
   clear(): void {
     this.bodies.clear();
     for (const kind of this.kinds) kind.clear();
     this.poses.forget();
     this.snapshot = null;
-    this.debris.clear();
+    this.happenings.say({ kind: 'start-over' });
   }
 
   /**
@@ -391,12 +390,6 @@ export class SandboxWorld {
    */
   private passOnGone(parties: ReadonlySet<PartyId>): void {
     for (const kind of this.kinds) kind.gone(parties);
-  }
-
-  /** Bursts a puff of Debris where each used-up Patch was. */
-  private puff(puffs: readonly Puff[]): void {
-    for (const { outline, velocity, colour } of puffs)
-      this.debris.burst(outline, velocity, [colour]);
   }
 
   /**
@@ -409,8 +402,10 @@ export class SandboxWorld {
     this.running = !this.running;
     this.accumulator = 0;
     if (!this.running) return;
-    this.snapshot = this.takeSnapshot();
-    this.rebuild(this.snapshot);
+    const snapshot = this.takeSnapshot();
+    this.snapshot = snapshot;
+    // Everything comes back as it was, under the same ids: nothing came or went.
+    this.happenings.quietly(() => this.rebuild(snapshot));
     this.strokes.squeezeAll();
   }
 
@@ -418,15 +413,15 @@ export class SandboxWorld {
    * Takes the world back to the moment physics last started, damage and all,
    * and pauses. Strokes and Fills made since are gone, and undo carries on
    * from the history of that moment. Does nothing before the first start.
+   * It starts over: everything comes back as added, and the Debris goes.
    */
   reset(): void {
     const snapshot = this.snapshot;
     if (!snapshot) return;
-    this.rebuild(snapshot);
-    this.debris.clear();
-    for (const kind of this.kinds) kind.dropVisuals();
     this.random.state = snapshot.random;
     this.elapsed = snapshot.time;
+    this.happenings.say({ kind: 'start-over' });
+    this.rebuild(snapshot);
     this.running = false;
     this.accumulator = 0;
   }
@@ -487,7 +482,6 @@ export class SandboxWorld {
     this.applyMaterials();
     this.contacts.step(this.physics.step());
     this.elapsed += STEP_SECONDS;
-    this.debris.step(STEP_SECONDS);
     // Damage by the ledger's hits. What broke breaks only after sticking and
     // landing: a green Object sticks to its first new contact even if that
     // breaks in this step (it then falls free at once, as when its host
@@ -498,7 +492,7 @@ export class SandboxWorld {
     this.rules.breakAll(broken);
     this.rules.glue([...this.strokes.pieces(), ...this.patchesKind.gluers()], STEP_SECONDS);
     this.blastsKind.spread(STEP_SECONDS, this.rules.blastReached);
-    this.puff(this.patchesKind.removeUsedUp());
+    this.patchesKind.removeUsedUp();
     for (const kind of this.kinds) kind.step(STEP_SECONDS);
   }
 

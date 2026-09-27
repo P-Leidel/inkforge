@@ -1,7 +1,7 @@
 import { polygonCentroid, type Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import type { Random } from './random';
+import type { Random } from '../sandbox/random';
 
 /** Seconds a Debris particle lives; it fades out over its life. */
 export const DEBRIS_LIFETIME = 2;
@@ -37,10 +37,12 @@ interface Particle {
 }
 
 /**
- * Debris: purely visual particles that burst from something that broke.
- * They live outside the physics world, fall under gravity, collide with
- * nothing and fade out. They are not part of the Reset snapshot, and their
- * randomness is their own, so they never change how a run plays out.
+ * Debris: purely visual particles that burst from something that broke, or
+ * from a Patch that went. They live outside the physics world, fall under
+ * gravity, collide with nothing and fade out. They move in the simulation's
+ * fixed steps, so they stop while it is paused. They are not part of the
+ * Reset snapshot, and their randomness is their own, so they never change
+ * how a run plays out.
  */
 export class Debris {
   private particles: Particle[] = [];
@@ -48,6 +50,8 @@ export class Debris {
   constructor(
     private readonly random: Random,
     private readonly gravity: number,
+    /** Seconds in one step. */
+    private readonly stepSeconds: number,
   ) {}
 
   get count(): number {
@@ -66,9 +70,11 @@ export class Debris {
 
   /**
    * Bursts particles from along a broken Outline (world coordinates), moving
-   * with `velocity`, in the given Colours taken in turn.
+   * with `velocity`, in the given Colours taken in turn, `steps` steps ago:
+   * they have moved on that far.
    */
-  burst(outline: Polygon, velocity: Vec2, colours: readonly Colour[]): void {
+  burst(outline: Polygon, velocity: Vec2, colours: readonly Colour[], steps = 0): void {
+    const from = this.particles.length;
     const perimeter = outline.reduce((sum, p, i) => {
       const q = outline[(i + 1) % outline.length]!;
       return sum + Math.hypot(q.x - p.x, q.y - p.y);
@@ -97,6 +103,9 @@ export class Debris {
         age: 0,
       });
     }
+    const burst = this.particles.splice(from);
+    for (let k = 0; k < steps; k++) this.move(burst);
+    this.particles.push(...burst.filter((p) => p.age < DEBRIS_LIFETIME));
   }
 
   private pointAlong(outline: Polygon, perimeter: number, distance: number): Vec2 {
@@ -114,16 +123,23 @@ export class Debris {
     return outline[0]!;
   }
 
-  /** Moves the particles on by `seconds`; spent ones disappear. */
-  step(seconds: number): void {
-    for (const p of this.particles) {
+  /** Moves the particles on by `steps` steps; spent ones disappear. */
+  advance(steps: number): void {
+    if (steps <= 0 || this.particles.length === 0) return;
+    for (let k = 0; k < steps; k++) this.move(this.particles);
+    this.particles = this.particles.filter((p) => p.age < DEBRIS_LIFETIME);
+  }
+
+  /** Moves particles on by one step. */
+  private move(particles: readonly Particle[]): void {
+    const seconds = this.stepSeconds;
+    for (const p of particles) {
       p.vy += this.gravity * seconds;
       p.x += p.vx * seconds;
       p.y += p.vy * seconds;
       p.angle += p.spin * seconds;
       p.age += seconds;
     }
-    this.particles = this.particles.filter((p) => p.age < DEBRIS_LIFETIME);
   }
 
   clear(): void {

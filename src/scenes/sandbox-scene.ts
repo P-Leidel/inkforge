@@ -18,7 +18,6 @@ import { PebbleDrop } from '../stress-tests/pebble-drop';
 import type { StressTest } from '../stress-tests/stress-test';
 import { isClosingStroke } from '../stroke/close-detection';
 import { isFillClick } from '../stroke/fill-click';
-import { transformPoints } from '../geometry/transform';
 
 /** Top edge of the gallery's row of buttons, under the stress-test row. */
 const GALLERY_ROW_TOP = 118;
@@ -65,7 +64,7 @@ export class SandboxScene extends Phaser.Scene {
     this.tuning = new TuningPanel(this.world.materials);
     this.worldView = new WorldRenderer(this, this.world);
     this.preview = new StrokePreview(this);
-    this.overlay = new DebugOverlay(this, this.world, this.frames);
+    this.overlay = new DebugOverlay(this, this.world, this.frames, this.worldView);
     // Phaser renders after the scene's update: time it for the frame's record.
     let renderStart = 0;
     const beforeRender = () => (renderStart = performance.now());
@@ -214,8 +213,7 @@ export class SandboxScene extends Phaser.Scene {
     if (isFillClick(stroke)) {
       const outcome = this.world.fillAt(stroke[0]!, colour);
       if (outcome.kind !== 'already-filled') return;
-      const object = this.world.objects.find((o) => o.id === outcome.id)!;
-      const outline = transformPoints(object.outline, object.transform);
+      const { outline } = outcome;
       flashRejection(this, [...outline, outline[0]!], 'Already filled', pointer);
       return;
     }
