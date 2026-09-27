@@ -1,8 +1,7 @@
 import type { Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import type { Vec2 } from '../geometry/vec2';
-import type { Colour } from '../materials/colour';
-import { TERRAIN_SURFACE, type MaterialTable } from '../materials/material-table';
+import { TERRAIN_SURFACE } from '../materials/material-table';
 import type {
   BodyId,
   BodyShape,
@@ -20,6 +19,7 @@ import {
   type SavedContacts,
 } from './contact-ledger';
 import type { Happening, Thing, Why } from './happenings';
+import type { Numbers, ThingType } from './numbers';
 
 /**
  * Arena bodies: every body in the Arena, and every shape added on one, come
@@ -33,8 +33,9 @@ import type { Happening, Thing, Why } from './happenings';
  * It also says what was added and what went, and why, for the list of what
  * happened: each body and added shape is a Thing that its kind names.
  *
- * It knows each body's Colour and role, and each added shape's Colour, so it
- * re-applies surfaces after a material table edit. It knows what each body
+ * It knows what each body and added shape is (its `ThingType`), and sets its
+ * surface by what `Numbers` says of it, when it is added and again after an
+ * F2 edit. It knows what each body
  * and added shape is made of: the Arena query tests those forms, and a
  * Party's form gives its surface, where a Patch can be laid on it. Kinds
  * never call the ledger's `register`, `unregister` or `squeezed`, or add or
@@ -64,12 +65,6 @@ export type BodiesLedger<T> = Pick<
   ContactLedger<T>,
   'newId' | 'register' | 'unregister' | 'squeezed' | 'party' | 'restore'
 >;
-
-/** A body's material: its Colour's surface in a role. */
-export interface Paint {
-  readonly colour: Colour;
-  readonly role: 'line' | 'outline';
-}
 
 /** Who a new body is, given the body: a kind builds its record around it. */
 type Who<P> = (body: BodyId) => P;
@@ -113,8 +108,8 @@ export interface AddedShape {
 
 interface BodyEntry extends Figure {
   readonly party: PartyId;
-  /** Null for the Terrain, whose surface never changes. */
-  readonly paint: Paint | null;
+  /** What it is, which gives its surface; null for the Terrain, whose surface never changes. */
+  readonly type: ThingType | null;
   /** Whether a Patch can be laid on it. */
   readonly lands: boolean;
   /** Shapes added on it, in the order they were added. */
@@ -125,7 +120,7 @@ interface BodyEntry extends Figure {
 
 interface ShapeEntry extends Figure {
   readonly what: Thing;
-  readonly colour: Colour;
+  readonly type: ThingType;
   readonly order: number;
 }
 
@@ -162,7 +157,7 @@ export class ArenaBodies<T> {
   constructor(
     private readonly physics: BodiesPhysics,
     private readonly contacts: BodiesLedger<T>,
-    private readonly materials: MaterialTable,
+    private readonly numbers: Numbers,
     private readonly gone: (parties: ReadonlySet<PartyId>) => void,
     private readonly say: (happening: Happening) => void,
   ) {}
@@ -179,63 +174,57 @@ export class ArenaBodies<T> {
     this.contacts.register({ id: TERRAIN_PARTY, stroke: TERRAIN_PARTY, body, target: null });
   }
 
-  /** Adds a fixed Line body with its Colour's Line surface; Patches lie along its capsules. */
+  /** Adds a fixed Line body with `type`'s surface; Patches lie along its capsules. */
   addLine<P extends Party<T>>(
     segments: readonly Segment[],
     thickness: number,
-    colour: Colour,
+    type: ThingType,
     what: Thing,
     who: Who<P>,
   ): P {
-    const body = this.physics.addLine(segments, thickness, this.materials.colours[colour].line);
+    const body = this.physics.addLine(segments, thickness, this.numbers.surface(type));
     const form: Form = { kind: 'capsules', segments, radius: thickness / 2 };
-    return this.register(body, { colour, role: 'line' }, form, what, who);
+    return this.register(body, type, form, what, who);
   }
 
-  /** Adds an Object with its Colour's Outline surface; Patches lie along `outline`. */
+  /** Adds an Object with `type`'s surface; Patches lie along `outline`. */
   addObject<P extends Party<T>>(
     def: Omit<ObjectBodyDef, 'surface'>,
-    colour: Colour,
+    type: ThingType,
     outline: Polygon,
     what: Thing,
     who: Who<P>,
   ): P {
-    const body = this.physics.addObject({
-      ...def,
-      surface: this.materials.colours[colour].outline,
-    });
+    const body = this.physics.addObject({ ...def, surface: this.numbers.surface(type) });
     const form: Form = { kind: 'object', outline, parts: def.parts };
-    return this.register(body, { colour, role: 'outline' }, form, what, who);
+    return this.register(body, type, form, what, who);
   }
 
   /**
-   * Adds a moving circle with `paint`'s surface. Patches lie on its rim,
+   * Adds a moving circle with `type`'s surface. Patches lie on its rim,
    * unless it is harmless: nothing lands on a Droplet.
    */
   addCircle<P extends Party<T>>(
     def: Omit<CircleBodyDef, 'surface'>,
-    paint: Paint,
+    type: ThingType,
     what: Thing,
     who: Who<P>,
   ): P {
-    const body = this.physics.addCircle({
-      ...def,
-      surface: this.materials.colours[paint.colour][paint.role],
-    });
+    const body = this.physics.addCircle({ ...def, surface: this.numbers.surface(type) });
     const circle: Form = { kind: 'circle', radius: def.radius };
-    return this.register(body, paint, circle, what, who, (party) => !party.harmless);
+    return this.register(body, type, circle, what, who, (party) => !party.harmless);
   }
 
   private register<P extends Party<T>>(
     body: BodyId,
-    paint: Paint,
+    type: ThingType,
     form: Form,
     what: Thing,
     who: Who<P>,
     lands: (party: P) => boolean = () => true,
   ): P {
     const party = who(body);
-    this.track(body, party.id, what, paint, form, lands(party));
+    this.track(body, party.id, what, type, form, lands(party));
     this.contacts.register(party);
     this.say({ kind: 'added', what });
     return party;
@@ -245,12 +234,12 @@ export class ArenaBodies<T> {
     body: BodyId,
     party: PartyId,
     what: What,
-    paint: Paint | null,
+    type: ThingType | null,
     form: Form,
     lands: boolean,
   ): void {
     const order = this.added++;
-    this.bodies.set(body, { body, party, what, paint, form, lands, shapes: new Set(), order });
+    this.bodies.set(body, { body, party, what, type, form, lands, shapes: new Set(), order });
   }
 
   /**
@@ -288,24 +277,23 @@ export class ArenaBodies<T> {
 
   /**
    * Adds a capsule of `radius` around `segment` (in the host's own
-   * coordinates) on the body of Party `host`, with `colour`'s Line surface:
-   * a Patch. It goes with its host. Null if the host is gone.
+   * coordinates) on the body of Party `host`, with `type`'s surface: a
+   * Patch. It goes with its host. Null if the host is gone.
    */
   addShape(
     host: PartyId,
     segment: Segment,
     radius: number,
-    colour: Colour,
+    type: ThingType,
     what: Thing,
   ): AddedShape | null {
     const body = this.contacts.party(host)?.body;
     const entry = body === undefined ? undefined : this.bodies.get(body);
     if (body === undefined || !entry) return null;
-    const surface = this.materials.colours[colour].line;
-    const shape = this.physics.addCapsule(body, segment, radius, surface);
+    const shape = this.physics.addCapsule(body, segment, radius, this.numbers.surface(type));
     entry.shapes.add(shape);
     const form: Form = { kind: 'capsule', segment, radius };
-    this.shapes.set(shape, { body, colour, what, form, order: this.added++ });
+    this.shapes.set(shape, { body, type, what, form, order: this.added++ });
     this.say({ kind: 'added', what });
     return { shape, body };
   }
@@ -355,16 +343,15 @@ export class ArenaBodies<T> {
   }
 
   /**
-   * Sets every body's and added shape's surface from the material table as
-   * it is now, in the order they were added: after an edit.
+   * Sets every body's and added shape's surface by what `Numbers` says of
+   * it now, in the order they were added: after an edit.
    */
   applySurfaces(): void {
-    const { colours } = this.materials;
-    for (const { body, paint } of this.bodies.values()) {
-      if (paint) this.physics.setSurface(body, colours[paint.colour][paint.role]);
+    for (const { body, type } of this.bodies.values()) {
+      if (type) this.physics.setSurface(body, this.numbers.surface(type));
     }
-    for (const [shape, { colour }] of this.shapes) {
-      this.physics.setShapeSurface(shape, colours[colour].line);
+    for (const [shape, { type }] of this.shapes) {
+      this.physics.setShapeSurface(shape, this.numbers.surface(type));
     }
   }
 

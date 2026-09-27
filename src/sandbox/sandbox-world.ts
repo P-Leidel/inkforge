@@ -23,6 +23,7 @@ import { ContactLedger, type PartyId, type SavedContacts } from './contact-ledge
 import { Droplets, type DropletView } from './droplets';
 import { Happenings, type Thing } from './happenings';
 import { MaterialRules } from './material-rules';
+import { Numbers } from './numbers';
 import { Patches, type PatchView } from './patches';
 import { PreviousPoses } from './previous-poses';
 import { Random } from './random';
@@ -164,6 +165,8 @@ export class SandboxWorld {
   readonly arena: Arena;
   readonly random: Random;
   readonly materials: MaterialTable;
+  /** What a thing's numbers are, from the material table as it is now. */
+  private readonly numbers: Numbers;
   /** What happened, in order: read it through a reader of your own. */
   readonly happenings = new Happenings(() => this.elapsed);
   private readonly physics: PhysicsWorld;
@@ -196,6 +199,7 @@ export class SandboxWorld {
     this.arena = options.arena ?? SANDBOX_ARENA;
     this.random = new Random(options.seed ?? 1);
     this.materials = options.materials ?? createMaterialTable();
+    this.numbers = new Numbers(this.materials);
     this.physics = (options.createPhysics ?? createPhysicsWorld)({
       gravity: { x: 0, y: GRAVITY },
       timeStep: STEP_SECONDS,
@@ -207,15 +211,15 @@ export class SandboxWorld {
     this.bodies = new ArenaBodies(
       this.physics,
       this.contacts,
-      this.materials,
+      this.numbers,
       (parties) => this.passOnGone(parties),
       say,
     );
     this.query = new ArenaQuery(this.physics, this.bodies);
     this.poses = new PreviousPoses(this.physics);
     this.bodies.addTerrain(this.arena.terrain);
-    const { physics, materials, arena, bodies, query, poses } = this;
-    this.strokes = new Strokes(physics, materials, arena, bodies, query, poses, say);
+    const { physics, materials, numbers, arena, bodies, query, poses } = this;
+    this.strokes = new Strokes(physics, materials, numbers, arena, bodies, query, poses, say);
     this.rubbleKind = new Rubble(physics, materials, bodies, poses);
     this.bondsKind = new Bonds(physics, this.contacts, poses);
     this.dropletsKind = new Droplets(physics, materials, arena, bodies, poses);
@@ -232,6 +236,7 @@ export class SandboxWorld {
     this.kinds = kinds;
     this.rules = new MaterialRules({
       materials: this.materials,
+      numbers: this.numbers,
       random: this.random,
       physics: this.physics,
       contacts: this.contacts,

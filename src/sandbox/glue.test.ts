@@ -5,7 +5,7 @@ import { createMaterialTable } from '../materials/material-table';
 import type { BodyId, ShapeId } from '../physics';
 import type { Party } from './contact-ledger';
 import type { Gluer } from './glue';
-import type { Breakable } from './material-rules';
+import type { Breakable } from './numbers';
 import { fakePatch, fakeRules, type FakeBody } from './rules-test-support';
 
 describe('Glue drag', () => {
@@ -57,8 +57,8 @@ describe('Glue drag', () => {
   }
 
   const gluer = (body: number, colour: Colour = 'green'): Piece => ({
+    kind: 'piece',
     colour,
-    role: 'line',
     body: body as BodyId,
     damage: 0,
     impacts: 0,

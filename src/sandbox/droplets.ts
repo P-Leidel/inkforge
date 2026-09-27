@@ -163,7 +163,7 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
         wakes: false,
         bullet: true,
       },
-      { colour: droplet.colour, role: 'line' },
+      { kind: 'droplet', colour: droplet.colour },
       { thing: 'droplet', id },
       (body) => ({ id: party, stroke: party, body, target: null, harmless: true }),
     );

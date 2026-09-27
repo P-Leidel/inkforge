@@ -11,10 +11,10 @@ import {
 import type { BodyId, ShapeId } from '../physics';
 import { blastSize, blastStrength, pieceBlastSize, type Reach } from './blasts';
 import { TERRAIN_PARTY, type NewContact, type Party, type PartyHit } from './contact-ledger';
-import { fuseBurns, impactDamage, wakes, wear, type Breakable } from './material-rules';
+import { fuseBurns, impactDamage, wakes, type Broken } from './material-rules';
+import { Numbers, type Breakable } from './numbers';
 import { fakePatch, fakeRules } from './rules-test-support';
 import { WAITING, type Sticker } from './sticking';
-import type { Broken } from './strokes';
 
 describe('The damage rule', () => {
   it('deals the impulse above the threshold, times k', () => {
@@ -49,7 +49,7 @@ describe('Material rules: impacts', () => {
 
   const breakable = (colour: Colour): Breakable => ({
     colour,
-    role: 'outline',
+    kind: 'object',
     damage: 0,
     impacts: 0,
   });
@@ -125,7 +125,7 @@ describe('Material rules: impacts', () => {
 
     expect(broken).toEqual([0, 0, 0, 1]);
     expect(blue.impacts).toBe(3);
-    expect(wear(blue, table)).toBe(1);
+    expect(new Numbers(table).wear(blue)).toBe(1);
   });
 
   it('breaks a Breakable when its damage reaches its durability', () => {
@@ -145,19 +145,19 @@ describe('Material rules: impacts', () => {
     const lines = createMaterialTable();
     lines.colours.grey.line.damageThreshold = 100;
     lines.colours.grey.line.durability = 500;
-    const piece: Breakable = { colour: 'grey', role: 'line', damage: 0, impacts: 0 };
+    const piece: Breakable = { kind: 'piece', colour: 'grey', damage: 0, impacts: 0 };
     const rules = impactRules(lines);
     const { hit } = setup([party(2, piece, 1), TERRAIN]);
 
     expect(rules.impacts([hit(0, 1, 350)])).toEqual([]);
     expect(piece.damage).toBe(250);
-    expect(wear(piece, lines)).toBe(0.5);
+    expect(new Numbers(lines).wear(piece)).toBe(0.5);
 
     expect(rules.impacts([hit(0, 1, 350)])).toEqual([piece]);
   });
 
   it('never breaks a blue Piece by counting impacts: only damage wears it', () => {
-    const piece: Breakable = { colour: 'blue', role: 'line', damage: 0, impacts: 0 };
+    const piece: Breakable = { kind: 'piece', colour: 'blue', damage: 0, impacts: 0 };
     const rules = impactRules(table);
     const { hit } = setup([party(2, piece, 1), TERRAIN]);
     const threshold = table.colours.blue.line.damageThreshold;
@@ -165,13 +165,13 @@ describe('Material rules: impacts', () => {
     for (let k = 0; k < 4; k++) rules.impacts([hit(0, 1, threshold + 10)]);
 
     expect(piece.damage).toBe(40);
-    expect(wear(piece, table)).toBeLessThan(1);
+    expect(new Numbers(table).wear(piece)).toBeLessThan(1);
   });
 
   it("counts one Line's Pieces hit in one step as one impact on what hit them", () => {
     const grey = breakable('grey');
-    const left: Breakable = { colour: 'grey', role: 'line', damage: 0, impacts: 0 };
-    const right: Breakable = { colour: 'grey', role: 'line', damage: 0, impacts: 0 };
+    const left: Breakable = { kind: 'piece', colour: 'grey', damage: 0, impacts: 0 };
+    const right: Breakable = { kind: 'piece', colour: 'grey', damage: 0, impacts: 0 };
     const rules = impactRules(table);
     // Line 2 has no body; Pieces 3 and 4 are its Pieces.
     const { hit } = setup([party(1, grey), party(3, left, 2), party(4, right, 2)]);
@@ -197,7 +197,9 @@ const SQUARE: Polygon = [
 function brokenObject(outline: Colour, fill: Colour | null): Broken {
   const centre = { x: 100, y: 200 };
   return {
+    kind: 'object',
     debris: { outline: SQUARE, velocity: { x: 0, y: 0 }, colours: [outline] },
+    outline: { colour: outline, ink: outlineInk(SQUARE), centre },
     fill: fill && {
       colour: fill,
       mass: 2,
@@ -209,18 +211,16 @@ function brokenObject(outline: Colour, fill: Colour | null): Broken {
         angularVelocity: 0,
       },
     },
-    outline: { colour: outline, ink: outlineInk(SQUARE), centre },
-    piece: null,
   };
 }
 
 /** What breaking a Piece of `colour` centred at (100, 200) lets out. */
 function brokenPiece(colour: Colour): Broken {
   return {
+    kind: 'piece',
     debris: { outline: SQUARE, velocity: { x: 0, y: 0 }, colours: [colour] },
-    fill: null,
-    outline: null,
-    piece: { colour, centre: { x: 100, y: 200 } },
+    colour,
+    centre: { x: 100, y: 200 },
   };
 }
 
@@ -237,7 +237,7 @@ describe('Material rules: breaking', () => {
   const table = createMaterialTable();
   const object = (colour: Colour): Breakable => ({
     colour,
-    role: 'outline',
+    kind: 'object',
     damage: 0,
     impacts: 0,
   });
@@ -245,7 +245,7 @@ describe('Material rules: breaking', () => {
   /** Breaks `target`, which lets out `broken`, as a hit that broke it would. */
   function breakOne(broken: Broken | null, materials = table) {
     const fake = fakeRules<Breakable>(materials);
-    const target = object(broken?.outline?.colour ?? 'grey');
+    const target = object(broken?.kind === 'object' ? broken.outline.colour : 'grey');
     if (broken) fake.arena.breaks.set(target, broken);
     fake.contacts.hits = [
       {
@@ -364,9 +364,9 @@ describe('Material rules: a Blast arriving', () => {
   table.blast.maxPushSpeed = 500;
   const CENTRE = { x: 0, y: 0 };
 
-  const target = (colour: Colour, role: 'line' | 'outline' = 'outline'): Breakable => ({
+  const target = (colour: Colour, kind: Breakable['kind'] = 'object'): Breakable => ({
+    kind,
     colour,
-    role,
     damage: 0,
     impacts: 0,
   });
@@ -446,7 +446,7 @@ describe('Material rules: a Blast arriving', () => {
 
   it('only damages a Piece, which is fixed', () => {
     const { rules, physics } = fakeRules<Breakable>(table);
-    const piece = target('grey', 'line');
+    const piece = target('grey', 'piece');
     physics.add(1, { free: false });
 
     rules.blastReached([reach(partyOf(1, piece), 500)]);
@@ -493,7 +493,7 @@ describe('The fuse', () => {
 
   it('destroys a red Piece that close through the Blast rule, in one go', () => {
     const { rules, physics, arena } = fakeRules<Breakable>(TABLE);
-    const next: Breakable = { colour: 'red', role: 'line', damage: 0, impacts: 0 };
+    const next: Breakable = { kind: 'piece', colour: 'red', damage: 0, impacts: 0 };
     arena.breaks.set(next, brokenPiece('red'));
     physics.add(1, { free: false });
 
