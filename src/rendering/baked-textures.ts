@@ -39,6 +39,18 @@ export function bakingGraphics(scene: Phaser.Scene): Graphics {
   return scene.make.graphics({}, false).setScale(SUPERSAMPLE);
 }
 
+/** Draws `draw` once and bakes it into each of `drawings`. */
+export function bakeInto(
+  scene: Phaser.Scene,
+  drawings: readonly BakedDrawing[],
+  draw: (g: Graphics) => void,
+): void {
+  const g = bakingGraphics(scene);
+  draw(g);
+  for (const drawing of drawings) drawing.bake(g);
+  g.destroy();
+}
+
 /**
  * A drawing baked into a texture of its own that covers `rect` of the
  * drawing's space, shown by `image`. Place the image where the drawing's

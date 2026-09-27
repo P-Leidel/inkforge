@@ -14,6 +14,7 @@ import { transformPoints } from '../src/geometry/transform';
 import type { Vec2 } from '../src/geometry/vec2';
 import { DEMOLITION_DEMO } from '../src/gallery/gallery';
 import type { Colour } from '../src/materials/colour';
+import { contentCounts } from '../src/sandbox/content-counts';
 import { GRAVITY, SandboxWorld, STEP_SECONDS } from '../src/sandbox/sandbox-world';
 import { BallCannon } from '../src/stress-tests/ball-cannon';
 import { BoxTower } from '../src/stress-tests/box-tower';
@@ -243,14 +244,7 @@ function demolition() {
       const t1 = performance.now();
       const entries = happenings.read();
       const read =
-        world.lines.length +
-        world.objects.length +
-        world.rubble.length +
-        world.bonds.length +
-        world.droplets.length +
-        world.patches.length +
-        world.blasts.length +
-        entries.length;
+        contentCounts(world.contents).reduce((sum, { count }) => sum + count, 0) + entries.length;
       readTimes.push(performance.now() - t1);
       stepTimes.push(t1 - t0);
       items = Math.max(items, read);
