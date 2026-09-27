@@ -19,7 +19,7 @@ Where Enemies appear: beyond the Arena's edge, out of view and out of reach of d
 _Avoid_: Spawn point, gate, portal
 
 **Pit**:
-A gap in the Terrain open to the bottom of the screen. An Enemy that falls in leaves the Arena and dies.
+A gap in the Terrain open to the bottom of the screen. An Enemy that falls in dies when it drops below the screen.
 _Avoid_: Hole, chasm, dip (a gap with a floor is not a Pit)
 
 **Terrain**:
@@ -139,7 +139,7 @@ _Avoid_: Loot, reward
 ### Enemies
 
 **Enemy**:
-An upright physics body that walks toward the Ink Core over whatever it stands on, pushing with a force up to its type's limit. It dies when its HP runs out or it leaves the Arena, and disappears when it reaches the Ink Core.
+An upright physics body that walks toward the Ink Core over whatever it stands on, pushing with a force up to its type's limit. It dies when its HP runs out, from hits, falls, Blasts and the like, or when it falls below the bottom of the screen, and disappears when it reaches the Ink Core.
 _Avoid_: Mob, unit, creep, walker (in player-facing text)
 
 **Crawler**:
