@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inkforge Architecture Review 4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f1f2f4;
+    --surface: #ffffff;
+    --ink: #15171c;
+    --muted: #5b616e;
+    --rule: #d7dae0;
+    --strong: #1d7f36;
+    --strong-bg: #e1f3e5;
+    --explore: #8c5f0e;
+    --explore-bg: #fbefd6;
+    --spec: #4e5563;
+    --spec-bg: #e6e8ec;
+    --tag-bg: #eceef2;
+    --note-bg: #eef0f4;
+    --leak: #b8322a;
+    --leak-bg: #fbe6e3;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d2027;
+      --surface: #252933;
+      --ink: #e8e2d0;
+      --muted: #9aa0ad;
+      --rule: #3a404d;
+      --strong: #62d98b;
+      --strong-bg: #1d3a28;
+      --explore: #f0c05a;
+      --explore-bg: #3b321d;
+      --spec: #c0c5cf;
+      --spec-bg: #333845;
+      --tag-bg: #2f3440;
+      --note-bg: #2c313c;
+      --leak: #f07a6e;
+      --leak-bg: #3d2524;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d2027;
+    --surface: #252933;
+    --ink: #e8e2d0;
+    --muted: #9aa0ad;
+    --rule: #3a404d;
+    --strong: #62d98b;
+    --strong-bg: #1d3a28;
+    --explore: #f0c05a;
+    --explore-bg: #3b321d;
+    --spec: #c0c5cf;
+    --spec-bg: #333845;
+    --tag-bg: #2f3440;
+    --note-bg: #2c313c;
+    --leak: #f07a6e;
+    --leak-bg: #3d2524;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+  h1 { font-size: 1.9rem; line-height: 1.15; }
+  h2 { font-size: 1.45rem; line-height: 1.2; }
+  h3 { font-size: 1.05rem; line-height: 1.25; }
+  p { margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  code { font-size: .9em; }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+  .muted { color: var(--muted); }
+  .label { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+
+  .page { max-width: 72rem; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  .head { display: flex; flex-direction: column; gap: 16px; }
+  .titlerow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .scope { font-size: 14px; color: var(--muted); max-width: 52rem; }
+  .legend { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .swatch { display: inline-block; width: 24px; height: 16px; }
+  .swatch-seam { display: inline-block; width: 32px; border-top: 1.5px dashed var(--muted); }
+
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* What the performance work changed */
+  .figs { display: grid; grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr)); gap: 8px; }
+  .fig { border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .fig .v { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .fig .k { font-size: 13px; color: var(--muted); line-height: 1.35; }
+  .points { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 60rem; }
+
+  /* The queue, today */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 8px; }
+  .tile { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); gap: 0 6px; font-size: 13px; line-height: 1.35; }
+  .tile .n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--muted); }
+  .tile .st { grid-column: 2; font-size: 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tile.keep .st { color: var(--strong); }
+  .tile.fold .st { color: var(--explore); }
+  .tile.park { background: var(--note-bg); border-color: transparent; }
+  .tile.park .st { color: var(--muted); }
+  .tile .st a { font-weight: 600; }
+
+  .candidates { display: flex; flex-direction: column; gap: 36px; }
+  .cand { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 16px; }
+  .cand-head { display: flex; flex-direction: column; gap: 8px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+  .b-strong { background: var(--strong-bg); color: var(--strong); }
+  .b-explore { background: var(--explore-bg); color: var(--explore); }
+  .b-spec { background: var(--spec-bg); color: var(--spec); }
+  .b-tag { background: var(--tag-bg); color: var(--muted); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .files { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+  .files .note { opacity: .75; }
+
+  .ba { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .prose3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .prose3 > div { display: flex; flex-direction: column; gap: 4px; }
+  .wins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wins li::before { content: "▪"; color: var(--strong); margin-right: 8px; }
+  .callout { background: var(--explore-bg); border-left: 3px solid var(--explore); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+  .evidence { background: var(--note-bg); border-left: 3px solid var(--muted); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+
+  .parked { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .park-card { background: var(--surface); border: 1px dashed var(--rule); border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+
+  /* The queue, restructured */
+  .tablewrap { overflow-x: auto; }
+  table.queue { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14px; }
+  table.queue th { text-align: left; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+  table.queue td { padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  table.queue td.ord { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; font-variant-numeric: tabular-nums; width: 2.5rem; }
+  table.queue tr.out td { color: var(--muted); }
+  .act { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .a-new { background: var(--strong-bg); color: var(--strong); }
+  .a-keep { background: var(--tag-bg); color: var(--ink); }
+  .a-rewrite { background: var(--explore-bg); color: var(--explore); }
+  .a-close { background: var(--spec-bg); color: var(--spec); }
+  .a-move { background: var(--note-bg); color: var(--muted); }
+
+  .also ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+
+  .top { background: var(--surface); border: 3px solid var(--strong); border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .top .label { color: var(--strong); }
+  .top p { max-width: 52rem; }
+
+  /* Addendum: what a check against the code changed after filing */
+  .scope.callout { color: var(--ink); }
+  .addendum { border: 2px solid var(--explore); }
+  .addendum .label { color: var(--explore); }
+  .addendum > p { font-size: 14px; max-width: 60rem; }
+
+  @media (min-width: 640px) {
+    .page { padding-inline: 24px; padding-block: 56px 80px; }
+    h1 { font-size: 2.3rem; }
+    h2 { font-size: 1.6rem; }
+    .cand { padding: 28px; }
+    .panel { padding: 20px; }
+    .top { padding: 32px; }
+  }
+  @media (min-width: 768px) {
+    .prose3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .parked { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1024px) { .ba { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Diagram sheets are drafting paper in both themes, so hand-drawn and Mermaid diagrams read the same. */
+  .sheet { background: #fbfbfa; color: #16181d; border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-x: auto; min-width: 0; }
+  .s-muted { color: #6a707c; }
+  .s-label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tiny { font-size: 11px; }
+  .small { font-size: 12px; }
+  .center { text-align: center; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 3px 8px; font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .pad { padding: 8px; }
+  .pad-lg { padding: 14px 16px; }
+  .mod { border: 1.5px solid #5b616e; background: #ffffff; border-radius: 4px; }
+  .plan { border: 1.5px dashed #7a808c; background: #ffffff; border-radius: 4px; color: #4a505b; }
+  .leakbox { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; border-radius: 4px; }
+  .okbox { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; border-radius: 4px; }
+  /* A deep module is drawn like the game's black ink: a heavy dark core in a pale rim. */
+  .deep { background: #050506; color: #eef0f3; border: 3px solid #8a909e; border-radius: 5px; }
+  .deep .faded { color: #8f96a3; }
+  .deep .chip { border: 1px solid #3c414c; color: #d6d9df; border-radius: 3px; }
+  .mod .chip, .plan .chip { border: 1px solid #c9cdd4; border-radius: 3px; background: #ffffff; }
+  .seam { border-top: 1.5px dashed #7a808c; }
+  .arrow { text-align: center; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: #6a707c; }
+  .stack { display: flex; flex-direction: column; gap: 12px; min-width: 330px; }
+  .row { display: grid; gap: 8px; }
+  .row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .row-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .frame { border: 1.5px dashed #7a808c; border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+  /* C1: the renderer's bookkeeping */
+  .ledger { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; }
+  .ledger .f { color: #2c3038; }
+  .ledger .t { color: #8f1f16; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* C2: Kind members, per kind */
+  .slots { display: grid; grid-template-columns: minmax(6.8rem, auto) repeat(6, 2.9rem) 3.4rem; gap: 5px 2px; align-items: center; min-width: 470px; }
+  .colhead { font-size: 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; line-height: 1.15; color: #4a505b; }
+  .rowhead { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; color: #2c3038; line-height: 1.25; }
+  .cell { width: 13px; height: 13px; border-radius: 999px; justify-self: center; display: inline-block; }
+  .c-built { background: #16181d; }
+  .c-empty { border: 1.5px solid #c9cdd4; }
+  .goes { font-size: 10.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; font-weight: 600; color: #1d7f36; }
+  .goes.stay { color: #8c929e; font-weight: 500; }
+  .key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: #6a707c; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .key span { display: flex; align-items: center; gap: 6px; }
+  .ways { display: flex; flex-direction: column; gap: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; }
+  .ways .w { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 8px; }
+  .ways .w span:first-child { color: #2c3038; }
+  .ways .w span:last-child { color: #8f1f16; }
+
+  /* C3: questions about place */
+  .qrows { display: flex; flex-direction: column; gap: 6px; min-width: 330px; }
+  .qrow { padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .qrow b { font-size: 12.5px; font-weight: 600; }
+  .qrow span { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .newtag { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; background: #d23a2e; color: #ffffff; border-radius: 2px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
+
+  /* C4: rebuild's checklist */
+  .check { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; }
+  .check li { display: grid; grid-template-columns: 1.2rem minmax(0, 1fr); gap: 6px; }
+  .check .y { color: #1d7f36; font-weight: 600; }
+  .check .x { color: #d23a2e; font-weight: 600; }
+  .check .q { color: #8c929e; }
+  .check .bad { color: #8f1f16; }
+  .check .meh { color: #6a707c; }
+
+  pre.mermaid { background: transparent; margin: 0; font-size: 13px; }
+  /* Mermaid names its node labels .label too: keep the page's label style off them. */
+  pre.mermaid .label { text-transform: none; letter-spacing: normal; font-size: inherit; font-weight: inherit; color: inherit; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<style>
+  /* Review 4: cross-sections and mass bars */
+  .xsec { display: flex; flex-direction: column; gap: 4px; min-width: 330px; }
+  .band { border-left: 4px solid #7a808c; background: #ffffff; padding: 6px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; color: #2c3038; }
+  .band .t { color: #6a707c; white-space: nowrap; }
+  .band.untested { border-left-color: #d23a2e; background: #fde8e5; color: #8f1f16; }
+  .band.untested .t { color: #8f1f16; }
+  .band.tested { border-left-color: #1d7f36; background: #e9f6ec; color: #155c27; }
+  .band.tested .t { color: #155c27; }
+  .band.thick { border-left: 6px solid #050506; background: #050506; color: #eef0f3; padding: 14px 12px; }
+  .band.thick .t { color: #8f96a3; }
+  .band.phaser { border-left-color: #8c929e; background: #f1f2f4; color: #4a505b; }
+  .bars { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 6px 10px; align-items: center; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; min-width: 330px; }
+  .bar { height: 14px; border-radius: 2px; }
+  .bar.i { background: #d23a2e; }
+  .bar.m { background: #16181d; }
+  .bar.e { background: repeating-linear-gradient(90deg, #c9cdd4 0 6px, transparent 6px 9px); }
+  .formula { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; }
+  .formula .fx { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 8px; padding: 6px 8px; }
+  .formula .fx span:first-child { color: #2c3038; }
+  .formula .fx span:last-child { color: #8f1f16; }
+  .formula .fx.plan span:last-child { color: #4a505b; }
+  .done .st { color: var(--muted); }
+  .tile.done { background: var(--note-bg); border-color: transparent; }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
+</head>
+<body>
+<main class="page">
+
+  <header class="head">
+    <div class="titlerow">
+      <h1>Inkforge architecture review</h1>
+      <span class="mono meta">P-Leidel/inkforge · 7285049 (#55) · 2026-09-27</span>
+    </div>
+    <p class="scope">Scope: the code through #55. That covers the refactor queue the review after #47 filed: drawing between steps (#49), one body description (#34), Arena bodies (#40) and the list of what happened (#50). It is judged on milestone 3 (the ink economy), which comes next, and on milestone 4 (enemies). It follows the <a href="architecture-review-2026-09-26-after-47.html">review after #47</a>. All 507 tests pass on 7285049.</p>
+    <div class="legend">
+      <span class="label">Legend</span>
+      <span class="item"><span class="swatch mod"></span>module</span>
+      <span class="item"><span class="swatch plan"></span>planned or later</span>
+      <span class="item"><span class="swatch-seam"></span>seam</span>
+      <span class="item"><svg width="30" height="10" aria-hidden="true"><line x1="0" y1="5" x2="22" y2="5" stroke="#d23a2e" stroke-width="2" stroke-dasharray="4 3"/><path d="M22 1 L29 5 L22 9 Z" fill="#d23a2e"/></svg>leakage</span>
+      <span class="item"><span class="swatch deep"></span>deep module, drawn like black ink</span>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="queue-now-h">
+    <span id="queue-now-h" class="label">The queue from the review after #47, today</span>
+    <div class="tiles">
+      <div class="tile done"><span class="n">#49</span><span>Draw moving bodies between the last two steps</span><span class="st">done in #53</span></div>
+      <div class="tile done"><span class="n">#34</span><span>Rebuild bodies from one body description</span><span class="st">done in #52</span></div>
+      <div class="tile done"><span class="n">#40</span><span>Add and remove every body through Arena bodies</span><span class="st">done in #54</span></div>
+      <div class="tile done"><span class="n">#50</span><span>Let the Sandbox world say what happened</span><span class="st">done in #55</span></div>
+      <div class="tile keep"><span class="n">#36</span><span>Answer "what is here" in one Arena query module</span><span class="st">unblocked, still true → <a href="#c1">C1</a></span></div>
+      <div class="tile park"><span class="n">#38</span><span>M3: undo and Ink cost in the Build Phase</span><span class="st">still a spec decision; <a href="#c2">C2</a> feeds it</span></div>
+    </div>
+    <ul class="points">
+      <li>The Sandbox world's own seams are in good shape now. Bodies come and go through one module, the renderer follows one list, and the Material rules have fakes for both their ports.</li>
+      <li>The friction left sits where milestone 3 will land: questions about place, how much Ink something is, and the scene that turns the pointer into commands.</li>
+    </ul>
+  </section>
+
+  <section id="candidates" class="candidates">
+
+    <!-- C1 -->
+    <article id="c1" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 1 · #36, unblocked</span>
+        <h2>Answer "what is here" in one Arena query module</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">M3 overlap charging needs it</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/sandbox-world.ts <span class="note">(strokeContext 307, every kind's solids() 308, eraseAlong 357)</span></li>
+        <li>src/sandbox/strokes.ts <span class="note">(squeeze 420, objectAt 451, erase 513, solids 647)</span></li>
+        <li>src/sandbox/rubble.ts · droplets.ts · patches.ts <span class="note">(erase, solids)</span> · bonds.ts · blasts.ts <span class="note">(empty erase, empty solids)</span></li>
+        <li>src/sandbox/arena-contents.ts <span class="note">(Kind: solids, erase)</span> · src/sandbox/brush.ts</li>
+        <li>src/stroke/stroke-pipeline.ts <span class="note">(StrokeContext, overlapsSolid)</span> · src/scenes/sandbox-scene.ts <span class="note">(updateRefusal 227)</span></li>
+        <li>src/geometry/separation.ts · overlap.ts <span class="note">(no tests of their own)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: each question has its own scan, and Kind carries two of them</span>
+          <div class="qrows">
+            <div class="qrow leakbox"><b>May this Object go here?</b><span>every kind's solids() → overlapsSolid · each draw, and each frame a closing Stroke grows</span></div>
+            <div class="qrow leakbox"><b>Which Object is under the pointer?</b><span>Strokes.objectAt · every Outline moved to world space</span></div>
+            <div class="qrow leakbox"><b>Which Objects does a new Line cross?</b><span>Strokes.squeeze · every Object's parts, then 48 directions</span></div>
+            <div class="qrow leakbox"><b>What does the Eraser's brush touch?</b><span>erase in 4 kinds · every body moved to world space</span></div>
+            <div class="qrow okbox"><b>What does a Blast reach?</b><span>physics.bodiesWithin · the engine's broadphase</span></div>
+            <div class="qrow plan"><b>Which parts of this Line lie on a Line?<span class="newtag">M3</span></b><span>GDD §10 overlap charging · not built</span></div>
+          </div>
+          <div class="frame">
+            <span class="s-label">Kind's solids and erase, per kind</span>
+            <div class="bars">
+              <span>strokes</span><div style="display:flex;gap:4px"><div class="bar m" style="width:40%"></div><div class="bar m" style="width:40%"></div></div>
+              <span>rubble</span><div style="display:flex;gap:4px"><div class="bar m" style="width:40%"></div><div class="bar m" style="width:40%"></div></div>
+              <span>droplets</span><div style="display:flex;gap:4px"><div class="bar e" style="width:40%"></div><div class="bar m" style="width:40%"></div></div>
+              <span>patches</span><div style="display:flex;gap:4px"><div class="bar e" style="width:40%"></div><div class="bar m" style="width:40%"></div></div>
+              <span>bonds</span><div style="display:flex;gap:4px"><div class="bar e" style="width:40%"></div><div class="bar e" style="width:40%"></div></div>
+              <span>blasts</span><div style="display:flex;gap:4px"><div class="bar e" style="width:40%"></div><div class="bar e" style="width:40%"></div></div>
+            </div>
+            <div class="key"><span><span class="bar m" style="width:14px;display:inline-block"></span>real</span><span><span class="bar e" style="width:14px;display:inline-block"></span>empty</span><span>left: solids · right: erase · 6 of 12 empty</span></div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: one interface, one index</span>
+          <div class="stack">
+            <div class="row row-3">
+              <div class="mod pad small center">drawing · preview</div>
+              <div class="mod pad small center">Fill · Release</div>
+              <div class="mod pad small center">Squeeze</div>
+              <div class="mod pad small center">Eraser</div>
+              <div class="mod pad small center">Blasts</div>
+              <div class="plan pad small center">M3 overlap charging</div>
+            </div>
+            <div class="arrow">↓ ask ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg" style="display:flex;flex-direction:column;gap:8px">
+              <span class="s-label">Arena queries</span>
+              <div class="chips"><span class="chip">at a point</span><span class="chip">overlapping a shape</span><span class="chip">crossed by a Line</span><span class="chip">under the brush</span><span class="chip">within a radius</span><span class="chip">lying on a Line</span></div>
+              <span class="small faded">every Party's shapes and every Patch's capsule, from Arena bodies · the engine's broadphase as its index</span>
+            </div>
+            <div class="arrow">↓ tested through this interface ↓</div>
+            <div class="row row-3">
+              <div class="okbox pad small center">separation.ts</div>
+              <div class="okbox pad small center">overlap.ts</div>
+              <div class="okbox pad small center">brush.ts</div>
+            </div>
+            <span class="tiny s-muted mono">Kind loses solids and erase · strokes.ts loses objectAt, erase, solids</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Five questions about place are answered five ways. Four of them move every body into world space and scan it, and the Object preview does that each frame a closing Stroke grows, so its cost grows with the Rubble. <code>Kind</code> carries <code>solids</code> and <code>erase</code> only to answer them, and 6 of those 12 methods are empty. Milestone 3's overlap charging is a sixth question.</p></div>
+        <div><span class="label">Solution</span><p>Now that Arena bodies knows every body's and every added shape's owner, one module answers all six questions over those shapes, with the broadphase as its index. Callers ask it. The Squeeze stays a rule that calls the crossing query. The geometry gets its tests first, at this module's interface.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>leverage: one query, six callers</li>
+            <li>Kind loses solids, erase</li>
+            <li>M3 overlap charging is a query</li>
+            <li>geometry tested at one interface</li>
+            <li>preview cost follows the neighbourhood</li>
+            <li>strokes.ts sheds three concerns</li>
+          </ul>
+        </div>
+      </div>
+      <p class="evidence">The ticket is filed and <code>ready-for-agent</code>. Its blocker, #40, closed with #54. The ticket's criteria still hold: pin <code>shortestWayOut</code> and the overlap tests first, since Squeeze results are part of replay order; the brush must still reach Patches, which <code>bodiesWithin</code> skips; <code>b2World_OverlapCircle</code> is broken in Phaser Box2D 1.1.0. Arena bodies already has the surface lookup the ticket moved out of this module (<code>surfaceOf</code>).</p>
+    </article>
+
+    <!-- C2 -->
+    <article id="c2" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 2 · new, feeds #38</span>
+        <h2>Measure Ink once, and let every command say what it spent</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">before M3's costs</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/materials/mass.ts <span class="note">(outlineMass, fillMass)</span> · src/sandbox/blasts.ts <span class="note">(blastInk)</span></li>
+        <li>src/sandbox/droplets.ts <span class="note">(packSpill 63)</span> · src/sandbox/rubble.ts <span class="note">(packRubble 69)</span></li>
+        <li>src/sandbox/material-rules.ts <span class="note">(explode 442)</span> · src/sandbox/strokes.ts <span class="note">(add 320, setFill 484, breakObject 565)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(submitStroke, fillAt, undo 368: returns nothing)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: "how much Ink is this" is worked out where it is used</span>
+          <div class="formula">
+            <div class="fx leakbox"><span>outlineMass</span><span>perimeter × LINE_THICKNESS × density</span></div>
+            <div class="fx leakbox"><span>fillMass</span><span>area × density</span></div>
+            <div class="fx leakbox"><span>blastInk</span><span>length × LINE_THICKNESS + area</span></div>
+            <div class="fx leakbox"><span>packSpill</span><span>area → the Spill's Patch length</span></div>
+            <div class="fx leakbox"><span>packRubble</span><span>area → how many pebbles or stones</span></div>
+            <div class="fx plan"><span>M3: Stroke cost</span><span>a Line's length × its thickness, an Outline's</span></div>
+            <div class="fx plan"><span>M3: Fill cost</span><span>area</span></div>
+            <div class="fx plan"><span>M3: undo refund</span><span>undo() returns nothing to refund from</span></div>
+            <div class="fx plan"><span>M3: overlap charging</span><span>the Line's length minus what lies on Lines</span></div>
+          </div>
+          <span class="tiny s-muted mono">five callers agree today only because each copies the same formula</span>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: one measure; commands report their Ink</span>
+          <div class="stack">
+            <div class="deep pad-lg" style="display:flex;flex-direction:column;gap:8px">
+              <span class="s-label">Ink</span>
+              <div class="chips"><span class="chip">a Line's</span><span class="chip">an Outline's</span><span class="chip">a Fill's</span><span class="chip">the part on Lines (C1)</span></div>
+              <span class="small faded">px² per Colour · mass, Blasts, Spills and Rubble are read from it</span>
+            </div>
+            <div class="arrow">↓ used by ↓</div>
+            <div class="row row-3">
+              <div class="mod pad small center">mass</div>
+              <div class="mod pad small center">Blast · Spill · Rubble</div>
+              <div class="okbox pad small center">Sandbox world commands</div>
+            </div>
+            <div class="arrow">↓ each command's outcome says what it spent or gave back ↓</div>
+            <div class="seam"></div>
+            <div class="plan pad-lg small">Ink Tanks, Locked Ink, Wave Ink: wherever #38 puts the Build Phase, they read outcomes and never re-measure</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Five functions work out how much Ink an Outline or a Fill is, each with its own copy of the formula. Milestone 3 adds four more: what a Stroke and a Fill cost, what undo refunds, and overlap charging. The Sandbox world's commands don't say what they spent, and <code>undo</code> returns nothing, so a refund has nothing to go on.</p></div>
+        <div><span class="label">Solution</span><p>One module says how much Ink a Line, an Outline and a Fill are, by Colour. Mass, Blasts, Spills and Rubble read from it. <code>submitStroke</code>, <code>fillAt</code> and <code>undo</code> report the Ink they spent or gave back, so the Ink Tanks can sit wherever #38 puts the Build Phase without measuring anything again.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>locality: one Ink formula</li>
+            <li>weight always follows Ink spent</li>
+            <li>refund equals cost, by construction</li>
+            <li>Ink Tanks test on outcomes alone</li>
+            <li>#38 decides placement, not measuring</li>
+          </ul>
+        </div>
+      </div>
+      <p class="callout">Doesn't reopen #38. Where the phase and the Ink Tanks live stays that ticket's decision for the milestone 3 spec. This candidate only makes sure each answer finds the same numbers. Overlap charging needs C1's "lying on a Line" query. Mass feeds replays, so the new measure must give bit-identical masses.</p>
+    </article>
+
+    <!-- C3 -->
+    <article id="c3" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 3 · new</span>
+        <h2>Turn a press, a drag and a release into commands in one headless module</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">untested today</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/scenes/sandbox-scene.ts <span class="note">(bindPointer, erase 198, finishStroke 206, updateRefusal 227; 16 commits, no tests)</span></li>
+        <li>src/stroke/fill-click.ts <span class="note">(tested alone)</span> · src/stroke/close-detection.ts <span class="note">(isClosingStroke)</span></li>
+        <li>src/rendering/stroke-preview.ts · rejection-flash.ts · palette-bar.ts <span class="note">(Tool, ERASER_RADIUS)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the rules of input live in the Phaser scene</span>
+          <div class="xsec">
+            <div class="band phaser"><span>Phaser pointer and key events</span><span class="t">engine</span></div>
+            <div class="band untested"><span>tool state: a Colour or the Eraser; picking the Eraser drops a Stroke</span><span class="t">untested</span></div>
+            <div class="band untested"><span>press: Stroke or Eraser path · right button: Release</span><span class="t">untested</span></div>
+            <div class="band untested"><span>Eraser: erase the path so far, keep its end, erase again each frame</span><span class="t">untested</span></div>
+            <div class="band tested"><span>isFillClick: a click or a Stroke?</span><span class="t">tested alone</span></div>
+            <div class="band untested"><span>already filled → flash the Outline · rejected → flash the path</span><span class="t">untested</span></div>
+            <div class="band untested"><span>preview refusal: closing? new samples? re-run the Stroke pipeline</span><span class="t">untested</span></div>
+            <div class="band plan"><span>M3: outside the Core Zone, not enough Wave Ink</span><span class="t">next</span></div>
+            <div class="band plan"><span>#38: undo only in the Build Phase</span><span class="t">next</span></div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: the scene forwards events; one module decides</span>
+          <div class="xsec">
+            <div class="band phaser"><span>Phaser scene: forwards pointer and keys, draws what it is told</span><span class="t">thin</span></div>
+            <div class="seam" style="margin:6px 0"></div>
+            <div class="band thick"><span>Drawing input<br/><span class="small faded">tool · Stroke capture · click or Stroke · Eraser path · Release · refusal preview · what to flash · M3's Core Zone and Ink checks</span></span><span class="t">deep</span></div>
+            <div class="seam" style="margin:6px 0"></div>
+            <div class="band"><span>Sandbox world commands</span><span class="t">real, in tests</span></div>
+          </div>
+          <span class="tiny s-muted mono">tests: sample paths in, commands and flashes out, against a real Sandbox world, no Phaser</span>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The scene decides what a press, a drag and a release mean. That covers click or Stroke, Eraser chunks, Release, the refusal preview and what to flash, and none of it has tests. The small checks were split out and tested alone, but the order they're called in is where the rules live. Milestone 3 adds Core Zone and Wave Ink refusals here.</p></div>
+        <div><span class="label">Solution</span><p>A headless module takes pointer and tool events, issues Sandbox world commands, and says what the preview and the flash show. The Phaser scene only forwards events and draws what it is told. Tests drive it with sample paths.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>input rules tested without Phaser</li>
+            <li>locality: gesture rules in one module</li>
+            <li>M3 refusals land in tested code</li>
+            <li>scene shrinks to forwarding</li>
+            <li>demos could replay real gestures</li>
+          </ul>
+        </div>
+      </div>
+      <p class="evidence">For grilling: whether the module also owns the refusal preview's throttle (once per new sample count) or leaves frame timing to the scene; and whether M3's Core Zone check belongs here or in the Sandbox world, where a Stroke from a demo would meet it too.</p>
+    </article>
+
+    <!-- C4 -->
+    <article id="c4" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 4 · new</span>
+        <h2>Let the Material rules own the order of a step's consequences</h2>
+        <div class="badges"><span class="badge b-spec"><span class="dot"></span>Speculative</span><span class="badge b-tag">in-process</span><span class="badge b-tag">revisit at M4</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/sandbox-world.ts <span class="note">(step 479–497, RulesArena wiring in the constructor)</span></li>
+        <li>src/sandbox/material-rules.ts <span class="note">(impacts, stick, land, breakAll, glue, blastReached)</span></li>
+        <li>src/sandbox/blasts.ts <span class="note">(spread)</span> · src/sandbox/patches.ts <span class="note">(removeUsedUp, gluers)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the world knows the order the rules' phases must run in</span>
+<pre class="mermaid">
+%%{init: {"theme": "neutral"}}%%
+sequenceDiagram
+  participant W as Sandbox world
+  participant R as Material rules
+  participant K as kinds
+  W->>R: impacts()
+  W->>K: strokes.objectRecords()
+  W->>R: stick(objects)
+  W->>R: land()
+  W->>R: breakAll(broken)
+  W->>K: strokes.pieces(), patches.gluers()
+  W->>R: glue(gluers)
+  W->>K: blasts.spread(rules.blastReached)
+  K-->>R: blastReached(reached)
+  W->>K: patches.removeUsedUp()
+  W->>K: every kind's step()
+</pre>
+          <span class="tiny s-muted mono">the order is part of replay order, and it lives in the world, not in the rules</span>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: one call; the order is the rules' own</span>
+          <div class="stack">
+            <div class="mod pad-lg small">Sandbox world: steps physics, hands over the report, then each kind's step</div>
+            <div class="arrow">↓ rules.step(report) ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg" style="display:flex;flex-direction:column;gap:8px">
+              <span class="s-label">Material rules</span>
+              <div class="chips"><span class="chip faded">impacts</span><span class="chip faded">stick</span><span class="chip faded">land</span><span class="chip faded">break</span><span class="chip faded">glue</span><span class="chip faded">Blasts spread</span><span class="chip faded">Patches used up</span></div>
+              <div class="chips"><span class="chip">M4: pressing wear</span><span class="chip">M4: kills</span><span class="chip">M4: Ink drops</span></div>
+            </div>
+            <div class="arrow">↓ through the Arena port they already have ↓</div>
+            <div class="row row-3">
+              <div class="mod pad small center">kinds</div>
+              <div class="mod pad small center">physics</div>
+              <div class="mod pad small center">Contact ledger</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The world calls six rule phases and three kind calls in an order that must never change, and the rules' own tests can't check that order. Each phase needs its caller to know the order. Milestone 4 adds more phases: enemies pressing on Lines, kills and Ink drops.</p></div>
+        <div><span class="label">Solution</span><p>The Material rules take the step's report and run every consequence in their own order. They reach the kinds through the Arena port they already have. The world keeps only physics, the snapshot and each kind's step.</p></div>
+        <div><span class="label">Wins</span>
+          <ul class="wins">
+            <li>interface: six phases become one</li>
+            <li>order tested at the rules' interface</li>
+            <li>M4 phases land in one module</li>
+          </ul>
+        </div>
+      </div>
+      <p class="evidence">Speculative because today the order changes rarely, the rules already have fakes of both ports, and the Arena port would grow by three methods (the objects that stick, the gluers, the Blasts' spread). Revisit when the milestone 4 spec names its enemy phases.</p>
+    </article>
+  </section>
+
+  <section class="panel also" aria-labelledby="also-h">
+    <span id="also-h" class="label">Also noticed, not candidates</span>
+    <ul>
+      <li>The Sandbox world has two read interfaces for the same views: <code>contents</code> (14 reads) and seven getters, <code>lines</code> to <code>blasts</code> (282 reads, mostly tests). Keep one when a ticket already touches both.</li>
+      <li>Of <code>Kind</code>'s 42 methods across six kinds, 14 are empty: <code>gone</code> in 3, <code>erase</code> in 2, <code>solids</code> in 4, <code>step</code> in 5. C1 removes 6 of them. The rest are the price of one fixed order over every kind, which replays need.</li>
+      <li><code>strokes.ts</code> is still 652 lines. C1 takes <code>objectAt</code>, <code>erase</code> and <code>solids</code>, and #38 takes the undo history. What stays (Lines, Objects, Fill, Release, breaking, the Squeeze) belongs together.</li>
+      <li><code>Breakable</code> is shaped like a Stroke: a Colour and a role pick its numbers from the material table. Milestone 4's enemies take damage by type, not by Colour, so the Material rules' <code>T</code> will need to widen. That's a question for the milestone 4 spec, not a refactor now.</li>
+    </ul>
+  </section>
+
+  <section id="top-recommendation" class="top" aria-labelledby="top-h">
+    <span id="top-h" class="label">Top recommendation</span>
+    <h2><a href="#c1">Answer "what is here" in one Arena query module (#36)</a></h2>
+    <p>It is filed, ready for an agent and no longer blocked, and it is the one candidate milestone 3 can't do without, since overlap charging is a query about place. It also removes the empty <code>solids</code> and <code>erase</code> methods from <code>Kind</code>, puts the geometry under tests, and stops the Object preview slowing down as Rubble piles up. <a href="#c2">C2</a> comes next, before the milestone 3 spec sets costs, and its overlap-charging part runs on C1's query.</p>
+  </section>
+
+</main>
+</body>
+</html>

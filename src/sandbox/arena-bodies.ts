@@ -3,7 +3,14 @@ import type { Segment } from '../geometry/segment';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { TERRAIN_SURFACE, type MaterialTable } from '../materials/material-table';
-import type { BodyId, CircleBodyDef, ObjectBodyDef, PhysicsWorld, ShapeId } from '../physics';
+import type {
+  BodyId,
+  BodyShape,
+  CircleBodyDef,
+  ObjectBodyDef,
+  PhysicsWorld,
+  ShapeId,
+} from '../physics';
 import type { HostSurface } from './arena-contents';
 import {
   TERRAIN_PARTY,
@@ -27,10 +34,11 @@ import type { Happening, Thing, Why } from './happenings';
  * happened: each body and added shape is a Thing that its kind names.
  *
  * It knows each body's Colour and role, and each added shape's Colour, so it
- * re-applies surfaces after a material table edit, and it knows each Party's
- * surface: where a Patch can be laid on it. Kinds never call the ledger's
- * `register`, `unregister` or `squeezed`, or add or remove bodies and shapes
- * themselves.
+ * re-applies surfaces after a material table edit. It knows what each body
+ * and added shape is made of: the Arena query tests those forms, and a
+ * Party's form gives its surface, where a Patch can be laid on it. Kinds
+ * never call the ledger's `register`, `unregister` or `squeezed`, or add or
+ * remove bodies and shapes themselves.
  */
 
 /** What of the physics module Arena bodies calls. */
@@ -69,6 +77,33 @@ type Who<P> = (body: BodyId) => P;
 /** What an added body or shape is, for the list of what happened; none for the Terrain. */
 type What = Thing | null;
 
+/**
+ * What a body, or a shape added on one, is made of, as the Arena query tests
+ * it: in its body's own coordinates (px, relative to its origin,
+ * unrotated). The Terrain's and a Line's bodies never leave the origin, so
+ * theirs are in world coordinates too.
+ */
+export type Form =
+  /** The Terrain: convex polygons. */
+  | { readonly kind: 'terrain'; readonly polygons: readonly Polygon[] }
+  /** A Piece: connected capsules. */
+  | { readonly kind: 'capsules'; readonly segments: readonly Segment[]; readonly radius: number }
+  /** An Object: the Outline it is drawn and filled by, and the convex parts it collides with. */
+  | { readonly kind: 'object'; readonly outline: Polygon; readonly parts: readonly Polygon[] }
+  /** Rubble or a Droplet: a circle about the origin. */
+  | { readonly kind: 'circle'; readonly radius: number }
+  /** A Patch: one capsule, on its host. */
+  | { readonly kind: 'capsule'; readonly segment: Segment; readonly radius: number };
+
+/** A body or an added shape, as the Arena query finds it. */
+export interface Figure {
+  /** What it is; null for the Terrain. */
+  readonly what: Thing | null;
+  /** Its body: for an added shape, its host's, which it moves with. */
+  readonly body: BodyId;
+  readonly form: Form;
+}
+
 /** A shape added on a host's body. */
 export interface AddedShape {
   readonly shape: ShapeId;
@@ -76,22 +111,38 @@ export interface AddedShape {
   readonly body: BodyId;
 }
 
-interface BodyEntry {
-  readonly body: BodyId;
+interface BodyEntry extends Figure {
   readonly party: PartyId;
-  readonly what: What;
   /** Null for the Terrain, whose surface never changes. */
   readonly paint: Paint | null;
-  /** Where a Patch can be laid on it; null if nothing lands on it. */
-  readonly surface: HostSurface | null;
+  /** Whether a Patch can be laid on it. */
+  readonly lands: boolean;
   /** Shapes added on it, in the order they were added. */
   readonly shapes: Set<ShapeId>;
+  /** Its place in the order bodies and shapes were added. */
+  readonly order: number;
 }
 
-interface ShapeEntry {
-  readonly body: BodyId;
-  readonly colour: Colour;
+interface ShapeEntry extends Figure {
   readonly what: Thing;
+  readonly colour: Colour;
+  readonly order: number;
+}
+
+/** Where a Patch can be laid on a body made of `form`. */
+function surfaceOfForm(form: Form): HostSurface | null {
+  switch (form.kind) {
+    case 'terrain':
+      return { kind: 'polygons', polygons: form.polygons };
+    case 'object':
+      return { kind: 'polygons', polygons: [form.outline] };
+    case 'capsules':
+      return { kind: 'capsules', segments: form.segments, radius: form.radius };
+    case 'circle':
+      return { kind: 'circle', radius: form.radius };
+    case 'capsule':
+      return null;
+  }
 }
 
 export class ArenaBodies<T> {
@@ -99,6 +150,8 @@ export class ArenaBodies<T> {
   private readonly bodies = new Map<BodyId, BodyEntry>();
   /** Every added shape, in the order it was added. */
   private readonly shapes = new Map<ShapeId, ShapeEntry>();
+  /** Bodies and shapes added so far: the next one's place in the order. */
+  private added = 0;
 
   /**
    * @param gone Hears each Party that went, as it goes: the Sandbox world
@@ -122,7 +175,7 @@ export class ArenaBodies<T> {
   /** Adds the Terrain, which is Party 0. */
   addTerrain(polygons: readonly Polygon[]): void {
     const body = this.physics.addTerrain(polygons, TERRAIN_SURFACE);
-    this.track(body, TERRAIN_PARTY, null, null, { kind: 'polygons', polygons });
+    this.track(body, TERRAIN_PARTY, null, null, { kind: 'terrain', polygons }, true);
     this.contacts.register({ id: TERRAIN_PARTY, stroke: TERRAIN_PARTY, body, target: null });
   }
 
@@ -135,8 +188,8 @@ export class ArenaBodies<T> {
     who: Who<P>,
   ): P {
     const body = this.physics.addLine(segments, thickness, this.materials.colours[colour].line);
-    const surface: HostSurface = { kind: 'capsules', segments, radius: thickness / 2 };
-    return this.register(body, { colour, role: 'line' }, surface, what, who);
+    const form: Form = { kind: 'capsules', segments, radius: thickness / 2 };
+    return this.register(body, { colour, role: 'line' }, form, what, who);
   }
 
   /** Adds an Object with its Colour's Outline surface; Patches lie along `outline`. */
@@ -151,8 +204,8 @@ export class ArenaBodies<T> {
       ...def,
       surface: this.materials.colours[colour].outline,
     });
-    const surface: HostSurface = { kind: 'polygons', polygons: [outline] };
-    return this.register(body, { colour, role: 'outline' }, surface, what, who);
+    const form: Form = { kind: 'object', outline, parts: def.parts };
+    return this.register(body, { colour, role: 'outline' }, form, what, who);
   }
 
   /**
@@ -169,20 +222,20 @@ export class ArenaBodies<T> {
       ...def,
       surface: this.materials.colours[paint.colour][paint.role],
     });
-    const circle: HostSurface = { kind: 'circle', radius: def.radius };
+    const circle: Form = { kind: 'circle', radius: def.radius };
     return this.register(body, paint, circle, what, who, (party) => !party.harmless);
   }
 
   private register<P extends Party<T>>(
     body: BodyId,
     paint: Paint,
-    surface: HostSurface,
+    form: Form,
     what: Thing,
     who: Who<P>,
     lands: (party: P) => boolean = () => true,
   ): P {
     const party = who(body);
-    this.track(body, party.id, what, paint, lands(party) ? surface : null);
+    this.track(body, party.id, what, paint, form, lands(party));
     this.contacts.register(party);
     this.say({ kind: 'added', what });
     return party;
@@ -193,9 +246,11 @@ export class ArenaBodies<T> {
     party: PartyId,
     what: What,
     paint: Paint | null,
-    surface: HostSurface | null,
+    form: Form,
+    lands: boolean,
   ): void {
-    this.bodies.set(body, { body, party, what, paint, surface, shapes: new Set() });
+    const order = this.added++;
+    this.bodies.set(body, { body, party, what, paint, form, lands, shapes: new Set(), order });
   }
 
   /**
@@ -249,7 +304,8 @@ export class ArenaBodies<T> {
     const surface = this.materials.colours[colour].line;
     const shape = this.physics.addCapsule(body, segment, radius, surface);
     entry.shapes.add(shape);
-    this.shapes.set(shape, { body, colour, what });
+    const form: Form = { kind: 'capsule', segment, radius };
+    this.shapes.set(shape, { body, colour, what, form, order: this.added++ });
     this.say({ kind: 'added', what });
     return { shape, body };
   }
@@ -280,7 +336,22 @@ export class ArenaBodies<T> {
    */
   surfaceOf(party: PartyId): HostSurface | null {
     const body = this.contacts.party(party)?.body;
-    return body === undefined ? null : (this.bodies.get(body)?.surface ?? null);
+    const entry = body === undefined ? undefined : this.bodies.get(body);
+    return entry?.lands ? surfaceOfForm(entry.form) : null;
+  }
+
+  /**
+   * The bodies and added shapes among `found` that the Arena holds, each
+   * once, in the order they were added: what the Arena query tests.
+   */
+  figures(found: Iterable<BodyShape>): Figure[] {
+    const figures = new Map<number, Figure>();
+    for (const { body, shape } of found) {
+      const added = this.shapes.get(shape);
+      const entry = added?.body === body ? added : this.bodies.get(body);
+      if (entry) figures.set(entry.order, { what: entry.what, body: entry.body, form: entry.form });
+    }
+    return [...figures].sort(([p], [q]) => p - q).map(([, figure]) => figure);
   }
 
   /**

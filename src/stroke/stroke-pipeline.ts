@@ -34,10 +34,17 @@ import {
 
 /** A read-only view of what already exists in the Arena. */
 export interface StrokeContext {
+  /** Lines are cut where they cross it. */
   readonly terrain: readonly Polygon[];
-  /** Existing solid bodies (Objects), each as its convex parts in world coordinates. */
-  readonly objects: readonly (readonly Polygon[])[];
-  /** Existing solid circles (Rubble), in world coordinates. */
+  /**
+   * Whether a convex part of a new Object, in world coordinates, would
+   * overlap something solid: the Arena's answer, the Terrain included.
+   * Without it, the pipeline checks `terrain`, `objects` and `rubble`.
+   */
+  readonly overlapsSolid?: (part: Polygon) => boolean;
+  /** Solid bodies (Objects), each as its convex parts in world coordinates, without `overlapsSolid`. */
+  readonly objects?: readonly (readonly Polygon[])[];
+  /** Solid circles (Rubble), in world coordinates, without `overlapsSolid`. */
   readonly rubble?: readonly Circle[];
   /** Thickness of a Line; defaults to LINE_THICKNESS. */
   readonly lineThickness?: number;
@@ -153,13 +160,16 @@ function scaleToArea(ring: readonly Vec2[], area: number): Vec2[] {
  * Object out).
  */
 function overlapsSolid(parts: readonly Polygon[], context: StrokeContext): boolean {
-  const solids = [...context.terrain, ...context.objects.flat()];
+  return parts.some(context.overlapsSolid ?? overlapsListed(context));
+}
+
+/** Whether a convex part overlaps the Terrain, `objects` or `rubble` the context lists. */
+function overlapsListed(context: StrokeContext): (part: Polygon) => boolean {
+  const solids = [...context.terrain, ...(context.objects ?? []).flat()];
   const rubble = context.rubble ?? [];
-  return parts.some(
-    (part) =>
-      solids.some((solid) => convexPolygonsOverlap(part, solid)) ||
-      rubble.some((circle) => circleOverlapsPolygon(circle, part)),
-  );
+  return (part) =>
+    solids.some((solid) => convexPolygonsOverlap(part, solid)) ||
+    rubble.some((circle) => circleOverlapsPolygon(circle, part));
 }
 
 function processOpenStroke(samples: readonly Vec2[], context: StrokeContext): StrokeResult {

@@ -4,7 +4,6 @@ import {
   polygonContainsPoint,
   type Polygon,
 } from '../geometry/polygon';
-import type { Circle } from '../geometry/overlap';
 import { distancePointToSegment } from '../geometry/segment';
 import type { Transform } from '../geometry/transform';
 import { rotate, type Vec2 } from '../geometry/vec2';
@@ -12,9 +11,9 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import type { ArenaBodies } from './arena-bodies';
-import { motionOf, type Kind, type Motion, type Poses, type Solids } from './arena-contents';
-import { brushTouchesCircle, type Brush } from './brush';
+import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
 import type { PartyId } from './contact-ledger';
+import type { Why } from './happenings';
 import type { PreviousPoses } from './previous-poses';
 import type { Random } from './random';
 
@@ -292,27 +291,16 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
   /** Nothing of it is attached to anything else. */
   gone(): void {}
 
-  /** Erased Rubble goes at once. */
-  erase(brush: Brush): void {
-    this.rubble = this.rubble.filter(({ body, radius }) => {
-      const { x, y } = this.physics.getTransform(body);
-      if (!brushTouchesCircle(brush, { x, y }, radius)) return true;
-      this.bodies.removeBody(body, 'erased');
-      return false;
-    });
+  /** Removes piece `id` of Rubble at once, for `why`: erased Rubble. */
+  remove(id: number, why: Why): void {
+    const index = this.rubble.findIndex((rubble) => rubble.id === id);
+    if (index < 0) return;
+    const { body } = this.rubble.splice(index, 1)[0]!;
+    this.bodies.removeBody(body, why);
   }
 
   clear(): void {
     this.rubble = [];
-  }
-
-  /** Rubble is solid: an Object drawn over it is refused. */
-  solids(): Solids {
-    const circles = this.rubble.map(({ body, radius }): Circle => {
-      const { x, y } = this.physics.getTransform(body);
-      return { centre: { x, y }, radius };
-    });
-    return { polygons: [], circles };
   }
 
   step(): void {}
