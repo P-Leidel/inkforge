@@ -6,6 +6,7 @@ import type { BodyDef, BodyId, ShapeId, StepReport, Surface } from '../physics';
 import { ArenaBodies, type BodiesPhysics } from './arena-bodies';
 import { ContactLedger, TERRAIN_PARTY, type Party, type PartyId } from './contact-ledger';
 import type { Happening, Thing } from './happenings';
+import { Numbers } from './numbers';
 
 /** A physics module that only numbers bodies and shapes, and logs every call. */
 class StubPhysics implements BodiesPhysics {
@@ -105,7 +106,7 @@ function setup() {
   const bodies = new ArenaBodies<string>(
     physics,
     contacts,
-    materials,
+    new Numbers(materials),
     (parties) => {
       heard.push({
         parties: [...parties],
@@ -126,11 +127,17 @@ function setup() {
     };
   let things = 0;
   const line = () =>
-    bodies.addLine([segment], 8, 'grey', { thing: 'piece', id: ++things, index: 0 }, own('line'));
+    bodies.addLine(
+      [segment],
+      8,
+      { kind: 'piece', colour: 'grey' },
+      { thing: 'piece', id: ++things, index: 0 },
+      own('line'),
+    );
   const object = () =>
     bodies.addObject(
       { position: { x: 0, y: 0 }, parts: [square], frozen: true, mass: 1 },
-      'blue',
+      { kind: 'object', colour: 'blue' },
       square,
       { thing: 'object', id: ++things },
       own('object'),
@@ -138,13 +145,13 @@ function setup() {
   const pebble = (extra: Partial<Party<string>> = {}) =>
     bodies.addCircle(
       { position: { x: 0, y: 0 }, radius: 6, mass: 1 },
-      { colour: 'grey', role: 'outline' },
+      { kind: 'rubble', colour: 'grey' },
       { thing: 'rubble', id: ++things, colour: 'grey', radius: 6 },
       own('pebble', extra),
     );
   const patchOn = (host: PartyId, colour: 'green' | 'blue' = 'blue') => {
     const what: Thing = { thing: 'patch', id: ++things, colour, segment, thickness: 3 };
-    return bodies.addShape(host, segment, 1.5, colour, what);
+    return bodies.addShape(host, segment, 1.5, { kind: 'patch', colour }, what);
   };
   return { physics, contacts, materials, bodies, heard, said, line, object, pebble, patchOn };
 }

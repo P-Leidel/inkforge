@@ -9,16 +9,17 @@ import type { NewContact, Party, PartyHit, Touching } from './contact-ledger';
 import type { Landing, LooseDroplet } from './droplets';
 import {
   MaterialRules,
-  type Breakable,
+  type Broken,
+  type Debris,
   type RulesArena,
   type RulesContacts,
   type RulesPhysics,
 } from './material-rules';
+import { Numbers, type Breakable } from './numbers';
 import type { PatchRecord } from './patches';
 import { Random } from './random';
 import type { LooseRubble } from './rubble';
 import type { Sticker } from './sticking';
-import type { Broken } from './strokes';
 
 /**
  * Fakes of the Material rules' ports, so that tests drive the rules with
@@ -150,7 +151,7 @@ export class FakeArena<T, S> implements RulesArena<T, S> {
     return broken;
   }
 
-  burst(debris: Broken['debris']): void {
+  burst(debris: Debris): void {
     this.log.push({ what: 'burst', with: debris });
   }
 
@@ -207,7 +208,14 @@ export function fakeRules<T extends Breakable, S extends Sticker = Sticker>(
   const contacts = new FakeContacts<T>();
   const arena = new FakeArena<T, S>();
   const random = new Random(1);
-  const rules = new MaterialRules<T, S>({ materials, random, physics, contacts, arena });
+  const rules = new MaterialRules<T, S>({
+    materials,
+    numbers: new Numbers(materials),
+    random,
+    physics,
+    contacts,
+    arena,
+  });
   return { rules, physics, contacts, arena, random };
 }
 

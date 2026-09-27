@@ -241,7 +241,13 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   private attach(saved: SavedPatch): void {
     const { id, host, segment, thickness, colour } = saved;
     const what = { thing: 'patch', id, colour, segment, thickness } as const;
-    const added = this.bodies.addShape(host, segment, thickness / 2, colour, what);
+    const added = this.bodies.addShape(
+      host,
+      segment,
+      thickness / 2,
+      { kind: 'patch', colour },
+      what,
+    );
     if (!added) return;
     const { shape, body } = added;
     const patch: PatchRecord = { ...saved, kind: 'patch', body, shape };

@@ -17,7 +17,8 @@ import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
 import type { ArenaQuery, Capsule } from './arena-query';
 import type { PartyId } from './contact-ledger';
 import type { Happening, Why } from './happenings';
-import { durabilityLeft, wear, type Breakable } from './material-rules';
+import type { Broken } from './material-rules';
+import type { Breakable, Numbers } from './numbers';
 import type { PreviousPoses } from './previous-poses';
 import { WAITING, type StickState } from './sticking';
 
@@ -161,7 +162,6 @@ export interface Piece extends Breakable {
   readonly kind: 'piece';
   readonly lineId: StrokeId;
   readonly index: number;
-  readonly role: 'line';
   readonly segments: readonly Segment[];
   /** Its Party id, the same after a rebuild. */
   readonly party: PartyId;
@@ -182,7 +182,6 @@ interface LineStroke {
 export interface ObjectStroke extends Breakable {
   readonly kind: 'object';
   readonly id: StrokeId;
-  readonly role: 'outline';
   /** Its Party id, the same after a rebuild. */
   readonly party: PartyId;
   readonly body: BodyId;
@@ -230,50 +229,6 @@ export interface SavedStrokes {
   readonly strokes: readonly SavedStroke[];
 }
 
-/** A broken Object's Fill, which comes out in the same step. */
-export interface ReleasedFill {
-  readonly colour: Colour;
-  readonly mass: number;
-  /** Its Ink, px². */
-  readonly ink: number;
-  /** The Outline it fills, relative to the Object's origin. */
-  readonly outline: Polygon;
-  /** The Object's pose and motion as it broke. */
-  readonly from: Motion;
-}
-
-/** A broken Object's Outline, which explodes if its Colour does. */
-export interface BrokenOutline {
-  readonly colour: Colour;
-  /** Its Ink, px². */
-  readonly ink: number;
-  /** The Object's centre (its body's origin) as it broke. */
-  readonly centre: Vec2;
-}
-
-/** A broken Piece, which explodes if its Line Colour does. */
-export interface BrokenPiece {
-  readonly colour: Colour;
-  /** Its centre, halfway along it. */
-  readonly centre: Vec2;
-}
-
-/** What breaking a Piece or an Object lets out: the Material rules decide what follows. */
-export interface Broken {
-  /** What Debris bursts from: an Outline or band in world coordinates, moving and coloured so. */
-  readonly debris: {
-    readonly outline: Polygon;
-    readonly velocity: Vec2;
-    readonly colours: readonly Colour[];
-  };
-  /** A broken Object's Fill; null for a Piece or a hollow Object. */
-  readonly fill: ReleasedFill | null;
-  /** A broken Object's Outline; null for a Piece. */
-  readonly outline: BrokenOutline | null;
-  /** A broken Piece; null for an Object. */
-  readonly piece: BrokenPiece | null;
-}
-
 /**
  * The Strokes: Lines with their Pieces, Objects with their Fills, taking
  * them back, the squeeze, and breaking Objects and Pieces. Stroke ids are
@@ -290,6 +245,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   constructor(
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
+    private readonly numbers: Numbers,
     private readonly arena: Arena,
     private readonly bodies: ArenaBodies<StrokeTarget>,
     private readonly query: Pick<ArenaQuery, 'objectsAt' | 'objectsCrossing' | 'lyingOnLines'>,
@@ -311,8 +267,8 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       pieces: line.pieces.map((piece) => ({
         index: piece.index,
         segments: piece.segments,
-        durability: durabilityLeft(piece, this.materials),
-        wear: wear(piece, this.materials),
+        durability: this.numbers.durabilityLeft(piece),
+        wear: this.numbers.wear(piece),
       })),
     }));
   }
@@ -332,9 +288,9 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       frozen: this.physics.isFrozen(stroke.body),
       fill: stroke.fill,
       mass: this.physics.getMass(stroke.body),
-      durability: durabilityLeft(stroke, this.materials),
+      durability: this.numbers.durabilityLeft(stroke),
       impacts: stroke.impacts,
-      wear: wear(stroke, this.materials),
+      wear: this.numbers.wear(stroke),
     };
   }
 
@@ -375,7 +331,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
             lineId: id,
             index,
             colour,
-            role: 'line',
             segments,
             party: this.bodies.newId(),
             damage: 0,
@@ -401,7 +356,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
         kind: 'object',
         id,
         colour,
-        role: 'outline',
         party: this.bodies.newId(),
         outline,
         parts,
@@ -423,7 +377,8 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   private addPiece(saved: SavedPiece, thickness: number, line: PartyId): Piece {
     const { segments, colour, party, lineId, index } = saved;
     const what = { thing: 'piece', id: lineId, index } as const;
-    return this.bodies.addLine(segments, thickness, colour, what, (body) => ({
+    const type = { kind: 'piece', colour } as const;
+    return this.bodies.addLine(segments, thickness, type, what, (body) => ({
       id: party,
       stroke: line,
       body,
@@ -435,7 +390,8 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   private addObject(saved: Omit<ObjectStroke, 'body'>, def: ObjectBody): ObjectStroke {
     const { colour, outline, party, id } = saved;
     const what = { thing: 'object', id } as const;
-    return this.bodies.addObject(def, colour, outline, what, (body) => ({
+    const type = { kind: 'object', colour } as const;
+    return this.bodies.addObject(def, type, outline, what, (body) => ({
       id: party,
       stroke: party,
       body,
@@ -670,14 +626,14 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     this.remove(object.id, 'broke');
     const { fill, fillMass, outline: local } = object;
     return {
+      kind: 'object',
       debris: { outline, velocity: from.velocity, colours },
-      fill: fill && { colour: fill, mass: fillMass, ink: fillInk(local), outline: local, from },
       outline: {
         colour: object.colour,
         ink: outlineInk(local),
         centre: { x: from.transform.x, y: from.transform.y },
       },
-      piece: null,
+      fill: fill && { colour: fill, mass: fillMass, ink: fillInk(local), outline: local, from },
     };
   }
 
@@ -686,14 +642,14 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     if (!line) return null;
     this.dropPiece(line, piece, 'broke');
     return {
+      kind: 'piece',
       debris: {
         outline: bandPolygon(piece.segments, line.thickness / 2),
         velocity: { x: 0, y: 0 },
         colours: [line.colour],
       },
-      fill: null,
-      outline: null,
-      piece: { colour: line.colour, centre: pieceCentre(piece.segments) },
+      colour: line.colour,
+      centre: pieceCentre(piece.segments),
     };
   }
 

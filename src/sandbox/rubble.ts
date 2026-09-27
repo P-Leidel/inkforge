@@ -257,7 +257,7 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
         velocity: motion.velocity,
         angularVelocity: motion.angularVelocity,
       },
-      { colour: rubble.colour, role: 'outline' },
+      { kind: 'rubble', colour },
       { thing: 'rubble', id, colour, radius },
       (body) => ({ id: party, stroke: party, body, target: null }),
     );

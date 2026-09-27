@@ -1,8 +1,9 @@
 import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
+import type { Polygon } from '../geometry/polygon';
 import type { BodyId, PhysicsWorld, ShapeId } from '../physics';
-import type { HostSurface } from './arena-contents';
+import type { HostSurface, Motion } from './arena-contents';
 import {
   blastInk,
   blastSize,
@@ -14,11 +15,11 @@ import {
 import { pairKey, type ContactLedger, type Party } from './contact-ledger';
 import { packSpill, type Landing, type LooseDroplet } from './droplets';
 import { Glue, type Gluer } from './glue';
+import type { Breakable, Numbers } from './numbers';
 import type { PatchRecord } from './patches';
 import type { Random } from './random';
 import { launchRubble, packRubble, type LooseRubble } from './rubble';
 import { Sticking, type Sticker } from './sticking';
-import type { Broken, BrokenOutline, BrokenPiece, ReleasedFill } from './strokes';
 
 /**
  * Material rules: everything Colour-specific that follows from things
@@ -28,48 +29,16 @@ import type { Broken, BrokenOutline, BrokenPiece, ReleasedFill } from './strokes
  * consequence: damage from any cause and the blue counter, what breaks, what
  * a break lets out (Debris, Rubble, a Spill, a Blast), what a Blast wakes and
  * pushes, glue drag and wear, Patch wear, what sticks and where a Droplet
- * lands. They carry their decisions out through two narrow ports the world
- * wires up: the physics module, and the Arena (its kinds and Debris). Glue
+ * lands. What a thing's numbers are they ask `Numbers`. They carry their
+ * decisions out through two narrow ports the world wires up: the physics
+ * module, and the Arena (its kinds and Debris). Glue
  * drag (`Glue`) and sticking (`Sticking`) are parts of them in files of
  * their own; the world only talks to `MaterialRules`.
  */
 
-/**
- * Something that takes damage and breaks: an Object, by its Outline's
- * numbers, or a Piece of a Line, by its Line's.
- */
-export interface Breakable {
-  readonly colour: Colour;
-  /** Which of its Colour's roles it takes its numbers from: a Piece's is `'line'`. */
-  readonly role: 'line' | 'outline';
-  /** Damage taken so far. */
-  damage: number;
-  /** Hits above its damage threshold so far (the blue counter). */
-  impacts: number;
-}
-
 /** Damage an impact deals to a receiver: the impulse above its threshold, times k. */
 export function impactDamage(impulse: number, threshold: number, damagePerImpulse: number): number {
   return impulse > threshold ? (impulse - threshold) * damagePerImpulse : 0;
-}
-
-/** A Breakable's numbers: its Colour's as a Line or as an Outline. Pieces have no impact limit. */
-function numbersOf(target: Breakable, table: MaterialTable) {
-  const material = table.colours[target.colour];
-  return target.role === 'line' ? { ...material.line, impactLimit: 0 } : material.outline;
-}
-
-/** How worn a Breakable is, from 0 (whole) to 1 (broken): damage or impacts, whichever is further. */
-export function wear(target: Breakable, table: MaterialTable): number {
-  const { durability, impactLimit } = numbersOf(target, table);
-  const byDamage = durability > 0 ? target.damage / durability : 1;
-  const byImpacts = impactLimit > 0 ? target.impacts / impactLimit : 0;
-  return Math.min(1, Math.max(byDamage, byImpacts));
-}
-
-/** Durability left before it breaks. */
-export function durabilityLeft(target: Breakable, table: MaterialTable): number {
-  return Math.max(0, numbersOf(target, table).durability - target.damage);
 }
 
 /**
@@ -105,6 +74,56 @@ type Cause =
   /** Wear by use, such as glue's: all of it, with no threshold, and not an impact. */
   | 'wear';
 
+/** What Debris bursts from: an Outline or band in world coordinates, moving and coloured so. */
+export interface Debris {
+  readonly outline: Polygon;
+  readonly velocity: Vec2;
+  readonly colours: readonly Colour[];
+}
+
+/** A broken Object's Fill, which comes out in the same step. */
+export interface ReleasedFill {
+  readonly colour: Colour;
+  readonly mass: number;
+  /** Its Ink, px². */
+  readonly ink: number;
+  /** The Outline it fills, relative to the Object's origin. */
+  readonly outline: Polygon;
+  /** The Object's pose and motion as it broke. */
+  readonly from: Motion;
+}
+
+/** A broken Object's Outline, which explodes if its Colour does. */
+export interface BrokenOutline {
+  readonly colour: Colour;
+  /** Its Ink, px². */
+  readonly ink: number;
+  /** The Object's centre (its body's origin) as it broke. */
+  readonly centre: Vec2;
+}
+
+/**
+ * What breaking a thing lets out, one variant per thing: the Material rules
+ * decide what follows. Each bursts into Debris.
+ */
+export type Broken =
+  /** A Piece's burst: it explodes if its Line Colour does. */
+  | {
+      readonly kind: 'piece';
+      readonly debris: Debris;
+      readonly colour: Colour;
+      /** Its centre, halfway along it. */
+      readonly centre: Vec2;
+    }
+  /** An Object's Outline and Fill: the Fill comes out, then red explodes. */
+  | {
+      readonly kind: 'object';
+      readonly debris: Debris;
+      readonly outline: BrokenOutline;
+      /** Its Fill; null for a hollow Object. */
+      readonly fill: ReleasedFill | null;
+    };
+
 /** What the Material rules ask of the physics module. */
 export type RulesPhysics = Pick<
   PhysicsWorld,
@@ -135,7 +154,7 @@ export interface RulesArena<T, S> {
   /** Removes a broken Object or Piece and says what it lets out; null if it is already gone. */
   break(target: T): Broken | null;
   /** Bursts Debris, which is visual only. */
-  burst(debris: Broken['debris']): void;
+  burst(debris: Debris): void;
   /** Sets Rubble loose (the Rubble cap may remove the oldest). */
   addRubble(rubble: readonly LooseRubble[]): void;
   /** Sets a Spill's Droplets loose. */
@@ -160,6 +179,8 @@ export interface RulesArena<T, S> {
 
 export interface MaterialRulesOptions<T, S> {
   readonly materials: MaterialTable;
+  /** What a thing's numbers are. */
+  readonly numbers: Numbers;
   /** The simulation's generator: releasing a Fill draws from it. */
   readonly random: Random;
   readonly physics: RulesPhysics;
@@ -177,6 +198,7 @@ const isPatch = (gluer: Gluer): gluer is PatchRecord => gluer.shape !== undefine
  */
 export class MaterialRules<T extends Breakable, S extends Sticker> {
   private readonly materials: MaterialTable;
+  private readonly numbers: Numbers;
   private readonly random: Random;
   private readonly physics: RulesPhysics;
   private readonly contacts: RulesContacts<T>;
@@ -184,8 +206,16 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
   private readonly glueDrag: Glue;
   private readonly sticking: Sticking;
 
-  constructor({ materials, random, physics, contacts, arena }: MaterialRulesOptions<T, S>) {
+  constructor({
+    materials,
+    numbers,
+    random,
+    physics,
+    contacts,
+    arena,
+  }: MaterialRulesOptions<T, S>) {
     this.materials = materials;
+    this.numbers = numbers;
     this.random = random;
     this.physics = physics;
     this.contacts = contacts;
@@ -319,7 +349,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
           continue;
         }
       }
-      if (target?.role === 'line') continue; // a Piece is fixed, so only damaged
+      if (target && this.numbers.of(target).fixed) continue; // a Piece is only damaged
       const mass = this.physics.getMass(body);
       const impulse = Math.min(blast.push * strength, mass * blast.maxPushSpeed);
       if (this.physics.isFrozen(body) && wakes(impulse, mass, wakeSpeed))
@@ -354,13 +384,13 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
     if (cause === 'wear') {
       target.damage += amount;
     } else {
-      const { damageThreshold } = numbersOf(target, this.materials);
+      const { damageThreshold } = this.numbers.of(target).toughness;
       if (amount > damageThreshold) {
         if (cause === 'impact') target.impacts++;
         target.damage += impactDamage(amount, damageThreshold, this.materials.damagePerImpulse);
       }
     }
-    return wear(target, this.materials) >= 1;
+    return this.numbers.wear(target) >= 1;
   }
 
   /**
@@ -372,9 +402,13 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
     const broken = this.arena.break(target);
     if (!broken) return;
     this.arena.burst(broken.debris);
-    if (broken.fill) this.releaseFill(broken.fill);
-    if (broken.outline) this.explode(broken.outline, broken.fill);
-    if (broken.piece) this.explodePiece(broken.piece);
+    switch (broken.kind) {
+      case 'piece':
+        return this.explodePiece(broken.colour, broken.centre);
+      case 'object':
+        if (broken.fill) this.releaseFill(broken.fill);
+        return this.explode(broken.outline, broken.fill);
+    }
   }
 
   /**
@@ -446,7 +480,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
    * Starts a Blast of the fixed Piece size at a broken Piece's centre if its
    * Line Colour explodes (red), so the next red Piece goes too: a fuse.
    */
-  private explodePiece({ colour, centre }: BrokenPiece): void {
+  private explodePiece(colour: Colour, centre: Vec2): void {
     if (this.materials.colours[colour].line.explodes > 0)
       this.arena.addBlast(centre, pieceBlastSize(this.materials));
   }

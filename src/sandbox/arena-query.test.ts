@@ -18,6 +18,7 @@ import { ArenaQuery, type Capsule } from './arena-query';
 import { brushTouchesCapsules, brushTouchesCircle, brushTouchesPolygon, type Brush } from './brush';
 import { ContactLedger, type Party } from './contact-ledger';
 import type { Thing } from './happenings';
+import { Numbers } from './numbers';
 import { Random } from './random';
 
 const worlds: PhysicsWorld[] = [];
@@ -45,7 +46,7 @@ function setup() {
   const bodies = new ArenaBodies<null>(
     physics,
     contacts,
-    createMaterialTable(),
+    new Numbers(createMaterialTable()),
     () => {},
     () => {},
   );
@@ -64,7 +65,7 @@ function setup() {
     const what = { thing: 'object', id: ++things } as const;
     const party = bodies.addObject(
       { position, parts, frozen: true, mass: 1 },
-      'grey',
+      { kind: 'object', colour: 'grey' },
       outline,
       what,
       own(),
@@ -73,7 +74,7 @@ function setup() {
   };
   const piece = (segments: readonly Segment[], thickness = 8, colour: Colour = 'grey') => {
     const what = { thing: 'piece', id: ++things, index: 0 } as const;
-    const party = bodies.addLine(segments, thickness, colour, what, own());
+    const party = bodies.addLine(segments, thickness, { kind: 'piece', colour }, what, own());
     return { what, body: party.body, party };
   };
   const circle = (position: Vec2, radius: number, droplet = false) => {
@@ -83,7 +84,7 @@ function setup() {
       : { thing: 'rubble', id, colour: 'grey', radius };
     const party = bodies.addCircle(
       { position, radius, mass: 1 },
-      { colour: 'grey', role: droplet ? 'line' : 'outline' },
+      { kind: droplet ? 'droplet' : 'rubble', colour: 'grey' },
       what,
       own(droplet ? { harmless: true } : {}),
     );
@@ -91,7 +92,7 @@ function setup() {
   };
   const patch = (host: Party<null>, segment: Segment, thickness = 3) => {
     const what = { thing: 'patch', id: ++things, colour: 'blue', segment, thickness } as const;
-    bodies.addShape(host.id, segment, thickness / 2, 'blue', what);
+    bodies.addShape(host.id, segment, thickness / 2, { kind: 'patch', colour: 'blue' }, what);
     return { what };
   };
   return { physics, bodies, query, object, piece, circle, patch };
