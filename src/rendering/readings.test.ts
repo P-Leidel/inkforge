@@ -13,6 +13,10 @@ describe('Readings', () => {
     blasts: 1,
     debris: 40,
   };
+  const ink = {
+    tanks: { grey: 32000, blue: 23999.6, green: 0, black: 12000, red: 8000 },
+    costs: true,
+  };
   const render = {
     graphics: 31,
     commands: 6212,
@@ -23,7 +27,7 @@ describe('Readings', () => {
     objects: 150,
   };
 
-  it('shows the last second, the time since the start, the bodies and the render load', () => {
+  it('shows the last second, the time since the start, the bodies, the render load and the Tanks', () => {
     const recent = new RecentFrames(240);
     for (let k = 0; k < 60; k++) {
       recent.push({ ms: 1000 / 60, physicsMs: 0.4, steps: 1, drawMs: 0.3, renderMs: 4.8 });
@@ -32,7 +36,7 @@ describe('Readings', () => {
     sinceStart.restart();
     for (const ms of [200, 16, 24.1, 16]) sinceStart.frame(ms);
 
-    const lines = readingLines({ recent: recent.summary(), sinceStart, bodies, render });
+    const lines = readingLines({ recent: recent.summary(), sinceStart, bodies, render, ink });
 
     expect(lines).toEqual([
       'last 1 s     60 fps   longest 16.7 ms',
@@ -44,6 +48,8 @@ describe('Readings', () => {
       '             Droplets 3   Patches 23   Blasts 1   Debris 40',
       'render       Graphics 31 · 6,212 commands   Text 29   objects 150',
       '             Images 88   baked 12 textures · 7.5 MB',
+      'ink, px²     grey 32,000   blue 24,000   green 0',
+      '             black 12,000   red 8,000   costs on',
     ]);
   });
 
@@ -51,9 +57,16 @@ describe('Readings', () => {
     const sinceStart = new FrameTimes();
     sinceStart.restart();
 
-    const lines = readingLines({ recent: null, sinceStart, bodies, render });
+    const lines = readingLines({
+      recent: null,
+      sinceStart,
+      bodies,
+      render,
+      ink: { ...ink, costs: false },
+    });
 
     expect(lines[0]).toBe('last 1 s     -');
     expect(lines[1]).toBe('since start  -   longest -   1% low -');
+    expect(lines.at(-1)).toBe('             black 12,000   red 8,000   costs off');
   });
 });

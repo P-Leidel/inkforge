@@ -87,51 +87,65 @@ export interface StrokeViews {
   readonly objects: readonly ObjectView[];
 }
 
-/** What adding a Stroke made: a Line or an Object, in its Colour, and the Ink (px²) it took. */
-export interface AddedStroke {
-  readonly kind: 'line' | 'object';
-  readonly id: StrokeId;
+/** What a Stroke makes, or would make: a Line or an Object, in its Colour, and the Ink (px²) it takes. */
+export type MadeStroke =
+  | {
+      readonly kind: 'line';
+      readonly colour: Colour;
+      /** Its Ink as drawn. */
+      readonly ink: number;
+      /** Each Piece's Ink, in order along the Line: together they are `ink`. */
+      readonly pieces: readonly number[];
+    }
+  | {
+      readonly kind: 'object';
+      readonly colour: Colour;
+      /** Its Outline's Ink. */
+      readonly ink: number;
+    };
+
+/** What adding a Stroke made, under its new id. */
+export type AddedStroke = MadeStroke & { readonly id: StrokeId };
+
+/** A Fill that is added, or would be: its Colour and its Ink (px²). */
+export interface MadeFill {
   readonly colour: Colour;
-  /** A Line's Ink as drawn, or an Object's Outline's. */
   readonly ink: number;
 }
 
 /** What a Fill click did. */
 export type FillOutcome =
   /** The Object under the click took a Fill of `colour`, of `ink` px². */
-  | {
-      readonly kind: 'filled';
-      readonly id: StrokeId;
-      readonly colour: Colour;
-      readonly ink: number;
-    }
+  | ({ readonly kind: 'filled'; readonly id: StrokeId } & MadeFill)
+  /**
+   * The Fill was not accepted, so the Object stays hollow; `outline` is its
+   * Outline where it is now.
+   */
+  | ({ readonly kind: 'declined'; readonly id: StrokeId; readonly outline: Polygon } & MadeFill)
   /** The Object under the click holds a Fill already; `outline` is its Outline where it is now. */
   | { readonly kind: 'already-filled'; readonly id: StrokeId; readonly outline: Polygon }
   | { readonly kind: 'missed' };
 
-/** What undo took back, in its Colour, and its Ink (px²). */
-export type UndoOutcome =
-  /**
-   * A Line, whatever is left of it: `ink` as it was drawn, `standing` what
-   * its Pieces still there hold.
-   */
-  | {
-      readonly kind: 'line';
-      readonly id: StrokeId;
-      readonly colour: Colour;
-      readonly ink: number;
-      readonly standing: number;
-    }
-  /** An Object: its Outline's Ink. It has no Fill by then; that is undone first. */
+/** What taking back a Stroke took, in its Colour, and its Ink (px²). */
+export type RemovedStroke =
+  /** A Line, whatever is left of it: `ink` is what its Pieces still there hold. */
+  | { readonly kind: 'line'; readonly id: StrokeId; readonly colour: Colour; readonly ink: number }
+  /** An Object: its Outline's Ink, and its Fill's, if it had one, which went with it. */
   | {
       readonly kind: 'object';
       readonly id: StrokeId;
       readonly colour: Colour;
       readonly ink: number;
+      readonly fill: MadeFill | null;
     }
-  /** An Object's Fill; the Object stays. */
-  | { readonly kind: 'fill'; readonly id: StrokeId; readonly colour: Colour; readonly ink: number }
-  | { readonly kind: 'nothing' };
+  /** It was gone already: broken, erased, removed or taken back. */
+  | { readonly kind: 'gone'; readonly id: StrokeId };
+
+/** What taking back a Fill took: the Object stays. */
+export type RemovedFill =
+  | ({ readonly kind: 'fill'; readonly id: StrokeId } & MadeFill)
+  /** The Object is gone, or holds no Fill. */
+  | { readonly kind: 'gone'; readonly id: StrokeId };
 
 /** What the Stroke pipeline made of a Stroke that is added. */
 export type DrawnStroke = Extract<StrokeResult, { readonly kind: 'line' | 'object' }>;
@@ -155,8 +169,6 @@ interface LineStroke {
   readonly party: PartyId;
   readonly colour: Colour;
   readonly thickness: number;
-  /** Its Ink as drawn, before any Piece broke. */
-  readonly ink: number;
   /** The Pieces still there, in order; broken ones are gone. */
   pieces: Piece[];
 }
@@ -194,9 +206,6 @@ function capsulesOf(line: LineStroke): Capsule[] {
   return line.pieces.flatMap((piece) => piece.segments.map((segment) => ({ segment, radius })));
 }
 
-/** One undo step: a Stroke, or the Fill of an Object. */
-type Action = { readonly kind: 'stroke' | 'fill'; readonly id: StrokeId };
-
 /** An Object's pose and motion when a snapshot is taken. */
 interface ObjectMotion extends Motion {
   readonly frozen: boolean;
@@ -213,7 +222,6 @@ type SavedStroke =
 /** The Strokes' part of a snapshot. */
 export interface SavedStrokes {
   readonly strokes: readonly SavedStroke[];
-  readonly history: readonly Action[];
 }
 
 /** A broken Object's Fill, which comes out in the same step. */
@@ -261,8 +269,8 @@ export interface Broken {
 }
 
 /**
- * The Strokes: Lines with their Pieces, Objects with their Fills, the undo
- * history, the squeeze, and breaking Objects and Pieces. Stroke ids are
+ * The Strokes: Lines with their Pieces, Objects with their Fills, taking
+ * them back, the squeeze, and breaking Objects and Pieces. Stroke ids are
  * never reused, not even after R or Clear. Each Object and each Piece is a
  * Party to the Contact ledger; each Line has a Party id too, which its
  * Pieces' Parties carry as their Stroke.
@@ -271,8 +279,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   readonly name = 'strokes';
   /** In the order they were drawn. */
   private strokes: Stroke[] = [];
-  /** Strokes and Fills in the order they were made, for undo. */
-  private history: Action[] = [];
   private nextId = 1;
 
   constructor(
@@ -326,6 +332,19 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     };
   }
 
+  /** What the Line or Object the Stroke pipeline made would be in `colour`, and its Ink. */
+  measure(result: DrawnStroke, colour: Colour): MadeStroke {
+    if (result.kind === 'object')
+      return { kind: 'object', colour, ink: outlineInk(result.outline) };
+    const { thickness } = result;
+    return {
+      kind: 'line',
+      colour,
+      ink: lineInk(result.segments, thickness),
+      pieces: result.pieces.map((piece) => lineInk(piece, thickness)),
+    };
+  }
+
   /**
    * Adds the Line or Object the Stroke pipeline made, in `colour`, and says
    * how much Ink it took. While physics is `running`, it squeezes what it
@@ -333,9 +352,9 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
    */
   add(result: DrawnStroke, colour: Colour, running: boolean): AddedStroke {
     const id = this.nextId++;
+    const made = this.measure(result, colour);
     if (result.kind === 'line') {
       const { thickness } = result;
-      const ink = lineInk(result.segments, thickness);
       const party = this.bodies.newId();
       const pieces = result.pieces.map((segments, index) =>
         this.addPiece(
@@ -354,11 +373,10 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
           party,
         ),
       );
-      const line: LineStroke = { kind: 'line', id, party, colour, thickness, ink, pieces };
+      const line: LineStroke = { kind: 'line', id, party, colour, thickness, pieces };
       this.strokes.push(line);
-      this.history.push({ kind: 'stroke', id });
       if (running) this.squeeze(this.crossedBy([line]));
-      return { kind: 'line', id, colour, ink };
+      return { ...made, id };
     }
     // The body's origin is the outline's centroid; shapes are stored relative to it.
     const origin = polygonCentroid(result.outline);
@@ -385,9 +403,8 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       { position: origin, parts, frozen: true, mass },
     );
     this.strokes.push(object);
-    this.history.push({ kind: 'stroke', id });
     if (running) this.squeeze([object]);
-    return { kind: 'object', id, colour, ink: outlineInk(outline) };
+    return { ...made, id };
   }
 
   /** Adds a Piece's fixed body. Its Party's Stroke is its Line's, `line`. */
@@ -524,17 +541,19 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
    * Fills the Object under `point` with `colour`: its mass becomes its
    * Outline's plus its Fill's. Works on Frozen and moving Objects, and never
    * wakes a Frozen one. An Object holds one Fill. Says how much Ink the Fill
-   * took.
+   * took. If `accept` turns the Fill down, the Object stays hollow.
    */
-  fillAt(point: Vec2, colour: Colour): FillOutcome {
+  fillAt(point: Vec2, colour: Colour, accept?: (fill: MadeFill) => boolean): FillOutcome {
     const object = this.objectAt(point);
     if (!object) return { kind: 'missed' };
-    if (object.fill) {
-      return { kind: 'already-filled', id: object.id, outline: this.worldOutline(object) };
+    const { id } = object;
+    if (object.fill) return { kind: 'already-filled', id, outline: this.worldOutline(object) };
+    const made = { colour, ink: fillInk(object.outline) };
+    if (accept && !accept(made)) {
+      return { kind: 'declined', id, outline: this.worldOutline(object), ...made };
     }
     this.setFill(object, colour);
-    this.history.push({ kind: 'fill', id: object.id });
-    return { kind: 'filled', id: object.id, colour, ink: fillInk(object.outline) };
+    return { kind: 'filled', id, ...made };
   }
 
   private setFill(object: ObjectStroke, fill: Colour | null): void {
@@ -560,7 +579,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     if (index < 0) return;
     const [stroke] = this.strokes.splice(index, 1);
     for (const body of this.bodiesOf(stroke!)) this.bodies.removeBody(body, why);
-    this.history = this.history.filter((action) => action.id !== id);
   }
 
   /**
@@ -580,29 +598,40 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   }
 
   /**
-   * Takes back the most recent Stroke or Fill that still exists: what's left
-   * of a Line goes as a whole. Broken Objects, and Lines whose every Piece
-   * broke, are gone from the history, so undo skips them. Says what it
-   * took back and its Ink.
+   * Takes back what's left of a Stroke: an Object with its Fill, or a Line's
+   * Pieces still there. Says what it took back and its Ink, or that the
+   * Stroke was gone already.
    */
-  undo(): UndoOutcome {
-    const action = this.history.pop();
-    const stroke = action && this.strokes.find((s) => s.id === action.id);
-    if (!action || !stroke) return { kind: 'nothing' };
-    const { id } = stroke;
-    if (action.kind === 'fill') {
-      if (stroke.kind !== 'object') return { kind: 'nothing' };
-      const { fill, outline } = stroke;
-      this.setFill(stroke, null);
-      return fill ? { kind: 'fill', id, colour: fill, ink: fillInk(outline) } : { kind: 'nothing' };
-    }
+  removeStroke(id: StrokeId): RemovedStroke {
+    const stroke = this.strokes.find((s) => s.id === id);
+    if (!stroke) return { kind: 'gone', id };
     this.remove(id, 'undone');
+    const { colour } = stroke;
     if (stroke.kind === 'object') {
-      return { kind: 'object', id, colour: stroke.colour, ink: outlineInk(stroke.outline) };
+      const { outline, fill } = stroke;
+      const ink = outlineInk(outline);
+      return {
+        kind: 'object',
+        id,
+        colour,
+        ink,
+        fill: fill && { colour: fill, ink: fillInk(outline) },
+      };
     }
-    const { colour, ink, thickness, pieces } = stroke;
-    const segments = pieces.flatMap((piece) => piece.segments);
-    return { kind: 'line', id, colour, ink, standing: lineInk(segments, thickness) };
+    const segments = stroke.pieces.flatMap((piece) => piece.segments);
+    return { kind: 'line', id, colour, ink: lineInk(segments, stroke.thickness) };
+  }
+
+  /**
+   * Takes back an Object's Fill; the Object stays, hollow. Says what it took
+   * back and its Ink, or that there was no Fill to take.
+   */
+  removeFill(id: StrokeId): RemovedFill {
+    const object = this.objectById(id);
+    const fill = object?.fill;
+    if (!object || !fill) return { kind: 'gone', id };
+    this.setFill(object, null);
+    return { kind: 'fill', id, colour: fill, ink: fillInk(object.outline) };
   }
 
   /**
@@ -667,7 +696,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
           },
         };
       }),
-      history: [...this.history],
     };
   }
 
@@ -695,7 +723,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       if (motion.slide) this.bodies.slideOut(restored.body, motion.slide, SLIDE_OUT_SPEED);
       return restored;
     });
-    this.history = [...saved.history];
   }
 
   /** Nothing of it is attached to anything else. */
@@ -703,7 +730,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
 
   clear(): void {
     this.strokes = [];
-    this.history = [];
   }
 
   step(): void {}

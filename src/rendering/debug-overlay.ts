@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { transformPoints } from '../geometry/transform';
+import type { Game } from '../game/game';
+import { COLOURS, type Colour } from '../materials/colour';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { bandPolygon } from '../geometry/separation';
 import { strokePolygon, strokeRing } from './draw';
@@ -38,7 +40,8 @@ const REACH_DOT = 3;
  * **Debug** adds
  * collider outlines, each Piece's and Object's durability and Blast rings
  * with their full reach; Rubble never breaks, so it gets no label. The
- * labels are BitmapText in one font texture. F3 copies the readings.
+ * labels are BitmapText in one font texture. The stats end with each Ink
+ * Tank in px². F3 copies the readings.
  */
 export class DebugOverlay {
   private readonly colliders: Phaser.GameObjects.Graphics;
@@ -50,14 +53,16 @@ export class DebugOverlay {
   private level: Level = 'off';
   private lastRefresh = -Infinity;
   private sceneName = 'Sandbox';
+  private readonly world: SandboxWorld;
 
   constructor(
     private readonly scene: Phaser.Scene,
-    private readonly world: SandboxWorld,
+    private readonly game: Game,
     private readonly frames: FrameRecorder,
     /** Draws the Debris, which is visual only. */
     private readonly worldView: Pick<WorldRenderer, 'debrisCount'>,
   ) {
+    this.world = game.world;
     this.colliders = scene.add.graphics().setDepth(100);
     this.panel = new StatsPanel(scene, PANEL_AT, () => void this.copyReadings());
     this.labelFont = addMonoFont(scene, 'mono-14-backed', LABEL_SIZE, 'rgba(0, 0, 0, 0.67)');
@@ -218,6 +223,12 @@ export class DebugOverlay {
         bakedTextures: baked.textures,
         bakedBytes: baked.bytes,
         objects: list.length,
+      },
+      ink: {
+        tanks: Object.fromEntries(
+          COLOURS.map((colour) => [colour, this.game.tank(colour)]),
+        ) as Record<Colour, number>,
+        costs: this.game.inkCosts,
       },
     };
   }

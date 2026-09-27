@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
+import type { Colour } from '../materials/colour';
 import type { RejectionReason } from '../stroke/stroke-pipeline';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { strokePolyline } from './draw';
@@ -11,6 +12,9 @@ export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
   'self-crossing': 'Shape crosses itself',
   overlaps: 'Overlaps Terrain or an Object',
 };
+
+/** What a flash says about a Stroke or a Fill its Tank can't pay for. */
+export const notEnough = (colour: Colour) => `Not enough ${colour}`;
 
 const FADE_MS = 900;
 

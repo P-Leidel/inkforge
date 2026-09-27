@@ -283,14 +283,13 @@ describe('Rubble and the Sandbox controls', () => {
     expect(world.submitStroke(clear, 'grey').kind).toBe('object');
   });
 
-  it('undo leaves released Rubble in place, and Clear removes it', () => {
+  it('taking back a Stroke leaves released Rubble in place, and Clear removes it', () => {
     const world = createWorld();
-    drawObject(world, dragBox(100, 100, 40, 40)); // something older to undo
+    const older = drawObject(world, dragBox(100, 100, 40, 40));
     smash(world, [smashable(world, 500, 'grey')]);
     const pebbles = world.rubble.length;
 
-    world.undo(); // the red Line's broken, so this takes the older box
-    world.undo();
+    world.removeStroke(older);
 
     expect(world.objects).toHaveLength(0);
     expect(world.rubble).toHaveLength(pebbles);

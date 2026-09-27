@@ -254,7 +254,7 @@ describe('Patches', () => {
     expect(objectById(world, host).frozen).toBe(true);
   });
 
-  it('go with their host when it breaks or is undone, and stay on the rest', () => {
+  it('go with their host when it breaks or is taken back, and stay on the rest', () => {
     const world = spillWorld();
     const line = drawLine(
       world,
@@ -277,15 +277,15 @@ describe('Patches', () => {
     const onGround = on(100, 300);
     expect(onGround).toBeGreaterThan(0);
 
-    // The shelf breaks under a boulder; the Line is undone.
+    // The shelf breaks under a boulder; the Line is taken back.
     world.materials.colours.grey.outline.durability = 1;
     const boulder = drawObject(world, dragBox(1080, 560, 40, 40), 'black');
     world.release(boulder);
     runFor(world, 0.5);
     expect(world.objects.some((o) => o.id === shelf)).toBe(false);
     expect(on(1000, 1200)).toBe(0);
-    world.undo(); // the boulder
-    world.undo(); // the Line
+    world.removeStroke(boulder);
+    world.removeStroke(line);
     expect(world.lines.some((l) => l.id === line)).toBe(false);
     expect(on(350, 650)).toBe(0);
     expect(on(100, 300)).toBe(onGround);

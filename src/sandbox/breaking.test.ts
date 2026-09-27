@@ -268,7 +268,7 @@ function lShape(x: number, y: number) {
   ];
 }
 
-describe('Undo, Clear and Reset after breaking', () => {
+describe('Taking back, Clear and Reset after breaking', () => {
   /** A box that stays whole, then a red ball filled grey that breaks when it lands. */
   function breakSomething(world: SandboxWorld) {
     const box = drawObject(world, dragBox(600, 819, 60, 60));
@@ -280,15 +280,16 @@ describe('Undo, Clear and Reset after breaking', () => {
     return { box, ball };
   }
 
-  it('undo skips the broken Object and its Fill and removes the latest that still exists', () => {
+  it('taking back a broken Object or its Fill finds it gone; one still there is taken back', () => {
     const world = createWorld();
-    const { box } = breakSomething(world);
+    const { box, ball } = breakSomething(world);
 
-    world.undo();
+    expect(world.removeFill(ball)).toEqual({ kind: 'gone', id: ball });
+    expect(world.removeStroke(ball)).toEqual({ kind: 'gone', id: ball });
+    expect(world.removeStroke(box)).toMatchObject({ kind: 'object', id: box });
 
     expect(exists(world, box)).toBe(false);
     expect(world.objects).toHaveLength(0);
-    world.undo(); // nothing left: does nothing
   });
 
   it('Clear removes everything after things have broken, and starts over', () => {

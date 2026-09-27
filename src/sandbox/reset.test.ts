@@ -18,7 +18,7 @@ function state(world: SandboxWorld) {
 
 /**
  * A busy scene: a ramp, a stack of boxes, a ball rolling down into them, a
- * Frozen box it knocks awake, and Strokes drawn and undone before physics
+ * Frozen box it knocks awake, and Strokes drawn and taken back before physics
  * starts, so the engine has some history.
  */
 function busyScene(world: SandboxWorld): void {
@@ -29,10 +29,8 @@ function busyScene(world: SandboxWorld): void {
   for (let k = 0; k < 3; k++) drawObject(world, dragBox(600, 818 - k * 62, 60, 60));
   world.fillAt({ x: 630, y: 848 }, 'black');
   drawObject(world, dragBox(700, 600, 60, 60));
-  drawObject(world, dragBox(300, 200, 40, 40));
-  world.undo();
-  drawObject(world, dragBox(300, 200, 50, 50), 'blue');
-  world.undo();
+  world.removeStroke(drawObject(world, dragBox(300, 200, 40, 40)));
+  world.removeStroke(drawObject(world, dragBox(300, 200, 50, 50), 'blue'));
   const ball = drawObject(world, dragCircle({ x: 150, y: 460 }, 20), 'blue');
   world.togglePause();
   world.release(ball, { x: 100, y: 0 });
@@ -126,7 +124,7 @@ describe('Reset', () => {
     expect(world.lines.map((line) => line.colour)).toEqual(['black']);
   });
 
-  it('forgets Strokes and Fills made after the snapshot, and undo carries on from it', () => {
+  it('forgets Strokes and Fills made after the snapshot', () => {
     const world = createWorld();
     const first = drawObject(world, dragBox(300, 300, 60, 60));
     const second = drawObject(world, dragBox(500, 300, 60, 60));
@@ -139,8 +137,6 @@ describe('Reset', () => {
 
     expect(world.objects.map((o) => o.id)).toEqual([first, second]);
     expect(objectById(world, first).fill).toBeNull();
-    world.undo();
-    expect(world.objects.map((o) => o.id)).toEqual([first]);
   });
 
   it('gives new Strokes after R fresh ids', () => {

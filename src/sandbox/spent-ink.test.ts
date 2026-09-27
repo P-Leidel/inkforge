@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { fillInk, lineInk, outlineInk } from '../materials/ink';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
-import type { SandboxWorld } from './sandbox-world';
-import { drawLine, drawObject, objectById, sandboxWorlds } from './test-support';
+import type { MadeStroke, SandboxWorld } from './sandbox-world';
+import { drawLine, drawObject, hear, objectById, runFor, sandboxWorlds } from './test-support';
 
 const createWorld = sandboxWorlds();
 
@@ -34,13 +34,26 @@ describe('What a Stroke spends', () => {
     if (outcome.kind !== 'line') return;
     const { segments, thickness } = lineById(world, outcome.id);
     expect(thickness).toBe(LINE_THICKNESS);
-    expect(outcome).toEqual({
+    expect(outcome).toMatchObject({
       kind: 'line',
       id: outcome.id,
       colour: 'blue',
       ink: lineInk(segments, thickness),
     });
     expect(outcome.ink).toBeCloseTo(480 * LINE_THICKNESS, -1);
+  });
+
+  it("reports each Piece's Ink, and the Pieces add up to the Line", () => {
+    const world = createWorld();
+
+    const outcome = world.submitStroke(dragAlong(SHELF), 'grey');
+
+    if (outcome.kind !== 'line') throw new Error('expected a Line');
+    const { pieces, thickness } = lineById(world, outcome.id);
+    expect(outcome.pieces).toHaveLength(10);
+    expect(outcome.pieces).toEqual(pieces.map((piece) => lineInk(piece.segments, thickness)));
+    const sum = outcome.pieces.reduce((total, ink) => total + ink, 0);
+    expect(sum).toBeCloseTo(outcome.ink, 6);
   });
 
   it('measures a Line by the thickness it was drawn with', () => {
@@ -89,48 +102,107 @@ describe('What a Stroke spends', () => {
   });
 });
 
-describe('What undo takes back', () => {
-  it('reports nothing with an empty history', () => {
+describe('What a declined Stroke would have spent', () => {
+  it('adds nothing, and says what the Line would have been with its Ink', () => {
     const world = createWorld();
+    const heard = hear(world);
+    const offered: MadeStroke[] = [];
 
-    expect(world.undo()).toEqual({ kind: 'nothing' });
+    const outcome = world.submitStroke(dragAlong(SHELF), 'red', {
+      accept: (made) => {
+        offered.push(made);
+        return false;
+      },
+    });
+
+    expect(outcome.kind).toBe('declined');
+    if (outcome.kind !== 'declined') return;
+    expect(offered).toEqual([outcome.made]);
+    expect(outcome.made).toMatchObject({ kind: 'line', colour: 'red' });
+    expect(outcome.made.ink).toBeCloseTo(480 * LINE_THICKNESS, -1);
+    expect(outcome.path[0]!.x).toBeCloseTo(200, 0);
+    expect(outcome.path.at(-1)!.x).toBeCloseTo(680, 0);
+    expect(world.lines).toEqual([]);
+    expect(world.bodyCount).toBe(1);
+    expect(heard()).toEqual([]);
   });
 
-  it('reports an undone Object with its Colour and its Outline’s Ink', () => {
+  it('says what the Object would have been, and its Outline as the path', () => {
+    const world = createWorld();
+
+    const outcome = world.submitStroke(dragBox(300, 300, 60, 60), 'grey', { accept: () => false });
+
+    expect(outcome.kind).toBe('declined');
+    if (outcome.kind !== 'declined') return;
+    expect(outcome.made).toMatchObject({ kind: 'object', colour: 'grey' });
+    expect(outcome.made.ink).toBeCloseTo(240 * LINE_THICKNESS, -1);
+    expect(outcome.path.at(-1)).toEqual(outcome.path[0]);
+    expect(world.objects).toEqual([]);
+  });
+
+  it('adds the Stroke when it is accepted, as without a check', () => {
+    const world = createWorld();
+
+    const outcome = world.submitStroke(dragAlong(SHELF), 'grey', { accept: () => true });
+
+    expect(outcome.kind).toBe('line');
+    expect(world.lines).toHaveLength(1);
+  });
+});
+
+describe('What taking back a Stroke or a Fill gives back', () => {
+  it('reports a taken back Object with its Colour and its Outline’s Ink', () => {
     const world = createWorld();
     const drawn = world.submitStroke(dragBox(300, 300, 60, 60), 'red');
+    if (drawn.kind !== 'object') throw new Error('expected an Object');
 
-    expect(world.undo()).toEqual(drawn);
+    expect(world.removeStroke(drawn.id)).toEqual({ ...drawn, fill: null });
     expect(world.objects).toEqual([]);
-    expect(world.undo()).toEqual({ kind: 'nothing' });
   });
 
-  it("reports a Fill's Ink apart from its Outline's: the Fill first, then the Object", () => {
+  it("reports a Fill's Ink apart from its Outline's, and the Object stays", () => {
     const world = createWorld();
     const drawn = world.submitStroke(dragBox(300, 300, 60, 60), 'grey');
     const filled = world.fillAt({ x: 330, y: 330 }, 'blue');
     if (drawn.kind !== 'object' || filled.kind !== 'filled') throw new Error('expected a Fill');
 
-    expect(world.undo()).toEqual({
+    expect(world.removeFill(drawn.id)).toEqual({
       kind: 'fill',
       id: drawn.id,
       colour: 'blue',
       ink: filled.ink,
     });
     expect(objectById(world, drawn.id).fill).toBeNull();
-    expect(world.undo()).toEqual(drawn);
+    expect(world.removeStroke(drawn.id)).toEqual({ ...drawn, fill: null });
   });
 
-  it('reports a whole Line with its Ink as drawn, and all of it still standing', () => {
+  it('reports the Fill that went with an Object taken back whole', () => {
+    const world = createWorld();
+    const box = box60(world);
+    const filled = world.fillAt({ x: 330, y: 330 }, 'black');
+    if (filled.kind !== 'filled') throw new Error('expected a Fill');
+
+    expect(world.removeStroke(box)).toMatchObject({
+      kind: 'object',
+      fill: { colour: 'black', ink: filled.ink },
+    });
+  });
+
+  it('reports a whole Line with all of its Ink', () => {
     const world = createWorld();
     const drawn = world.submitStroke(dragAlong(SHELF), 'green');
     if (drawn.kind !== 'line') throw new Error('expected a Line');
 
-    expect(world.undo()).toEqual({ ...drawn, standing: drawn.ink });
+    expect(world.removeStroke(drawn.id)).toEqual({
+      kind: 'line',
+      id: drawn.id,
+      colour: 'green',
+      ink: drawn.ink,
+    });
     expect(world.lines).toEqual([]);
   });
 
-  it('reports a partly gone Line with its Ink as drawn and the Ink of its Pieces still there', () => {
+  it('reports a partly erased Line with the Ink of its Pieces still there', () => {
     const world = createWorld();
     const line = drawLine(world, SHELF, 'grey');
     const drawn = lineById(world, line);
@@ -139,15 +211,50 @@ describe('What undo takes back', () => {
     const left = lineById(world, line);
     expect(left.pieces).toHaveLength(9);
 
-    const undone = world.undo();
+    const taken = world.removeStroke(line);
 
-    expect(undone).toEqual({
+    expect(taken).toEqual({
       kind: 'line',
       id: line,
       colour: 'grey',
-      ink,
-      standing: lineInk(left.segments, left.thickness),
+      ink: lineInk(left.segments, left.thickness),
     });
-    if (undone.kind === 'line') expect(undone.standing).toBeCloseTo((ink * 9) / 10, 6);
+    if (taken.kind === 'line') expect(taken.ink).toBeCloseTo((ink * 9) / 10, 6);
+  });
+
+  it('reports a Line with broken Pieces with only the Ink of its Pieces still standing', () => {
+    const world = createWorld();
+    const drawn = world.submitStroke(dragAlong(SHELF), 'grey');
+    if (drawn.kind !== 'line') throw new Error('expected a Line');
+    const rock = drawObject(world, dragBox(410, 220, 60, 60), 'black');
+    world.fillAt({ x: 440, y: 250 }, 'black');
+    runFor(world, 0);
+    world.release(rock);
+    runFor(world, 1.5);
+    world.remove(rock);
+    const left = lineById(world, drawn.id);
+    expect(left.pieces.length).toBeLessThan(10);
+    const standing = left.pieces.reduce((sum, piece) => sum + drawn.pieces[piece.index]!, 0);
+
+    const taken = world.removeStroke(drawn.id);
+
+    expect(taken.kind).toBe('line');
+    if (taken.kind === 'line') expect(taken.ink).toBeCloseTo(standing, 6);
+  });
+
+  it('says a Stroke or a Fill that is already gone is gone', () => {
+    const world = createWorld();
+    const box = box60(world);
+    const hollow = drawObject(world, dragBox(500, 300, 60, 60));
+    world.fillAt({ x: 330, y: 330 }, 'grey');
+    world.removeStroke(box);
+    const heard = hear(world);
+
+    expect(world.removeStroke(box)).toEqual({ kind: 'gone', id: box });
+    expect(world.removeFill(box)).toEqual({ kind: 'gone', id: box });
+    expect(world.removeFill(hollow)).toEqual({ kind: 'gone', id: hollow });
+    expect(world.removeStroke(999)).toEqual({ kind: 'gone', id: 999 });
+    expect(heard()).toEqual([]);
+    expect(world.objects.map((o) => o.id)).toEqual([hollow]);
   });
 });

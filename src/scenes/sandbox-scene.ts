@@ -4,7 +4,8 @@ import { GALLERY, type Demo } from '../gallery/gallery';
 import { COLOURS } from '../materials/colour';
 import { DebugOverlay } from '../rendering/debug-overlay';
 import { FrameRecorder } from '../rendering/frame-times';
-import { flashRejection, REJECTION_MESSAGES } from '../rendering/rejection-flash';
+import { Game } from '../game/game';
+import { flashRejection, notEnough, REJECTION_MESSAGES } from '../rendering/rejection-flash';
 import { Hud } from '../rendering/hud';
 import type { Menu } from '../rendering/menu';
 import { ERASER_RADIUS, PaletteBar, type Tool } from '../rendering/palette-bar';
@@ -12,7 +13,7 @@ import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../rendering/toolbar';
 import { TuningPanel } from '../rendering/tuning-panel';
 import { WorldRenderer } from '../rendering/world-renderer';
-import { SandboxWorld } from '../sandbox/sandbox-world';
+import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { BallCannon } from '../stress-tests/ball-cannon';
 import { BoxTower } from '../stress-tests/box-tower';
 import { PebbleDrop } from '../stress-tests/pebble-drop';
@@ -24,12 +25,14 @@ import { isFillClick } from '../stroke/fill-click';
 const COLOUR_KEYS = new Map(COLOURS.map((colour, k) => [String(k + 1), colour]));
 
 /**
- * The sandbox scene: turns pointer and keyboard input into Sandbox world
- * commands and draws the world's state. Game logic lives in SandboxWorld.
- * The scene remembers the picked tool, a Colour or the Eraser, and hands the
- * Colour to every command.
+ * The sandbox scene: turns pointer and keyboard input into commands to the
+ * Game, and draws the Sandbox world's state and the Ink Tanks. The rules live
+ * in the Game and the Sandbox world below it. The scene remembers the picked
+ * tool, a Colour or the Eraser, and hands the Colour to every command.
  */
 export class SandboxScene extends Phaser.Scene {
+  private gameLayer!: Game;
+  /** The Sandbox world below the Game: what is drawn, and what demos build on. */
   private world!: SandboxWorld;
   private worldView!: WorldRenderer;
   private overlay!: DebugOverlay;
@@ -59,11 +62,13 @@ export class SandboxScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.world = new SandboxWorld();
-    this.tuning = new TuningPanel(this.world.materials);
+    // Ink is unlimited until Ink costs is turned on in F2.
+    this.gameLayer = new Game({ inkCosts: false });
+    this.world = this.gameLayer.world;
+    this.tuning = new TuningPanel(this.world.materials, this.gameLayer);
     this.worldView = new WorldRenderer(this, this.world);
     this.preview = new StrokePreview(this);
-    this.overlay = new DebugOverlay(this, this.world, this.frames, this.worldView);
+    this.overlay = new DebugOverlay(this, this.gameLayer, this.frames, this.worldView);
     // Phaser renders after the scene's update: time it for the frame's record.
     let renderStart = 0;
     const beforeRender = () => (renderStart = performance.now());
@@ -77,7 +82,7 @@ export class SandboxScene extends Phaser.Scene {
       this.worldView.destroy();
       this.palette.destroy();
       this.tuning.destroy();
-      this.world.dispose();
+      this.gameLayer.dispose();
     });
     this.hud = new Hud(this, this.world);
     this.palette = new PaletteBar(this, (tool) => this.pick(tool));
@@ -100,29 +105,28 @@ export class SandboxScene extends Phaser.Scene {
     this.bindPointer();
   }
 
-  /** Clears the Arena and starts a stress test on it (or none). */
+  /** Clears the Arena, fills the Tanks and starts a stress test on it (or none). */
   private startStressTest(
     name: string,
     create: ((world: SandboxWorld) => StressTest) | null,
   ): void {
-    this.world.clear();
-    this.stressTest = create ? create(this.world) : null;
+    this.stressTest = null;
+    this.gameLayer.clear(create ? (world) => (this.stressTest = create(world)) : undefined);
     this.overlay.setSceneName(name);
     this.frames.sinceStart.restart();
   }
 
-  /** Clears the Arena and sets up a gallery demo on it. */
+  /** Clears the Arena, fills the Tanks and sets up a gallery demo on it. */
   private loadDemo(demo: Demo): void {
-    this.world.clear();
     this.stressTest = null;
-    demo.build(this.world);
+    this.gameLayer.clear((world) => demo.build(world));
     this.overlay.setSceneName(demo.name);
     this.frames.sinceStart.restart();
   }
 
-  /** Takes the world back to the last start; the replay is timed on its own. */
+  /** Takes the world and the Tanks back to the last start; the replay is timed on its own. */
   private reset(): void {
-    this.world.reset();
+    this.gameLayer.reset();
     this.frames.sinceStart.restart();
   }
 
@@ -143,7 +147,7 @@ export class SandboxScene extends Phaser.Scene {
     });
     keyboard
       .addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
-      .on('down', () => this.world.togglePause());
+      .on('down', () => this.gameLayer.togglePause());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.cycle());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F2).on('down', () => this.tuning.toggle());
     keyboard
@@ -153,7 +157,7 @@ export class SandboxScene extends Phaser.Scene {
     keyboard.on('keydown-Z', (event: KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
-      this.world.undo();
+      this.gameLayer.undo();
     });
   }
 
@@ -178,7 +182,7 @@ export class SandboxScene extends Phaser.Scene {
           } else {
             this.stroke = [point];
           }
-        } else if (pointer.rightButtonDown()) this.world.releaseAt(point);
+        } else if (pointer.rightButtonDown()) this.gameLayer.releaseAt(point);
       },
     );
     this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
@@ -202,7 +206,7 @@ export class SandboxScene extends Phaser.Scene {
   private erase(): void {
     const path = this.erasing;
     if (!path) return;
-    this.world.eraseAlong(path, ERASER_RADIUS);
+    this.gameLayer.eraseAlong(path, ERASER_RADIUS);
     this.erasing = [path[path.length - 1]!];
   }
 
@@ -215,15 +219,18 @@ export class SandboxScene extends Phaser.Scene {
     if (!stroke || colour === 'eraser') return;
     const pointer = stroke[stroke.length - 1]!;
     if (isFillClick(stroke)) {
-      const outcome = this.world.fillAt(stroke[0]!, colour);
-      if (outcome.kind !== 'already-filled') return;
+      const outcome = this.gameLayer.fillAt(stroke[0]!, colour);
+      if (outcome.kind !== 'already-filled' && outcome.kind !== 'refused') return;
       const { outline } = outcome;
-      flashRejection(this, [...outline, outline[0]!], 'Already filled', pointer);
+      const message = outcome.kind === 'refused' ? notEnough(colour) : 'Already filled';
+      flashRejection(this, [...outline, outline[0]!], message, pointer);
       return;
     }
-    const outcome = this.world.submitStroke(stroke, colour);
+    const outcome = this.gameLayer.submitStroke(stroke, colour);
     if (outcome.kind === 'rejected') {
       flashRejection(this, outcome.path, REJECTION_MESSAGES[outcome.reason], pointer);
+    } else if (outcome.kind === 'refused') {
+      flashRejection(this, outcome.path, notEnough(colour), pointer);
     }
   }
 
@@ -246,7 +253,7 @@ export class SandboxScene extends Phaser.Scene {
     this.frames.begin(this.game.loop.rawDelta, this.world.isRunning);
     this.erase();
     const start = performance.now();
-    const steps = this.world.advance(deltaMs / 1000);
+    const steps = this.gameLayer.advance(deltaMs / 1000);
     this.frames.physics(performance.now() - start, steps);
     this.stressTest?.update();
     const drawStart = performance.now();
@@ -256,7 +263,7 @@ export class SandboxScene extends Phaser.Scene {
     const at = this.pointerInside ? { x: pointer.worldX, y: pointer.worldY } : null;
     if (this.tool === 'eraser') this.preview.drawBrush(at);
     else this.preview.draw(this.stroke, this.tool, this.strokeRefused, at);
-    this.palette.show(this.tool);
+    this.palette.show(this.tool, this.gameLayer);
     this.overlay.draw();
     this.hud.draw(this.stressTest?.status());
     this.frames.draw(performance.now() - drawStart);

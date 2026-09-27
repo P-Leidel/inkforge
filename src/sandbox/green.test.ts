@@ -108,17 +108,17 @@ describe('Sticking', () => {
    * A 40 px green box Frozen under a grey Line at y = 400, thrown up at it
    * gently: it sticks to the Line's underside and hangs there.
    */
-  function hangUnderLine(world: SandboxWorld): number {
+  function hangUnderLine(world: SandboxWorld): { box: number; line: number } {
     const box = drawObject(world, dragBox(530, 460, 40, 40), 'green');
-    floor(world, 400, 400, 700, 'grey'); // drawn last, so undo takes it
+    const line = floor(world, 400, 400, 700, 'grey');
     launch(world, box, { x: 0, y: -400 });
     runFor(world, 1);
-    return box;
+    return { box, line };
   }
 
   it('sticks a green Object to its first new contact, fixed on a Line, and lets it fall free when that Piece breaks', () => {
     const world = createWorld();
-    const box = hangUnderLine(world);
+    const { box } = hangUnderLine(world);
 
     expect(stuck(world, box)).toBe(true);
     const hanging = objectById(world, box).transform;
@@ -243,12 +243,12 @@ describe('Sticking', () => {
     expect(world.bonds[0]!.point.y).toBeGreaterThan(870); // on the ground
   });
 
-  it('falls free for good when its host is undone', () => {
+  it('falls free for good when its host is taken back', () => {
     const world = createWorld();
-    const box = hangUnderLine(world);
+    const { box, line } = hangUnderLine(world);
     expect(stuck(world, box)).toBe(true);
 
-    world.undo(); // the Line
+    world.removeStroke(line);
     runFor(world, 2);
 
     expect(world.bonds).toEqual([]);
@@ -273,11 +273,11 @@ describe('Sticking', () => {
 
   it('comes back stuck with R, and fell free again the same way', () => {
     const world = createWorld();
-    const box = hangUnderLine(world);
+    const { box, line } = hangUnderLine(world);
     world.togglePause();
     world.togglePause(); // the snapshot has it stuck
     const hanging = objectById(world, box).transform;
-    world.undo(); // the Line
+    world.removeStroke(line);
     runFor(world, 2);
     expect(world.bonds).toEqual([]);
 
@@ -290,8 +290,8 @@ describe('Sticking', () => {
 
   it('never sticks again once it has fallen free, also after R', () => {
     const world = createWorld();
-    const box = hangUnderLine(world);
-    world.undo(); // the Line: it falls to the ground
+    const { box, line } = hangUnderLine(world);
+    world.removeStroke(line); // it falls to the ground
     world.togglePause();
     world.togglePause(); // the snapshot has it falling, spent
     runFor(world, 2);

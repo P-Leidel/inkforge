@@ -1,3 +1,4 @@
+import { COLOURS, type Colour } from '../materials/colour';
 import { LONG_FRAME_MS, SLOW_FRAME_MS, type FrameTimes, type RecentSummary } from './frame-times';
 
 /** How many of each kind of thing the Sandbox world holds. */
@@ -35,12 +36,21 @@ export interface RenderLoad {
   readonly objects: number;
 }
 
+/** The Ink Tanks. */
+export interface InkReadings {
+  /** Each Tank's Ink, px². */
+  readonly tanks: Readonly<Record<Colour, number>>;
+  /** Whether Strokes and Fills cost Ink. */
+  readonly costs: boolean;
+}
+
 /** Everything the F1 stats panel shows. */
 export interface Readings {
   readonly recent: RecentSummary | null;
   readonly sinceStart: FrameTimes;
   readonly bodies: BodyCounts;
   readonly render: RenderLoad;
+  readonly ink: InkReadings;
 }
 
 const number = (n: number) => n.toLocaleString('en-US');
@@ -48,10 +58,12 @@ const ms = (n: number | null) => (n === null ? '-' : `${n.toFixed(1)} ms`);
 const fps = (n: number | null, digits = 0) => (n === null ? '-' : `${n.toFixed(digits)} fps`);
 
 /** The readings as lines of text, for the panel and for pasting into an issue. */
-export function readingLines({ recent, sinceStart, bodies, render }: Readings): string[] {
+export function readingLines({ recent, sinceStart, bodies, render, ink }: Readings): string[] {
   const phase = ({ mean, max }: { mean: number; max: number }) =>
     `${mean.toFixed(1)} (max ${max.toFixed(1)})`;
   const row = (label: string, text: string) => label.padEnd(13) + text;
+  const tank = (colour: Colour) => `${colour} ${number(Math.round(ink.tanks[colour]))}`;
+  const [first, second] = [COLOURS.slice(0, 3), COLOURS.slice(3)];
   return [
     row('last 1 s', recent ? `${fps(recent.fps)}   longest ${ms(recent.longestMs)}` : '-'),
     row(
@@ -94,5 +106,7 @@ export function readingLines({ recent, sinceStart, bodies, render }: Readings): 
       `Images ${number(render.images)}   baked ${render.bakedTextures} textures · ` +
         `${(render.bakedBytes / 2 ** 20).toFixed(1)} MB`,
     ),
+    row('ink, px²', first.map(tank).join('   ')),
+    row('', [...second.map(tank), ink.costs ? 'costs on' : 'costs off'].join('   ')),
   ];
 }

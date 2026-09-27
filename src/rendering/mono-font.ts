@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 
 /** Every printable ASCII character, and the few others the overlay writes. */
 const CHARS =
-  ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·×→';
+  ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~·×→²';
 const FAMILY = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
 /**

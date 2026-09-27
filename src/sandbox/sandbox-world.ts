@@ -31,11 +31,14 @@ import {
   type AddedStroke,
   type FillOutcome,
   type LineView,
+  type MadeFill,
+  type MadeStroke,
   type ObjectStroke,
   type ObjectView,
+  type RemovedFill,
+  type RemovedStroke,
   type StrokeId,
   type StrokeTarget,
-  type UndoOutcome,
 } from './strokes';
 
 export type { BlastView } from './blasts';
@@ -47,12 +50,16 @@ export type { PatchView } from './patches';
 export type { RubbleView } from './rubble';
 export {
   SLIDE_OUT_SPEED,
+  type AddedStroke,
   type FillOutcome,
   type LineView,
+  type MadeFill,
+  type MadeStroke,
   type ObjectView,
   type PieceView,
+  type RemovedFill,
+  type RemovedStroke,
   type StrokeId,
-  type UndoOutcome,
 } from './strokes';
 
 /** Fixed physics step: 60 Hz. */
@@ -64,16 +71,30 @@ const MAX_STEPS_PER_ADVANCE = 8;
 
 /**
  * What a submitted Stroke became. A Line or an Object carries its Colour
- * and the Ink (px²) it took: a Line's as drawn, an Object's Outline's.
+ * and the Ink (px²) it took: a Line's as drawn, with each Piece's, and an
+ * Object's Outline's.
  */
 export type StrokeOutcome =
   | AddedStroke
+  /** It was not accepted, so nothing was added: `path` is what it would have been. */
+  | { readonly kind: 'declined'; readonly made: MadeStroke; readonly path: readonly Vec2[] }
   | { readonly kind: 'rejected'; readonly reason: RejectionReason; readonly path: readonly Vec2[] }
   | { readonly kind: 'dropped' };
 
 export interface StrokeOptions {
   /** Overrides the Line thickness (the stress tests use a thinner Line). */
   readonly lineThickness?: number;
+  /**
+   * Asked what the Stroke would make, with its Ink, before it is added:
+   * false declines it, and nothing is added. The world decides nothing by
+   * it; the Game layer above refuses what can't be afforded.
+   */
+  readonly accept?: (made: MadeStroke) => boolean;
+}
+
+export interface FillOptions {
+  /** Asked what the Fill would be, with its Ink, before it is added: false declines it. */
+  readonly accept?: (fill: MadeFill) => boolean;
 }
 
 /**
@@ -302,8 +323,17 @@ export class SandboxWorld {
     const result = processStroke(samples, this.strokeContext(options));
     switch (result.kind) {
       case 'line':
-      case 'object':
+      case 'object': {
+        const made = this.strokes.measure(result, colour);
+        if (options.accept && !options.accept(made)) {
+          const path =
+            result.kind === 'line'
+              ? [result.segments[0]!.a, ...result.segments.map(({ b }) => b)]
+              : [...result.outline, result.outline[0]!];
+          return { kind: 'declined', made, path };
+        }
         return this.strokes.add(result, colour, this.running);
+      }
       case 'rejected':
         return { kind: 'rejected', reason: result.reason, path: result.path };
       case 'dropped':
@@ -343,8 +373,8 @@ export class SandboxWorld {
    * Objects, and never wakes a Frozen one. An Object holds one Fill. A Fill
    * that is added carries its Colour and the Ink it took.
    */
-  fillAt(point: Vec2, colour: Colour): FillOutcome {
-    return this.strokes.fillAt(point, colour);
+  fillAt(point: Vec2, colour: Colour, options: FillOptions = {}): FillOutcome {
+    return this.strokes.fillAt(point, colour, options.accept);
   }
 
   /**
@@ -366,8 +396,8 @@ export class SandboxWorld {
    * Objects with their Fills, the Pieces of Lines, Rubble, Droplets and
    * Patches. Erasing is not breaking: nothing bursts, releases its Fill or
    * sets off a Blast. What was attached to what went goes as when it
-   * breaks: a green Object stuck to it falls free. Works paused and running;
-   * erased Strokes are gone from the undo history.
+   * breaks: a green Object stuck to it falls free. Works paused and running.
+   * Each thing erased goes as `erased` in the list of what happened.
    */
   eraseAlong(path: readonly Vec2[], radius: number): void {
     if (path.length === 0) return;
@@ -393,14 +423,20 @@ export class SandboxWorld {
   }
 
   /**
-   * Takes back the most recent Stroke or Fill that still exists: what's left
-   * of a Line goes as a whole. Broken Objects, and Lines whose every Piece
-   * broke, are gone from the history, so undo skips them. Says what it
-   * took back (a Line, an Object or a Fill) and its Ink; for a Line, also
-   * the Ink of its Pieces still there. Nothing is refunded here.
+   * Takes back what's left of a Stroke, for undo: an Object with its Fill, or
+   * a Line's Pieces still there. Says what it took back, in its Colour, and
+   * its Ink, or that the Stroke was gone already. Nothing is refunded here.
    */
-  undo(): UndoOutcome {
-    return this.strokes.undo();
+  removeStroke(id: StrokeId): RemovedStroke {
+    return this.strokes.removeStroke(id);
+  }
+
+  /**
+   * Takes back an Object's Fill, for undo; the Object stays, hollow. Says
+   * what it took back and its Ink, or that there was no Fill to take.
+   */
+  removeFill(id: StrokeId): RemovedFill {
+    return this.strokes.removeFill(id);
   }
 
   /**
@@ -445,8 +481,8 @@ export class SandboxWorld {
 
   /**
    * Takes the world back to the moment physics last started, damage and all,
-   * and pauses. Strokes and Fills made since are gone, and undo carries on
-   * from the history of that moment. Does nothing before the first start.
+   * and pauses. Strokes and Fills made since are gone. Does nothing before
+   * the first start.
    * It starts over: everything comes back as added, and the Debris goes.
    */
   reset(): void {

@@ -1,3 +1,4 @@
+import type { Game } from '../game/game';
 import { COLOURS } from '../materials/colour';
 import {
   DEFAULT_MATERIAL_TABLE,
@@ -8,11 +9,12 @@ import { numberPaths, readPath, writePath } from '../materials/table-paths';
 import { element } from './dom';
 
 /**
- * The F2 tuning panel: every number of the material table, editable while
- * the sandbox runs, and "Copy as JSON" to paste the table back into
- * src/materials/material-table.ts. It lists whatever the table holds, so
- * values added later appear without changes here. Edits go straight into the
- * table the Sandbox world reads, so they survive R and Clear.
+ * The F2 tuning panel: the **Ink costs** switch, every number of the
+ * material table, editable while the sandbox runs, and "Copy as JSON" to
+ * paste the table back into src/materials/material-table.ts. It lists
+ * whatever the table holds, so values added later appear without changes
+ * here. Edits go straight into the table the Sandbox world reads, so they
+ * survive R and Clear.
  *
  * A plain HTML overlay (styles in index.html). Keys typed into it don't reach
  * the game; clicking the game gives the keys back.
@@ -28,7 +30,11 @@ export class TuningPanel {
     }
   };
 
-  constructor(private readonly table: MaterialTable) {
+  constructor(
+    private readonly table: MaterialTable,
+    /** Where the Ink costs switch goes. */
+    private readonly game: Pick<Game, 'inkCosts'>,
+  ) {
     this.root = element('div', 'tuning-panel');
     this.root.hidden = true;
 
@@ -40,7 +46,7 @@ export class TuningPanel {
     defaults.addEventListener('click', () => this.restoreDefaults());
     this.status = element('span', 'tuning-status');
     header.append(copy, defaults, this.status);
-    this.root.append(header, this.colourGrid(), this.sharedValues());
+    this.root.append(header, this.inkCosts(), this.colourGrid(), this.sharedValues());
 
     // Phaser also listens for mouse presses on the window, so a click on the
     // panel would otherwise hit whatever game button lies under it.
@@ -63,6 +69,20 @@ export class TuningPanel {
   destroy(): void {
     window.removeEventListener('pointerdown', this.giveKeysBack, true);
     this.root.remove();
+  }
+
+  /**
+   * The Ink costs switch, off by default: off, Ink is unlimited. Switching
+   * leaves the Tanks as they are. Not a table value: Defaults leaves it.
+   */
+  private inkCosts(): HTMLElement {
+    const row = element('label', 'tuning-ink');
+    const box = element('input');
+    box.type = 'checkbox';
+    box.checked = this.game.inkCosts;
+    box.addEventListener('change', () => (this.game.inkCosts = box.checked));
+    row.append(box, element('span', '', 'Ink costs (off: Ink is unlimited)'));
+    return row;
   }
 
   /** The per-Colour values as a grid: one row per value, one column per Colour. */
