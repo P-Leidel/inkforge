@@ -24,14 +24,15 @@ import { Sticking, type Sticker } from './sticking';
 /**
  * Material rules: everything Colour-specific that follows from things
  * touching, breaking and exploding. Headless and part of the Sandbox world.
- * Each step they read the contacts that count from the Contact ledger (hits,
- * new contacts, touching) and what the Blasts reached, and decide every
- * consequence: damage from any cause and the blue counter, what breaks, what
- * a break lets out (Debris, Rubble, a Spill, a Blast), what a Blast wakes and
- * pushes, glue drag and wear, Patch wear, what sticks and where a Droplet
- * lands. What a thing's numbers are they ask `Numbers`. They carry their
- * decisions out through two narrow ports the world wires up: the physics
- * module, and the Arena (its kinds and Debris). Glue
+ * After each physics step the world makes one call, `step`, and they run
+ * every consequence in their own order: they read the contacts that count
+ * from the Contact ledger (hits, new contacts, touching) and what the Blasts
+ * reached, and decide damage from any cause and the blue counter, what
+ * breaks, what a break lets out (Debris, Rubble, a Spill, a Blast), what a
+ * Blast wakes and pushes, glue drag and wear, Patch wear, what sticks and
+ * where a Droplet lands. What a thing's numbers are they ask `Numbers`. They
+ * carry their decisions out through two narrow ports the world wires up: the
+ * physics module, and the Arena (its kinds and Debris). Glue
  * drag (`Glue`) and sticking (`Sticking`) are parts of them in files of
  * their own; the world only talks to `MaterialRules`.
  */
@@ -175,6 +176,17 @@ export interface RulesArena<T, S> {
   patchOf(shape: ShapeId): PatchRecord | undefined;
   /** Records that a Patch used up `amount` more; it goes once it is used up. */
   usePatch(patch: PatchRecord, amount: number): void;
+  /** Removes every used-up Patch. */
+  removeUsedUpPatches(): void;
+  /** The Objects that may stick, as the step's sticking reaches them. */
+  stickers(): Iterable<S>;
+  /** Every gluer now: the Pieces, then the Patches. */
+  gluers(): Iterable<(T & Gluer) | PatchRecord>;
+  /**
+   * Spreads every Blast by `seconds`, handing `act` what each newly reached;
+   * a Blast `act` starts spreads in the same call.
+   */
+  spreadBlasts(seconds: number, act: (reached: readonly Reach<T>[]) => void): void;
 }
 
 export interface MaterialRulesOptions<T, S> {
@@ -192,9 +204,8 @@ export interface MaterialRulesOptions<T, S> {
 const isPatch = (gluer: Gluer): gluer is PatchRecord => gluer.shape !== undefined;
 
 /**
- * The Material rules' entry point. The Sandbox world calls one phase at a
- * time, in its step order: `impacts`, `stick`, `land`, `breakAll`, `glue`,
- * and `blastReached` as the Blasts spread.
+ * The Material rules' entry point: the Sandbox world calls `step` once after
+ * each physics step, and the rules run their phases in their own order.
  */
 export class MaterialRules<T extends Breakable, S extends Sticker> {
   private readonly materials: MaterialTable;
@@ -225,14 +236,42 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
   }
 
   /**
+   * Runs every consequence of the physics step the Contact ledger just read,
+   * in an order that must not change: exact replays depend on every engine
+   * call and every draw from the generator coming in the same order.
+   *
+   * What the hits broke breaks only after sticking and landing: a green
+   * Object sticks to its first new contact even if that breaks in this step
+   * (it then falls free at once, as when its host breaks later), and a Patch
+   * laid on something broken goes with it. Then glue drags and wears, which
+   * breaks a worn-out Piece at once; the Blasts spread, and what they break
+   * breaks as they do; and the used-up Patches go.
+   *
+   * The Enemies' phases slot in around these: pressing and floor wear is a
+   * breaking cause like hits, so its breaks join `broken` before sticking;
+   * after the used-up Patches go come Enemies reaching the Ink Core, kills,
+   * Drops (which draw from the generator) and removing what went out over
+   * the Spawn edge, in that order.
+   */
+  step(seconds: number): void {
+    const broken = this.impacts();
+    this.stick(seconds);
+    this.land(); // Droplets land by new contacts, then Patches wear by hits
+    for (const target of broken) this.breakTarget(target);
+    this.glue(seconds);
+    this.arena.spreadBlasts(seconds, this.blastReached);
+    this.arena.removeUsedUpPatches();
+  }
+
+  /**
    * Damages by the step's hits: each Party takes the strongest hit of the
    * step from each Stroke it hit (several shapes of one body, or several
    * Pieces of one Line, hitting at once are one impact), against its own
    * threshold. Hits with a harmless Party (a Droplet) deal no damage either
    * way. Returns what broke, in the order the hits first reached it, not yet
-   * broken: `breakAll` breaks it later in the step.
+   * broken: `step` breaks it later.
    */
-  impacts(): T[] {
+  private impacts(): T[] {
     const hits = this.contacts.hits;
     if (hits.length === 0) return [];
     // The strongest hit each target takes from each Stroke, in the order they came.
@@ -258,11 +297,11 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
   }
 
   /**
-   * Moves sticking on by a step of `seconds` for each of `objects`, and
-   * bonds each Object that sticks now to its host, where the two touched.
+   * Moves sticking on by a step of `seconds` for each Object that may stick,
+   * and bonds each one that sticks now to its host, where the two touched.
    */
-  stick(objects: Iterable<S>, seconds: number): void {
-    for (const { sticker, host, pair } of this.sticking.step(objects, seconds)) {
+  private stick(seconds: number): void {
+    for (const { sticker, host, pair } of this.sticking.step(this.arena.stickers(), seconds)) {
       const point = this.physics.touchPoint(pair) ?? this.physics.getTransform(sticker.body);
       this.arena.bond(sticker, host, point);
     }
@@ -276,7 +315,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
    * every bounce a blue Patch gives uses it up a little. A Droplet's hit
    * doesn't count.
    */
-  land(): void {
+  private land(): void {
     const landings: Landing[] = [];
     for (const { a, b } of this.contacts.newContacts) {
       for (const [mine, host] of [
@@ -305,19 +344,14 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
     this.arena.usePatch(patch, impulse * this.materials.colours[patch.colour].fill.patchHitWear);
   }
 
-  /** Breaks what `impacts` returned, in order. */
-  breakAll(targets: readonly T[]): void {
-    for (const target of targets) this.breakTarget(target);
-  }
-
   /**
    * Drags every free body touching glue (green Pieces and Patches) and
    * wears the glue by the momentum it removed: a Piece by damage, which
    * breaks it once worn out, and a Patch by using it up, which removes it
    * at the end of the step.
    */
-  glue(gluers: Iterable<(T & Gluer) | PatchRecord>, seconds: number): void {
-    for (const worn of this.glueDrag.apply(gluers, seconds, this.wearGluer)) {
+  private glue(seconds: number): void {
+    for (const worn of this.glueDrag.apply(this.arena.gluers(), seconds, this.wearGluer)) {
       if (!isPatch(worn)) this.breakTarget(worn);
     }
   }
@@ -338,7 +372,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
    * never faster than `maxPushSpeed`. What it broke then breaks, and red
    * explodes in turn.
    */
-  readonly blastReached = (reached: readonly Reach<T>[]): void => {
+  private readonly blastReached = (reached: readonly Reach<T>[]): void => {
     const { blast, wakeSpeed } = this.materials;
     const broken: T[] = [];
     for (const { party, centre, point, strength } of reached) {

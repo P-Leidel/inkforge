@@ -28,13 +28,19 @@ describe('The damage rule', () => {
   });
 });
 
-/** The impact phase of the Material rules, fed hand-made hits as the Contact ledger gives them. */
+/** A step of the Material rules. */
+const STEP = 1 / 60;
+
+/** The Material rules, stepped with hand-made hits as the Contact ledger gives them. */
 function impactRules(materials: MaterialTable) {
-  const { rules, contacts } = fakeRules<Breakable>(materials);
+  const { rules, contacts, arena } = fakeRules<Breakable>(materials);
   return {
+    /** Steps the rules with `hits`, and says what they broke in that step. */
     impacts(hits: PartyHit<Breakable>[]): Breakable[] {
       contacts.hits = hits;
-      return rules.impacts();
+      const before = arena.handed('break').length;
+      rules.step(STEP);
+      return arena.handed('break').slice(before) as Breakable[];
     },
   };
 }
@@ -263,17 +269,13 @@ describe('Material rules: breaking', () => {
         },
       },
     ];
-    const hit = fake.rules.impacts();
-    const before = [...fake.arena.done];
-    fake.rules.breakAll(hit);
-    return { ...fake, target, hit, before };
+    fake.rules.step(STEP);
+    return { ...fake, target };
   }
 
-  it('breaks only when told to, after sticking and landing, what the hits broke', () => {
-    const { hit, target, before, arena } = breakOne(brokenObject('grey', null));
+  it('breaks what the hits broke', () => {
+    const { target, arena } = breakOne(brokenObject('grey', null));
 
-    expect(hit).toEqual([target]);
-    expect(before).toEqual([]);
     expect(arena.handed('break')).toEqual([target]);
   });
 
@@ -370,35 +372,41 @@ describe('Material rules: a Blast arriving', () => {
     damage: 0,
     impacts: 0,
   });
+  /** The Material rules, stepped with what a spreading Blast reached. */
+  function blastRules(materials: MaterialTable) {
+    const fake = fakeRules<Breakable>(materials);
+    /** Steps the rules, and the Blast reaches `reached` as it spreads. */
+    const blastReached = (reached: Reach<Breakable>[]) => {
+      fake.arena.reaching = [reached];
+      fake.rules.step(STEP);
+    };
+    return { ...fake, blastReached };
+  }
   /** The Blast reaching `party` at `point` with `strength`. */
   const reach = (party: Party<Breakable>, strength: number, point: Vec2 = { x: 30, y: 40 }) =>
     ({ party, centre: CENTRE, point, strength }) satisfies Reach<Breakable>;
 
   it('damages what it reaches above its own threshold, and never counts an impact', () => {
-    const { rules, physics } = fakeRules<Breakable>(table);
+    const { blastReached, physics } = blastRules(table);
     const blue = target('blue');
     const { damageThreshold } = table.colours.blue.outline;
     physics.add(1, { frozen: true, free: false, mass: 1e6 });
 
-    rules.blastReached([reach(partyOf(1, blue), damageThreshold)]);
+    blastReached([reach(partyOf(1, blue), damageThreshold)]);
     expect(blue.damage).toBe(0);
-    for (let k = 0; k < 5; k++)
-      rules.blastReached([reach(partyOf(1, blue), damageThreshold + 100)]);
+    for (let k = 0; k < 5; k++) blastReached([reach(partyOf(1, blue), damageThreshold + 100)]);
 
     expect(blue.damage).toBe(500);
     expect(blue.impacts).toBe(0);
   });
 
   it('wakes a Frozen Object when its push over its mass beats the wake speed, and pushes it outward', () => {
-    const { rules, physics } = fakeRules<Breakable>(table);
+    const { blastReached, physics } = blastRules(table);
     // A push of 300: 150 px/s for the light one, 60 px/s for the heavy one.
     physics.add(1, { frozen: true, free: false, mass: 2 });
     physics.add(2, { frozen: true, free: false, mass: 5 });
 
-    rules.blastReached([
-      reach(partyOf(1, target('grey')), 300),
-      reach(partyOf(2, target('grey')), 300),
-    ]);
+    blastReached([reach(partyOf(1, target('grey')), 300), reach(partyOf(2, target('grey')), 300)]);
 
     expect(physics.log).toEqual(['release 1', 'impulse 1']);
     expect(physics.body(1 as BodyId).velocity.x).toBeCloseTo(150 * 0.6, 9);
@@ -412,51 +420,51 @@ describe('Material rules: a Blast arriving', () => {
   });
 
   it('never changes a body’s speed by more than maxPushSpeed', () => {
-    const { rules, physics } = fakeRules<Breakable>(table);
+    const { blastReached, physics } = blastRules(table);
     physics.add(1, { mass: 0.1 });
 
-    rules.blastReached([reach(partyOf(1, null), 1000)]);
+    blastReached([reach(partyOf(1, null), 1000)]);
 
     const { velocity } = physics.body(1 as BodyId);
     expect(Math.hypot(velocity.x, velocity.y)).toBeCloseTo(500, 9);
   });
 
   it('pushes a body it started inside away from the body’s centre, or else straight up', () => {
-    const { rules, physics } = fakeRules<Breakable>(table);
+    const { blastReached, physics } = blastRules(table);
     physics.add(1, { transform: { x: 0, y: 20, angle: 0 } });
     physics.add(2);
 
-    rules.blastReached([reach(partyOf(1, null), 10, CENTRE), reach(partyOf(2, null), 10, CENTRE)]);
+    blastReached([reach(partyOf(1, null), 10, CENTRE), reach(partyOf(2, null), 10, CENTRE)]);
 
     expect(physics.body(1 as BodyId).velocity).toEqual({ x: 0, y: 10 });
     expect(physics.body(2 as BodyId).velocity).toEqual({ x: 0, y: -10 });
   });
 
   it('leaves a Squeezed Object sliding off a Line alone', () => {
-    const { rules, physics, arena } = fakeRules<Breakable>(table);
+    const { blastReached, physics, arena } = blastRules(table);
     const squeezed = target('red');
     physics.add(1, { free: false, slide: { x: 0, y: -12 } });
 
-    rules.blastReached([reach(partyOf(1, squeezed), 1e6)]);
+    blastReached([reach(partyOf(1, squeezed), 1e6)]);
 
     expect(squeezed.damage).toBe(0);
     expect(physics.log).toEqual([]);
-    expect(arena.done).toEqual([]);
+    expect(arena.done).toEqual(['reach']);
   });
 
   it('only damages a Piece, which is fixed', () => {
-    const { rules, physics } = fakeRules<Breakable>(table);
+    const { blastReached, physics } = blastRules(table);
     const piece = target('grey', 'piece');
     physics.add(1, { free: false });
 
-    rules.blastReached([reach(partyOf(1, piece), 500)]);
+    blastReached([reach(partyOf(1, piece), 500)]);
 
     expect(piece.damage).toBe(500 - table.colours.grey.line.damageThreshold);
     expect(physics.log).toEqual([]);
   });
 
   it('breaks what it broke once it has pushed everything else it reached, without pushing it', () => {
-    const { rules, physics, arena } = fakeRules<Breakable>(table);
+    const { blastReached, physics, arena } = blastRules(table);
     const weak = target('red');
     arena.breaks.set(weak, brokenObject('red', null));
     physics.add(1, { mass: 1 });
@@ -468,12 +476,12 @@ describe('Material rules: a Blast arriving', () => {
       return breakIt(broken);
     };
 
-    rules.blastReached([reach(partyOf(1, weak), 1000), reach(partyOf(2, null), 10)]);
+    blastReached([reach(partyOf(1, weak), 1000), reach(partyOf(2, null), 10)]);
 
     expect(pushedFirst).toEqual(['impulse 2']);
     expect(physics.body(1 as BodyId).velocity).toEqual({ x: 0, y: 0 });
     // Red set off by a Blast explodes in turn.
-    expect(arena.done).toEqual(['break', 'burst', 'blast']);
+    expect(arena.done).toEqual(['reach', 'break', 'burst', 'blast']);
   });
 });
 
@@ -496,17 +504,20 @@ describe('The fuse', () => {
     const next: Breakable = { kind: 'piece', colour: 'red', damage: 0, impacts: 0 };
     arena.breaks.set(next, brokenPiece('red'));
     physics.add(1, { free: false });
+    arena.reaching = [
+      [
+        {
+          party: partyOf(1, next),
+          centre: { x: 0, y: 0 },
+          point: { x: 48, y: 0 },
+          strength: blastStrength(pieceBlastSize(TABLE), 48),
+        },
+      ],
+    ];
 
-    rules.blastReached([
-      {
-        party: partyOf(1, next),
-        centre: { x: 0, y: 0 },
-        point: { x: 48, y: 0 },
-        strength: blastStrength(pieceBlastSize(TABLE), 48),
-      },
-    ]);
+    rules.step(STEP);
 
-    expect(arena.done).toEqual(['break', 'burst', 'blast']);
+    expect(arena.done).toEqual(['reach', 'break', 'burst', 'blast']);
   });
 
   it('goes out when a tuning change weakens the Piece Blast or toughens red Lines', () => {
@@ -547,8 +558,9 @@ describe('Material rules: sticking', () => {
   function letGo(colour: Colour = 'green') {
     const fake = fakeRules<Breakable, Box>(table);
     const box: Box = { name: 'box', colour, body: fake.physics.add(1), sticking: WAITING };
-    fake.rules.stick([box], 1 / 60);
-    fake.rules.stick([box], 1 / 60);
+    fake.arena.mayStick = [box];
+    fake.rules.step(STEP);
+    fake.rules.step(STEP);
     return { ...fake, box };
   }
 
@@ -559,9 +571,9 @@ describe('Material rules: sticking', () => {
     contacts.newContacts = [contact(partyOf(1, null), host), contact(other, partyOf(1, null))];
     physics.touchPoints.set(contacts.newContacts[0]!.pair, { x: 5, y: 6 });
 
-    rules.stick([box], 1 / 60);
+    rules.step(STEP);
     contacts.newContacts = [contact(other, partyOf(1, null))];
-    rules.stick([box], 1 / 60);
+    rules.step(STEP);
 
     expect(arena.handed('bond')).toEqual([{ sticker: box, host, point: { x: 5, y: 6 } }]);
     expect(box.sticking).toEqual({ state: 'done' });
@@ -572,22 +584,22 @@ describe('Material rules: sticking', () => {
     physics.body(1 as BodyId).transform = { x: 7, y: 8, angle: 0 };
     contacts.newContacts = [contact(partyOf(9, null, true), partyOf(1, null))];
 
-    rules.stick([box], 1 / 60);
+    rules.step(STEP);
     expect(arena.handed('bond')).toEqual([]);
 
     const host = partyOf(2, null);
     contacts.newContacts = [contact(partyOf(1, null), host)];
-    rules.stick([box], 1 / 60);
+    rules.step(STEP);
 
     // With no touch point, where the box is.
     expect(arena.handed('bond')).toEqual([{ sticker: box, host, point: { x: 7, y: 8, angle: 0 } }]);
   });
 
   it('never sticks an Object whose Outline doesn’t stick', () => {
-    const { rules, contacts, arena, box } = letGo('grey');
+    const { rules, contacts, arena } = letGo('grey');
     contacts.newContacts = [contact(partyOf(1, null), partyOf(2, null))];
 
-    rules.stick([box], 1 / 60);
+    rules.step(STEP);
 
     expect(arena.handed('bond')).toEqual([]);
   });
@@ -630,7 +642,7 @@ describe('Material rules: Droplets landing and Patch wear', () => {
       contact(droplet(5), partyOf(3, null)),
     ];
 
-    rules.land();
+    rules.step(STEP);
 
     expect(arena.done).toEqual(['land', 'patch']);
     expect(arena.handed('patch')).toEqual([
@@ -646,7 +658,7 @@ describe('Material rules: Droplets landing and Patch wear', () => {
       contact(droplet(6), partyOf(4, null)),
     ];
 
-    rules.land();
+    rules.step(STEP);
 
     expect(arena.done).toEqual(['land', 'land', 'patch']);
   });
@@ -677,9 +689,105 @@ describe('Material rules: Droplets landing and Patch wear', () => {
       hit(partyOf(3, null), 3, 50),
     ];
 
-    rules.land();
+    rules.step(STEP);
 
     expect(blue.used).toBe(300 * table.colours.blue.fill.patchHitWear);
     expect(green.used).toBe(50 * table.colours.green.fill.patchHitWear);
+  });
+});
+
+describe('Material rules: the order of a step', () => {
+  const table = createMaterialTable();
+  table.colours.green.line.glueDrag = 4;
+  const surface = { kind: 'circle', radius: 10 } as const;
+
+  const object = (colour: Colour): Breakable => ({ colour, kind: 'object', damage: 0, impacts: 0 });
+  const contact = (a: Party<Breakable>, b: Party<Breakable>): NewContact<Breakable> => ({
+    a,
+    b,
+    pair: { bodyA: a.body, bodyB: b.body, shapeA: a.id as ShapeId, shapeB: b.id as ShapeId },
+  });
+  /** A hit from the Terrain on `party` hard enough to break anything. */
+  const breakingHit = (party: Party<Breakable>): PartyHit<Breakable> => ({
+    a: partyOf(TERRAIN_PARTY, null),
+    b: party,
+    hit: {
+      bodyA: TERRAIN_PARTY as BodyId,
+      bodyB: party.body,
+      shapeA: 1 as ShapeId,
+      shapeB: party.id as ShapeId,
+      point: { x: 0, y: 0 },
+      normal: { x: 0, y: 1 },
+      speed: 500,
+      impulse: 1e6,
+    },
+  });
+
+  /** The rules, with a grey Object on body 2 that the step's hit breaks. */
+  function breakingHost() {
+    const fake = fakeRules<Breakable, Sticker>(table);
+    const target = object('grey');
+    const host = partyOf(2, target);
+    fake.arena.breaks.set(target, brokenObject('grey', null));
+    fake.contacts.hits = [breakingHit(host)];
+    return { ...fake, target, host };
+  }
+
+  it('sticks a green Object to a new contact that breaks in the same step, before it breaks', () => {
+    const { rules, contacts, physics, arena, host } = breakingHost();
+    const box: Sticker = { colour: 'green', body: physics.add(1), sticking: WAITING };
+    arena.mayStick = [box];
+    const hits = contacts.hits;
+    contacts.hits = [];
+    rules.step(STEP);
+    rules.step(STEP); // free after two steps: it may stick
+
+    contacts.hits = hits;
+    contacts.newContacts = [contact(partyOf(1, null), host)];
+    rules.step(STEP);
+
+    expect(arena.done).toEqual(['bond', 'break', 'burst']);
+    expect(arena.handed('bond')).toEqual([
+      { sticker: box, host, point: physics.getTransform(box.body) },
+    ]);
+  });
+
+  it('lays a Patch on something the step broke before it breaks, so the Patch goes with it', () => {
+    const { rules, contacts, arena, host } = breakingHost();
+    arena.droplets.set(5 as BodyId, { colour: 'blue', length: 12, centre: { x: 5, y: 0 } });
+    arena.surfaces.set(host.id, surface);
+    contacts.newContacts = [contact(partyOf(5, null, true), host)];
+
+    rules.step(STEP);
+
+    expect(arena.done).toEqual(['land', 'patch', 'break', 'burst']);
+  });
+
+  it('then drags by glue, spreads the Blasts, and last removes the used-up Patches', () => {
+    const { rules, contacts, physics, arena } = breakingHost();
+    // A green Patch on body 3 drags body 4, moving, through its shape 103.
+    const patch = fakePatch('green', 3, 103);
+    physics.add(3, { free: false, mass: 0 });
+    physics.add(4, { velocity: { x: 300, y: 0 } });
+    contacts.touches.set(3 as BodyId, [
+      {
+        party: partyOf(4, null),
+        pairs: [
+          { bodyA: 3 as BodyId, bodyB: 4 as BodyId, shapeA: 103 as ShapeId, shapeB: 4 as ShapeId },
+        ],
+      },
+    ]);
+    arena.patches.set(patch.shape, patch);
+    arena.glue = [patch];
+    arena.patchCapacity = 1;
+    // A Blast reaches body 4 as it spreads.
+    arena.reaching = [
+      [{ party: partyOf(4, null), centre: { x: 0, y: 0 }, point: { x: 1, y: 0 }, strength: 1 }],
+    ];
+
+    rules.step(STEP);
+
+    expect(arena.done).toEqual(['break', 'burst', 'use', 'reach', 'used-up']);
+    expect(physics.log.at(-1)).toBe('impulse 4');
   });
 });

@@ -293,7 +293,7 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
     patch.used += amount;
   }
 
-  /** Removes every used-up Patch. */
+  /** Removes every used-up Patch: the Material rules call it at the end of their step. */
   removeUsedUp(): void {
     const used = this.patches.filter((patch) => patch.used >= this.capacity(patch));
     if (used.length > 0) this.removeAll(used, 'used-up');

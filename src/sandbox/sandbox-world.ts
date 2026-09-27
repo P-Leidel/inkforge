@@ -154,9 +154,9 @@ export interface SandboxWorldOptions {
  * fixed order. They add and remove bodies through Arena bodies, which tells
  * every kind what went as it goes, and the Arena query answers what is
  * where from them. The Contact ledger decides which contacts count, and the
- * Material rules read it and decide every consequence: the world runs their
- * phases in its step order and wires their decisions to the kinds and the
- * physics module. Each step and command appends what happened to
+ * Material rules read it and decide every consequence, in their own order:
+ * the world calls them once a step and wires their decisions to the kinds
+ * and the physics module. Each step and command appends what happened to
  * `happenings`, which the renderer reads. Each Stroke is drawn in a Colour
  * given with the command; the world holds no selected Colour.
  */
@@ -256,6 +256,10 @@ export class SandboxWorld {
           this.patchesKind.add(host, surface, centre, colour, length),
         patchOf: (shape) => this.patchesKind.patchOf(shape),
         usePatch: (patch, amount) => this.patchesKind.use(patch, amount),
+        removeUsedUpPatches: () => this.patchesKind.removeUsedUp(),
+        stickers: () => this.strokes.objectRecords(),
+        gluers: () => [...this.strokes.pieces(), ...this.patchesKind.gluers()],
+        spreadBlasts: (seconds, act) => this.blastsKind.spread(seconds, act),
       },
     });
   }
@@ -581,10 +585,10 @@ export class SandboxWorld {
   }
 
   /**
-   * Advances physics by one fixed step, if running. The Material rules
-   * decide every consequence, one phase at a time, in an order that must
-   * not change: exact replays depend on every engine call and every draw
-   * from `random` coming in the same order.
+   * Advances physics by one fixed step, if running. The Material rules then
+   * run every consequence in their own order, and each kind takes its turn.
+   * This order must not change: exact replays depend on every engine call
+   * and every draw from `random` coming in the same order.
    */
   step(): void {
     if (!this.running) return;
@@ -593,17 +597,7 @@ export class SandboxWorld {
     this.contacts.step(this.physics.step());
     this.elapsed += STEP_SECONDS;
     this.stepsTaken++;
-    // Damage by the ledger's hits. What broke breaks only after sticking and
-    // landing: a green Object sticks to its first new contact even if that
-    // breaks in this step (it then falls free at once, as when its host
-    // breaks later), and a Patch laid on something broken goes with it.
-    const broken = this.rules.impacts();
-    this.rules.stick(this.strokes.objectRecords(), STEP_SECONDS);
-    this.rules.land(); // Droplets land by new contacts, then Patches wear by hits
-    this.rules.breakAll(broken);
-    this.rules.glue([...this.strokes.pieces(), ...this.patchesKind.gluers()], STEP_SECONDS);
-    this.blastsKind.spread(STEP_SECONDS, this.rules.blastReached);
-    this.patchesKind.removeUsedUp();
+    this.rules.step(STEP_SECONDS);
     for (const kind of this.kinds) kind.step(STEP_SECONDS);
   }
 
