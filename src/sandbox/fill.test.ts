@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { transformPoints } from '../geometry/transform';
 import { COLOURS, type Colour } from '../materials/colour';
+import { fillInk } from '../materials/ink';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import type { SandboxWorld } from './sandbox-world';
 import { drawLine, drawObject, hear, objectById, runFor, sandboxWorlds } from './test-support';
@@ -18,7 +19,12 @@ describe('Fill', () => {
 
     const outcome = world.fillAt({ x: 330, y: 330 }, 'black');
 
-    expect(outcome).toEqual({ kind: 'filled', id: box });
+    expect(outcome).toEqual({
+      kind: 'filled',
+      id: box,
+      colour: 'black',
+      ink: fillInk(objectById(world, box).outline),
+    });
     expect(objectById(world, box).fill).toBe('black');
   });
 
@@ -82,7 +88,11 @@ describe('Fill', () => {
         const x = 100 + column * 80;
         const y = 100 + row * 80;
         const box = box60(world, x, y, outline);
-        expect(world.fillAt({ x: x + 30, y: y + 30 }, fill)).toEqual({ kind: 'filled', id: box });
+        expect(world.fillAt({ x: x + 30, y: y + 30 }, fill)).toMatchObject({
+          kind: 'filled',
+          id: box,
+          colour: fill,
+        });
         expect(objectById(world, box).fill).toBe(fill);
       }
     }
@@ -96,7 +106,7 @@ describe('Fill', () => {
     runFor(world, 2); // falls onto the ground at y = 880
 
     expect(world.fillAt({ x: 330, y: 330 }, 'grey').kind).toBe('missed');
-    expect(world.fillAt({ x: 330, y: 850 }, 'grey')).toEqual({ kind: 'filled', id: box });
+    expect(world.fillAt({ x: 330, y: 850 }, 'grey')).toMatchObject({ kind: 'filled', id: box });
   });
 
   it('fills a Frozen Object without waking it, paused or running', () => {

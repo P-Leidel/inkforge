@@ -3,6 +3,7 @@ import { polygonContainsPoint, type Polygon } from '../geometry/polygon';
 import { distancePointToSegment } from '../geometry/segment';
 import { length, sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import { fillInk } from '../materials/ink';
 import { fillMass } from '../materials/mass';
 import { DEFAULT_MATERIAL_TABLE as table } from '../materials/material-table';
 import { Random } from './random';
@@ -32,7 +33,14 @@ const L_SHAPE: Polygon = [
 ];
 
 function pack(outline: Polygon, fill: Colour, seed = 1): PackedRubble[] {
-  return packRubble(outline, fill, fillMass(outline, fill, table), table, new Random(seed));
+  return packRubble(
+    outline,
+    fillInk(outline),
+    fill,
+    fillMass(outline, fill, table),
+    table,
+    new Random(seed),
+  );
 }
 
 /** How far a point is from the nearest edge of the polygon. */
@@ -122,7 +130,7 @@ describe('Rubble generation', () => {
   });
 
   it('releases nothing from a hollow Object or a Fill that makes no Rubble', () => {
-    expect(packRubble(box(60), null, 0, table, new Random(1))).toEqual([]);
+    expect(packRubble(box(60), fillInk(box(60)), null, 0, table, new Random(1))).toEqual([]);
     for (const fill of ['blue', 'green', 'red'] as const) expect(pack(box(60), fill)).toEqual([]);
   });
 
