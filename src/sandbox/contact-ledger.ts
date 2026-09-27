@@ -1,3 +1,4 @@
+import type { Vec2 } from '../geometry/vec2';
 import type { BodyId, ContactHit, ContactPair, PhysicsWorld, StepReport } from '../physics';
 
 /**
@@ -16,7 +17,8 @@ import type { BodyId, ContactHit, ContactPair, PhysicsWorld, StepReport } from '
  * Touching is built from the report's begins and ends, so it changes only
  * when contacts do, and a resting pile costs nothing per step. It is part of
  * the Sandbox world and never reads the engine; it asks the physics module
- * only whether a sliding Object still slides.
+ * only whether a sliding Object still slides, and which way a touching pair
+ * faces when a rule asks.
  */
 
 /** A Party's id. Never reused, not even after R or Clear, and the same after a rebuild. */
@@ -121,7 +123,7 @@ export class ContactLedger<T> {
   private readonly hitList: PartyHit<T>[] = [];
   private readonly newList: NewContact<T>[] = [];
 
-  constructor(private readonly physics: Pick<PhysicsWorld, 'getSlide'>) {}
+  constructor(private readonly physics: Pick<PhysicsWorld, 'getSlide' | 'touchNormal'>) {}
 
   /** The last step's hits that count: neither side Squeezed, the pair not Settled. */
   get hits(): readonly PartyHit<T>[] {
@@ -208,6 +210,20 @@ export class ContactLedger<T> {
     for (const contact of mine.values()) {
       if (!this.sliding.has(contact.party.body)) yield contact;
     }
+  }
+
+  /**
+   * Which way a shape pair `touching(body)` named faces now: the unit
+   * normal pointing from the other side towards `body`'s, so up (y < 0)
+   * where `body` rests on flat ground and sideways where it presses against
+   * a wall. Null if the pair doesn't touch now. The Material rules decide
+   * from it whether `body` stands on the other side or presses it.
+   */
+  normal(body: BodyId, pair: ContactPair): Vec2 | null {
+    const normal = this.physics.touchNormal(pair);
+    if (!normal) return null;
+    // The physics normal points from A towards B.
+    return pair.bodyB === body ? normal : { x: -normal.x, y: -normal.y };
   }
 
   /** Takes in one step's report, and fills `hits` and `newContacts` until the next step. */
