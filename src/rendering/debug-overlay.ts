@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { transformPoints } from '../geometry/transform';
 import type { Game } from '../game/game';
-import { COLOURS, type Colour } from '../materials/colour';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { bandPolygon } from '../geometry/separation';
 import { strokePolygon, strokeRing } from './draw';
@@ -224,12 +223,7 @@ export class DebugOverlay {
         bakedBytes: baked.bytes,
         objects: list.length,
       },
-      ink: {
-        tanks: Object.fromEntries(
-          COLOURS.map((colour) => [colour, this.game.tank(colour)]),
-        ) as Record<Colour, number>,
-        costs: this.game.inkCosts,
-      },
+      ink: { tanks: this.game.tanks, costs: this.game.inkCosts },
     };
   }
 

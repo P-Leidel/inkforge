@@ -13,8 +13,19 @@ describe('Readings', () => {
     blasts: 1,
     debris: 40,
   };
+  const tank = (spendable: number, maximum: number) => ({
+    spendable,
+    maximum,
+    units: Math.floor(spendable / 8),
+  });
   const ink = {
-    tanks: { grey: 32000, blue: 23999.6, green: 0, black: 12000, red: 8000 },
+    tanks: {
+      grey: tank(32000, 32000),
+      blue: tank(23999.6, 24000),
+      green: tank(0, 24000),
+      black: tank(12000, 12000),
+      red: tank(8000, 8000),
+    },
     costs: true,
   };
   const render = {

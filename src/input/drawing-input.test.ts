@@ -205,7 +205,7 @@ describe('Drawing input', () => {
       expect(flash!.path[0]!.x).toBeCloseTo(200, 0);
       expect(flash!.path[flash!.path.length - 1]!.x).toBeCloseTo(1400, 0);
       expect(world.lines).toEqual([]);
-      expect(game.tank('red')).toBe(game.maximum('red'));
+      expect(game.tanks.red.spendable).toBe(game.tanks.red.maximum);
     });
 
     it('flashes "Not enough <Colour>" around an Object its Fill\'s Tank can\'t pay for', () => {

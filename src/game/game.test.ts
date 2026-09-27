@@ -14,13 +14,13 @@ const createGame = games();
 
 /** What `colour`'s Tank has spent, in Line length. */
 const spent = (game: Game, colour: Colour) =>
-  inLineLength(game.maximum(colour) - game.tank(colour));
+  inLineLength(game.tanks[colour].maximum - game.tanks[colour].spendable);
 
 /** Every Tank, px². */
-const tanks = (game: Game) => COLOURS.map((colour) => game.tank(colour));
+const tanks = (game: Game) => COLOURS.map((colour) => game.tanks[colour].spendable);
 
 /** Every Tank full. */
-const full = (game: Game) => COLOURS.map((colour) => game.maximum(colour));
+const full = (game: Game) => COLOURS.map((colour) => game.tanks[colour].maximum);
 
 /** Starts physics if paused, then steps it for `seconds`. */
 function runFor(game: Game, seconds: number): void {
@@ -95,7 +95,7 @@ describe('Ink Tanks', () => {
   it('start full, at their maximums in Line length', () => {
     const game = createGame(true);
 
-    expect(COLOURS.map((colour) => inLineLength(game.tank(colour)))).toEqual([
+    expect(COLOURS.map((colour) => inLineLength(game.tanks[colour].spendable))).toEqual([
       4000, 3000, 3000, 1500, 1000,
     ]);
     expect(tanks(game)).toEqual(full(game));
@@ -109,9 +109,9 @@ describe('Charging, with Ink costs on', () => {
     const line = drawLine(game, 300, 200, 400);
 
     expect(spent(game, 'grey')).toBeCloseTo(400, 0);
-    expect(game.maximum('grey') - game.tank('grey')).toBeCloseTo(line.ink, 6);
+    expect(game.tanks.grey.maximum - game.tanks.grey.spendable).toBeCloseTo(line.ink, 6);
     for (const colour of COLOURS.filter((c) => c !== 'grey')) {
-      expect(game.tank(colour)).toBe(game.maximum(colour));
+      expect(game.tanks[colour].spendable).toBe(game.tanks[colour].maximum);
     }
   });
 
@@ -124,7 +124,7 @@ describe('Charging, with Ink costs on', () => {
 
     expect(spent(game, 'green')).toBeGreaterThan(300);
     expect(spent(game, 'green')).toBeLessThanOrEqual(312.5);
-    expect(game.maximum('green') - game.tank('green')).toBeCloseTo(filled.ink * 0.25, 6);
+    expect(game.tanks.green.maximum - game.tanks.green.spendable).toBeCloseTo(filled.ink * 0.25, 6);
     expect(spent(game, 'blue')).toBeCloseTo(400, 0);
   });
 
@@ -148,7 +148,7 @@ describe('Not enough Ink, with Ink costs on', () => {
   it('refuses a Stroke that costs more than is left, whole, and leaves the Tank as it was', () => {
     const game = createGame(true);
     drawLine(game, 300, 200, 600, 'red'); // 400 of red's 1000 left
-    const before = game.tank('red');
+    const before = game.tanks.red.spendable;
 
     const line = game.submitStroke(
       dragAlong([
@@ -166,7 +166,7 @@ describe('Not enough Ink, with Ink costs on', () => {
       expect(line.path.at(-1)!.x).toBeCloseTo(700, 0);
     }
     expect(box.kind).toBe('refused');
-    expect(game.tank('red')).toBe(before);
+    expect(game.tanks.red.spendable).toBe(before);
     expect(game.world.lines).toHaveLength(1);
     expect(game.world.objects).toHaveLength(0);
     expect(game.history).toHaveLength(1);
@@ -176,7 +176,7 @@ describe('Not enough Ink, with Ink costs on', () => {
     const game = createGame(true);
     drawLine(game, 300, 200, 500, 'red');
     const box = drawBox(game, 300, 500, 100, 'red'); // 100 of red left
-    const before = game.tank('red');
+    const before = game.tanks.red.spendable;
 
     const outcome = game.fillAt({ x: 350, y: 550 }, 'red');
 
@@ -185,7 +185,7 @@ describe('Not enough Ink, with Ink costs on', () => {
       expect(inLineLength(outcome.price)).toBeGreaterThan(300);
       expect(outcome.outline.length).toBeGreaterThan(3);
     }
-    expect(game.tank('red')).toBe(before);
+    expect(game.tanks.red.spendable).toBe(before);
     expect(game.world.objects[0]!.fill).toBeNull();
     expect(game.history).toHaveLength(2);
   });
@@ -202,22 +202,22 @@ describe('Cost estimates, with Ink costs on', () => {
       { x: 700, y: 420 },
     ]);
     const estimate = game.estimateStroke(samples, 'blue')!;
-    const before = game.tank('blue');
+    const before = game.tanks.blue.spendable;
 
     game.submitStroke(samples, 'blue');
 
-    expect(off(estimate.price, before - game.tank('blue'))).toBeLessThan(0.05);
+    expect(off(estimate.price, before - game.tanks.blue.spendable)).toBeLessThan(0.05);
   });
 
   it('estimates a box within 5% of what it is charged', () => {
     const game = createGame(true);
     const samples = dragBox(400, 300, 120, 80);
     const estimate = game.estimateStroke(samples, 'green')!;
-    const before = game.tank('green');
+    const before = game.tanks.green.spendable;
 
     expect(game.submitStroke(samples, 'green').kind).toBe('object');
 
-    expect(off(estimate.price, before - game.tank('green'))).toBeLessThan(0.05);
+    expect(off(estimate.price, before - game.tanks.green.spendable)).toBeLessThan(0.05);
   });
 
   it("estimates a Fill at what it is charged, and nothing once it's filled or over nothing", () => {
@@ -225,11 +225,11 @@ describe('Cost estimates, with Ink costs on', () => {
     game.submitStroke(dragBox(400, 300, 100, 100), 'grey');
     const point = { x: 450, y: 350 };
     const estimate = game.estimateFill(point, 'black')!;
-    const before = game.tank('black');
+    const before = game.tanks.black.spendable;
 
     game.fillAt(point, 'black');
 
-    expect(estimate.price).toBeCloseTo(before - game.tank('black'), 6);
+    expect(estimate.price).toBeCloseTo(before - game.tanks.black.spendable, 6);
     expect(game.estimateFill(point, 'black')).toBeNull();
     expect(game.estimateFill({ x: 900, y: 200 }, 'black')).toBeNull();
   });
@@ -251,9 +251,11 @@ describe('Cost estimates, with Ink costs on', () => {
     game.submitStroke(half, 'green');
 
     // Drawn exactly along, it is charged next to nothing, and estimated so: within 5% of its length.
-    const charged = game.maximum('blue') - game.tank('blue');
+    const charged = game.tanks.blue.maximum - game.tanks.blue.spendable;
     expect(Math.abs(estimates[0]!.price - charged)).toBeLessThan(0.05 * fromLineLength(400));
-    expect(off(estimates[1]!.price, game.maximum('green') - game.tank('green'))).toBeLessThan(0.05);
+    expect(
+      off(estimates[1]!.price, game.tanks.green.maximum - game.tanks.green.spendable),
+    ).toBeLessThan(0.05);
   });
 
   it('says a Stroke is over when it costs more than its Tank holds', () => {
@@ -291,14 +293,14 @@ describe('Overlap charging, with Ink costs on', () => {
     drawLine(game, 700, 200, 240); // five grey Pieces, from x = 200 to x = 440
     const shelf = drawLine(game, 700, 200, 480, 'green'); // ten green Pieces, five on the grey
     expect(shelf.pieces).toHaveLength(10);
-    const green = game.tank('green');
+    const green = game.tanks.green.spendable;
 
     game.eraseAlong([{ x: 200 + 48 * 2 + 24, y: 700 }], 12); // Piece 2 of each
-    expect(game.tank('green')).toBeCloseTo(green, 6);
+    expect(game.tanks.green.spendable).toBeCloseTo(green, 6);
     expect(spent(game, 'grey')).toBeCloseTo(4 * 48, 0);
 
     game.eraseAlong([{ x: 200 + 48 * 7 + 24, y: 700 }], 12); // green Piece 7, on nothing
-    expect(game.tank('green') - green).toBeCloseTo(shelf.pieces[7]!, 6);
+    expect(game.tanks.green.spendable - green).toBeCloseTo(shelf.pieces[7]!, 6);
   });
 
   it('charges full along the Terrain and an Outline, and across an Object along the Object', () => {
@@ -333,12 +335,12 @@ describe('Overlap charging, with Ink costs on', () => {
     );
     expect(game.world.lines.map((line) => line.id)).not.toContain(under.id);
     expect(game.world.lines).toHaveLength(1);
-    expect(game.tank('grey')).toBeCloseTo(game.maximum('grey'), 6);
-    expect(game.tank('green')).toBeCloseTo(game.maximum('green'), 6);
+    expect(game.tanks.grey.spendable).toBeCloseTo(game.tanks.grey.maximum, 6);
+    expect(game.tanks.green.spendable).toBeCloseTo(game.tanks.green.maximum, 6);
 
     game.undo(); // the green Line: it paid nothing, and gets nothing back
     expect(game.world.lines).toEqual([]);
-    expect(game.tank('green')).toBeCloseTo(game.maximum('green'), 6);
+    expect(game.tanks.green.spendable).toBeCloseTo(game.tanks.green.maximum, 6);
     expect(game.history).toEqual([]);
   });
 
@@ -363,20 +365,20 @@ describe('Undo refunds exactly what was paid, with Ink costs on', () => {
     drawLine(game, 300, 200, 400, 'blue');
     const box = drawBox(game, 300, 500, 100, 'black');
     fill(game, { x: 350, y: 550 }, 'grey');
-    const black = game.tank('black');
+    const black = game.tanks.black.spendable;
 
     game.undo(); // the Fill
     expect(game.world.objects[0]!.fill).toBeNull();
-    expect(game.tank('grey')).toBeCloseTo(game.maximum('grey'), 6);
-    expect(game.tank('black')).toBe(black);
+    expect(game.tanks.grey.spendable).toBeCloseTo(game.tanks.grey.maximum, 6);
+    expect(game.tanks.black.spendable).toBe(black);
 
     game.undo(); // the box
     expect(game.world.objects.some((o) => o.id === box)).toBe(false);
-    expect(game.tank('black')).toBeCloseTo(game.maximum('black'), 6);
+    expect(game.tanks.black.spendable).toBeCloseTo(game.tanks.black.maximum, 6);
 
     game.undo(); // the Line
     expect(game.world.lines).toEqual([]);
-    expect(game.tank('blue')).toBeCloseTo(game.maximum('blue'), 6);
+    expect(game.tanks.blue.spendable).toBeCloseTo(game.tanks.blue.maximum, 6);
 
     game.undo(); // nothing left: does nothing
     for (const [k, tank] of tanks(game).entries()) expect(tank).toBeCloseTo(full(game)[k]!, 6);
@@ -393,7 +395,7 @@ describe('Undo refunds exactly what was paid, with Ink costs on', () => {
     game.undo();
 
     expect(game.world.lines).toEqual([]);
-    expect(game.tank('grey')).toBeCloseTo(game.maximum('grey') - brokenPrice, 6);
+    expect(game.tanks.grey.spendable).toBeCloseTo(game.tanks.grey.maximum - brokenPrice, 6);
     expect(brokenPrice).toBeGreaterThan(0);
   });
 
@@ -405,7 +407,7 @@ describe('Undo refunds exactly what was paid, with Ink costs on', () => {
     game.undo();
 
     expect(game.world.lines).toHaveLength(0);
-    expect(game.tank('grey')).toBeCloseTo(game.maximum('grey'), 6);
+    expect(game.tanks.grey.spendable).toBeCloseTo(game.tanks.grey.maximum, 6);
   });
 
   it('skips a broken Object and its Fill, and takes back the latest Stroke that still exists', () => {
@@ -414,7 +416,7 @@ describe('Undo refunds exactly what was paid, with Ink costs on', () => {
     const ball = game.submitStroke(dragCircle({ x: 300, y: 300 }, 20), 'red');
     if (ball.kind !== 'object') throw new Error('expected a ball');
     const filled = fill(game, { x: 300, y: 300 }, 'grey');
-    const red = game.tank('red');
+    const red = game.tanks.red.spendable;
     runFor(game, 0);
     game.world.release(ball.id);
     runFor(game, 1.5);
@@ -425,8 +427,8 @@ describe('Undo refunds exactly what was paid, with Ink costs on', () => {
 
     expect(game.world.objects).toHaveLength(0);
     // The box is refunded; the broken ball's Outline and Fill are spent.
-    expect(game.tank('grey')).toBeCloseTo(game.maximum('grey') - 0.25 * filled.ink, 6);
-    expect(game.tank('red')).toBe(red);
+    expect(game.tanks.grey.spendable).toBeCloseTo(game.tanks.grey.maximum - 0.25 * filled.ink, 6);
+    expect(game.tanks.red.spendable).toBe(red);
   });
 
   it('skips a Line whose every Piece broke', () => {
@@ -439,12 +441,12 @@ describe('Undo refunds exactly what was paid, with Ink costs on', () => {
     runFor(game, 1.5);
     game.world.remove(rock);
     expect(game.world.lines.some((line) => line.id === red.id)).toBe(false);
-    const redLeft = game.tank('red');
+    const redLeft = game.tanks.red.spendable;
 
     game.undo();
 
     expect(game.world.objects.some((o) => o.id === box)).toBe(false);
-    expect(game.tank('red')).toBe(redLeft);
+    expect(game.tanks.red.spendable).toBe(redLeft);
   });
 });
 
@@ -454,14 +456,14 @@ describe('The Eraser refunds what was paid, with Ink costs on', () => {
     drawLine(game, 300, 200, 200);
     const box = drawBox(game, 500, 500, 100, 'black');
     fill(game, { x: 550, y: 550 }, 'blue');
-    const grey = game.tank('grey');
+    const grey = game.tanks.grey.spendable;
 
     game.eraseAlong([{ x: 550, y: 550 }], 12);
 
     expect(game.world.objects.some((o) => o.id === box)).toBe(false);
-    expect(game.tank('black')).toBeCloseTo(game.maximum('black'), 6);
-    expect(game.tank('blue')).toBeCloseTo(game.maximum('blue'), 6);
-    expect(game.tank('grey')).toBe(grey);
+    expect(game.tanks.black.spendable).toBeCloseTo(game.tanks.black.maximum, 6);
+    expect(game.tanks.blue.spendable).toBeCloseTo(game.tanks.blue.maximum, 6);
+    expect(game.tanks.grey.spendable).toBe(grey);
     expect(game.history.map((action) => action.id)).not.toContain(box);
   });
 
@@ -471,12 +473,15 @@ describe('The Eraser refunds what was paid, with Ink costs on', () => {
     expect(shelf.pieces).toHaveLength(10);
 
     game.eraseAlong([{ x: 200 + 48 * 4 + 24, y: 700 }], 12); // Piece 4
-    expect(game.maximum('green') - game.tank('green')).toBeCloseTo(shelf.ink - shelf.pieces[4]!, 6);
+    expect(game.tanks.green.maximum - game.tanks.green.spendable).toBeCloseTo(
+      shelf.ink - shelf.pieces[4]!,
+      6,
+    );
 
     game.undo();
-    expect(game.tank('green')).toBeCloseTo(game.maximum('green'), 6);
+    expect(game.tanks.green.spendable).toBeCloseTo(game.tanks.green.maximum, 6);
     game.undo(); // nothing left
-    expect(game.tank('green')).toBeCloseTo(game.maximum('green'), 6);
+    expect(game.tanks.green.spendable).toBeCloseTo(game.tanks.green.maximum, 6);
   });
 
   it('takes erased Strokes out of the undo history', () => {
@@ -492,7 +497,7 @@ describe('The Eraser refunds what was paid, with Ink costs on', () => {
     game.undo(); // not the erased box, but the one before it
     expect(game.world.objects).toEqual([]);
     expect(game.history).toEqual([]);
-    expect(game.tank('grey')).toBeCloseTo(game.maximum('grey'), 6);
+    expect(game.tanks.grey.spendable).toBeCloseTo(game.tanks.grey.maximum, 6);
   });
 
   it('for Rubble, Droplets and Patches, nothing', () => {
@@ -523,21 +528,11 @@ describe('The Eraser refunds what was paid, with Ink costs on', () => {
     expect(game.world.droplets).toEqual([]);
     expect(game.world.patches).toEqual([]);
     expect(tanks(game)).toEqual(before);
-    expect(game.tank('grey')).toBeLessThan(game.maximum('grey'));
+    expect(game.tanks.grey.spendable).toBeLessThan(game.tanks.grey.maximum);
   });
 });
 
 describe('Refunds never make Ink, with Ink costs on', () => {
-  it('never fill a Tank beyond its maximum, when the maximum was lowered after the Ink was spent', () => {
-    const game = createGame(true);
-    drawLine(game, 300, 200, 400);
-    game.editInk((ink) => (ink.tanks.grey = 3900));
-
-    game.undo();
-
-    expect(game.tank('grey')).toBe(fromLineLength(3900));
-  });
-
   it('draw, run, break, undo, erase and R in any order never leave a Tank above what it held before', () => {
     const game = createGame(true);
     const random = seeded(7);
@@ -573,9 +568,9 @@ describe('Refunds never make Ink, with Ink costs on', () => {
     ];
     const check = () => {
       for (const colour of COLOURS) {
-        expect(game.tank(colour)).toBeLessThanOrEqual(game.maximum(colour) + 1e-6);
-        expect(game.tank(colour) + game.paid(colour)).toBeLessThanOrEqual(
-          game.maximum(colour) + 1e-6,
+        expect(game.tanks[colour].spendable).toBeLessThanOrEqual(game.tanks[colour].maximum + 1e-6);
+        expect(game.tanks[colour].spendable + game.paid(colour)).toBeLessThanOrEqual(
+          game.tanks[colour].maximum + 1e-6,
         );
       }
     };
@@ -607,7 +602,7 @@ describe('Editing the Ink table, with Ink costs on', () => {
     drawLine(game, 200, 200, 400, 'green');
     expect(spent(game, 'green')).toBeCloseTo(800, 0);
     const filled = fill(game, { x: 350, y: 550 }, 'red');
-    expect(game.maximum('red') - game.tank('red')).toBeCloseTo(filled.ink * 0.5, 6);
+    expect(game.tanks.red.maximum - game.tanks.red.spendable).toBeCloseTo(filled.ink * 0.5, 6);
 
     game.undo(); // the red Fill: what it paid at 0.5
     game.undo(); // the green Line: what it paid at 2
@@ -621,31 +616,20 @@ describe('Editing the Ink table, with Ink costs on', () => {
     const game = createGame(true);
     drawBox(game, 300, 500, 100, 'blue');
     const filled = fill(game, { x: 350, y: 550 }, 'grey');
-    const grey = game.tank('grey');
+    const grey = game.tanks.grey.spendable;
 
     game.editInk((ink) => (ink.fillPrice = 1));
     game.undo(); // the Fill: refunds its price at 0.25, not at 1
 
-    expect(game.tank('grey') - grey).toBeCloseTo(filled.ink * 0.25, 6);
+    expect(game.tanks.grey.spendable - grey).toBeCloseTo(filled.ink * 0.25, 6);
   });
 
-  it('lowering a maximum empties the Tank down to it at once, and raising one leaves the Tank', () => {
+  it('a lowered maximum empties the Tank down to it as soon as it is edited', () => {
     const game = createGame(true);
-    drawLine(game, 300, 200, 400); // grey holds 3600
 
-    game.editInk((ink) => {
-      ink.tanks.grey = 3800; // still above what grey holds
-      ink.tanks.red = 600;
-    });
-    expect(inLineLength(game.tank('grey'))).toBeCloseTo(3600, 0);
-    expect(game.tank('red')).toBe(fromLineLength(600));
+    game.editInk((ink) => (ink.tanks.red = 600));
 
-    game.editInk((ink) => {
-      ink.tanks.grey = 3000;
-      ink.tanks.red = 1000;
-    });
-    expect(game.tank('grey')).toBe(fromLineLength(3000));
-    expect(game.tank('red')).toBe(fromLineLength(600));
+    expect(game.tanks.red).toMatchObject({ spendable: fromLineLength(600), units: 600 });
   });
 
   it("refuses what the lowered Tank can't pay for", () => {
@@ -655,7 +639,7 @@ describe('Editing the Ink table, with Ink costs on', () => {
     const outcome = game.submitStroke(dragBox(300, 300, 100, 100), 'black');
 
     expect(outcome.kind).toBe('refused');
-    expect(game.tank('black')).toBe(fromLineLength(300));
+    expect(game.tanks.black.spendable).toBe(fromLineLength(300));
   });
 
   it('a refund never fills a Tank beyond the lowered maximum, for undo, the Eraser or R', () => {
@@ -665,14 +649,14 @@ describe('Editing the Ink table, with Ink costs on', () => {
     game.togglePause(); // the snapshot: grey holds 3200
     game.togglePause();
     game.editInk((ink) => (ink.tanks.grey = 3100));
-    expect(game.tank('grey')).toBe(fromLineLength(3100));
+    expect(game.tanks.grey.spendable).toBe(fromLineLength(3100));
 
     game.reset();
-    expect(game.tank('grey')).toBe(fromLineLength(3100));
+    expect(game.tanks.grey.spendable).toBe(fromLineLength(3100));
     game.undo(); // the box: 400 back, 100 of it fits
-    expect(game.tank('grey')).toBe(fromLineLength(3100));
+    expect(game.tanks.grey.spendable).toBe(fromLineLength(3100));
     eraseEverything(game); // the Line: 400 back, none of it fits
-    expect(game.tank('grey')).toBe(fromLineLength(3100));
+    expect(game.tanks.grey.spendable).toBe(fromLineLength(3100));
   });
 
   it('Clear fills every Tank to the edited maximums', () => {
@@ -681,18 +665,18 @@ describe('Editing the Ink table, with Ink costs on', () => {
 
     game.clear();
 
-    expect(game.tank('blue')).toBe(fromLineLength(5000));
+    expect(game.tanks.blue.spendable).toBe(fromLineLength(5000));
     expect(tanks(game)).toEqual(full(game));
   });
 });
 
 describe('R, with Ink costs on', () => {
-  it('brings back the Tanks and the history as they were when physics last started', () => {
+  it('brings back the Tanks and what undo takes back as they were when physics last started', () => {
     const game = createGame(true);
-    drawLine(game, 300, 200, 400);
+    const line = drawLine(game, 300, 200, 400);
     const box = drawBox(game, 500, 500, 100, 'blue');
     game.togglePause();
-    const atStart = { tanks: tanks(game), history: [...game.history] };
+    const atStart = tanks(game);
     fill(game, { x: 550, y: 550 }, 'red');
     drawLine(game, 200, 200, 300, 'green');
     game.undo(); // the green Line
@@ -702,11 +686,19 @@ describe('R, with Ink costs on', () => {
 
     game.reset();
 
-    expect(tanks(game)).toEqual(atStart.tanks);
-    expect(game.history).toEqual(atStart.history);
+    expect(tanks(game)).toEqual(atStart);
     expect(game.world.objects.map((o) => o.id)).toEqual([box]);
+    expect(game.world.lines.map((l) => l.id)).toEqual([line.id]);
     game.undo(); // undo carries on from there: the box, refunded
-    expect(game.tank('blue')).toBeCloseTo(game.maximum('blue'), 6);
+    expect(game.world.objects).toEqual([]);
+    expect(game.world.lines).toHaveLength(1);
+    expect(game.tanks.blue.spendable).toBeCloseTo(game.tanks.blue.maximum, 6);
+    game.undo(); // then the grey Line, refunded
+    expect(game.world.lines).toEqual([]);
+    expect(tanks(game)).toEqual(full(game));
+    game.undo(); // and nothing more: the Fill and the green Line came after the start
+    expect(game.world.bodyCount).toBe(1);
+    expect(tanks(game)).toEqual(full(game));
   });
 
   it('does nothing before physics has first started', () => {
@@ -758,14 +750,41 @@ describe('Clear, demos and stress tests', () => {
     const game = createGame(true);
     const boulder = GALLERY.find((demo) => demo.name === 'Boulder')!;
     game.clear((world) => boulder.build(world));
-    const history = [...game.history];
+    const made = game.world.lines.length + game.world.objects.length;
+    const filled = game.world.objects.filter((o) => o.fill).length;
     const objects = game.world.objects.map((o) => o.transform);
     runFor(game, 1);
 
     game.reset();
 
-    expect(game.history).toEqual(history);
     expect(game.world.objects.map((o) => o.transform)).toEqual(objects);
+    // Undo takes back every Stroke and Fill the demo made, and refunds nothing.
+    for (let k = 0; k < made + filled; k++) game.undo();
+    expect(game.world.lines).toEqual([]);
+    expect(game.world.objects).toEqual([]);
+    expect(tanks(game)).toEqual(full(game));
+  });
+
+  it('a clear or an R made below the Game fills every Tank, as Clear does', () => {
+    const game = createGame(true);
+    drawLine(game, 300, 200, 400);
+    drawBox(game, 500, 500, 100, 'red');
+    game.togglePause();
+    drawLine(game, 200, 200, 300, 'green');
+
+    game.world.reset();
+    game.step(); // the Game reads what happened
+
+    expect(tanks(game)).toEqual(full(game));
+    game.undo(); // what came back is the world's now, and refunds nothing
+    expect(tanks(game)).toEqual(full(game));
+
+    drawLine(game, 100, 200, 300, 'blue');
+    game.world.clear();
+    game.step();
+
+    expect(tanks(game)).toEqual(full(game));
+    expect(game.history).toEqual([]);
   });
 });
 
@@ -787,13 +806,13 @@ describe('With Ink costs off', () => {
   it('leaves the Tanks as they are when turned off, and goes on from there when turned on', () => {
     const game = createGame(true);
     drawLine(game, 300, 200, 400);
-    const spentOn = game.tank('grey');
+    const spentOn = game.tanks.grey.spendable;
 
     game.inkCosts = false;
     drawLine(game, 400, 200, 400);
-    expect(game.tank('grey')).toBe(spentOn);
+    expect(game.tanks.grey.spendable).toBe(spentOn);
     game.undo(); // refunds the nothing it cost
-    expect(game.tank('grey')).toBe(spentOn);
+    expect(game.tanks.grey.spendable).toBe(spentOn);
 
     game.inkCosts = true;
     drawLine(game, 500, 200, 400);
