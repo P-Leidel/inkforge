@@ -1,5 +1,6 @@
 import type { TankReadings } from '../game/ink-tanks';
 import { COLOURS, type Colour } from '../materials/colour';
+import type { ContentCount } from '../sandbox/content-counts';
 import { LONG_FRAME_MS, SLOW_FRAME_MS, type FrameTimes, type RecentSummary } from './frame-times';
 
 /** How many of each kind of thing the Sandbox world holds. */
@@ -7,11 +8,8 @@ export interface BodyCounts {
   /** Physics bodies, all kinds together. */
   readonly total: number;
   readonly pieces: number;
-  readonly objects: number;
-  readonly rubble: number;
-  readonly droplets: number;
-  readonly patches: number;
-  readonly blasts: number;
+  /** How many views each list of the world's contents holds, in kind order. */
+  readonly contents: readonly ContentCount[];
   /** Debris particles: drawn only, no bodies. */
   readonly debris: number;
 }
@@ -65,6 +63,11 @@ export function readingLines({ recent, sinceStart, bodies, render, ink }: Readin
   const row = (label: string, text: string) => label.padEnd(13) + text;
   const tank = (colour: Colour) => `${colour} ${number(Math.round(ink.tanks[colour].spendable))}`;
   const [first, second] = [COLOURS.slice(0, 3), COLOURS.slice(3)];
+  // Each list of the world's contents, e.g. "Objects 7", over two rows.
+  const counts = bodies.contents.map(
+    ({ name, count }) => `${name[0]!.toUpperCase()}${name.slice(1)} ${count}`,
+  );
+  const [countsFirst, countsRest] = [counts.slice(0, 3), counts.slice(3)];
   return [
     row('last 1 s', recent ? `${fps(recent.fps)}   longest ${ms(recent.longestMs)}` : '-'),
     row(
@@ -90,13 +93,9 @@ export function readingLines({ recent, sinceStart, bodies, render, ink }: Readin
     ),
     row(
       'bodies',
-      `${number(bodies.total)}: Pieces ${bodies.pieces}   Objects ${bodies.objects}   Rubble ${bodies.rubble}`,
+      `${number(bodies.total)}: ` + [`Pieces ${bodies.pieces}`, ...countsFirst].join('   '),
     ),
-    row(
-      '',
-      `Droplets ${bodies.droplets}   Patches ${bodies.patches}   Blasts ${bodies.blasts}   ` +
-        `Debris ${bodies.debris}`,
-    ),
+    row('', [...countsRest, `Debris ${bodies.debris}`].join('   ')),
     row(
       'render',
       `Graphics ${render.graphics} · ${number(render.commands)} commands   Text ${render.texts}   ` +

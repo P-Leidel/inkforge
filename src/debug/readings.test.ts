@@ -6,11 +6,15 @@ describe('Readings', () => {
   const bodies = {
     total: 83,
     pieces: 24,
-    objects: 7,
-    rubble: 62,
-    droplets: 3,
-    patches: 23,
-    blasts: 1,
+    contents: [
+      { name: 'lines', count: 5 },
+      { name: 'objects', count: 7 },
+      { name: 'rubble', count: 62 },
+      { name: 'bonds', count: 2 },
+      { name: 'droplets', count: 3 },
+      { name: 'patches', count: 23 },
+      { name: 'blasts', count: 1 },
+    ],
     debris: 40,
   };
   const tank = (spendable: number, maximum: number) => ({
@@ -55,8 +59,8 @@ describe('Readings', () => {
       '             3 frames   >20 ms: 1   >33 ms: 0',
       'ms, last 1 s physics 0.4 (max 0.4)   draw 0.3 (max 0.3)',
       '             render 4.8 (max 4.8)   steps 60 · 0.4 ms each',
-      'bodies       83: Pieces 24   Objects 7   Rubble 62',
-      '             Droplets 3   Patches 23   Blasts 1   Debris 40',
+      'bodies       83: Pieces 24   Lines 5   Objects 7   Rubble 62',
+      '             Bonds 2   Droplets 3   Patches 23   Blasts 1   Debris 40',
       'render       Graphics 31 · 6,212 commands   Text 29   objects 150',
       '             Images 88   baked 12 textures · 7.5 MB',
       'ink, px²     grey 32,000   blue 24,000   green 0',

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { transformPoints } from '../geometry/transform';
 import type { Game } from '../game/game';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
+import { contentCounts } from '../sandbox/content-counts';
 import { bandPolygon } from '../geometry/separation';
 import { strokePolygon, strokeRing } from '../rendering/draw';
 import type { FrameRecorder } from './frame-times';
@@ -207,11 +208,7 @@ export class DebugOverlay {
       bodies: {
         total: world.bodyCount,
         pieces,
-        objects: world.objects.length,
-        rubble: world.rubble.length,
-        droplets: world.droplets.length,
-        patches: world.patches.length,
-        blasts: world.blasts.length,
+        contents: contentCounts(world.contents),
         debris: this.worldView.debrisCount,
       },
       render: {
