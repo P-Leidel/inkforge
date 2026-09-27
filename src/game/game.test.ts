@@ -365,7 +365,7 @@ describe('Refunds never make Ink, with Ink costs on', () => {
   it('never fill a Tank beyond its maximum, when the maximum was lowered after the Ink was spent', () => {
     const game = createGame(true);
     drawLine(game, 300, 200, 400);
-    game.ink.tanks.grey = 3900;
+    game.editInk((ink) => (ink.tanks.grey = 3900));
 
     game.undo();
 
@@ -424,6 +424,99 @@ describe('Refunds never make Ink, with Ink costs on', () => {
     }
     eraseEverything(game);
     check();
+  });
+});
+
+describe('Editing the Ink table, with Ink costs on', () => {
+  it('a price edit changes the next charge, and not the refund of what was already made', () => {
+    const game = createGame(true);
+    drawLine(game, 300, 200, 400);
+    const box = drawBox(game, 300, 500, 100, 'blue');
+
+    game.editInk((ink) => {
+      ink.linePrice = 2;
+      ink.fillPrice = 0.5;
+    });
+    expect(spent(game, 'grey')).toBeCloseTo(400, 0);
+    drawLine(game, 200, 200, 400, 'green');
+    expect(spent(game, 'green')).toBeCloseTo(800, 0);
+    const filled = fill(game, { x: 350, y: 550 }, 'red');
+    expect(game.maximum('red') - game.tank('red')).toBeCloseTo(filled.ink * 0.5, 6);
+
+    game.undo(); // the red Fill: what it paid at 0.5
+    game.undo(); // the green Line: what it paid at 2
+    game.undo(); // the blue box: what it paid at 1
+    game.undo(); // the grey Line: likewise
+    expect(game.world.objects.some((o) => o.id === box)).toBe(false);
+    for (const [k, tank] of tanks(game).entries()) expect(tank).toBeCloseTo(full(game)[k]!, 6);
+  });
+
+  it('a Fill price edit charges nothing more for a Fill already made', () => {
+    const game = createGame(true);
+    drawBox(game, 300, 500, 100, 'blue');
+    const filled = fill(game, { x: 350, y: 550 }, 'grey');
+    const grey = game.tank('grey');
+
+    game.editInk((ink) => (ink.fillPrice = 1));
+    game.undo(); // the Fill: refunds its price at 0.25, not at 1
+
+    expect(game.tank('grey') - grey).toBeCloseTo(filled.ink * 0.25, 6);
+  });
+
+  it('lowering a maximum empties the Tank down to it at once, and raising one leaves the Tank', () => {
+    const game = createGame(true);
+    drawLine(game, 300, 200, 400); // grey holds 3600
+
+    game.editInk((ink) => {
+      ink.tanks.grey = 3800; // still above what grey holds
+      ink.tanks.red = 600;
+    });
+    expect(inLineLength(game.tank('grey'))).toBeCloseTo(3600, 0);
+    expect(game.tank('red')).toBe(fromLineLength(600));
+
+    game.editInk((ink) => {
+      ink.tanks.grey = 3000;
+      ink.tanks.red = 1000;
+    });
+    expect(game.tank('grey')).toBe(fromLineLength(3000));
+    expect(game.tank('red')).toBe(fromLineLength(600));
+  });
+
+  it("refuses what the lowered Tank can't pay for", () => {
+    const game = createGame(true);
+    game.editInk((ink) => (ink.tanks.black = 300));
+
+    const outcome = game.submitStroke(dragBox(300, 300, 100, 100), 'black');
+
+    expect(outcome.kind).toBe('refused');
+    expect(game.tank('black')).toBe(fromLineLength(300));
+  });
+
+  it('a refund never fills a Tank beyond the lowered maximum, for undo, the Eraser or R', () => {
+    const game = createGame(true);
+    drawLine(game, 300, 200, 400);
+    drawBox(game, 300, 500, 100, 'grey');
+    game.togglePause(); // the snapshot: grey holds 3200
+    game.togglePause();
+    game.editInk((ink) => (ink.tanks.grey = 3100));
+    expect(game.tank('grey')).toBe(fromLineLength(3100));
+
+    game.reset();
+    expect(game.tank('grey')).toBe(fromLineLength(3100));
+    game.undo(); // the box: 400 back, 100 of it fits
+    expect(game.tank('grey')).toBe(fromLineLength(3100));
+    eraseEverything(game); // the Line: 400 back, none of it fits
+    expect(game.tank('grey')).toBe(fromLineLength(3100));
+  });
+
+  it('Clear fills every Tank to the edited maximums', () => {
+    const game = createGame(true);
+    game.editInk((ink) => (ink.tanks.blue = 5000));
+
+    game.clear();
+
+    expect(game.tank('blue')).toBe(fromLineLength(5000));
+    expect(tanks(game)).toEqual(full(game));
   });
 });
 

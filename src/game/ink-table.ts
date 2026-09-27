@@ -17,15 +17,28 @@ export interface InkTable {
   tanks: Record<Colour, number>;
 }
 
-export const DEFAULT_INK_TABLE: Readonly<InkTable> = Object.freeze({
+/** The Ink table, read only: the Game's is edited through `Game.editInk`. */
+export type ReadonlyInkTable = { readonly [K in keyof InkTable]: Readonly<InkTable[K]> };
+
+/**
+ * The starting values. The F2 tuning panel's "Copy as JSON" gives a table in
+ * this shape under `ink`, to paste over it.
+ */
+export const DEFAULT_INK_TABLE: ReadonlyInkTable = {
   linePrice: 1,
   fillPrice: 0.25,
-  tanks: Object.freeze({ grey: 4000, blue: 3000, green: 3000, black: 1500, red: 1000 }),
-});
+  tanks: {
+    grey: 4000,
+    blue: 3000,
+    green: 3000,
+    black: 1500,
+    red: 1000,
+  },
+};
 
 /** A fresh, editable copy of the default Ink table. */
 export function createInkTable(): InkTable {
-  return { ...DEFAULT_INK_TABLE, tanks: { ...DEFAULT_INK_TABLE.tanks } };
+  return structuredClone(DEFAULT_INK_TABLE) as InkTable;
 }
 
 /** Ink (px²) as the player reads it: in Line length. */

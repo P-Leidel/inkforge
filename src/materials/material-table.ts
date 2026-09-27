@@ -182,7 +182,7 @@ export interface MaterialTable {
 
 /**
  * The starting values. The F2 tuning panel's "Copy as JSON" gives a table in
- * this shape, to paste over it.
+ * this shape under `materials`, to paste over it.
  */
 export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   colours: {
