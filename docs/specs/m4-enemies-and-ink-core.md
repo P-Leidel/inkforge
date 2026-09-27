@@ -195,18 +195,18 @@ Before the slices, the five refactors from the [architecture review after #71](.
 
 Then:
 
-1. **Enemies walk.** The enemy table and its F2 section, the Crawler, the Spawn and its lane, Shift+1, walking by capped force, floor or not from the touching normal, the Ink Core with its HP and core damage, death below the screen, removal of what goes out over the Spawn edge, and the pit filled in.
-2. **Pressing wear.** Pieces and Objects wear under pressing, and what an Enemy stands on under floor wear. Red goes off under an Enemy.
-3. **Enemies take damage.** HP, the damage threshold, hits on both sides, falls, Blasts, the pop, HP bars, and "Ink Core destroyed".
-4. **Runner and Heavy.** Their rows in the enemy table, Shift+2 and Shift+3.
-5. **Strokes meet Enemies.** Lines are cut at Enemies and the Ink Core; Objects over them are refused.
-6. **Waves.** The Waves switch and the Wave section in F2, the Build Phase and the Wave in the Game, arrivals in order with gaps and the Spawn arrow's count, the end of a Wave, and undo in the Build Phase only.
-7. **Drops and Wave Ink.** Drops from the seeded random, Locked Ink on the gauges and in F1, spending and refunding Wave Ink, and the Drop burst.
-8. **Core Zone.** The circle and "Outside the Core Zone".
-9. **Pit demo.** Per-demo Terrain in the gallery, and a demo with a Pit.
-10. **Different answers and frame rate** (for a person, not an agent). The playtest and the 30-Enemy frame rate on the baseline machine.
+1. **Enemies walk** (#85). The enemy table and its F2 section, the Crawler, the Spawn and its lane, Shift+1, walking by capped force, floor or not from the touching normal, the Ink Core with its HP and core damage, death below the screen, removal of what goes out over the Spawn edge, and the pit filled in.
+2. **Pressing wear** (#86). Pieces and Objects wear under pressing, and what an Enemy stands on under floor wear. Red goes off under an Enemy.
+3. **Enemies take damage** (#87). HP, the damage threshold, hits on both sides, falls, Blasts, the pop, HP bars, and "Ink Core destroyed".
+4. **Runner and Heavy** (#90). Their rows in the enemy table, Shift+2 and Shift+3.
+5. **Strokes meet Enemies** (#88). Lines are cut at Enemies and the Ink Core; Objects over them are refused.
+6. **Waves** (#91). The Waves switch and the Wave section in F2, the Build Phase and the Wave in the Game, arrivals in order with gaps and the Spawn arrow's count, the end of a Wave, and undo in the Build Phase only.
+7. **Drops and Wave Ink** (#92). Drops from the seeded random, Locked Ink on the gauges and in F1, spending and refunding Wave Ink, and the Drop burst.
+8. **Core Zone** (#93). The circle and "Outside the Core Zone".
+9. **Pit demo** (#89). Per-demo Terrain in the gallery, and a demo with a Pit.
+10. **Different answers and frame rate** (#94, for a person, not an agent). The playtest and the 30-Enemy frame rate on the baseline machine.
 
-2, 3 and 5 can run in parallel after 1. 7 and 8 can run in parallel after 6. 9 can run any time after 1.
+2, 3 and 9 can run in parallel after 1; 4 follows 2 and 3; 5 needs 1 and #79. 7 and 8 can run in parallel after 6.
 
 ## Testing Decisions
 
