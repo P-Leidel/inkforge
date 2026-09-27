@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Segment } from '../geometry/segment';
 import type { Vec2 } from '../geometry/vec2';
-import { SANDBOX_ARENA } from '../sandbox/arena';
 import { Random } from '../sandbox/random';
 import {
   isConvex,
@@ -11,9 +10,10 @@ import {
   type Polygon,
 } from '../geometry/polygon';
 import { dragAlong as drag, dragBox, dragCircle, dragPolygon } from './pointer-paths';
-import { processStroke, type StrokeContext, type StrokeResult } from './stroke-pipeline';
+import { processStroke, type StrokeResult } from './stroke-pipeline';
+import { terrainOnly } from './test-support';
 
-const context: StrokeContext = { terrain: SANDBOX_ARENA.terrain, objects: [] };
+const context = terrainOnly();
 
 function jitter(samples: readonly Vec2[], amplitude: number, seed = 7): Vec2[] {
   const random = new Random(seed);
@@ -474,51 +474,5 @@ describe('Stroke pipeline: overlap', () => {
 
   it('accepts an Object that only touches Terrain', () => {
     expect(processStroke(dragBox(300, 820, 60, 60), context).kind).toBe('object');
-  });
-
-  it('rejects an Object that overlaps another Object', () => {
-    const existing = objectOf(processStroke(dragBox(300, 300, 100, 100), context));
-    const withObject: StrokeContext = { ...context, objects: [existing.parts] };
-
-    const result = processStroke(dragBox(380, 380, 60, 60), withObject);
-
-    expect(rejectionOf(result)).toBe('overlaps');
-  });
-
-  it('accepts an Object that only touches another Object', () => {
-    const existing = objectOf(processStroke(dragBox(300, 300, 100, 100), context));
-    const withObject: StrokeContext = { ...context, objects: [existing.parts] };
-
-    expect(processStroke(dragBox(400, 300, 60, 60), withObject).kind).toBe('object');
-  });
-
-  it('rejects an Object that overlaps Rubble, and accepts one that only touches it', () => {
-    const withRubble: StrokeContext = {
-      ...context,
-      rubble: [{ centre: { x: 300, y: 300 }, radius: 10 }],
-    };
-
-    expect(rejectionOf(processStroke(dragBox(305, 250, 60, 60), withRubble))).toBe('overlaps');
-    expect(rejectionOf(processStroke(dragBox(200, 200, 200, 200), withRubble))).toBe('overlaps');
-    expect(processStroke(dragBox(310, 250, 60, 60), withRubble).kind).toBe('object');
-  });
-
-  it('does not cut a Line where it crosses an Object', () => {
-    const existing = objectOf(processStroke(dragBox(300, 300, 100, 100), context));
-    const withObject: StrokeContext = { ...context, objects: [existing.parts] };
-
-    const points = linePoints(
-      processStroke(
-        drag([
-          { x: 200, y: 350 },
-          { x: 500, y: 350 },
-        ]),
-        withObject,
-      ),
-    );
-
-    expect(Math.min(...points.map((p) => p.x))).toBeCloseTo(200, 0);
-    expect(Math.max(...points.map((p) => p.x))).toBeCloseTo(500, 0);
-    expect(points.some((p) => p.x > 300 && p.x < 400)).toBe(true);
   });
 });

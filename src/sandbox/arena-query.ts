@@ -12,6 +12,7 @@ import {
   type Polygon,
 } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
+import { capsulePolygon } from '../geometry/separation';
 import { applyTransform, transformPoints, type Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { BodyId, NearBody, PhysicsWorld } from '../physics';
@@ -31,9 +32,13 @@ export type { Capsule } from '../geometry/overlap';
  *
  * Each question tests the shapes it always has: which Object is under a
  * point, and what the Eraser's brush touches, go by an Object's Outline;
- * where an Object may go, and what a Line crosses, go by its collider
- * parts, the Outline simplified by up to `COLLIDER_TOLERANCE`; what lies on
- * a Line goes by each Piece's band.
+ * where an Object may go, where a squeezed one may end, and what a Line
+ * crosses, go by its collider parts, the Outline simplified by up to
+ * `COLLIDER_TOLERANCE`; what lies on a Line goes by each Piece's band.
+ *
+ * It is the one answer to what a new Stroke meets: what cuts a new Line,
+ * what blocks a new Object, and what a squeezed Object must end clear of.
+ * Whatever kind of body Arena bodies holds takes part as its form says.
  */
 
 /** What the query asks of the physics module. */
@@ -136,6 +141,25 @@ export class ArenaQuery {
   }
 
   /**
+   * Cutting: the convex polygons, in world coordinates, that a new Line
+   * drawn along `path` is cut at, near it: the Terrain's. Objects, Lines,
+   * Rubble, Droplets and Patches don't cut one.
+   */
+  lineCutters(path: readonly Vec2[]): Polygon[] {
+    return this.near(polygonBounds(path), 0).flatMap(({ form }) => {
+      switch (form.kind) {
+        case 'terrain':
+          return form.polygons;
+        case 'object':
+        case 'capsules':
+        case 'circle':
+        case 'capsule':
+          return [];
+      }
+    });
+  }
+
+  /**
    * Overlap: whether a convex part of a new Object, in world coordinates,
    * overlaps something solid by more than `TOUCH_TOLERANCE`: the Terrain,
    * an Object's collider parts, or Rubble. Lines aren't solid (an Object
@@ -154,6 +178,35 @@ export class ArenaQuery {
         case 'capsules':
         case 'capsule':
           // Lines and Patches aren't solid.
+          return false;
+      }
+    });
+  }
+
+  /**
+   * Squeeze: whether a convex part of the Object with body `squeezed`,
+   * moved to where a Squeeze would leave it, in world coordinates, overlaps
+   * by more than `TOUCH_TOLERANCE` what it must end clear of: the Terrain,
+   * another Object's collider parts, Rubble, or a Line, each Piece's capsule
+   * as `capsulePolygon` encloses it. Droplets and Patches don't count.
+   */
+  blocksSqueezed(part: Polygon, squeezed: BodyId): boolean {
+    return this.near(polygonBounds(part), 0).some(({ what, body, form }) => {
+      switch (form.kind) {
+        case 'terrain':
+          return form.polygons.some((solid) => convexPolygonsOverlap(part, solid));
+        case 'object':
+          if (body === squeezed) return false;
+          return this.parts(body, form).some((solid) => convexPolygonsOverlap(part, solid));
+        case 'capsules':
+          return form.segments.some((segment) =>
+            convexPolygonsOverlap(part, capsulePolygon(segment, form.radius)),
+          );
+        case 'circle':
+          if (what?.thing !== 'rubble') return false;
+          return circleOverlapsPolygon({ centre: this.centre(body), radius: form.radius }, part);
+        case 'capsule':
+          // Patches don't count.
           return false;
       }
     });

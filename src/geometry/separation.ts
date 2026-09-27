@@ -96,13 +96,14 @@ function translate(polygon: Polygon, d: Vec2): Vec2[] {
 
 /**
  * The shortest straight move that takes a body made of convex `parts` clear
- * of every polygon in `from`, to a place that overlaps nothing in `from` or
- * `blocked`. Tries `directions` evenly spread directions; null if none works.
+ * of every polygon in `from`, to a place where no part overlaps anything in
+ * `from` nor is `blocked`. Tries `directions` evenly spread directions; null
+ * if none works.
  */
 export function shortestWayOut(
   parts: readonly Polygon[],
   from: readonly Polygon[],
-  blocked: readonly Polygon[],
+  blocked: (part: Polygon) => boolean,
   margin = 1,
   directions = 48,
 ): Vec2 | null {
@@ -120,16 +121,15 @@ export function shortestWayOut(
   }
   candidates.sort((p, q) => p.distance - q.distance);
 
-  const obstacles = [...from, ...blocked].map((polygon) => ({
-    polygon,
-    bounds: polygonBounds(polygon),
-  }));
+  const obstacles = from.map((polygon) => ({ polygon, bounds: polygonBounds(polygon) }));
   for (const { move } of candidates) {
     const moved = parts.map((part) => translate(part, move));
     const clear = moved.every((part) => {
       const bounds = polygonBounds(part);
-      return obstacles.every(
-        (o) => !boundsOverlap(bounds, o.bounds) || !convexPolygonsOverlap(part, o.polygon),
+      return (
+        obstacles.every(
+          (o) => !boundsOverlap(bounds, o.bounds) || !convexPolygonsOverlap(part, o.polygon),
+        ) && !blocked(part)
       );
     });
     if (clear) return move;

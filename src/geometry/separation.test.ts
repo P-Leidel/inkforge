@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SANDBOX_ARENA } from '../sandbox/arena';
+import { convexPolygonsOverlap } from './overlap';
 import type { Polygon } from './polygon';
 import { bandPolygon, capsulePolygon, shortestWayOut } from './separation';
 
@@ -7,6 +8,14 @@ import { bandPolygon, capsulePolygon, shortestWayOut } from './separation';
  * These pin down today's results exactly: the Squeeze moves Objects by
  * `shortestWayOut`, and replays depend on every move coming out the same.
  */
+
+/** Blocked by any of `polygons`, as the Arena query tests what a squeezed Object must end clear of. */
+const among =
+  (polygons: readonly Polygon[]) =>
+  (part: Polygon): boolean =>
+    polygons.some((polygon) => convexPolygonsOverlap(part, polygon));
+
+const nothing = among([]);
 
 const box = (x: number, y: number, width: number, height: number): Polygon => [
   { x, y },
@@ -30,35 +39,35 @@ const diagonal = capsulePolygon({ a: { x: 280, y: 520 }, b: { x: 420, y: 430 } }
 describe('shortestWayOut', () => {
   it('moves a box straight up off a Line across it, by exactly the same amount', () => {
     // The Squeeze's margin: 0.5 px.
-    expect(shortestWayOut([onGround], [lowLine], [], 0.5)).toEqual({
+    expect(shortestWayOut([onGround], [lowLine], nothing, 0.5)).toEqual({
       x: -2.689527305000702e-15,
       y: -14.641104721640318,
     });
   });
 
   it('ignores what blocks the way only elsewhere', () => {
-    expect(shortestWayOut([onGround], [lowLine], SANDBOX_ARENA.terrain, 0.5)).toEqual({
+    expect(shortestWayOut([onGround], [lowLine], among(SANDBOX_ARENA.terrain), 0.5)).toEqual({
       x: -2.689527305000702e-15,
       y: -14.641104721640318,
     });
   });
 
   it('takes the shortest way for a body of several parts', () => {
-    expect(shortestWayOut(ell, [diagonal], [])).toEqual({
+    expect(shortestWayOut(ell, [diagonal], nothing)).toEqual({
       x: -26.633996909580286,
       y: -46.13143585602547,
     });
   });
 
   it('takes the next shortest way when the shortest one is blocked', () => {
-    expect(shortestWayOut(ell, [diagonal], [box(300, 330, 140, 60)])).toEqual({
+    expect(shortestWayOut(ell, [diagonal], among([box(300, 330, 140, 60)]))).toEqual({
       x: -44.8059299108219,
       y: -34.380799242067354,
     });
   });
 
   it('tries only as many directions as it is given', () => {
-    expect(shortestWayOut([onGround], [lowLine], [], 1, 4)).toEqual({
+    expect(shortestWayOut([onGround], [lowLine], nothing, 1, 4)).toEqual({
       x: -2.7813758149367537e-15,
       y: -15.141104721640318,
     });
@@ -72,7 +81,7 @@ describe('shortestWayOut', () => {
       box(0, 0, 95, 400),
       box(305, 0, 100, 400),
     ];
-    expect(shortestWayOut([box(150, 95, 20, 10)], [tunnel], walls)).toBeNull();
+    expect(shortestWayOut([box(150, 95, 20, 10)], [tunnel], among(walls))).toBeNull();
   });
 });
 

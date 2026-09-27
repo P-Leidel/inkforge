@@ -76,7 +76,7 @@ The player's action of unfreezing an Object during a Wave.
 _Avoid_: Activate, trigger, drop
 
 **Squeeze**:
-What happens to an Object a new Line is drawn across: it slides the shortest way off the Line, passing through Terrain and Lines, then carries on from rest, touching the Line it slid off. It deals and takes no damage while it slides, and what it touches where it stops is Settled.
+What happens to an Object a new Line is drawn across: it slides the shortest way off the Line that leaves it clear of the Terrain, other Objects, Rubble and other Lines, passing through them on the way, then carries on from rest, touching the Line it slid off. It deals and takes no damage while it slides, and what it touches where it stops is Settled.
 _Avoid_: Push-out, overlap
 
 **Eraser**:
