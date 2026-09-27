@@ -66,8 +66,8 @@ The milestone answers one question: **can a player read what a Stroke or a Fill 
 
 ### Modules
 
-- **Ink measure** (pure, `src/materials/`, #58). Says how much Ink a Line, an Outline and a Fill is, in px²: a Line's length × its thickness, an Outline's perimeter × the Line thickness, a Fill's area. Mass, Blasts, Spills and Rubble read from it.
-- **Sandbox world** (milestone 2). Stays free of Ink rules. Its commands report the Ink of what they made or took back (#58). The undo history leaves it: it gains `removeStroke(id)` and `removeFill(id)`, and the Game decides what to take back.
+- **Ink measure** (pure, `src/materials/ink.ts`, done in #59). Says how much Ink a Line, an Outline and a Fill is, in px²: a Line's length × its thickness, an Outline's perimeter × the Line thickness, a Fill's area. Mass, Blasts, Spills and Rubble read from it.
+- **Sandbox world** (milestone 2). Stays free of Ink rules. Its commands report the Ink of what they made or took back (#59). The undo history leaves it: it gains `removeStroke(id)` and `removeFill(id)`, and the Game decides what to take back.
 - **Game** (new, headless, `src/game/`). The rules layer over the Sandbox world. It owns:
   - the Ink Tanks, the prices and the **Ink costs** switch;
   - what each Stroke, Piece and Fill was charged;
@@ -75,7 +75,7 @@ The milestone answers one question: **can a player read what a Stroke or a Fill 
   - the snapshot of all of these that R goes back to.
 
   It issues the Sandbox world's commands and reads the list of what happened to learn what broke or was erased. It never measures Ink itself: it prices the Ink the commands report. See [ADR 0009](../adr/0009-ink-rules-in-a-game-layer.md).
-- **Drawing input** (new, headless, C3). Turns a press, a drag, a release and a hover into commands, and says what the preview and the flash show. It asks the Game what a Stroke or a Fill would cost and whether it can be afforded. It never works out a price itself.
+- **Drawing input** (new, headless, #60). Turns a press, a drag, a release and a hover into commands, and says what the preview and the flash show. It asks the Game what a Stroke or a Fill would cost and whether it can be afforded. It never works out a price itself.
 - **Phaser scene** (milestone 2). Forwards pointer and key events to the drawing input, and draws the gauges.
 - **Gallery, stress tests and verdict.** Unchanged: they build through the Sandbox world, below the Game.
 
@@ -161,14 +161,15 @@ Milestone 3 is done when all three hold:
 
 Vertical slices, one GitHub issue each, linking to this spec. Each slice extends R, Clear and the demos to what it adds, and updates the README's controls table when it adds a control.
 
-Before the slices, two refactors that don't depend on each other:
+Before the slices, two refactors:
 
-- **Ink measured once** (#58). The Ink measure, the commands' Ink outcomes, `removeStroke` and `removeFill`.
-- **Drawing input** (C3). The headless module that turns pointer events into commands. It owns the preview's throttle.
+- **Ink measured once** (#58, done in #59). The Ink measure and the commands' Ink outcomes.
+- **Drawing input** (#60). The headless module that turns pointer events into commands. It owns the preview's throttle.
 
 Then:
 
-1. **Game and Ink Tanks** (blocked by #58). `src/game/`, and the scene talks to the Game instead of the Sandbox world. Covers:
+1. **Game and Ink Tanks** (#61). `src/game/`, and the scene talks to the Game instead of the Sandbox world. Covers:
+   - each Piece's Ink on a Line's outcome, and `removeStroke` and `removeFill` in the Sandbox world;
    - the Tanks and the Ink table;
    - Strokes and Fills charged at full price;
    - refused whole with "Not enough <Colour>";
@@ -178,10 +179,10 @@ Then:
    - plain gauges on the palette;
    - the **Ink costs** switch in F2, off by default;
    - the Tanks in F1.
-2. **Cost previews** (blocked by 1 and C3). The greyed-out pending cost while drawing and on hover over a fillable Object, red when over.
-3. **Overlap charging** (blocked by 2). The free parts, a price per Piece from them, and the free part in the preview.
-4. **Ink section in F2** (blocked by 1). The prices and Tank maximums, live.
-5. **Readable cost and frame rate** (blocked by 3 and 4; for a person, not an agent). The readability test and the Demolition frame rate on the baseline machine.
+2. **Cost previews** (#62, blocked by 1 and #60). The greyed-out pending cost while drawing and on hover over a fillable Object, red when over.
+3. **Overlap charging** (#64, blocked by 2). The free parts, a price per Piece from them, and the free part in the preview.
+4. **Ink section in F2** (#63, blocked by 1). The prices and Tank maximums, live.
+5. **Readable cost and frame rate** (#65, blocked by 3 and 4; for a person, not an agent). The readability test and the Demolition frame rate on the baseline machine.
 
 2 and 4 can run in parallel.
 
