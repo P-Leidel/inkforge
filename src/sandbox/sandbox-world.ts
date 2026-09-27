@@ -313,7 +313,7 @@ export class SandboxWorld {
 
   /**
    * What a Stroke would become if it were submitted now, without adding it.
-   * The scene uses this to show a refused Object in red while drawing.
+   * Drawing input uses this to show a refused Object in red while drawing.
    */
   previewStroke(samples: readonly Vec2[]): StrokeResult {
     return processStroke(samples, this.strokeContext({}));
