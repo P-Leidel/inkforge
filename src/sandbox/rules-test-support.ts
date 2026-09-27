@@ -7,7 +7,9 @@ import type { HostSurface } from './arena-contents';
 import type { BlastSize, Reach } from './blasts';
 import type { NewContact, Party, PartyHit, Touching } from './contact-ledger';
 import type { Landing, LooseDroplet } from './droplets';
+import type { Walker } from './enemies';
 import type { Gluer } from './glue';
+import type { Thing, Why } from './happenings';
 import {
   MaterialRules,
   type Broken,
@@ -108,9 +110,15 @@ export class FakeContacts<T> implements RulesContacts<T> {
   newContacts: NewContact<T>[] = [];
   /** What touches each body now. */
   readonly touches = new Map<BodyId, Touching<T>[]>();
+  /** Which way each touching shape pair faces, towards the body asked about; none by default. */
+  readonly normals = new Map<ContactPair, Vec2>();
 
   touching(body: BodyId): Iterable<Touching<T>> {
     return this.touches.get(body) ?? [];
+  }
+
+  normal(_body: BodyId, pair: ContactPair): Vec2 | null {
+    return this.normals.get(pair) ?? null;
   }
 }
 
@@ -125,9 +133,10 @@ export interface FakeDroplet {
  * Arena contents that record what the rules did to them, in order, in
  * `log`: `break`, `burst`, `rubble`, `droplets`, `blast`, `bond`, `land`,
  * `patch` and `use`, each with what it was handed; `reach` when a Blast
- * spreading reached something, and `used-up` for each Patch removed.
+ * spreading reached something, and `used-up` for each Patch removed;
+ * `walk`, `core` (damage to the Ink Core) and `remove`.
  */
-export class FakeArena<T, S> implements RulesArena<T, S> {
+export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
   /** What breaking each target lets out; a target not in it is already gone. */
   readonly breaks = new Map<T, Broken>();
   readonly droplets = new Map<BodyId, FakeDroplet>();
@@ -142,6 +151,13 @@ export class FakeArena<T, S> implements RulesArena<T, S> {
   glue: ((T & Gluer) | PatchRecord)[] = [];
   /** What the Blasts reach when they next spread, one batch per Blast; handed out once. */
   reaching: Reach<T>[][] = [];
+  /** The Enemies. */
+  walking: W[] = [];
+  /** The Ink Core's Party id. */
+  inkCore = -1;
+  /** What lies below the screen, and beyond the Spawn edge. */
+  below: Thing[] = [];
+  beyond: Thing[] = [];
   readonly log: { readonly what: string; readonly with?: unknown }[] = [];
 
   /** The names of what was done, in order. */
@@ -233,17 +249,47 @@ export class FakeArena<T, S> implements RulesArena<T, S> {
       act(reached);
     }
   }
+
+  walkers(): Iterable<W> {
+    return this.walking;
+  }
+
+  walk(walker: W): void {
+    this.log.push({ what: 'walk', with: walker });
+  }
+
+  isInkCore(party: Party<unknown>): boolean {
+    return party.id === this.inkCore;
+  }
+
+  damageInkCore(damage: number): void {
+    this.log.push({ what: 'core', with: damage });
+  }
+
+  belowScreen(): readonly Thing[] {
+    return this.below;
+  }
+
+  beyondSpawnEdge(): readonly Thing[] {
+    return this.beyond;
+  }
+
+  remove(thing: Thing, why: Why): void {
+    this.log.push({ what: 'remove', with: { thing, why } });
+  }
 }
 
 /** The Material rules over fake ports, with the simulation's generator seeded 1. */
-export function fakeRules<T extends Breakable, S extends Sticker = Sticker>(
-  materials: MaterialTable,
-) {
+export function fakeRules<
+  T extends Breakable,
+  S extends Sticker = Sticker,
+  W extends Walker = Walker,
+>(materials: MaterialTable) {
   const physics = new FakePhysics();
   const contacts = new FakeContacts<T>();
-  const arena = new FakeArena<T, S>();
+  const arena = new FakeArena<T, S, W>();
   const random = new Random(1);
-  const rules = new MaterialRules<T, S>({
+  const rules = new MaterialRules<T, S, W>({
     materials,
     numbers: new Numbers(materials),
     random,

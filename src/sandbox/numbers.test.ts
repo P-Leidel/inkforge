@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createEnemyTable } from '../materials/enemy-table';
 import { createMaterialTable } from '../materials/material-table';
 import { Numbers, type Breakable } from './numbers';
 
@@ -79,5 +80,19 @@ describe("What a thing's numbers are", () => {
     const piece: Breakable = { kind: 'piece', colour: 'blue', damage: 100, impacts: 50 };
 
     expect(new Numbers(table).wear(piece)).toBeCloseTo(0.1);
+  });
+
+  it("gives an Enemy its type's surface from the enemy table; it is not fixed, and never breaks", () => {
+    const enemies = createEnemyTable();
+    enemies.types.crawler.restitution = 0.3;
+
+    const numbers = new Numbers(createMaterialTable(), enemies);
+
+    expect(numbers.of({ kind: 'enemy', type: 'crawler' })).toMatchObject({
+      surface: { friction: 0, restitution: 0.3 },
+      fixed: false,
+      toughness: null,
+    });
+    expect(numbers.enemy('crawler')).toBe(enemies.types.crawler);
   });
 });

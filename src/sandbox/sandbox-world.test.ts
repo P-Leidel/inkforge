@@ -5,6 +5,7 @@ import { capsuleOverlapsPolygon } from '../geometry/overlap';
 import { transformPoints } from '../geometry/transform';
 import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
 import { GRAVITY, SandboxWorld } from './sandbox-world';
+import { FIXED_BODIES } from './test-support';
 
 const worlds: SandboxWorld[] = [];
 function createWorld(seed = 1): SandboxWorld {
@@ -21,25 +22,32 @@ function isTerrain(world: SandboxWorld, point: Vec2): boolean {
 }
 
 describe('Sandbox world: Arena', () => {
-  it('has ground, a wall at each side, a pit and a slope', () => {
+  it('has flat ground from the lane beyond the left edge to a slope, a plateau and a right wall', () => {
     const world = createWorld();
+    const { spawn, core } = world.arena;
 
     expect(isTerrain(world, { x: 500, y: 890 }), 'ground').toBe(true);
     expect(isTerrain(world, { x: 500, y: 870 }), 'air above ground').toBe(false);
-    expect(isTerrain(world, { x: 20, y: 300 }), 'left wall').toBe(true);
+    expect(isTerrain(world, { x: 1000, y: 890 }), 'the pit filled in').toBe(true);
+    expect(isTerrain(world, { x: 20, y: 300 }), 'no left wall').toBe(false);
     expect(isTerrain(world, { x: 1900, y: 300 }), 'right wall').toBe(true);
-    expect(isTerrain(world, { x: 1000, y: 950 }), 'inside the pit').toBe(false);
-    expect(isTerrain(world, { x: 1000, y: 1060 }), 'pit floor').toBe(true);
-    // The slope rises towards the right wall.
+    // The lane: the ground carries on out of view, closed by a wall at its far end.
+    expect(isTerrain(world, { x: -100, y: 890 }), 'the lane').toBe(true);
+    expect(isTerrain(world, { x: -100, y: 870 }), 'air above the lane').toBe(false);
+    expect(isTerrain(world, { x: spawn.x - 1, y: 300 }), 'the far wall').toBe(true);
+    expect(spawn).toEqual({ x: -240, y: 880 });
+    // The slope rises towards a plateau at the right wall, where the Ink Core stands.
     expect(isTerrain(world, { x: 1500, y: 850 })).toBe(true);
-    expect(isTerrain(world, { x: 1800, y: 850 })).toBe(true);
-    expect(isTerrain(world, { x: 1800, y: 700 })).toBe(true);
-    expect(isTerrain(world, { x: 1500, y: 700 })).toBe(false);
+    expect(isTerrain(world, { x: 1500, y: 800 })).toBe(false);
+    expect(isTerrain(world, { x: 1700, y: 740 })).toBe(true);
+    expect(isTerrain(world, { x: 1800, y: 720 })).toBe(true);
+    expect(isTerrain(world, { x: 1800, y: 700 })).toBe(false);
+    expect(core).toEqual({ minX: 1784, minY: 614, maxX: 1880, maxY: 710 });
   });
 
-  it('simulates the Terrain as one fixed body', () => {
+  it('simulates the Terrain as one fixed body, and the Ink Core as another', () => {
     const world = createWorld();
-    expect(world.bodyCount).toBe(1);
+    expect(world.bodyCount).toBe(FIXED_BODIES);
   });
 });
 
@@ -145,7 +153,7 @@ describe('Sandbox world: Lines', () => {
 
     expect(outcome.kind).toBe('line');
     expect(world.lines).toHaveLength(1);
-    expect(world.bodyCount).toBe(1 + world.lines[0]!.pieces.length); // Terrain + a body per Piece
+    expect(world.bodyCount).toBe(FIXED_BODIES + world.lines[0]!.pieces.length); // a body per Piece
   });
 
   it('keeps a Line where it was drawn, even in mid-air, while physics runs', () => {
@@ -187,7 +195,7 @@ describe('Sandbox world: Lines', () => {
 
     expect(outcome.kind).toBe('dropped');
     expect(world.lines).toHaveLength(0);
-    expect(world.bodyCount).toBe(1);
+    expect(world.bodyCount).toBe(FIXED_BODIES);
   });
 });
 
@@ -218,7 +226,7 @@ describe('Sandbox world: remove and clear', () => {
     world.clear();
 
     expect(world.lines).toHaveLength(0);
-    expect(world.bodyCount).toBe(1);
+    expect(world.bodyCount).toBe(FIXED_BODIES);
   });
 });
 
@@ -247,7 +255,7 @@ describe('Sandbox world: Objects', () => {
 
     expect(world.objects).toHaveLength(1);
     expect(objectById(world, id).frozen).toBe(true);
-    expect(world.bodyCount).toBe(2);
+    expect(world.bodyCount).toBe(FIXED_BODIES + 1);
   });
 
   it('keeps a Frozen Object where it was drawn while physics runs', () => {
@@ -336,7 +344,7 @@ describe('Sandbox world: Objects', () => {
 
     world.clear();
     expect(world.objects).toHaveLength(0);
-    expect(world.bodyCount).toBe(1);
+    expect(world.bodyCount).toBe(FIXED_BODIES);
   });
 });
 

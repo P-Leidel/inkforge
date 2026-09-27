@@ -189,6 +189,23 @@ describe('World renderer: render budget', () => {
     renderer.destroy();
   });
 
+  it('replays a few dozen drawing calls per Enemy, however many there are', () => {
+    const world = createWorld();
+    const { recording, renderer } = renderWorld(world);
+    renderer.draw();
+    const empty = recording.replayed;
+
+    world.spawn('crawler');
+    renderer.draw();
+    const one = recording.replayed - empty;
+    for (let k = 0; k < 9; k++) world.spawn('crawler');
+    renderer.draw();
+
+    expect(one).toBeLessThan(40);
+    expect(recording.replayed - empty).toBe(10 * one);
+    renderer.destroy();
+  });
+
   it('replays nothing for Lines and Objects that stand still, however many there are', () => {
     const world = createWorld();
     const recording = new RecordingScene();

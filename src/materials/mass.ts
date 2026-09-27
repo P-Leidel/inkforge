@@ -1,5 +1,6 @@
 import type { Polygon } from '../geometry/polygon';
 import type { Colour } from './colour';
+import type { EnemyMaterial } from './enemy-table';
 import { fillInk, outlineInk } from './ink';
 import type { MaterialTable } from './material-table';
 
@@ -17,6 +18,11 @@ export function outlineMass(outline: Polygon, colour: Colour, table: MaterialTab
 export function fillMass(outline: Polygon, fill: Colour | null, table: MaterialTable): number {
   if (!fill) return 0;
   return table.inkMass * fillInk(outline) * table.colours[fill].fill.density;
+}
+
+/** An Enemy weighs its body's box, width × height, as ink of its type's density. */
+export function enemyMass(enemy: EnemyMaterial, table: MaterialTable): number {
+  return table.inkMass * enemy.width * enemy.height * enemy.density;
 }
 
 export function objectMass(

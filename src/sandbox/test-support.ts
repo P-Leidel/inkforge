@@ -15,6 +15,9 @@ import {
  * import this module.
  */
 
+/** The bodies an empty Arena has: the Terrain and the Ink Core, which stay through Clear. */
+export const FIXED_BODIES = 2;
+
 /** A factory for Sandbox worlds that are disposed after each test. */
 export function sandboxWorlds(): (options?: SandboxWorldOptions) => SandboxWorld {
   const worlds: SandboxWorld[] = [];

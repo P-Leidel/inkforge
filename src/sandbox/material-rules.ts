@@ -14,7 +14,9 @@ import {
 } from './blasts';
 import { pairKey, type ContactLedger, type Party } from './contact-ledger';
 import { packSpill, type Landing, type LooseDroplet } from './droplets';
+import type { Walker } from './enemies';
 import { Glue, type Gluer } from './glue';
+import type { Thing, Why } from './happenings';
 import type { Breakable, Numbers } from './numbers';
 import type { PatchRecord } from './patches';
 import type { Random } from './random';
@@ -23,18 +25,22 @@ import { Sticking, type Sticker } from './sticking';
 
 /**
  * Material rules: everything Colour-specific that follows from things
- * touching, breaking and exploding. Headless and part of the Sandbox world.
- * After each physics step the world makes one call, `step`, and they run
- * every consequence in their own order: they read the contacts that count
+ * touching, breaking and exploding, and the Enemies' walking. Headless and
+ * part of the Sandbox world. Before each physics step the world calls
+ * `walk`, and after it one call, `step`, and they run every consequence in
+ * their own order: they read the contacts that count
  * from the Contact ledger (hits, new contacts, touching) and what the Blasts
  * reached, and decide damage from any cause and the blue counter, what
  * breaks, what a break lets out (Debris, Rubble, a Spill, a Blast), what a
  * Blast wakes and pushes, glue drag and wear, Patch wear, what sticks and
- * where a Droplet lands. What a thing's numbers are they ask `Numbers`. They
- * carry their decisions out through two narrow ports the world wires up: the
- * physics module, and the Arena (its kinds and Debris). Glue
- * drag (`Glue`) and sticking (`Sticking`) are parts of them in files of
- * their own; the world only talks to `MaterialRules`.
+ * where a Droplet lands. For Enemies they decide whether one stands on
+ * something it can walk on, before each step, and what follows from where
+ * it is after: reaching the Ink Core, dying below the screen. What a
+ * thing's numbers are they ask `Numbers`. They carry their decisions out
+ * through two narrow ports the world wires up: the physics module, and the
+ * Arena (its kinds and Debris). Glue drag (`Glue`) and sticking (`Sticking`)
+ * are parts of them in files of their own; the world only talks to
+ * `MaterialRules`.
  */
 
 /** Damage an impact deals to a receiver: the impulse above its threshold, times k. */
@@ -64,6 +70,18 @@ export function fuseBurns(colour: Colour, table: MaterialTable): boolean {
   if (line.explodes <= 0) return false;
   const strength = blastStrength(pieceBlastSize(table), table.pieceLength);
   return impactDamage(strength, line.damageThreshold, table.damagePerImpulse) >= line.durability;
+}
+
+/** The steepest surface (radians from level) an Enemy stands on: anything steeper it presses. */
+export const STEEPEST_FLOOR = Math.PI / 4;
+
+/**
+ * Floor or not: whether an Enemy stands on a surface it touches, given the
+ * unit contact normal pointing from the surface towards the Enemy. It does
+ * on one no steeper than `STEEPEST_FLOOR`; anything steeper it presses.
+ */
+export function isFloor(normal: Vec2): boolean {
+  return -normal.y >= Math.cos(STEEPEST_FLOOR) - 1e-9;
 }
 
 /** What damages a Breakable. */
@@ -143,15 +161,18 @@ export type RulesPhysics = Pick<
 >;
 
 /** The contacts that count, as the Contact ledger gives them after each step. */
-export type RulesContacts<T> = Pick<ContactLedger<T>, 'hits' | 'newContacts' | 'touching'>;
+export type RulesContacts<T> = Pick<
+  ContactLedger<T>,
+  'hits' | 'newContacts' | 'touching' | 'normal'
+>;
 
 /**
  * What the Material rules' decisions do to the Arena contents, wired by the
  * Sandbox world to its kinds and its Debris. Each call carries out a
- * decision; none decides anything. `T` is what takes damage and `S` what
- * may stick.
+ * decision; none decides anything. `T` is what takes damage, `S` what
+ * may stick and `W` what walks.
  */
-export interface RulesArena<T, S> {
+export interface RulesArena<T, S, W> {
   /** Removes a broken Object or Piece and says what it lets out; null if it is already gone. */
   break(target: T): Broken | null;
   /** Bursts Debris, which is visual only. */
@@ -187,9 +208,23 @@ export interface RulesArena<T, S> {
    * a Blast `act` starts spreads in the same call.
    */
   spreadBlasts(seconds: number, act: (reached: readonly Reach<T>[]) => void): void;
+  /** Every Enemy, oldest first. */
+  walkers(): Iterable<W>;
+  /** Pushes an Enemy through the next step of `seconds` toward its walking speed: it walks. */
+  walk(walker: W, seconds: number): void;
+  /** Whether a Party is the Ink Core. */
+  isInkCore(party: Party<unknown>): boolean;
+  /** Takes `damage` off the Ink Core's HP. */
+  damageInkCore(damage: number): void;
+  /** What lies wholly below the bottom of the screen, oldest first. */
+  belowScreen(): readonly Thing[];
+  /** What lies wholly out of view over the Spawn edge, oldest first. */
+  beyondSpawnEdge(): readonly Thing[];
+  /** Removes a thing at once, for `why`: it breaks, bursts and releases nothing. */
+  remove(thing: Thing, why: Why): void;
 }
 
-export interface MaterialRulesOptions<T, S> {
+export interface MaterialRulesOptions<T, S, W> {
   readonly materials: MaterialTable;
   /** What a thing's numbers are. */
   readonly numbers: Numbers;
@@ -197,7 +232,7 @@ export interface MaterialRulesOptions<T, S> {
   readonly random: Random;
   readonly physics: RulesPhysics;
   readonly contacts: RulesContacts<T>;
-  readonly arena: RulesArena<T, S>;
+  readonly arena: RulesArena<T, S, W>;
 }
 
 /** Whether a gluer is a Patch, which glues through its one shape, rather than a Piece. */
@@ -207,13 +242,13 @@ const isPatch = (gluer: Gluer): gluer is PatchRecord => gluer.shape !== undefine
  * The Material rules' entry point: the Sandbox world calls `step` once after
  * each physics step, and the rules run their phases in their own order.
  */
-export class MaterialRules<T extends Breakable, S extends Sticker> {
+export class MaterialRules<T extends Breakable, S extends Sticker, W extends Walker> {
   private readonly materials: MaterialTable;
   private readonly numbers: Numbers;
   private readonly random: Random;
   private readonly physics: RulesPhysics;
   private readonly contacts: RulesContacts<T>;
-  private readonly arena: RulesArena<T, S>;
+  private readonly arena: RulesArena<T, S, W>;
   private readonly glueDrag: Glue;
   private readonly sticking: Sticking;
 
@@ -224,7 +259,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
     physics,
     contacts,
     arena,
-  }: MaterialRulesOptions<T, S>) {
+  }: MaterialRulesOptions<T, S, W>) {
     this.materials = materials;
     this.numbers = numbers;
     this.random = random;
@@ -233,6 +268,28 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
     this.arena = arena;
     this.glueDrag = new Glue(materials, physics, contacts, (shape) => !!arena.patchOf(shape));
     this.sticking = new Sticking(materials, physics, contacts);
+  }
+
+  /**
+   * Before each physics step of `seconds`: every Enemy standing on
+   * something it can walk on walks, oldest first. One in the air, or only
+   * on what is too steep, doesn't push.
+   */
+  walk(seconds: number): void {
+    for (const walker of this.arena.walkers()) {
+      if (this.stands(walker)) this.arena.walk(walker, seconds);
+    }
+  }
+
+  /** Whether an Enemy touches, now, a surface it stands on (`isFloor`). */
+  private stands({ body }: W): boolean {
+    for (const { pairs } of this.contacts.touching(body)) {
+      for (const pair of pairs) {
+        const normal = this.contacts.normal(body, pair);
+        if (normal && isFloor(normal)) return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -247,11 +304,11 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
    * breaks a worn-out Piece at once; the Blasts spread, and what they break
    * breaks as they do; and the used-up Patches go.
    *
-   * The Enemies' phases slot in around these: pressing and floor wear is a
-   * breaking cause like hits, so its breaks join `broken` before sticking;
-   * after the used-up Patches go come Enemies reaching the Ink Core, kills,
-   * Drops (which draw from the generator) and removing what went out over
-   * the Spawn edge, in that order.
+   * Then come the Enemies' phases: Enemies reaching the Ink Core, kills
+   * below the screen, and removing what went out over the Spawn edge, in
+   * that order. (Pressing and floor wear, a breaking cause like hits, will
+   * join `broken` before sticking; Drops, which draw from the generator,
+   * will come after kills.)
    */
   step(seconds: number): void {
     const broken = this.impacts();
@@ -261,6 +318,41 @@ export class MaterialRules<T extends Breakable, S extends Sticker> {
     this.glue(seconds);
     this.arena.spreadBlasts(seconds, this.blastReached);
     this.arena.removeUsedUpPatches();
+    this.reachInkCore();
+    this.killBelowScreen();
+    this.removeBeyondSpawnEdge();
+  }
+
+  /**
+   * Every Enemy touching the Ink Core deals it its type's core damage and
+   * disappears, oldest first.
+   */
+  private reachInkCore(): void {
+    const reached = [...this.arena.walkers()].filter(({ body }) =>
+      [...this.contacts.touching(body)].some(({ party }) => this.arena.isInkCore(party)),
+    );
+    for (const { id, type } of reached) {
+      this.arena.damageInkCore(this.numbers.enemy(type).coreDamage);
+      this.arena.remove({ thing: 'enemy', id }, 'reached');
+    }
+  }
+
+  /** Every Enemy wholly below the bottom of the screen dies. */
+  private killBelowScreen(): void {
+    for (const thing of this.arena.belowScreen()) {
+      if (thing.thing === 'enemy') this.arena.remove(thing, 'died');
+    }
+  }
+
+  /**
+   * Anything but an Enemy wholly out of view over the Spawn edge is
+   * removed, as a Droplet that leaves the Arena is: it breaks, bursts,
+   * releases and sets off nothing. An Enemy there walks in again.
+   */
+  private removeBeyondSpawnEdge(): void {
+    for (const thing of this.arena.beyondSpawnEdge()) {
+      if (thing.thing !== 'enemy') this.arena.remove(thing, 'left');
+    }
   }
 
   /**

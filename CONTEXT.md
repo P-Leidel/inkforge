@@ -165,7 +165,7 @@ The rules layer over the Sandbox world: the Ink Tanks, what Strokes and Fills co
 _Avoid_: Controller, manager
 
 **Arena contents**:
-Everything the simulation tracks and Reset brings back: Strokes (with their Pieces and Fills), Rubble, Bonds, Droplets, Patches, Blasts still spreading, and later enemies. Debris is not part of it.
+Everything the simulation tracks and Reset brings back: the Ink Core's HP, Strokes (with their Pieces and Fills), Rubble, Enemies, Bonds, Droplets, Patches and Blasts still spreading. Debris is not part of it.
 _Avoid_: Entities, world state
 
 **Settled**:

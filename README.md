@@ -31,20 +31,23 @@ CI runs lint, format check, typecheck, tests and build on every push and pull re
 
 ## Playing the sandbox
 
-| Action                                                      | Input                         |
-| ----------------------------------------------------------- | ----------------------------- |
-| Pick a Colour (grey, blue, green, black, red)               | Keys 1–5 or click the palette |
-| Draw a Line (open Stroke)                                   | Hold the left button and drag |
-| Draw an Object (end near the start)                         | Drag back to the green marker |
-| Fill an Object with the picked Colour                       | Click inside it (no drag)     |
-| Run / pause physics                                         | Space                         |
-| Reset to when physics last started                          | R                             |
-| Release a Frozen Object (while running)                     | Right-click it                |
-| Undo the last Stroke or Fill still there, and refund it     | Ctrl+Z                        |
-| Erase what the brush passes over (for testing)              | E or the palette, then drag   |
-| Stats; press again for colliders, durability, Blast rings   | F1                            |
-| Copy the stats, with browser and GPU                        | F3                            |
-| Tuning panel (Ink costs, Ink table and material table live) | F2                            |
+| Action                                                    | Input                         |
+| --------------------------------------------------------- | ----------------------------- |
+| Pick a Colour (grey, blue, green, black, red)             | Keys 1–5 or click the palette |
+| Draw a Line (open Stroke)                                 | Hold the left button and drag |
+| Draw an Object (end near the start)                       | Drag back to the green marker |
+| Fill an Object with the picked Colour                     | Click inside it (no drag)     |
+| Run / pause physics                                       | Space                         |
+| Reset to when physics last started                        | R                             |
+| Release a Frozen Object (while running)                   | Right-click it                |
+| Undo the last Stroke or Fill still there, and refund it   | Ctrl+Z                        |
+| Erase what the brush passes over (for testing)            | E or the palette, then drag   |
+| Stats; press again for colliders, durability, Blast rings | F1                            |
+| Copy the stats, with browser and GPU                      | F3                            |
+| Send in a Crawler from the Spawn, paused or running       | Shift+1                       |
+| Tuning panel (Ink costs, Ink, material and enemy tables)  | F2                            |
+
+**Enemies** walk in from the **Spawn**, beyond the left edge: the ground carries on out of view as a lane about 240 px long, closed by a wall at its far end, and a small arrow at the left edge shows where they come in. Shift+1 sends in a **Crawler**, a grey-brown box that stands upright and never turns. It walks toward the **Ink Core**, the glowing block on the plateau at the top right, pushed by a force toward its walking speed that is never more than its push, one times its own weight ([ADR 0010](docs/adr/0010-enemies-walk-by-capped-force.md)). It only pushes while it stands on something no steeper than 45°, so it climbs the slope and rides up onto a Line lying on the ground, but not a steeper ramp, where it stops and presses. Enemies collide with each other, so one queues behind another; glue drags them like any moving body, and Blasts push them. One that touches the Ink Core takes 1 of its 10 HP and disappears; the bar above the Ink Core shows what is left. Only Enemies damage it. An Enemy that falls below the bottom of the screen dies. One thrown back over the left edge walks in again, but anything else that goes wholly out of view over it is removed, like a Droplet leaving the Arena: no Debris, no Fill comes out, red doesn't go off and nothing is refunded. Nothing can be drawn beyond the left edge: a Line that runs past it is cut there, and an Object reaching past it is refused. R brings back the Enemies as they were and the Ink Core's HP, and Clear removes the Enemies and makes the Ink Core whole. The numbers live in the enemy table ([`src/materials/enemy-table.ts`](src/materials/enemy-table.ts)), in F2's **Enemies** section. There is no damage, wear or Drop yet: those come later in milestone 4.
 
 The Eraser is a testing tool of the sandbox, not part of the game. It removes whatever its brush (12 px) touches: a whole Object with its Fill, the Pieces of a Line it crosses (the rest stays), Rubble, Droplets and Patches. Erasing isn't breaking: no Debris, no Fill comes out and red doesn't explode, but a green Object stuck to what was erased falls free. It works paused and running; R brings back what was erased while running, and erased Strokes are gone from undo. It refunds the Ink paid for what it removes (see Ink, below). Keys 1–5 go back to drawing.
 
@@ -72,7 +75,7 @@ Drawing a Line through an Object, moving or Frozen, squeezes the Object off the 
 
 Every time physics starts, the sandbox takes a snapshot, and R takes the world back to it and pauses, so you can build, watch it play out and try again. A retry plays out exactly like the first run: every start rebuilds the physics world from its snapshot. R brings back broken Objects and Pieces with the damage they had. Contacts touching when physics starts deal no damage until they come apart, so pressing Space never breaks a build. Undo removes what's left of a Line and skips Strokes that have broken completely, and Clear also sweeps away the Debris.
 
-F2 opens a panel with an **Ink** section and every number of the material table. The Ink section holds the **Ink costs** switch and the Game's Ink table ([`src/game/ink-table.ts`](src/game/ink-table.ts)): `linePrice` and `fillPrice`, what a unit of a Line or an Outline and of a Fill costs, and each Colour's Tank maximum, in Line length. The material table ([`src/materials/material-table.ts`](src/materials/material-table.ts)) holds friction, bounce, density, durability, damage threshold, impact limit, glue drag and wear, and whether an Outline sticks or a Line or Outline explodes, per Colour and role, a Fill's kick speed, the size and number of its Rubble, whether it spills or explodes and how bounces wear its Patches, and the shared constants such as the Piece length, damage per impulse, the Rubble cap, the kick's spread, the Droplets' count and size, the Patches' length, thickness, capacity and cap, and the Blasts' speed, size, push and top push speed, and a Piece's Blast's fixed reach and strength. Edits survive R and Clear and are lost on reload; **Copy as JSON** copies both tables, the material table under `materials` and the Ink table under `ink`, each to paste back over its defaults in the code. Changed values are outlined in yellow, and **Defaults** puts them all back. Each kind of edit takes effect at its own time:
+F2 opens a panel with an **Ink** section, every number of the material table and an **Enemies** section. The Ink section holds the **Ink costs** switch and the Game's Ink table ([`src/game/ink-table.ts`](src/game/ink-table.ts)): `linePrice` and `fillPrice`, what a unit of a Line or an Outline and of a Fill costs, and each Colour's Tank maximum, in Line length. The material table ([`src/materials/material-table.ts`](src/materials/material-table.ts)) holds friction, bounce, density, durability, damage threshold, impact limit, glue drag and wear, and whether an Outline sticks or a Line or Outline explodes, per Colour and role, a Fill's kick speed, the size and number of its Rubble, whether it spills or explodes and how bounces wear its Patches, and the shared constants such as the Piece length, damage per impulse, the Rubble cap, the kick's spread, the Droplets' count and size, the Patches' length, thickness, capacity and cap, and the Blasts' speed, size, push and top push speed, and a Piece's Blast's fixed reach and strength. The Enemies section is the enemy table ([`src/materials/enemy-table.ts`](src/materials/enemy-table.ts)): per Enemy type its size, density, friction and bounce, walking speed, push, pressing rate, HP, damage threshold, core damage and Drop ranges, and the shared floor wear, Ink Core HP and Core Zone size. Edits survive R and Clear and are lost on reload; **Copy as JSON** copies the three tables, the material table under `materials`, the Ink table under `ink` and the enemy table under `enemies`, each to paste back over its defaults in the code. Changed values are outlined in yellow, and **Defaults** puts them all back. Each kind of edit takes effect at its own time:
 
 | Field                                   | Takes effect                          |
 | --------------------------------------- | ------------------------------------- |
@@ -84,6 +87,9 @@ F2 opens a panel with an **Ink** section and every number of the material table.
 | `patchCapacity`                         | at once, and it rescales worn Patches |
 | `linePrice`, `fillPrice`                | next Stroke or Fill                   |
 | Tank maximums                           | at once                               |
+| an Enemy's walking speed, push          | next step                             |
+| an Enemy's size, density                | next one sent in                      |
+| Ink Core HP                             | next Clear                            |
 
 A price edit leaves what was already charged at its price, so undo still refunds what was paid. Lowering a Tank maximum empties the Tank down to it at once, and no refund or R fills it beyond it; raising one leaves the Tank as it is, and Clear fills it.
 

@@ -11,7 +11,15 @@ import {
 import type { BodyId, ShapeId } from '../physics';
 import { blastSize, blastStrength, pieceBlastSize, type Reach } from './blasts';
 import { TERRAIN_PARTY, type NewContact, type Party, type PartyHit } from './contact-ledger';
-import { fuseBurns, impactDamage, wakes, type Broken } from './material-rules';
+import type { Walker } from './enemies';
+import {
+  fuseBurns,
+  impactDamage,
+  isFloor,
+  STEEPEST_FLOOR,
+  wakes,
+  type Broken,
+} from './material-rules';
 import { Numbers, type Breakable } from './numbers';
 import { fakePatch, fakeRules } from './rules-test-support';
 import { WAITING, type Sticker } from './sticking';
@@ -789,5 +797,95 @@ describe('Material rules: the order of a step', () => {
 
     expect(arena.done).toEqual(['break', 'burst', 'use', 'reach', 'used-up']);
     expect(physics.log.at(-1)).toBe('impulse 4');
+  });
+});
+
+describe('Floor or not', () => {
+  /** The normal of a surface `degrees` steep, pointing from it up towards what stands on it. */
+  const up = (degrees: number, facing = 1): Vec2 => {
+    const turn = (degrees * Math.PI) / 180;
+    return { x: -facing * Math.sin(turn), y: -Math.cos(turn) };
+  };
+
+  it('stands on a surface no steeper than 45°, either way it slopes, and presses a steeper one', () => {
+    expect(STEEPEST_FLOOR).toBeCloseTo(Math.PI / 4, 12);
+    for (const facing of [1, -1]) {
+      expect(isFloor(up(0, facing))).toBe(true);
+      expect(isFloor(up(44, facing))).toBe(true);
+      expect(isFloor(up(45, facing))).toBe(true);
+      expect(isFloor(up(46, facing))).toBe(false);
+      expect(isFloor(up(90, facing))).toBe(false);
+    }
+    expect(isFloor({ x: 0, y: 1 })).toBe(false); // a ceiling
+  });
+});
+
+describe('Material rules: Enemies', () => {
+  const crawler = (id: number): Walker => ({ id, body: (100 + id) as BodyId, type: 'crawler' });
+  const party = (id: number, body = id): Party<Breakable> => ({
+    id,
+    stroke: id,
+    body: body as BodyId,
+    target: null,
+  });
+  const pair = (a: number, b: number) => ({
+    bodyA: a as BodyId,
+    bodyB: b as BodyId,
+    shapeA: a as ShapeId,
+    shapeB: b as ShapeId,
+  });
+
+  it('walks each Enemy that stands on something, before the step, and not one in the air or on a wall', () => {
+    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const [onGround, inAir, onWall] = [crawler(1), crawler(2), crawler(3)];
+    arena.walking = [onGround, inAir, onWall];
+    const ground = pair(0, 101);
+    const wall = pair(0, 103);
+    contacts.touches.set(onGround.body, [{ party: party(TERRAIN_PARTY), pairs: [ground] }]);
+    contacts.touches.set(onWall.body, [{ party: party(TERRAIN_PARTY), pairs: [wall] }]);
+    contacts.normals.set(ground, { x: 0, y: -1 });
+    contacts.normals.set(wall, { x: -1, y: 0 });
+
+    rules.walk(STEP);
+
+    expect(arena.handed('walk')).toEqual([onGround]);
+  });
+
+  it('lets an Enemy touching the Ink Core deal it its core damage and disappear', () => {
+    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const [reaching, walking] = [crawler(1), crawler(2)];
+    arena.walking = [reaching, walking];
+    arena.inkCore = 50;
+    contacts.touches.set(reaching.body, [{ party: party(50), pairs: [pair(50, 101)] }]);
+
+    rules.step(STEP);
+
+    expect(arena.log.slice(-2)).toEqual([
+      { what: 'core', with: 1 },
+      { what: 'remove', with: { thing: { thing: 'enemy', id: 1 }, why: 'reached' } },
+    ]);
+  });
+
+  it('kills an Enemy below the screen, and removes anything but an Enemy beyond the Spawn edge', () => {
+    const { rules, arena } = fakeRules<Breakable>(createMaterialTable());
+    arena.below = [
+      { thing: 'object', id: 7 },
+      { thing: 'enemy', id: 1 },
+    ];
+    arena.beyond = [
+      { thing: 'enemy', id: 2 },
+      { thing: 'object', id: 8 },
+      { thing: 'rubble', id: 3, colour: 'grey', radius: 6 },
+    ];
+
+    rules.step(STEP);
+
+    expect(arena.handed('remove')).toEqual([
+      { thing: { thing: 'enemy', id: 1 }, why: 'died' },
+      { thing: { thing: 'object', id: 8 }, why: 'left' },
+      { thing: { thing: 'rubble', id: 3, colour: 'grey', radius: 6 }, why: 'left' },
+    ]);
+    expect(arena.handed('break')).toEqual([]);
+    expect(arena.handed('blast')).toEqual([]);
   });
 });

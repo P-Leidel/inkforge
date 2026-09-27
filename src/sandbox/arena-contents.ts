@@ -82,7 +82,10 @@ export interface Motion {
   readonly angularVelocity: number;
 }
 
-export function motionOf(physics: PhysicsWorld, body: BodyId): Motion {
+export function motionOf(
+  physics: Pick<PhysicsWorld, 'getTransform' | 'getVelocity' | 'getAngularVelocity'>,
+  body: BodyId,
+): Motion {
   return {
     transform: physics.getTransform(body),
     velocity: physics.getVelocity(body),

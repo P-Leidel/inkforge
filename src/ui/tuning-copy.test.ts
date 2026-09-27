@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../game/game';
 import { DEFAULT_INK_TABLE } from '../game/ink-table';
+import { createEnemyTable, DEFAULT_ENEMY_TABLE } from '../materials/enemy-table';
 import { createMaterialTable, DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { numberPaths } from '../materials/table-paths';
 import { tablesAsJson } from './tuning-copy';
@@ -13,7 +14,13 @@ describe("The tuning panel's Copy as JSON", () => {
       ink.tanks.red = 800;
     });
 
-    const pasted = JSON.parse(tablesAsJson({ materials: createMaterialTable(), ink: game.ink }));
+    const pasted = JSON.parse(
+      tablesAsJson({
+        materials: createMaterialTable(),
+        ink: game.ink,
+        enemies: createEnemyTable(),
+      }),
+    );
 
     expect(numberPaths(pasted.ink)).toEqual(numberPaths(DEFAULT_INK_TABLE));
     expect(pasted.ink).toEqual(game.ink);
@@ -29,9 +36,24 @@ describe("The tuning panel's Copy as JSON", () => {
     const materials = createMaterialTable();
     materials.colours.blue.line.restitution = 0.5;
 
-    const pasted = JSON.parse(tablesAsJson({ materials, ink: DEFAULT_INK_TABLE }));
+    const pasted = JSON.parse(
+      tablesAsJson({ materials, ink: DEFAULT_INK_TABLE, enemies: createEnemyTable() }),
+    );
 
     expect(numberPaths(pasted.materials)).toEqual(numberPaths(DEFAULT_MATERIAL_TABLE));
     expect(pasted.materials).toEqual(materials);
+  });
+
+  it('holds the enemy table under `enemies`, in the shape of its defaults', () => {
+    const enemies = createEnemyTable();
+    enemies.types.crawler.walkingSpeed = 75;
+    enemies.types.crawler.drop.red.max = 20;
+
+    const pasted = JSON.parse(
+      tablesAsJson({ materials: createMaterialTable(), ink: DEFAULT_INK_TABLE, enemies }),
+    );
+
+    expect(numberPaths(pasted.enemies)).toEqual(numberPaths(DEFAULT_ENEMY_TABLE));
+    expect(pasted.enemies).toEqual(enemies);
   });
 });

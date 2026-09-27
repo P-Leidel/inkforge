@@ -10,6 +10,7 @@ import {
   drawLine,
   drawObject,
   entriesOf,
+  FIXED_BODIES,
   hear,
   objectById,
   runFor,
@@ -296,7 +297,7 @@ describe('Rubble and the Sandbox controls', () => {
 
     world.clear();
     expect(world.rubble).toHaveLength(0);
-    expect(world.bodyCount).toBe(1); // the Terrain
+    expect(world.bodyCount).toBe(FIXED_BODIES);
   });
 
   it('Reset brings back Rubble released before physics last started, where it was', () => {

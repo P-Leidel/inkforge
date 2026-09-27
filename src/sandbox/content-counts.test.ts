@@ -19,6 +19,7 @@ describe('Content counts', () => {
       { name: 'lines', count: 1 },
       { name: 'objects', count: 2 },
       { name: 'rubble', count: 0 },
+      { name: 'enemies', count: 0 },
       { name: 'bonds', count: 0 },
       { name: 'droplets', count: 0 },
       { name: 'patches', count: 0 },

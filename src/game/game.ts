@@ -1,6 +1,7 @@
 import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import type { EnemyType } from '../materials/enemy-table';
 import {
   SandboxWorld,
   type AddedStroke,
@@ -331,6 +332,16 @@ export class Game {
   /** Releases the Frozen Object under `point`, if physics is running. */
   releaseAt(point: Vec2): boolean {
     return this.world.releaseAt(point);
+  }
+
+  /**
+   * Sends in an Enemy of `type` from the Spawn, paused or running: Shift+1.
+   * It costs nothing and is not in the undo history.
+   */
+  spawn(type: EnemyType): void {
+    this.catchUp();
+    this.world.spawn(type);
+    this.catchUp();
   }
 
   /**

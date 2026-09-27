@@ -8,6 +8,7 @@ import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import type { Game } from './game';
 import { fromLineLength, inLineLength } from './ink-table';
 import { games } from './test-support';
+import { FIXED_BODIES } from '../sandbox/test-support';
 
 /** A Game over a new Sandbox world. Every test says whether Ink costs are on. */
 const createGame = games();
@@ -428,7 +429,7 @@ describe('Undo refunds exactly what was paid, with Ink costs on', () => {
 
     game.undo(); // nothing left: does nothing
     for (const [k, tank] of tanks(game).entries()) expect(tank).toBeCloseTo(full(game)[k]!, 6);
-    expect(game.world.bodyCount).toBe(1);
+    expect(game.world.bodyCount).toBe(FIXED_BODIES);
   });
 
   it("for a Line with broken Pieces, only the standing Pieces' share", () => {
@@ -743,7 +744,7 @@ describe('R, with Ink costs on', () => {
     expect(game.world.lines).toEqual([]);
     expect(tanks(game)).toEqual(full(game));
     game.undo(); // and nothing more: the Fill and the green Line came after the start
-    expect(game.world.bodyCount).toBe(1);
+    expect(game.world.bodyCount).toBe(FIXED_BODIES);
     expect(tanks(game)).toEqual(full(game));
   });
 
@@ -874,3 +875,35 @@ function seeded(seed: number): () => number {
     return state / 2 ** 32;
   };
 }
+
+describe('Enemies in the Game', () => {
+  it('sends a Crawler in for free, paused or running, and undo leaves it be', () => {
+    const game = createGame(true);
+    const before = game.tanks;
+
+    game.spawn('crawler');
+    game.togglePause();
+    game.spawn('crawler');
+    game.undo();
+
+    expect(game.world.enemies).toHaveLength(2);
+    expect(game.tanks).toEqual(before);
+    expect(game.history).toEqual([]);
+  });
+
+  it('lets R bring back the Enemies and the Ink Core’s HP, and Clear remove them', () => {
+    const game = createGame(true);
+    game.spawn('crawler');
+    game.togglePause();
+    for (let step = 0; step < 40 * 60; step++) game.step();
+    expect(game.world.enemies).toEqual([]);
+    expect(game.world.inkCore.hp).toBe(9);
+
+    game.reset();
+    expect(game.world.enemies).toHaveLength(1);
+    expect(game.world.inkCore.hp).toBe(10);
+
+    game.clear();
+    expect(game.world.enemies).toEqual([]);
+  });
+});

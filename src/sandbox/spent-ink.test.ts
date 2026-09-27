@@ -3,7 +3,15 @@ import { fillInk, lineInk, outlineInk } from '../materials/ink';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import type { MadeStroke, SandboxWorld } from './sandbox-world';
-import { drawLine, drawObject, hear, objectById, runFor, sandboxWorlds } from './test-support';
+import {
+  drawLine,
+  drawObject,
+  FIXED_BODIES,
+  hear,
+  objectById,
+  runFor,
+  sandboxWorlds,
+} from './test-support';
 
 const createWorld = sandboxWorlds();
 
@@ -123,7 +131,7 @@ describe('What a declined Stroke would have spent', () => {
     expect(outcome.path[0]!.x).toBeCloseTo(200, 0);
     expect(outcome.path.at(-1)!.x).toBeCloseTo(680, 0);
     expect(world.lines).toEqual([]);
-    expect(world.bodyCount).toBe(1);
+    expect(world.bodyCount).toBe(FIXED_BODIES);
     expect(heard()).toEqual([]);
   });
 

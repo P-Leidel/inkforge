@@ -1,5 +1,11 @@
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import {
+  createEnemyTable,
+  enemiesRevision,
+  type EnemyTable,
+  type EnemyType,
+} from '../materials/enemy-table';
 import { samplesInk, type SamplesInk } from '../materials/ink';
 import {
   createMaterialTable,
@@ -21,7 +27,9 @@ import { Blasts, type BlastView } from './blasts';
 import { Bonds, type BondView } from './bonds';
 import { ContactLedger, type PartyId, type SavedContacts } from './contact-ledger';
 import { Droplets, type DropletView } from './droplets';
-import { Happenings, type Thing } from './happenings';
+import { Enemies, type EnemyRecord, type EnemyView } from './enemies';
+import { Happenings, type Thing, type Why } from './happenings';
+import { InkCore, type InkCoreView } from './ink-core';
 import { MaterialRules } from './material-rules';
 import { Numbers } from './numbers';
 import { Patches, type PatchView } from './patches';
@@ -47,7 +55,9 @@ export type { BlastView } from './blasts';
 export type { Poses } from './arena-contents';
 export type { BondView } from './bonds';
 export type { DropletView } from './droplets';
+export type { EnemyView } from './enemies';
 export type { Entry, Happening, Reader, Thing, Why } from './happenings';
+export type { InkCoreView } from './ink-core';
 export type { PatchView } from './patches';
 export type { RubbleView } from './rubble';
 export {
@@ -100,22 +110,33 @@ export interface FillOptions {
 }
 
 /**
- * Every kind of Arena contents, in the fixed order they are rebuilt in:
- * Strokes, Rubble, Bonds, Droplets, Patches, then Blasts. A kind that lives
- * on another, or acts on it, comes after it.
+ * Every kind of Arena contents, in the fixed order they are rebuilt in: the
+ * Ink Core, Strokes, Rubble, Enemies, Bonds, Droplets, Patches, then
+ * Blasts. A kind that lives on another, or acts on it, comes after it.
  */
-type Kinds = readonly [Strokes, Rubble, Bonds, Droplets, Patches, Blasts<StrokeTarget>];
+type Kinds = readonly [
+  InkCore,
+  Strokes,
+  Rubble,
+  Enemies,
+  Bonds,
+  Droplets,
+  Patches,
+  Blasts<StrokeTarget>,
+];
 
 /**
  * The order the Eraser removes what it touches in, by rank: kind order, an
- * Object before a Piece, each oldest first. Every Thing has a rank.
+ * Object before a Piece, each oldest first. Every Thing has a rank, though
+ * the Eraser never touches an Enemy.
  */
 const ERASE_ORDER: Readonly<Record<Thing['thing'], number>> = {
   object: 0,
   piece: 1,
   rubble: 2,
-  droplet: 3,
-  patch: 4,
+  enemy: 3,
+  droplet: 4,
+  patch: 5,
 };
 
 /** A kind as the Sandbox world runs it, over every kind alike. */
@@ -144,14 +165,16 @@ export interface SandboxWorldOptions {
   readonly arena?: Arena;
   /** The material table to read; defaults to a fresh copy of the defaults. */
   readonly materials?: MaterialTable;
+  /** The enemy table to read; defaults to a fresh copy of the defaults. */
+  readonly enemies?: EnemyTable;
 }
 
 /**
  * The headless sandbox: the Arena and its contents, the pause state, and
  * Reset. It has no rendering dependency, so it is the main testing seam.
- * Each kind of Arena contents is a module of its own (`Strokes`, `Rubble`,
- * `Bonds`, `Droplets`, `Patches`, `Blasts`); the world runs them all, in a
- * fixed order. They add and remove bodies through Arena bodies, which tells
+ * Each kind of Arena contents is a module of its own (`InkCore`, `Strokes`,
+ * `Rubble`, `Enemies`, `Bonds`, `Droplets`, `Patches`, `Blasts`); the world
+ * runs them all, in a fixed order. They add and remove bodies through Arena bodies, which tells
  * every kind what went as it goes, and the Arena query answers what is
  * where from them. The Contact ledger decides which contacts count, and the
  * Material rules read it and decide every consequence, in their own order:
@@ -164,7 +187,8 @@ export class SandboxWorld {
   readonly arena: Arena;
   readonly random: Random;
   readonly materials: MaterialTable;
-  /** What a thing's numbers are, from the material table as it is now. */
+  readonly enemyTable: EnemyTable;
+  /** What a thing's numbers are, from the material and enemy tables as they are now. */
   private readonly numbers: Numbers;
   /** What happened, in order: read it through a reader of your own. */
   readonly happenings = new Happenings(() => this.elapsed);
@@ -173,11 +197,13 @@ export class SandboxWorld {
   private readonly bodies: ArenaBodies<StrokeTarget>;
   /** What is where: every question about place. */
   private readonly query: ArenaQuery;
-  private readonly rules: MaterialRules<StrokeTarget, ObjectStroke>;
+  private readonly rules: MaterialRules<StrokeTarget, ObjectStroke, EnemyRecord>;
   /** Each body's pose as the latest step began, for drawing: the simulation never reads it. */
   private readonly poses: PreviousPoses;
+  private readonly inkCoreKind: InkCore;
   private readonly strokes: Strokes;
   private readonly rubbleKind: Rubble;
+  private readonly enemiesKind: Enemies;
   private readonly bondsKind: Bonds;
   private readonly dropletsKind: Droplets;
   private readonly patchesKind: Patches;
@@ -186,8 +212,8 @@ export class SandboxWorld {
   private readonly kinds: readonly AnyKind[];
   /** Taken whenever physics starts; R returns to it. */
   private snapshot: Snapshot | null = null;
-  /** The material table's revision last applied to the physics world; none yet. */
-  private appliedRevision = -1;
+  /** The material and enemy tables' revisions last applied to the physics world; none yet. */
+  private appliedRevisions: readonly number[] = [];
   private running = false;
   private accumulator = 0;
   private elapsed = 0;
@@ -198,7 +224,8 @@ export class SandboxWorld {
     this.arena = options.arena ?? SANDBOX_ARENA;
     this.random = new Random(options.seed ?? 1);
     this.materials = options.materials ?? createMaterialTable();
-    this.numbers = new Numbers(this.materials);
+    this.enemyTable = options.enemies ?? createEnemyTable();
+    this.numbers = new Numbers(this.materials, this.enemyTable);
     this.physics = createPhysicsWorld({
       gravity: { x: 0, y: GRAVITY },
       timeStep: STEP_SECONDS,
@@ -218,15 +245,28 @@ export class SandboxWorld {
     this.poses = new PreviousPoses(this.physics);
     this.bodies.addTerrain(this.arena.terrain);
     const { physics, materials, numbers, arena, bodies, query, poses } = this;
+    this.inkCoreKind = new InkCore(arena, this.enemyTable, bodies);
     this.strokes = new Strokes(physics, materials, numbers, bodies, query, poses, say);
     this.rubbleKind = new Rubble(physics, materials, bodies, poses);
+    this.enemiesKind = new Enemies(
+      physics,
+      materials,
+      numbers,
+      arena,
+      bodies,
+      query,
+      poses,
+      GRAVITY,
+    );
     this.bondsKind = new Bonds(physics, this.contacts, poses);
     this.dropletsKind = new Droplets(physics, materials, arena, bodies, poses);
     this.patchesKind = new Patches(physics, materials, bodies, poses);
     this.blastsKind = new Blasts(query, this.materials, this.contacts);
     const kinds: Kinds = [
+      this.inkCoreKind,
       this.strokes,
       this.rubbleKind,
+      this.enemiesKind,
       this.bondsKind,
       this.dropletsKind,
       this.patchesKind,
@@ -260,6 +300,13 @@ export class SandboxWorld {
         stickers: () => this.strokes.objectRecords(),
         gluers: () => [...this.strokes.pieces(), ...this.patchesKind.gluers()],
         spreadBlasts: (seconds, act) => this.blastsKind.spread(seconds, act),
+        walkers: () => this.enemiesKind.walkers(),
+        walk: (enemy, seconds) => this.enemiesKind.walk(enemy, seconds),
+        isInkCore: (party) => this.inkCoreKind.is(party.id),
+        damageInkCore: (damage) => this.inkCoreKind.damage(damage),
+        belowScreen: () => this.query.below(this.arena.height),
+        beyondSpawnEdge: () => this.query.beyondSpawnEdge(),
+        remove: (thing, why) => this.removeThing(thing, why),
       },
     });
   }
@@ -334,6 +381,24 @@ export class SandboxWorld {
   /** Blast rings still spreading, oldest first. */
   get blasts(): readonly BlastView[] {
     return this.blastsKind.views;
+  }
+
+  /** Enemies, oldest first. */
+  get enemies(): readonly EnemyView[] {
+    return this.enemiesKind.views;
+  }
+
+  /** The Ink Core and its HP. */
+  get inkCore(): InkCoreView {
+    return this.inkCoreKind.views;
+  }
+
+  /**
+   * Sends in an Enemy of `type` from the Spawn, beyond the left edge,
+   * paused or running. Returns its id.
+   */
+  spawn(type: EnemyType): number {
+    return this.enemiesKind.spawn(type);
   }
 
   /**
@@ -448,21 +513,29 @@ export class SandboxWorld {
     const touched = this.query.touchedBy({ path, radius });
     const rank = (thing: Thing) => ERASE_ORDER[thing.thing];
     // What went with a host erased before it is already gone, and stays so.
-    for (const thing of touched.sort((p, q) => rank(p) - rank(q))) this.erase(thing);
+    for (const thing of touched.sort((p, q) => rank(p) - rank(q))) {
+      this.removeThing(thing, 'erased');
+    }
   }
 
-  private erase(thing: Thing): void {
+  /**
+   * Removes one thing at once, for `why`, by its kind: nothing bursts,
+   * releases its Fill or sets off a Blast.
+   */
+  private removeThing(thing: Thing, why: Why): void {
     switch (thing.thing) {
       case 'object':
-        return this.strokes.remove(thing.id, 'erased');
+        return this.strokes.remove(thing.id, why);
       case 'piece':
-        return this.strokes.removePiece(thing.id, thing.index, 'erased');
+        return this.strokes.removePiece(thing.id, thing.index, why);
       case 'rubble':
-        return this.rubbleKind.remove(thing.id, 'erased');
+        return this.rubbleKind.remove(thing.id, why);
+      case 'enemy':
+        return this.enemiesKind.remove(thing.id, why);
       case 'droplet':
-        return this.dropletsKind.remove(thing.id, 'erased');
+        return this.dropletsKind.remove(thing.id, why);
       case 'patch':
-        return this.patchesKind.remove(thing.id, 'erased');
+        return this.patchesKind.remove(thing.id, why);
     }
   }
 
@@ -484,8 +557,9 @@ export class SandboxWorld {
   }
 
   /**
-   * Removes every Stroke and Fill, the Rubble, Droplets, Patches and Blasts;
-   * the Terrain stays. R has nothing to go back to. Nothing is left touching
+   * Removes every Stroke and Fill, the Rubble, Enemies, Droplets, Patches
+   * and Blasts; the Terrain and the Ink Core stay, and the Ink Core is whole
+   * again. R has nothing to go back to. Nothing is left touching
    * or Settled, since every kind unregisters its bodies. It starts over: the
    * Debris goes too.
    */
@@ -558,14 +632,15 @@ export class SandboxWorld {
   }
 
   /**
-   * Applies edits to the material table from the next step, when its
-   * revision has moved on. Densities are left out: an Object's mass is set
-   * when it is drawn or filled.
+   * Applies edits to the material and enemy tables from the next step, when
+   * either's revision has moved on. Densities and sizes are left out: an
+   * Object's mass is set when it is drawn or filled, and an Enemy's when it
+   * is sent in.
    */
   private applyMaterials(): void {
-    const revision = materialsRevision(this.materials);
-    if (revision === this.appliedRevision) return;
-    this.appliedRevision = revision;
+    const revisions = [materialsRevision(this.materials), enemiesRevision(this.enemyTable)];
+    if (revisions.every((revision, k) => revision === this.appliedRevisions[k])) return;
+    this.appliedRevisions = revisions;
     this.physics.setWakeSpeed(this.materials.wakeSpeed);
     this.physics.setMinBounceSpeed(this.materials.minBounceSpeed);
     this.bodies.applySurfaces();
@@ -585,15 +660,17 @@ export class SandboxWorld {
   }
 
   /**
-   * Advances physics by one fixed step, if running. The Material rules then
-   * run every consequence in their own order, and each kind takes its turn.
-   * This order must not change: exact replays depend on every engine call
-   * and every draw from `random` coming in the same order.
+   * Advances physics by one fixed step, if running. The Enemies walk first,
+   * as the Material rules decide; after the step the rules run every
+   * consequence in their own order, and each kind takes its turn. This order
+   * must not change: exact replays depend on every engine call and every
+   * draw from `random` coming in the same order.
    */
   step(): void {
     if (!this.running) return;
     this.poses.remember(this.contacts.bodies());
     this.applyMaterials();
+    this.rules.walk(STEP_SECONDS);
     this.contacts.step(this.physics.step());
     this.elapsed += STEP_SECONDS;
     this.stepsTaken++;

@@ -7,6 +7,7 @@ import {
   drawLine,
   drawObject,
   entriesOf,
+  FIXED_BODIES,
   hear,
   objectById,
   runFor,
@@ -78,7 +79,7 @@ describe('Lines break Piece by Piece', () => {
       expect(piece.durability).toBe(GREY_LINE);
       expect(piece.wear).toBe(0);
     }
-    expect(world.bodyCount).toBe(1 + 10);
+    expect(world.bodyCount).toBe(FIXED_BODIES + 10);
   });
 
   it('breaks a grey Piece after hard hits, and the rest of the Line stays fixed', () => {
@@ -228,7 +229,7 @@ describe('Taking back, Clear and Reset after a Piece has broken', () => {
     world.removeStroke(id);
 
     expect(world.lines.map((l) => l.id)).toEqual([earlier]);
-    expect(world.bodyCount).toBe(1 + lineById(world, earlier).pieces.length);
+    expect(world.bodyCount).toBe(FIXED_BODIES + lineById(world, earlier).pieces.length);
     expect(world.lines.some((l) => l.id === id)).toBe(false);
   });
 
@@ -309,7 +310,7 @@ describe('Taking back, Clear and Reset after a Piece has broken', () => {
     world.clear();
 
     expect(world.lines).toHaveLength(0);
-    expect(world.bodyCount).toBe(1);
+    expect(world.bodyCount).toBe(FIXED_BODIES);
     expect(heard().map((entry) => entry.kind)).toEqual(['start-over']);
   });
 });

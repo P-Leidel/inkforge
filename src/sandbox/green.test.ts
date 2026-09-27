@@ -45,7 +45,7 @@ describe('Glue drag', () => {
   it('slows a light ball crossing green more than a heavy one, and one on grey hardly at all', () => {
     const world = createWorld();
     floor(world, 700, 100, 900, 'green');
-    floor(world, 700, 1000, 1800, 'grey');
+    floor(world, 700, 1000, 1752, 'grey');
     const light = ballOnFloor(world, 200);
     const heavy = ballOnFloor(world, 500, 'black');
     const onGrey = ballOnFloor(world, 1100);
@@ -63,7 +63,7 @@ describe('Glue drag', () => {
     const world = createWorld();
     world.materials.colours.green.line.durability = 250;
     const green = floor(world, 700, 100, 900, 'green');
-    const grey = floor(world, 700, 1000, 1800, 'grey');
+    const grey = floor(world, 700, 1000, 1752, 'grey');
     const count = world.lines.map((line) => line.pieces.length);
     const onGreen = ballOnFloor(world, 200, 'black');
     ballOnFloor(world, 1100, 'black');

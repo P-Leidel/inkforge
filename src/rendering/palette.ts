@@ -11,6 +11,20 @@ export const PALETTE = {
   eraser: 0xe8e2d0,
   rejected: 0xff5a5a,
   debug: 0x39ff88,
+  /** The arrow at the left edge where Enemies come in. */
+  spawn: 0xf0c05a,
+  /** A Crawler's body and outline, placeholder art. */
+  crawler: 0x7a6450,
+  crawlerEdge: 0x3e3127,
+  enemyEye: 0xf2e6c8,
+  /** The Ink Core: a glowing block. */
+  core: 0x6fe3ff,
+  coreEdge: 0xe8fbff,
+  coreGlow: 0x6fe3ff,
+  /** An HP bar's empty part, and its full part while whole and once low. */
+  hpEmpty: 0x16171b,
+  hpFull: 0x62d98b,
+  hpLow: 0xff5a5a,
   crack: 0x16171b,
   /** Cracks on black ink, which a dark crack wouldn't show on. */
   crackOnBlack: 0xc9ced8,

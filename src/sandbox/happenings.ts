@@ -25,6 +25,7 @@ export type Thing =
       readonly radius: number;
     }
   | { readonly thing: 'droplet'; readonly id: number }
+  | { readonly thing: 'enemy'; readonly id: number }
   /** A Patch, with its centre line in its host's own coordinates. */
   | {
       readonly thing: 'patch';
@@ -45,8 +46,15 @@ export type Why =
   | 'capped'
   /** A Droplet landed, and left a Patch. */
   | 'landed'
-  /** A Droplet left the Arena. */
+  /**
+   * It left the Arena: a Droplet off any edge, or anything but an Enemy
+   * wholly out of view over the Spawn edge.
+   */
   | 'left'
+  /** An Enemy reached the Ink Core. */
+  | 'reached'
+  /** An Enemy died: it fell below the bottom of the screen. */
+  | 'died'
   /** A Patch was used up. */
   | 'used-up'
   /** A Patch went with its host's body. */

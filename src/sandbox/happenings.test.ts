@@ -116,7 +116,8 @@ describe('What the Sandbox world says happened', () => {
     const why = (thing: string) =>
       new Set(went.filter(({ what }) => what.thing === thing).map(({ why }) => why));
     expect(why('object')).toEqual(new Set(['broke']));
-    expect(why('droplet')).toEqual(new Set(['landed']));
+    // With no wall at the left edge, some Droplets fly out over it.
+    expect(new Set(['landed', 'left'])).toEqual(new Set([...why('droplet'), 'landed', 'left']));
     // Every Object that broke burst into Debris, and so did every Piece.
     const broke = went.filter(({ why }) => why === 'broke').length;
     expect(entriesOf(entries, 'burst')).toHaveLength(broke);

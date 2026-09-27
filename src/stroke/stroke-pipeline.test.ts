@@ -136,13 +136,28 @@ describe('Stroke pipeline: Lines', () => {
   });
 
   it('cuts a Line into two where it passes through Terrain', () => {
+    // Ground with a pit from 900 to 1100.
+    const pitted = terrainOnly([
+      [
+        { x: 0, y: 880 },
+        { x: 900, y: 880 },
+        { x: 900, y: 1080 },
+        { x: 0, y: 1080 },
+      ],
+      [
+        { x: 1100, y: 880 },
+        { x: 1900, y: 880 },
+        { x: 1900, y: 1080 },
+        { x: 1100, y: 1080 },
+      ],
+    ]);
     // Runs along y = 1000 through the pit: inside ground | air in the pit | inside ground.
     const result = processStroke(
       drag([
         { x: 800, y: 1000 },
         { x: 1200, y: 1000 },
       ]),
-      context,
+      pitted,
     );
 
     const points = linePoints(result);
@@ -153,14 +168,14 @@ describe('Stroke pipeline: Lines', () => {
   it('cuts a Line where it enters a wall', () => {
     const result = processStroke(
       drag([
-        { x: 10, y: 400 },
-        { x: 300, y: 400 },
+        { x: 1600, y: 400 },
+        { x: 1910, y: 400 },
       ]),
       context,
     );
 
     const points = linePoints(result);
-    expect(Math.min(...points.map((p) => p.x))).toBeCloseTo(40, 3);
+    expect(Math.max(...points.map((p) => p.x))).toBeCloseTo(1880, 3);
   });
 
   it('drops a Line drawn entirely inside Terrain', () => {

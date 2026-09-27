@@ -4,6 +4,7 @@ import { GALLERY, type Demo } from '../gallery/gallery';
 import { Game } from '../game/game';
 import { DrawingInput } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
+import { ENEMY_TYPES } from '../materials/enemy-table';
 import { DebugOverlay } from '../debug/debug-overlay';
 import { FrameRecorder } from '../debug/frame-times';
 import { flashRejection } from '../rendering/rejection-flash';
@@ -22,6 +23,8 @@ import type { StressTest } from '../stress-tests/stress-test';
 
 /** Keys 1–5 pick the Colours in palette order. */
 const COLOUR_KEYS = new Map(COLOURS.map((colour, k) => [String(k + 1), colour]));
+/** Shift+1, Shift+2, ... send in the Enemy types in order, by the key's place on any layout. */
+const ENEMY_KEYS = new Map(ENEMY_TYPES.map((type, k) => [`Digit${k + 1}`, type]));
 
 /**
  * The sandbox scene: forwards pointer and tool events to drawing input,
@@ -55,7 +58,7 @@ export class SandboxScene extends Phaser.Scene {
     this.gameLayer = new Game({ inkCosts: false });
     this.world = this.gameLayer.world;
     this.drawing = new DrawingInput(this.gameLayer);
-    this.tuning = new TuningPanel(this.world.materials, this.gameLayer);
+    this.tuning = new TuningPanel(this.world.materials, this.world.enemyTable, this.gameLayer);
     this.worldView = new WorldRenderer(this, this.world);
     this.preview = new StrokePreview(this);
     this.overlay = new DebugOverlay(this, this.gameLayer, this.frames, this.worldView);
@@ -123,6 +126,11 @@ export class SandboxScene extends Phaser.Scene {
   private bindKeys(): void {
     const keyboard = this.input.keyboard!;
     keyboard.on('keydown', (event: KeyboardEvent) => {
+      const enemy = event.shiftKey ? ENEMY_KEYS.get(event.code) : undefined;
+      if (enemy) {
+        this.gameLayer.spawn(enemy);
+        return;
+      }
       const colour = COLOUR_KEYS.get(event.key);
       if (colour) this.drawing.pick(colour);
       else if (event.key.toLowerCase() === 'e' && !event.ctrlKey && !event.metaKey) {

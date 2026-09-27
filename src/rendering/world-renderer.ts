@@ -16,6 +16,8 @@ import { BlastsDrawing } from './kinds/blasts-drawing';
 import { BondsDrawing } from './kinds/bonds-drawing';
 import { DropletsDrawing } from './kinds/droplets-drawing';
 import { stepsSince, type DrawnKind } from './kinds/drawn-kind';
+import { EnemiesDrawing } from './kinds/enemies-drawing';
+import { InkCoreDrawing } from './kinds/ink-core-drawing';
 import { LinesDrawing } from './kinds/lines-drawing';
 import { ObjectsDrawing } from './kinds/objects-drawing';
 import { PatchesDrawing } from './kinds/patches-drawing';
@@ -27,6 +29,10 @@ type Graphics = Phaser.GameObjects.Graphics;
 const DEBRIS_DEPTH = 5;
 /** Seed of the Debris' own random generator, apart from the simulation's. */
 const DEBRIS_SEED = 0x0deb415;
+/** The Spawn arrow at the left edge: how far above the ground it points in, and its size. */
+const SPAWN_ARROW_RISE = 60;
+const SPAWN_ARROW_LENGTH = 22;
+const SPAWN_ARROW_WIDTH = 24;
 
 /** The ids of what the renderer holds a drawing for. */
 export interface Held {
@@ -37,8 +43,9 @@ export interface Held {
 }
 
 /**
- * Draws the Sandbox world's state: Terrain, Lines, Objects, Rubble, Patches,
- * Droplets, bonds, Debris and Blast rings.
+ * Draws the Sandbox world's state: Terrain and the Spawn arrow, the Ink
+ * Core, Lines, Objects, Rubble, Enemies, Patches, Droplets, bonds, Debris
+ * and Blast rings.
  *
  * Each kind of Arena contents is drawn by a module of its own (`kinds/`),
  * which makes, bakes again and frees its own drawings from the world's list
@@ -86,6 +93,8 @@ export class WorldRenderer {
     this.rubble = new RubbleDrawing(this.baked, world.materials, () => world.rubble);
     this.drawTerrain(scene.add.graphics());
     this.debrisGraphics = scene.add.graphics().setDepth(DEBRIS_DEPTH);
+    const inkCore = new InkCoreDrawing(scene, () => world.inkCore);
+    const enemies = new EnemiesDrawing(scene, () => world.enemies);
     const bonds = new BondsDrawing(scene, () => world.bonds);
     const droplets = new DropletsDrawing(scene, () => world.droplets);
     const blasts = new BlastsDrawing(scene, () => world.blasts);
@@ -97,7 +106,17 @@ export class WorldRenderer {
       (outline, velocity, colours, time) =>
         this.debris.burst(outline, velocity, colours, stepsSince(time, this.world.time)),
     );
-    this.kinds = [this.lines, this.objects, this.rubble, this.patches, droplets, bonds, blasts];
+    this.kinds = [
+      inkCore,
+      this.lines,
+      this.objects,
+      this.rubble,
+      enemies,
+      this.patches,
+      droplets,
+      bonds,
+      blasts,
+    ];
   }
 
   /** Frees the textures, and stops reading what happens. */
@@ -122,6 +141,7 @@ export class WorldRenderer {
     };
   }
 
+  /** The Terrain, and the Spawn arrow at the left edge, where Enemies come in. */
   private drawTerrain(g: Graphics): void {
     g.fillStyle(PALETTE.terrainFill, 1);
     g.lineStyle(2, PALETTE.terrainEdge, 1);
@@ -129,6 +149,13 @@ export class WorldRenderer {
       fillPolygon(g, polygon);
       strokePolygon(g, polygon);
     }
+    const y = this.world.arena.spawn.y - SPAWN_ARROW_RISE;
+    g.fillStyle(PALETTE.spawn, 0.8);
+    fillPolygon(g, [
+      { x: 4, y: y - SPAWN_ARROW_WIDTH / 2 },
+      { x: 4 + SPAWN_ARROW_LENGTH, y },
+      { x: 4, y: y + SPAWN_ARROW_WIDTH / 2 },
+    ]);
   }
 
   draw(): void {

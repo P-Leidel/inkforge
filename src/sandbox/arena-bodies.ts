@@ -94,10 +94,24 @@ export interface CircleBody {
   readonly bullet?: boolean;
 }
 
+/** Where an Enemy's body is, and how it starts. It never rotates, and is never Frozen. */
+export interface EnemyBody {
+  /** World position of its centre. */
+  readonly position: Vec2;
+  /** Its outline relative to its centre: one convex polygon. */
+  readonly outline: Polygon;
+  readonly mass: number;
+  /** Linear velocity, px/s. */
+  readonly velocity?: Vec2;
+}
+
 /** Who a new body is, given the body: a kind builds its record around it. */
 type Who<P> = (body: BodyId) => P;
 
-/** What an added body or shape is, for the list of what happened; none for the Terrain. */
+/**
+ * What an added body or shape is, for the list of what happened; none for
+ * the Terrain and the Ink Core.
+ */
 type What = Thing | null;
 
 /**
@@ -115,12 +129,14 @@ export type Form =
   | { readonly kind: 'object'; readonly outline: Polygon; readonly parts: readonly Polygon[] }
   /** Rubble or a Droplet: a circle about the origin. */
   | { readonly kind: 'circle'; readonly radius: number }
+  /** An Enemy: an upright rounded box, the one convex polygon it collides with. */
+  | { readonly kind: 'enemy'; readonly outline: Polygon }
   /** A Patch: one capsule, on its host. */
   | { readonly kind: 'capsule'; readonly segment: Segment; readonly radius: number };
 
 /** A body or an added shape, as the Arena query finds it. */
 export interface Figure {
-  /** What it is; null for the Terrain. */
+  /** What it is; null for the Terrain and the Ink Core. */
   readonly what: Thing | null;
   /** Its body: for an added shape, its host's, which it moves with. */
   readonly body: BodyId;
@@ -136,7 +152,10 @@ export interface AddedShape {
 
 interface BodyEntry extends Figure {
   readonly party: PartyId;
-  /** What it is, which gives its surface; null for the Terrain, whose surface never changes. */
+  /**
+   * What it is, which gives its surface; null for the Terrain and the Ink
+   * Core, whose surface never changes.
+   */
   readonly type: ThingType | null;
   /** Whether a Patch can be laid on it. */
   readonly lands: boolean;
@@ -158,6 +177,7 @@ function surfaceOfForm(form: Form): HostSurface | null {
     case 'terrain':
       return { kind: 'polygons', polygons: form.polygons };
     case 'object':
+    case 'enemy':
       return { kind: 'polygons', polygons: [form.outline] };
     case 'capsules':
       return { kind: 'capsules', segments: form.segments, radius: form.radius };
@@ -205,6 +225,20 @@ export class ArenaBodies<T> {
     this.contacts.register({ id: TERRAIN_PARTY, stroke: TERRAIN_PARTY, body, target: null });
   }
 
+  /**
+   * Adds the Ink Core, a fixed block with the Terrain's surface, as Party
+   * `party`. To the Arena query it is solid like the Terrain; it takes no
+   * damage from hits, and like the Terrain it stays through Clear.
+   */
+  addInkCore(block: Polygon, party: PartyId): void {
+    const body = this.physics.addBody({
+      shapes: { kind: 'polygons', polygons: [block] },
+      surface: TERRAIN_SURFACE,
+    });
+    this.track(body, party, null, null, { kind: 'terrain', polygons: [block] }, true);
+    this.contacts.register({ id: party, stroke: party, body, target: null });
+  }
+
   /** Adds a fixed Line body with `type`'s surface; Patches lie along its capsules. */
   addLine<P extends Party<T>>(
     segments: readonly Segment[],
@@ -245,6 +279,21 @@ export class ArenaBodies<T> {
     });
     const form: Form = { kind: 'object', outline, parts: def.parts };
     return this.register(body, type, form, what, who);
+  }
+
+  /**
+   * Adds an Enemy with `type`'s surface: an upright body a walking force
+   * drives, whose hits wake Frozen Objects. Patches lie along its outline.
+   */
+  addEnemy<P extends Party<T>>(def: EnemyBody, type: ThingType, what: Thing, who: Who<P>): P {
+    const body = this.physics.addBody({
+      shapes: { kind: 'polygons', polygons: [def.outline] },
+      surface: this.numbers.surface(type),
+      position: def.position,
+      motion: { mass: def.mass, velocity: def.velocity, wakes: true, upright: true, driven: true },
+      reportsHits: true,
+    });
+    return this.register(body, type, { kind: 'enemy', outline: def.outline }, what, who);
   }
 
   /**
@@ -412,14 +461,15 @@ export class ArenaBodies<T> {
   }
 
   /**
-   * Removes every added shape, then every body but the Terrain, in the order
-   * they were added, telling no kind and saying nothing: Clear, where every
-   * kind forgets all of itself, and the Sandbox world says it starts over.
+   * Removes every added shape, then every body but the Terrain and the Ink
+   * Core, in the order they were added, telling no kind and saying nothing:
+   * Clear, where every kind forgets all of itself, and the Sandbox world
+   * says it starts over.
    */
   clear(): void {
     for (const shape of [...this.shapes.keys()]) this.dropShape(shape);
-    for (const { body, party } of [...this.bodies.values()]) {
-      if (party === TERRAIN_PARTY) continue;
+    for (const { body, what } of [...this.bodies.values()]) {
+      if (!what) continue; // the Terrain or the Ink Core
       this.bodies.delete(body);
       this.physics.removeBody(body);
       this.contacts.unregister(body);
