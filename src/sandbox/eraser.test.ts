@@ -188,21 +188,6 @@ describe('Eraser', () => {
     expect(world.patches).toEqual(left);
   });
 
-  it('takes erased Strokes out of the undo history', () => {
-    const world = createWorld();
-    const first = boxOnGround(world, 300);
-    boxOnGround(world, 500);
-    const line = shelf(world);
-
-    eraseAt(world, { x: 500, y: 848 });
-    eraseAt(world, onPiece(0));
-    world.undo(); // what is left of the Line
-    expect(world.lines).toEqual([]);
-    world.undo(); // not the erased box, but the one before it
-    expect(world.objects).toEqual([]);
-    expect(line).toBeGreaterThan(first);
-  });
-
   it('brings back what was erased while running with R', () => {
     const world = createWorld();
     shelf(world);

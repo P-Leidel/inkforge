@@ -1,31 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
+import type { Game } from '../game/game';
+import { games } from '../game/test-support';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
-import { drawLine, objectById, runFor, sandboxWorlds } from '../sandbox/test-support';
+import { drawLine, objectById } from '../sandbox/test-support';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
 import { DrawingInput, ERASER_RADIUS, type DrawingCommands, type Flash } from './drawing-input';
 
-const createWorld = sandboxWorlds();
+const createGame = games();
 
 /**
- * Drawing input over a real Sandbox world, with a count of the refusal
- * previews it asked for and every path it erased along.
+ * Drawing input over a real Game, with a count of the refusal previews it
+ * asked for and every path it erased along.
  */
-function drawingOver(world: SandboxWorld) {
+function drawingOver(game: Game) {
   const asked = { previews: 0, erased: [] as Vec2[][] };
   const commands: DrawingCommands = {
-    submitStroke: (samples, colour) => world.submitStroke(samples, colour),
+    submitStroke: (samples, colour) => game.submitStroke(samples, colour),
     previewStroke: (samples) => {
       asked.previews++;
-      return world.previewStroke(samples);
+      return game.previewStroke(samples);
     },
-    fillAt: (point, colour) => world.fillAt(point, colour),
-    releaseAt: (point) => world.releaseAt(point),
+    fillAt: (point, colour) => game.fillAt(point, colour),
+    releaseAt: (point) => game.releaseAt(point),
     eraseAlong: (path, radius) => {
       asked.erased.push([...path]);
-      world.eraseAlong(path, radius);
+      game.eraseAlong(path, radius);
     },
-    undo: () => world.undo(),
+    undo: () => game.undo(),
   };
   return { input: new DrawingInput(commands), asked };
 }
@@ -52,8 +54,9 @@ const inBox = { x: 400, y: 430 };
 describe('Drawing input', () => {
   describe('a press, a drag and a release', () => {
     it('turns a drag into a Line in the picked Colour', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
       input.pick('blue');
 
       const flash = drag(
@@ -70,8 +73,9 @@ describe('Drawing input', () => {
     });
 
     it('turns a closing drag into an Object', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
 
       box(world, input);
 
@@ -80,8 +84,9 @@ describe('Drawing input', () => {
     });
 
     it('fills the Object under a click in the picked Colour', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
       const id = box(world, input);
       input.pick('red');
 
@@ -91,8 +96,9 @@ describe('Drawing input', () => {
     });
 
     it('draws a Line for a short drag inside an Object, and leaves it hollow', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
       const id = box(world, input);
 
       drag(
@@ -108,8 +114,9 @@ describe('Drawing input', () => {
     });
 
     it('carries a Stroke on in a Colour picked while drawing it', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
       const samples = dragAlong([
         { x: 200, y: 500 },
         { x: 500, y: 500 },
@@ -125,8 +132,9 @@ describe('Drawing input', () => {
     });
 
     it('takes back the most recent Stroke on undo', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
       box(world, input);
 
       input.undo();
@@ -137,8 +145,9 @@ describe('Drawing input', () => {
 
   describe('flashes', () => {
     it('flashes the Outline of an Object already filled, closed, with "Already filled" at the pointer', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
       const id = box(world, input);
       click(input, inBox);
 
@@ -158,8 +167,9 @@ describe('Drawing input', () => {
     });
 
     it('flashes a rejected Stroke along its path, with its reason at the pointer', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
       box(world, input);
       const over = dragBox(390, 420, 60, 60);
 
@@ -173,9 +183,42 @@ describe('Drawing input', () => {
       expect(world.objects).toHaveLength(1);
     });
 
+    it('flashes "Not enough <Colour>" along a Stroke its Tank can\'t pay for, and draws nothing', () => {
+      const game = createGame(true);
+      const world = game.world;
+      const { input } = drawingOver(game);
+      input.pick('red');
+      const long = dragAlong([
+        { x: 200, y: 300 },
+        { x: 1400, y: 300 },
+      ]); // 1200 of red's 1000
+
+      const flash = drag(input, long);
+
+      expect(flash).toMatchObject({ message: 'Not enough red', pointer: long[long.length - 1] });
+      expect(flash!.path[0]!.x).toBeCloseTo(200, 0);
+      expect(flash!.path[flash!.path.length - 1]!.x).toBeCloseTo(1400, 0);
+      expect(world.lines).toEqual([]);
+      expect(game.tank('red')).toBe(game.maximum('red'));
+    });
+
+    it('flashes "Not enough <Colour>" around an Object its Fill\'s Tank can\'t pay for', () => {
+      const game = createGame(true);
+      const world = game.world;
+      const { input } = drawingOver(game);
+      expect(drag(input, dragBox(300, 200, 300, 300))).toBeNull(); // in grey
+      input.pick('red'); // a Fill of about 2800 of red's 1000
+
+      const flash = click(input, { x: 450, y: 350 });
+
+      expect(flash).toMatchObject({ message: 'Not enough red', pointer: { x: 450, y: 350 } });
+      expect(flash!.path[flash!.path.length - 1]).toEqual(flash!.path[0]);
+      expect(world.objects[0]!.fill).toBeNull();
+    });
+
     it('flashes nothing for a click that misses every Object', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const { input } = drawingOver(game);
 
       expect(click(input, { x: 600, y: 300 })).toBeNull();
     });
@@ -183,8 +226,9 @@ describe('Drawing input', () => {
 
   describe('the refusal preview', () => {
     it('shows a closing Stroke over an Object as refused, worked out again only on new samples', () => {
-      const world = createWorld();
-      const { input, asked } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input, asked } = drawingOver(game);
       box(world, input);
       const over = dragBox(390, 420, 60, 60);
       const half = over.length / 2;
@@ -206,8 +250,8 @@ describe('Drawing input', () => {
     });
 
     it('shows a closing Stroke in the open as not refused', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const { input } = drawingOver(game);
 
       input.press({ x: 600, y: 300 }, 'left');
       for (const sample of dragBox(600, 300, 60, 60).slice(1)) input.move(sample);
@@ -216,8 +260,8 @@ describe('Drawing input', () => {
     });
 
     it('shows a dab of the Colour at the pointer between Strokes, and nothing off the canvas', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const { input } = drawingOver(game);
       input.pick('black');
 
       input.move({ x: 300, y: 200 });
@@ -246,8 +290,8 @@ describe('Drawing input', () => {
     const piecesLeft = (world: SandboxWorld) => world.lines[0]!.pieces.map((p) => p.index);
 
     it('shows its brush at the pointer', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const { input } = drawingOver(game);
       input.pick('eraser');
       input.move({ x: 300, y: 200 });
 
@@ -255,9 +299,10 @@ describe('Drawing input', () => {
     });
 
     it('erases along its path in chunks, once a frame, and carries on from where it got to', () => {
-      const world = createWorld();
+      const game = createGame(false);
+      const world = game.world;
       shelf(world);
-      const { input, asked } = drawingOver(world);
+      const { input, asked } = drawingOver(game);
       input.pick('eraser');
 
       input.press(onPiece(0), 'left');
@@ -284,9 +329,10 @@ describe('Drawing input', () => {
     });
 
     it('erases with its brush radius', () => {
-      const world = createWorld();
+      const game = createGame(false);
+      const world = game.world;
       shelf(world);
-      const { input } = drawingOver(world);
+      const { input } = drawingOver(game);
       input.pick('eraser');
 
       click(input, { x: onPiece(0).x, y: 700 + 4 + ERASER_RADIUS + 1 });
@@ -296,8 +342,9 @@ describe('Drawing input', () => {
     });
 
     it('drops the Stroke being drawn when it is picked', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
       const samples = dragAlong([
         { x: 200, y: 500 },
         { x: 500, y: 500 },
@@ -316,9 +363,10 @@ describe('Drawing input', () => {
     });
 
     it('stops erasing when a Colour is picked while it is held', () => {
-      const world = createWorld();
+      const game = createGame(false);
+      const world = game.world;
       shelf(world);
-      const { input, asked } = drawingOver(world);
+      const { input, asked } = drawingOver(game);
       input.pick('eraser');
 
       input.press(onPiece(0), 'left');
@@ -334,10 +382,12 @@ describe('Drawing input', () => {
 
   describe('the right button', () => {
     it('Releases the Frozen Object under it while physics runs', () => {
-      const world = createWorld();
-      const { input } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
       const id = box(world, input);
-      runFor(world, 0.1);
+      game.togglePause();
+      for (let k = 0; k < 6; k++) game.step();
       expect(objectById(world, id).frozen).toBe(true);
 
       input.press(inBox, 'right');
@@ -348,8 +398,9 @@ describe('Drawing input', () => {
     });
 
     it('neither draws nor erases', () => {
-      const world = createWorld();
-      const { input, asked } = drawingOver(world);
+      const game = createGame(false);
+      const world = game.world;
+      const { input, asked } = drawingOver(game);
 
       input.press({ x: 200, y: 500 }, 'right');
       input.move({ x: 500, y: 500 });

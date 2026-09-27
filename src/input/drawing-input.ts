@@ -1,6 +1,6 @@
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import type { FillOutcome, StrokeOutcome } from '../sandbox/sandbox-world';
+import type { GameFillOutcome, GameStrokeOutcome } from '../game/game';
 import { isClosingStroke } from '../stroke/close-detection';
 import { isFillClick } from '../stroke/fill-click';
 import type { RejectionReason, StrokeResult } from '../stroke/stroke-pipeline';
@@ -18,16 +18,19 @@ export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
   overlaps: 'Overlaps Terrain or an Object',
 };
 
+/** What a flash says about a Stroke or a Fill its Colour's Ink Tank can't pay for. */
+export const notEnough = (colour: Colour) => `Not enough ${colour}`;
+
 /**
- * The commands drawing input issues: what the Sandbox world offers today.
- * The Game implements them in milestone 3. Drawing input never works out
- * what a Stroke becomes or whether it is refused: it asks.
+ * The commands drawing input issues: the Game implements them. Drawing
+ * input never works out what a Stroke becomes, what it costs or whether it
+ * is refused: it asks.
  */
 export interface DrawingCommands {
-  submitStroke(samples: readonly Vec2[], colour: Colour): StrokeOutcome;
+  submitStroke(samples: readonly Vec2[], colour: Colour): GameStrokeOutcome;
   /** What a Stroke would become if it were submitted now, without adding it. */
   previewStroke(samples: readonly Vec2[]): StrokeResult;
-  fillAt(point: Vec2, colour: Colour): FillOutcome;
+  fillAt(point: Vec2, colour: Colour): GameFillOutcome;
   releaseAt(point: Vec2): void;
   eraseAlong(path: readonly Vec2[], radius: number): void;
   undo(): void;
@@ -127,7 +130,8 @@ export class DrawingInput {
   /**
    * The button went up. The Eraser erases the rest of its path. A click
    * fills the Object under it, anything longer is a Stroke. Returns what to
-   * flash if the Fill or the Stroke was refused.
+   * flash if the Fill or the Stroke was refused: already filled, rejected by
+   * the Stroke pipeline, or more than its Ink Tank holds.
    */
   release(): Flash | null {
     this.erase();
@@ -138,11 +142,15 @@ export class DrawingInput {
     const pointer = stroke[stroke.length - 1]!;
     if (isFillClick(stroke)) {
       const outcome = this.commands.fillAt(stroke[0]!, this.picked);
-      if (outcome.kind !== 'already-filled') return null;
+      if (outcome.kind !== 'already-filled' && outcome.kind !== 'refused') return null;
       const { outline } = outcome;
-      return { path: [...outline, outline[0]!], message: 'Already filled', pointer };
+      const message = outcome.kind === 'refused' ? notEnough(outcome.colour) : 'Already filled';
+      return { path: [...outline, outline[0]!], message, pointer };
     }
     const outcome = this.commands.submitStroke(stroke, this.picked);
+    if (outcome.kind === 'refused') {
+      return { path: outcome.path, message: notEnough(outcome.colour), pointer };
+    }
     if (outcome.kind !== 'rejected') return null;
     return { path: outcome.path, message: REJECTION_MESSAGES[outcome.reason], pointer };
   }

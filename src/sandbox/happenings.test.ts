@@ -54,7 +54,7 @@ describe('The list of what happened', () => {
 });
 
 describe('What the Sandbox world says happened', () => {
-  it('says each Piece and Object it adds, and what undo and remove take away', () => {
+  it('says each Piece and Object it adds, and what taking back and remove take away', () => {
     const world = createWorld();
     const heard = hear(world);
     const line = drawLine(world, [
@@ -63,7 +63,7 @@ describe('What the Sandbox world says happened', () => {
     ]);
     const box = drawObject(world, dragBox(500, 300, 60, 60));
 
-    world.undo();
+    world.removeStroke(box);
     world.remove(line);
 
     const added = entriesOf(heard(), 'added').map(({ what }) => what);

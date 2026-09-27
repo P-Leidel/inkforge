@@ -67,13 +67,13 @@ describe('Fill', () => {
     expect(heard()).toEqual([]);
   });
 
-  it('says it filled the Object, and that undo took the Fill back', () => {
+  it('says it filled the Object, and that its Fill was taken back', () => {
     const world = createWorld();
     const box = box60(world, 300, 300);
     const heard = hear(world);
 
     world.fillAt({ x: 330, y: 330 }, 'grey');
-    world.undo();
+    world.removeFill(box);
 
     expect(heard()).toEqual([
       { kind: 'filled', id: box, fill: 'grey', time: 0 },
@@ -127,30 +127,45 @@ describe('Fill', () => {
     }
   });
 
-  it('is undone on its own: Ctrl+Z takes out the Fill and leaves the Object', () => {
+  it('is taken back on its own: the Fill goes and the Object stays', () => {
     const world = createWorld();
     const box = box60(world, 300, 300);
     world.fillAt({ x: 330, y: 330 }, 'black');
 
-    world.undo();
+    world.removeFill(box);
 
     expect(objectById(world, box).fill).toBeNull();
     expect(objectById(world, box).mass).toBeCloseTo(1.44, 1);
-    world.undo();
+    world.removeStroke(box);
     expect(world.objects).toHaveLength(0);
   });
 
-  it('undoes Strokes and Fills in the order they were made', () => {
+  it('is not added when it is declined, and the Object stays hollow', () => {
     const world = createWorld();
-    const first = box60(world, 300, 300);
-    const second = box60(world, 500, 300);
-    world.fillAt({ x: 330, y: 330 }, 'grey');
+    const box = box60(world, 300, 300);
+    const { outline, transform } = objectById(world, box);
+    const heard = hear(world);
+    const offered: unknown[] = [];
 
-    world.undo(); // the Fill of the first box
-    expect(objectById(world, first).fill).toBeNull();
-    world.undo(); // the second box
-    expect(world.objects.map((o) => o.id)).toEqual([first]);
-    expect(second).not.toBe(first);
+    const outcome = world.fillAt({ x: 330, y: 330 }, 'black', {
+      accept: (fill) => {
+        offered.push(fill);
+        return false;
+      },
+    });
+
+    const ink = fillInk(outline);
+    expect(offered).toEqual([{ colour: 'black', ink }]);
+    expect(outcome).toEqual({
+      kind: 'declined',
+      id: box,
+      colour: 'black',
+      ink,
+      outline: transformPoints(outline, transform),
+    });
+    expect(objectById(world, box).fill).toBeNull();
+    expect(objectById(world, box).mass).toBeCloseTo(1.44, 1);
+    expect(heard()).toEqual([]);
   });
 });
 

@@ -202,7 +202,7 @@ describe('Lines break Piece by Piece', () => {
   });
 });
 
-describe('Undo, Clear and Reset after a Piece has broken', () => {
+describe('Taking back, Clear and Reset after a Piece has broken', () => {
   /** A grey shelf broken in the middle by a boulder that then falls away. */
   function brokenShelf(world: SandboxWorld) {
     const id = shelf(world);
@@ -216,7 +216,7 @@ describe('Undo, Clear and Reset after a Piece has broken', () => {
     return { id, rock };
   }
 
-  it("undo removes what's left of a Line", () => {
+  it("taking back a Line removes what's left of it", () => {
     const world = createWorld();
     const earlier = drawLine(world, [
       { x: 200, y: 400 },
@@ -225,16 +225,15 @@ describe('Undo, Clear and Reset after a Piece has broken', () => {
     const { id, rock } = brokenShelf(world);
     world.remove(rock);
 
-    world.undo();
+    world.removeStroke(id);
 
     expect(world.lines.map((l) => l.id)).toEqual([earlier]);
     expect(world.bodyCount).toBe(1 + lineById(world, earlier).pieces.length);
     expect(world.lines.some((l) => l.id === id)).toBe(false);
   });
 
-  it('undo skips a Line whose every Piece broke', () => {
+  it('taking back a Line whose every Piece broke finds it gone', () => {
     const world = createWorld();
-    const box = drawObject(world, dragBox(1200, 300, 40, 40));
     // A short red Line under a boulder: one Piece, which breaks at once.
     const red = drawLine(
       world,
@@ -249,9 +248,7 @@ describe('Undo, Clear and Reset after a Piece has broken', () => {
     expect(world.lines.some((l) => l.id === red)).toBe(false);
     world.remove(rock);
 
-    world.undo();
-
-    expect(world.objects.some((o) => o.id === box)).toBe(false);
+    expect(world.removeStroke(red)).toEqual({ kind: 'gone', id: red });
   });
 
   it('Reset brings broken Pieces back, with the damage they had', () => {

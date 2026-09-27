@@ -163,40 +163,12 @@ describe('Sandbox world: Lines', () => {
   });
 });
 
-describe('Sandbox world: undo and clear', () => {
+describe('Sandbox world: remove and clear', () => {
   const strokeAt = (y: number) =>
     dragAlong([
       { x: 200, y },
       { x: 600, y },
     ]);
-
-  it('undo removes the last Stroke', () => {
-    const world = createWorld();
-    world.submitStroke(strokeAt(300), 'grey');
-    world.submitStroke(strokeAt(400), 'grey');
-
-    world.undo();
-
-    expect(world.lines).toHaveLength(1);
-    expect(world.lines[0]!.segments[0]!.a.y).toBeCloseTo(300);
-    expect(world.bodyCount).toBe(1 + world.lines[0]!.pieces.length);
-  });
-
-  it('undo works while running', () => {
-    const world = createWorld();
-    world.submitStroke(strokeAt(300), 'grey');
-    world.togglePause();
-
-    world.undo();
-
-    expect(world.lines).toHaveLength(0);
-  });
-
-  it('undo with nothing drawn does nothing', () => {
-    const world = createWorld();
-    world.undo();
-    expect(world.bodyCount).toBe(1);
-  });
 
   it('remove takes out one Stroke by id', () => {
     const world = createWorld();
@@ -326,12 +298,12 @@ describe('Sandbox world: Objects', () => {
     expect(objectById(world, ball).transform.y).toBeCloseTo(520 - 15, -1);
   });
 
-  it('undo and clear remove Objects too', () => {
+  it('taking back and clear remove Objects too', () => {
     const world = createWorld();
     drawObject(world, dragBox(300, 300, 60, 60));
-    drawObject(world, dragBox(500, 300, 60, 60));
+    const second = drawObject(world, dragBox(500, 300, 60, 60));
 
-    world.undo();
+    world.removeStroke(second);
     expect(world.objects).toHaveLength(1);
 
     world.clear();

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
 import { GALLERY, type Demo } from '../gallery/gallery';
+import { Game } from '../game/game';
 import { DrawingInput } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
 import { DebugOverlay } from '../rendering/debug-overlay';
@@ -13,7 +14,7 @@ import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../rendering/toolbar';
 import { TuningPanel } from '../rendering/tuning-panel';
 import { WorldRenderer } from '../rendering/world-renderer';
-import { SandboxWorld } from '../sandbox/sandbox-world';
+import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { BallCannon } from '../stress-tests/ball-cannon';
 import { BoxTower } from '../stress-tests/box-tower';
 import { PebbleDrop } from '../stress-tests/pebble-drop';
@@ -24,11 +25,14 @@ const COLOUR_KEYS = new Map(COLOURS.map((colour, k) => [String(k + 1), colour]))
 
 /**
  * The sandbox scene: forwards pointer and tool events to drawing input,
- * which turns them into Sandbox world commands, and draws the world's state
- * and what drawing input says to preview and flash. Game logic lives in
- * SandboxWorld.
+ * which turns them into commands to the Game, and draws the Sandbox world's
+ * state, the Ink Tanks and what drawing input says to preview and flash. The
+ * rules live in the Game and the Sandbox world below it.
  */
 export class SandboxScene extends Phaser.Scene {
+  /** The rules layer: Phaser's own `game` is the Phaser game. */
+  private gameLayer!: Game;
+  /** The Sandbox world below the Game: what is drawn, and what demos build on. */
   private world!: SandboxWorld;
   private drawing!: DrawingInput;
   private worldView!: WorldRenderer;
@@ -47,12 +51,14 @@ export class SandboxScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.world = new SandboxWorld();
-    this.drawing = new DrawingInput(this.world);
-    this.tuning = new TuningPanel(this.world.materials);
+    // Ink is unlimited until Ink costs is turned on in F2.
+    this.gameLayer = new Game({ inkCosts: false });
+    this.world = this.gameLayer.world;
+    this.drawing = new DrawingInput(this.gameLayer);
+    this.tuning = new TuningPanel(this.world.materials, this.gameLayer);
     this.worldView = new WorldRenderer(this, this.world);
     this.preview = new StrokePreview(this);
-    this.overlay = new DebugOverlay(this, this.world, this.frames, this.worldView);
+    this.overlay = new DebugOverlay(this, this.gameLayer, this.frames, this.worldView);
     // Phaser renders after the scene's update: time it for the frame's record.
     let renderStart = 0;
     const beforeRender = () => (renderStart = performance.now());
@@ -66,7 +72,7 @@ export class SandboxScene extends Phaser.Scene {
       this.worldView.destroy();
       this.palette.destroy();
       this.tuning.destroy();
-      this.world.dispose();
+      this.gameLayer.dispose();
     });
     this.hud = new Hud(this, this.world);
     this.palette = new PaletteBar(this, (tool) => this.drawing.pick(tool));
@@ -89,29 +95,28 @@ export class SandboxScene extends Phaser.Scene {
     this.bindPointer();
   }
 
-  /** Clears the Arena and starts a stress test on it (or none). */
+  /** Clears the Arena, fills the Tanks and starts a stress test on it (or none). */
   private startStressTest(
     name: string,
     create: ((world: SandboxWorld) => StressTest) | null,
   ): void {
-    this.world.clear();
-    this.stressTest = create ? create(this.world) : null;
+    this.stressTest = null;
+    this.gameLayer.clear(create ? (world) => (this.stressTest = create(world)) : undefined);
     this.overlay.setSceneName(name);
     this.frames.sinceStart.restart();
   }
 
-  /** Clears the Arena and sets up a gallery demo on it. */
+  /** Clears the Arena, fills the Tanks and sets up a gallery demo on it. */
   private loadDemo(demo: Demo): void {
-    this.world.clear();
     this.stressTest = null;
-    demo.build(this.world);
+    this.gameLayer.clear((world) => demo.build(world));
     this.overlay.setSceneName(demo.name);
     this.frames.sinceStart.restart();
   }
 
-  /** Takes the world back to the last start; the replay is timed on its own. */
+  /** Takes the world and the Tanks back to the last start; the replay is timed on its own. */
   private reset(): void {
-    this.world.reset();
+    this.gameLayer.reset();
     this.frames.sinceStart.restart();
   }
 
@@ -126,7 +131,7 @@ export class SandboxScene extends Phaser.Scene {
     });
     keyboard
       .addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
-      .on('down', () => this.world.togglePause());
+      .on('down', () => this.gameLayer.togglePause());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.cycle());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F2).on('down', () => this.tuning.toggle());
     keyboard
@@ -172,7 +177,7 @@ export class SandboxScene extends Phaser.Scene {
     this.frames.begin(this.game.loop.rawDelta, this.world.isRunning);
     this.drawing.tick();
     const start = performance.now();
-    const steps = this.world.advance(deltaMs / 1000);
+    const steps = this.gameLayer.advance(deltaMs / 1000);
     this.frames.physics(performance.now() - start, steps);
     this.stressTest?.update();
     const drawStart = performance.now();
@@ -180,7 +185,7 @@ export class SandboxScene extends Phaser.Scene {
     const preview = this.drawing.preview();
     if (preview.kind === 'brush') this.preview.drawBrush(preview.pointer);
     else this.preview.draw(preview.samples, preview.colour, preview.refused, preview.pointer);
-    this.palette.show(this.drawing.tool);
+    this.palette.show(this.drawing.tool, this.gameLayer);
     this.overlay.draw();
     this.hud.draw(this.stressTest?.status());
     this.frames.draw(performance.now() - drawStart);
