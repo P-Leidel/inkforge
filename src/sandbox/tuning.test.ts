@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { editMaterials } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import type { SandboxWorld } from './sandbox-world';
 import {
@@ -37,7 +38,7 @@ describe('Tuning the material table while the sandbox runs', () => {
     const ball = ballOverBlueLine(world);
     const first = reboundHeight(world, ball);
 
-    world.materials.colours.blue.line.restitution = 0.3;
+    editMaterials(world.materials, (m) => (m.colours.blue.line.restitution = 0.3));
     const second = reboundHeight(world, ball);
 
     // Unchanged, the second bounce would climb about 0.9² as high as the first.
@@ -49,7 +50,8 @@ describe('Tuning the material table while the sandbox runs', () => {
     const world = createWorld();
     const ball = ballOverBlueLine(world);
 
-    world.materials.minBounceSpeed = 2000; // faster than the ball will fall
+    // Faster than the ball will fall.
+    editMaterials(world.materials, (m) => (m.minBounceSpeed = 2000));
 
     expect(reboundHeight(world, ball)).toBeLessThan(1);
   });
@@ -60,7 +62,7 @@ describe('Tuning the material table while the sandbox runs', () => {
       const box = drawObject(world, dragBox(600, 400, 60, 60));
       const ball = drawObject(world, dragCircle({ x: 580, y: 430 }, 15));
       world.togglePause();
-      world.materials.wakeSpeed = wakeSpeed;
+      editMaterials(world.materials, (m) => (m.wakeSpeed = wakeSpeed));
       world.release(ball, { x: 300, y: 0 });
       runFor(world, 0.3);
       return !objectById(world, box).frozen;
@@ -90,7 +92,7 @@ describe('Tuning the material table while the sandbox runs', () => {
   it('keeps edits through R and Clear: they are tuning, not simulation', () => {
     const world = createWorld();
     const ball = ballOverBlueLine(world);
-    world.materials.colours.blue.line.restitution = 0.3;
+    editMaterials(world.materials, (m) => (m.colours.blue.line.restitution = 0.3));
     runFor(world, 0.5);
 
     world.reset();

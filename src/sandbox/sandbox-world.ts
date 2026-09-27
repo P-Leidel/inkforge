@@ -2,7 +2,7 @@ import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import {
   createMaterialTable,
-  TERRAIN_SURFACE,
+  materialsRevision,
   type MaterialTable,
 } from '../materials/material-table';
 import { createPhysicsWorld, type PhysicsWorld, type PhysicsWorldFactory } from '../physics';
@@ -13,10 +13,11 @@ import {
   type StrokeResult,
 } from '../stroke/stroke-pipeline';
 import { SANDBOX_ARENA, type Arena } from './arena';
-import type { HostSurface, Kind } from './arena-contents';
+import { ArenaBodies } from './arena-bodies';
+import type { Kind } from './arena-contents';
 import { Blasts, type BlastView } from './blasts';
 import { Bonds, type BondView } from './bonds';
-import { ContactLedger, TERRAIN_PARTY, type Party, type SavedContacts } from './contact-ledger';
+import { ContactLedger, type PartyId, type SavedContacts } from './contact-ledger';
 import { Debris, type DebrisParticle } from './debris';
 import { Droplets, type DropletView } from './droplets';
 import { MaterialRules } from './material-rules';
@@ -111,7 +112,8 @@ export interface SandboxWorldOptions {
  * Reset. It has no rendering dependency, so it is the main testing seam.
  * Each kind of Arena contents is a module of its own (`Strokes`, `Rubble`,
  * `Bonds`, `Droplets`, `Patches`, `Blasts`); the world runs them all, in a
- * fixed order. The Contact ledger decides which contacts count, and the
+ * fixed order. They add and remove bodies through Arena bodies, which tells
+ * every kind what went as it goes. The Contact ledger decides which contacts count, and the
  * Material rules read it and decide every consequence: the world runs their
  * phases in its step order and wires their decisions to the kinds, the
  * Debris and the physics module. Each Stroke is drawn in a Colour given with
@@ -123,6 +125,7 @@ export class SandboxWorld {
   readonly materials: MaterialTable;
   private readonly physics: PhysicsWorld;
   private readonly contacts: ContactLedger<StrokeTarget>;
+  private readonly bodies: ArenaBodies<StrokeTarget>;
   private readonly rules: MaterialRules<StrokeTarget, ObjectStroke>;
   private readonly debris = new Debris(new Random(DEBRIS_SEED), GRAVITY);
   /** Each body's pose as the latest step began, for drawing: the simulation never reads it. */
@@ -137,8 +140,8 @@ export class SandboxWorld {
   private readonly kinds: readonly AnyKind[];
   /** Taken whenever physics starts; R returns to it. */
   private snapshot: Snapshot | null = null;
-  /** The material table as it was last applied to the physics world. */
-  private appliedMaterials = '';
+  /** The material table's revision last applied to the physics world; none yet. */
+  private appliedRevision = -1;
   private running = false;
   private accumulator = 0;
   private elapsed = 0;
@@ -154,20 +157,17 @@ export class SandboxWorld {
       minBounceSpeed: this.materials.minBounceSpeed,
     });
     this.contacts = new ContactLedger(this.physics);
-    this.poses = new PreviousPoses(this.physics);
-    this.addTerrain();
-    const poses = this.poses;
-    this.strokes = new Strokes(this.physics, this.materials, this.arena, this.contacts, poses);
-    this.rubbleKind = new Rubble(this.physics, this.materials, this.contacts, poses);
-    this.bondsKind = new Bonds(this.physics, this.contacts, poses);
-    this.dropletsKind = new Droplets(
-      this.physics,
-      this.materials,
-      this.arena,
-      this.contacts,
-      poses,
+    this.bodies = new ArenaBodies(this.physics, this.contacts, this.materials, (parties) =>
+      this.passOnGone(parties),
     );
-    this.patchesKind = new Patches(this.physics, this.materials, this.contacts, poses);
+    this.poses = new PreviousPoses(this.physics);
+    this.bodies.addTerrain(this.arena.terrain);
+    const { physics, materials, arena, bodies, poses } = this;
+    this.strokes = new Strokes(physics, materials, arena, bodies, poses);
+    this.rubbleKind = new Rubble(physics, materials, bodies, poses);
+    this.bondsKind = new Bonds(physics, this.contacts, poses);
+    this.dropletsKind = new Droplets(physics, materials, arena, bodies, poses);
+    this.patchesKind = new Patches(physics, materials, bodies, poses);
     this.blastsKind = new Blasts(this.physics, this.materials, this.contacts);
     const kinds: Kinds = [
       this.strokes,
@@ -193,7 +193,7 @@ export class SandboxWorld {
           this.bondsKind.add(sticker.id, sticker.party, host.id, point),
         isDroplet: (body) => this.dropletsKind.isDroplet(body),
         landDroplet: (body, host) => this.dropletsKind.land(body, host),
-        surfaceOf: (host) => this.surfaceOf(host),
+        surfaceOf: (host) => this.bodies.surfaceOf(host.id),
         layPatch: ({ host, centre, colour, length }, surface) =>
           this.puff(this.patchesKind.add(host, surface, centre, colour, length)),
         patchOf: (shape) => this.patchesKind.patchOf(shape),
@@ -345,7 +345,6 @@ export class SandboxWorld {
   /** Removes one Stroke with its Fill, e.g. a spent stress-test ball. */
   remove(id: StrokeId): void {
     this.strokes.remove(id);
-    this.passOnGone();
   }
 
   /**
@@ -360,11 +359,7 @@ export class SandboxWorld {
   eraseAlong(path: readonly Vec2[], radius: number): void {
     if (path.length === 0) return;
     const brush = { path, radius };
-    // Hosts before what lies on them: a Patch whose host went goes with it.
-    for (const kind of this.kinds) {
-      kind.erase(brush);
-      this.passOnGone();
-    }
+    for (const kind of this.kinds) kind.erase(brush);
   }
 
   /**
@@ -374,7 +369,6 @@ export class SandboxWorld {
    */
   undo(): void {
     this.strokes.undo();
-    this.passOnGone();
   }
 
   /**
@@ -383,22 +377,19 @@ export class SandboxWorld {
    * touching or Settled, since every kind unregisters its bodies.
    */
   clear(): void {
+    this.bodies.clear();
     for (const kind of this.kinds) kind.clear();
-    this.contacts.takeGone();
     this.poses.forget();
     this.snapshot = null;
     this.debris.clear();
   }
 
   /**
-   * Tells every kind, in kind order, what the last step or command removed,
-   * so that what was attached to it goes too: a bond whose host broke or was
-   * undone lets its green Object fall free.
+   * Tells every kind, in kind order, what just went, so that what was
+   * attached to it goes too: a bond whose host broke or was undone lets its
+   * green Object fall free.
    */
-  private passOnGone(): void {
-    const gone = this.contacts.takeGone();
-    if (gone.length === 0) return;
-    const parties = new Set(gone);
+  private passOnGone(parties: ReadonlySet<PartyId>): void {
     for (const kind of this.kinds) kind.gone(parties);
   }
 
@@ -458,35 +449,17 @@ export class SandboxWorld {
   }
 
   /**
-   * A host's surface, where a Droplet lays its Patch: the Terrain's
-   * polygons, or the host's kind's surface for it.
-   */
-  private surfaceOf(host: Party<unknown>): HostSurface | null {
-    if (host.id === TERRAIN_PARTY) return { kind: 'polygons', polygons: this.arena.terrain };
-    for (const kind of this.kinds) {
-      const surface = kind.surfaceOf(host.id);
-      if (surface) return surface;
-    }
-    return null;
-  }
-
-  /** Adds the Terrain, which is Party 0 to the Contact ledger. */
-  private addTerrain(): void {
-    const body = this.physics.addTerrain(this.arena.terrain, TERRAIN_SURFACE);
-    this.contacts.register({ id: TERRAIN_PARTY, stroke: TERRAIN_PARTY, body, target: null });
-  }
-
-  /**
-   * Applies edits to the material table from the next step. Densities are
-   * left out: an Object's mass is set when it is drawn or filled.
+   * Applies edits to the material table from the next step, when its
+   * revision has moved on. Densities are left out: an Object's mass is set
+   * when it is drawn or filled.
    */
   private applyMaterials(): void {
-    const materials = JSON.stringify(this.materials);
-    if (materials === this.appliedMaterials) return;
-    this.appliedMaterials = materials;
+    const revision = materialsRevision(this.materials);
+    if (revision === this.appliedRevision) return;
+    this.appliedRevision = revision;
     this.physics.setWakeSpeed(this.materials.wakeSpeed);
     this.physics.setMinBounceSpeed(this.materials.minBounceSpeed);
-    for (const kind of this.kinds) kind.applySurfaces();
+    this.bodies.applySurfaces();
   }
 
   /**
@@ -494,11 +467,10 @@ export class SandboxWorld {
    * the Contact ledger, the Terrain, then every kind in order.
    */
   private rebuild(snapshot: Snapshot): void {
-    this.physics.reset();
+    this.bodies.reset(snapshot.contacts);
     // Body ids start again after a reset: a pose from before would be another body's.
     this.poses.forget();
-    this.contacts.restore(snapshot.contacts);
-    this.addTerrain();
+    this.bodies.addTerrain(this.arena.terrain);
     const saved: Readonly<Record<string, unknown>> = snapshot.contents;
     for (const kind of this.kinds) kind.restore(saved[kind.name]);
   }
@@ -526,7 +498,6 @@ export class SandboxWorld {
     this.rules.breakAll(broken);
     this.rules.glue([...this.strokes.pieces(), ...this.patchesKind.gluers()], STEP_SECONDS);
     this.blastsKind.spread(STEP_SECONDS, this.rules.blastReached);
-    this.passOnGone();
     this.puff(this.patchesKind.removeUsedUp());
     for (const kind of this.kinds) kind.step(STEP_SECONDS);
   }
