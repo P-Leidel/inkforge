@@ -105,10 +105,16 @@ export interface FillOptions {
 type Kinds = readonly [Strokes, Rubble, Bonds, Droplets, Patches, Blasts<StrokeTarget>];
 
 /**
- * The order the Eraser removes what it touches in: kind order, an Object
- * before a Piece, each oldest first.
+ * The order the Eraser removes what it touches in, by rank: kind order, an
+ * Object before a Piece, each oldest first. Every Thing has a rank.
  */
-const ERASE_ORDER: readonly Thing['thing'][] = ['object', 'piece', 'rubble', 'droplet', 'patch'];
+const ERASE_ORDER: Readonly<Record<Thing['thing'], number>> = {
+  object: 0,
+  piece: 1,
+  rubble: 2,
+  droplet: 3,
+  patch: 4,
+};
 
 /** A kind as the Sandbox world runs it, over every kind alike. */
 type AnyKind = Kind<string, unknown, unknown>;
@@ -419,7 +425,7 @@ export class SandboxWorld {
   eraseAlong(path: readonly Vec2[], radius: number): void {
     if (path.length === 0) return;
     const touched = this.query.touchedBy({ path, radius });
-    const rank = (thing: Thing) => ERASE_ORDER.indexOf(thing.thing);
+    const rank = (thing: Thing) => ERASE_ORDER[thing.thing];
     // What went with a host erased before it is already gone, and stays so.
     for (const thing of touched.sort((p, q) => rank(p) - rank(q))) this.erase(thing);
   }

@@ -9,8 +9,13 @@ export default tseslint.config(
   {
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
+      // Typed linting, so rules can see a switch's union.
+      parserOptions: { projectService: true },
     },
     rules: {
+      // A new Thing, Form or Happening must be handled everywhere one is
+      // switched on; a `default:` doesn't excuse a missing case of a union.
+      '@typescript-eslint/switch-exhaustiveness-check': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       // Runs must be repeatable: all randomness comes from the seeded generator.
@@ -42,5 +47,10 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  {
+    // Files outside tsconfig.json have no type information.
+    files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
+    extends: [tseslint.configs.disableTypeChecked],
   },
 );
