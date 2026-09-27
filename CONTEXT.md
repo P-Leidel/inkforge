@@ -34,7 +34,7 @@ The untimed phase before a Wave. Physics is paused, the player can draw anywhere
 _Avoid_: Prep phase, planning phase
 
 **Wave**:
-The phase in which physics runs and enemies walk toward the Ink Core. No undo.
+The phase in which physics runs and enemies walk toward the Ink Core. No undo. Pausing does not end it; it ends when no Enemy is left to spawn or alive, or when the Ink Core is destroyed.
 _Avoid_: Round, combat phase
 
 **Campaign**:
@@ -131,6 +131,10 @@ Ink left over from the Build Phase. It stays in the Ink Tank but cannot be spent
 **Wave Ink**:
 Ink dropped by enemies killed during the current Wave, spendable immediately inside the Core Zone.
 
+**Drop**:
+The Ink of every Colour an Enemy lets out when it dies, picked up into the Ink Tanks at once. An Enemy that reaches the Ink Core drops nothing.
+_Avoid_: Loot, reward
+
 ### Enemies
 
 **Enemy**:
@@ -145,6 +149,10 @@ A fast walker.
 
 **Heavy**:
 A slow, heavy walker that wears down Lines quickly.
+
+**Pressing**:
+An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate; what it stands on wears at a small fraction of that.
+_Avoid_: Attacking, wall (a Line is never called a wall)
 
 **Siege Walker**:
 The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with physics rather than raw damage.
