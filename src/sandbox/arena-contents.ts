@@ -1,10 +1,8 @@
-import type { Circle } from '../geometry/overlap';
 import type { Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { BodyId, PhysicsWorld } from '../physics';
-import type { Brush } from './brush';
 import type { PartyId } from './contact-ledger';
 
 /**
@@ -16,15 +14,9 @@ import type { PartyId } from './contact-ledger';
  * happened, the Material rules decide what follows, and the world wires
  * their decisions back to the kinds. What is visual only (Debris, Rubble
  * fading out, a Patch's puff) is the renderer's, drawn from the list of
- * what happened; it is not a kind.
+ * what happened; it is not a kind. What is where is the Arena query's to
+ * answer, from what Arena bodies holds: a kind never scans itself for it.
  */
-
-/** Shapes a new Object may not overlap, in world coordinates. */
-export interface Solids {
-  /** Solid bodies, each as its convex parts. */
-  readonly polygons: readonly (readonly Polygon[])[];
-  readonly circles: readonly Circle[];
-}
 
 /**
  * A body's surface in its own coordinates (px, relative to its origin,
@@ -59,8 +51,6 @@ export interface Kind<Name extends string, Saved, Views> {
   restore(saved: Saved): void;
   /** Forgets all of it: Clear, after Arena bodies has removed every body and shape. */
   clear(): void;
-  /** What of it new Objects may not overlap. */
-  solids(): Solids;
   /**
    * Hears which Parties went (broken, undone, removed, erased, capped or
    * vanished), its own too: whatever of it was attached to them goes. Arena
@@ -71,12 +61,6 @@ export interface Kind<Name extends string, Saved, Views> {
    * itself.
    */
   gone(parties: ReadonlySet<PartyId>): void;
-  /**
-   * Removes, quietly, whatever of it the Eraser's brush touches: nothing
-   * breaks, bursts or comes out of it. What went with a host erased before
-   * it is already gone.
-   */
-  erase(brush: Brush): void;
   /** Its turn in each step, after the Material rules and breaking. */
   step(seconds: number): void;
 }

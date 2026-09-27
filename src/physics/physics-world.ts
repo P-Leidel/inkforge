@@ -1,4 +1,4 @@
-import type { Polygon } from '../geometry/polygon';
+import type { Bounds, Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
@@ -142,6 +142,12 @@ export interface NearBody {
   readonly distance: number;
 }
 
+/** A shape, and the body it belongs to. */
+export interface BodyShape {
+  readonly body: BodyId;
+  readonly shape: ShapeId;
+}
+
 /** What one step did to contacts. */
 export interface StepReport {
   /** Every hit between shapes of which at least one belongs to an Object or a circle. */
@@ -201,6 +207,13 @@ export interface PhysicsWorld {
    * shape's nearest point. In no particular order.
    */
   bodiesWithin(centre: Vec2, radius: number): NearBody[];
+  /**
+   * Every shape, a body's own or one `addCapsule` added, whose box may
+   * overlap `bounds` (px): the engine's broadphase. Its boxes are a little
+   * larger than the shapes, so it names every shape whose bounds overlap
+   * `bounds`, and maybe some that only come near. In no particular order.
+   */
+  shapesNear(bounds: Bounds): BodyShape[];
   /**
    * Where two shapes that began touching in the last step touched as it
    * ended: the middle of their contact points. Null for any other pair.

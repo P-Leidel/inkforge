@@ -15,11 +15,12 @@ import {
 import { SANDBOX_ARENA, type Arena } from './arena';
 import { ArenaBodies } from './arena-bodies';
 import type { Kind } from './arena-contents';
+import { ArenaQuery } from './arena-query';
 import { Blasts, type BlastView } from './blasts';
 import { Bonds, type BondView } from './bonds';
 import { ContactLedger, type PartyId, type SavedContacts } from './contact-ledger';
 import { Droplets, type DropletView } from './droplets';
-import { Happenings } from './happenings';
+import { Happenings, type Thing } from './happenings';
 import { MaterialRules } from './material-rules';
 import { Patches, type PatchView } from './patches';
 import { PreviousPoses } from './previous-poses';
@@ -77,6 +78,12 @@ export interface StrokeOptions {
  */
 type Kinds = readonly [Strokes, Rubble, Bonds, Droplets, Patches, Blasts<StrokeTarget>];
 
+/**
+ * The order the Eraser removes what it touches in: kind order, an Object
+ * before a Piece, each oldest first.
+ */
+const ERASE_ORDER: readonly Thing['thing'][] = ['object', 'piece', 'rubble', 'droplet', 'patch'];
+
 /** A kind as the Sandbox world runs it, over every kind alike. */
 type AnyKind = Kind<string, unknown, unknown>;
 
@@ -112,7 +119,8 @@ export interface SandboxWorldOptions {
  * Each kind of Arena contents is a module of its own (`Strokes`, `Rubble`,
  * `Bonds`, `Droplets`, `Patches`, `Blasts`); the world runs them all, in a
  * fixed order. They add and remove bodies through Arena bodies, which tells
- * every kind what went as it goes. The Contact ledger decides which contacts count, and the
+ * every kind what went as it goes, and the Arena query answers what is
+ * where from them. The Contact ledger decides which contacts count, and the
  * Material rules read it and decide every consequence: the world runs their
  * phases in its step order and wires their decisions to the kinds and the
  * physics module. Each step and command appends what happened to
@@ -128,6 +136,8 @@ export class SandboxWorld {
   private readonly physics: PhysicsWorld;
   private readonly contacts: ContactLedger<StrokeTarget>;
   private readonly bodies: ArenaBodies<StrokeTarget>;
+  /** What is where: every question about place. */
+  private readonly query: ArenaQuery;
   private readonly rules: MaterialRules<StrokeTarget, ObjectStroke>;
   /** Each body's pose as the latest step began, for drawing: the simulation never reads it. */
   private readonly poses: PreviousPoses;
@@ -166,15 +176,16 @@ export class SandboxWorld {
       (parties) => this.passOnGone(parties),
       say,
     );
+    this.query = new ArenaQuery(this.physics, this.bodies);
     this.poses = new PreviousPoses(this.physics);
     this.bodies.addTerrain(this.arena.terrain);
-    const { physics, materials, arena, bodies, poses } = this;
-    this.strokes = new Strokes(physics, materials, arena, bodies, poses, say);
+    const { physics, materials, arena, bodies, query, poses } = this;
+    this.strokes = new Strokes(physics, materials, arena, bodies, query, poses, say);
     this.rubbleKind = new Rubble(physics, materials, bodies, poses);
     this.bondsKind = new Bonds(physics, this.contacts, poses);
     this.dropletsKind = new Droplets(physics, materials, arena, bodies, poses);
     this.patchesKind = new Patches(physics, materials, bodies, poses);
-    this.blastsKind = new Blasts(this.physics, this.materials, this.contacts);
+    this.blastsKind = new Blasts(query, this.materials, this.contacts);
     const kinds: Kinds = [
       this.strokes,
       this.rubbleKind,
@@ -303,14 +314,12 @@ export class SandboxWorld {
     return processStroke(samples, this.strokeContext({}));
   }
 
-  /** The Arena as the Stroke pipeline sees it: the Terrain and every kind's solids. */
+  /** The Arena as the Stroke pipeline sees it: the Terrain, and what is solid by the Arena query. */
   private strokeContext(options: StrokeOptions): StrokeContext {
-    const solids = this.kinds.map((kind) => kind.solids());
     return {
       terrain: this.arena.terrain,
       pieceLength: this.materials.pieceLength,
-      objects: solids.flatMap((s) => s.polygons),
-      rubble: solids.flatMap((s) => s.circles),
+      overlapsSolid: (part) => this.query.overlapsSolid(part),
       ...(options.lineThickness !== undefined && { lineThickness: options.lineThickness }),
     };
   }
@@ -356,8 +365,25 @@ export class SandboxWorld {
    */
   eraseAlong(path: readonly Vec2[], radius: number): void {
     if (path.length === 0) return;
-    const brush = { path, radius };
-    for (const kind of this.kinds) kind.erase(brush);
+    const touched = this.query.touchedBy({ path, radius });
+    const rank = (thing: Thing) => ERASE_ORDER.indexOf(thing.thing);
+    // What went with a host erased before it is already gone, and stays so.
+    for (const thing of touched.sort((p, q) => rank(p) - rank(q))) this.erase(thing);
+  }
+
+  private erase(thing: Thing): void {
+    switch (thing.thing) {
+      case 'object':
+        return this.strokes.remove(thing.id, 'erased');
+      case 'piece':
+        return this.strokes.removePiece(thing.id, thing.index, 'erased');
+      case 'rubble':
+        return this.rubbleKind.remove(thing.id, 'erased');
+      case 'droplet':
+        return this.dropletsKind.remove(thing.id, 'erased');
+      case 'patch':
+        return this.patchesKind.remove(thing.id, 'erased');
+    }
   }
 
   /**

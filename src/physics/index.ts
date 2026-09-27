@@ -5,6 +5,7 @@
  */
 export type {
   BodyId,
+  BodyShape,
   BondAnchors,
   BondId,
   CircleBodyDef,

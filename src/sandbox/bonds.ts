@@ -1,7 +1,7 @@
 import { applyTransform } from '../geometry/transform';
 import { rotate, sub, type Vec2 } from '../geometry/vec2';
 import type { BodyId, BondAnchors, BondId, PhysicsWorld } from '../physics';
-import type { Kind, Poses, Solids } from './arena-contents';
+import type { Kind, Poses } from './arena-contents';
 import type { ContactLedger, PartyId } from './contact-ledger';
 import type { PreviousPoses } from './previous-poses';
 import type { StrokeId } from './strokes';
@@ -118,14 +118,6 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
       this.physics.removeBond(bond);
       return false;
     });
-  }
-
-  /** A bond goes only with what it holds. */
-  erase(): void {}
-
-  /** Bonds take no room of their own. */
-  solids(): Solids {
-    return { polygons: [], circles: [] };
   }
 
   step(): void {}
