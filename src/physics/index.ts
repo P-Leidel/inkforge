@@ -4,20 +4,21 @@
  * writing another adapter and changing `createPhysicsWorld`.
  */
 export type {
+  BodyDef,
   BodyId,
+  BodyMotion,
   BodyShape,
+  BodyShapes,
   BondAnchors,
   BondId,
-  CircleBodyDef,
   ContactHit,
   ContactPair,
   NearBody,
-  ObjectBodyDef,
   PhysicsWorld,
-  PhysicsWorldFactory,
   PhysicsWorldOptions,
   ShapeId,
   StepReport,
   Surface,
+  TouchingPair,
 } from './physics-world';
 export { createBox2dPhysicsWorld as createPhysicsWorld } from './box2d/box2d-physics-world';

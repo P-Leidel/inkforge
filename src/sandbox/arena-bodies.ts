@@ -2,14 +2,7 @@ import type { Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import type { Vec2 } from '../geometry/vec2';
 import { TERRAIN_SURFACE } from '../materials/material-table';
-import type {
-  BodyId,
-  BodyShape,
-  CircleBodyDef,
-  ObjectBodyDef,
-  PhysicsWorld,
-  ShapeId,
-} from '../physics';
+import type { BodyId, BodyShape, PhysicsWorld, ShapeId } from '../physics';
 import type { HostSurface } from './arena-contents';
 import {
   TERRAIN_PARTY,
@@ -45,10 +38,7 @@ import type { Numbers, ThingType } from './numbers';
 /** What of the physics module Arena bodies calls. */
 export type BodiesPhysics = Pick<
   PhysicsWorld,
-  | 'addTerrain'
-  | 'addLine'
-  | 'addObject'
-  | 'addCircle'
+  | 'addBody'
   | 'removeBody'
   | 'getTransform'
   | 'getVelocity'
@@ -65,6 +55,44 @@ export type BodiesLedger<T> = Pick<
   ContactLedger<T>,
   'newId' | 'register' | 'unregister' | 'squeezed' | 'party' | 'restore'
 >;
+
+/** Where an Object's body is, what it is made of, and how it starts. */
+export interface ObjectBody {
+  /** World position of the body's origin. */
+  readonly position: Vec2;
+  /** Convex parts relative to the origin, together forming one rigid body. */
+  readonly parts: readonly Polygon[];
+  /** Whether the Object starts Frozen. */
+  readonly frozen: boolean;
+  readonly mass: number;
+  /** Rotation about `position`, radians; 0 by default. */
+  readonly angle?: number;
+  /** Linear velocity, px/s, if it starts moving (not Frozen). */
+  readonly velocity?: Vec2;
+  /** Angular velocity, rad/s, if it starts moving (not Frozen). */
+  readonly angularVelocity?: number;
+}
+
+/** Where a moving circle (Rubble, a Droplet) is, and how it starts. It is never Frozen. */
+export interface CircleBody {
+  /** World position of its centre. */
+  readonly position: Vec2;
+  /** px. */
+  readonly radius: number;
+  readonly mass: number;
+  /** Rotation, radians; 0 by default. */
+  readonly angle?: number;
+  /** Linear velocity, px/s. */
+  readonly velocity?: Vec2;
+  /** Angular velocity, rad/s. */
+  readonly angularVelocity?: number;
+  /** Circles of the same group (a positive number) never touch each other. None by default. */
+  readonly group?: number;
+  /** False if its hits never wake a Frozen Object (Droplets). True by default. */
+  readonly wakes?: boolean;
+  /** True for continuous collision against moving bodies too (see `BodyMotion`). */
+  readonly bullet?: boolean;
+}
 
 /** Who a new body is, given the body: a kind builds its record around it. */
 type Who<P> = (body: BodyId) => P;
@@ -169,7 +197,10 @@ export class ArenaBodies<T> {
 
   /** Adds the Terrain, which is Party 0. */
   addTerrain(polygons: readonly Polygon[]): void {
-    const body = this.physics.addTerrain(polygons, TERRAIN_SURFACE);
+    const body = this.physics.addBody({
+      shapes: { kind: 'polygons', polygons },
+      surface: TERRAIN_SURFACE,
+    });
     this.track(body, TERRAIN_PARTY, null, null, { kind: 'terrain', polygons }, true);
     this.contacts.register({ id: TERRAIN_PARTY, stroke: TERRAIN_PARTY, body, target: null });
   }
@@ -182,20 +213,36 @@ export class ArenaBodies<T> {
     what: Thing,
     who: Who<P>,
   ): P {
-    const body = this.physics.addLine(segments, thickness, this.numbers.surface(type));
+    const body = this.physics.addBody({
+      shapes: { kind: 'capsules', segments, radius: thickness / 2 },
+      surface: this.numbers.surface(type),
+    });
     const form: Form = { kind: 'capsules', segments, radius: thickness / 2 };
     return this.register(body, type, form, what, who);
   }
 
   /** Adds an Object with `type`'s surface; Patches lie along `outline`. */
   addObject<P extends Party<T>>(
-    def: Omit<ObjectBodyDef, 'surface'>,
+    def: ObjectBody,
     type: ThingType,
     outline: Polygon,
     what: Thing,
     who: Who<P>,
   ): P {
-    const body = this.physics.addObject({ ...def, surface: this.numbers.surface(type) });
+    const body = this.physics.addBody({
+      shapes: { kind: 'polygons', polygons: def.parts },
+      surface: this.numbers.surface(type),
+      position: def.position,
+      angle: def.angle,
+      motion: {
+        mass: def.mass,
+        velocity: def.velocity,
+        angularVelocity: def.angularVelocity,
+        frozen: def.frozen,
+        wakes: true,
+      },
+      reportsHits: true,
+    });
     const form: Form = { kind: 'object', outline, parts: def.parts };
     return this.register(body, type, form, what, who);
   }
@@ -204,13 +251,22 @@ export class ArenaBodies<T> {
    * Adds a moving circle with `type`'s surface. Patches lie on its rim,
    * unless it is harmless: nothing lands on a Droplet.
    */
-  addCircle<P extends Party<T>>(
-    def: Omit<CircleBodyDef, 'surface'>,
-    type: ThingType,
-    what: Thing,
-    who: Who<P>,
-  ): P {
-    const body = this.physics.addCircle({ ...def, surface: this.numbers.surface(type) });
+  addCircle<P extends Party<T>>(def: CircleBody, type: ThingType, what: Thing, who: Who<P>): P {
+    const body = this.physics.addBody({
+      shapes: { kind: 'circle', radius: def.radius },
+      surface: this.numbers.surface(type),
+      position: def.position,
+      angle: def.angle,
+      motion: {
+        mass: def.mass,
+        velocity: def.velocity,
+        angularVelocity: def.angularVelocity,
+        wakes: def.wakes ?? true,
+        bullet: def.bullet,
+      },
+      reportsHits: true,
+      group: def.group,
+    });
     const circle: Form = { kind: 'circle', radius: def.radius };
     return this.register(body, type, circle, what, who, (party) => !party.harmless);
   }

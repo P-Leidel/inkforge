@@ -6,7 +6,7 @@ import {
   materialsRevision,
   type MaterialTable,
 } from '../materials/material-table';
-import { createPhysicsWorld, type PhysicsWorld, type PhysicsWorldFactory } from '../physics';
+import { createPhysicsWorld, type PhysicsWorld } from '../physics';
 import {
   processStroke,
   type RejectionReason,
@@ -144,7 +144,6 @@ export interface SandboxWorldOptions {
   readonly arena?: Arena;
   /** The material table to read; defaults to a fresh copy of the defaults. */
   readonly materials?: MaterialTable;
-  readonly createPhysics?: PhysicsWorldFactory;
 }
 
 /**
@@ -200,7 +199,7 @@ export class SandboxWorld {
     this.random = new Random(options.seed ?? 1);
     this.materials = options.materials ?? createMaterialTable();
     this.numbers = new Numbers(this.materials);
-    this.physics = (options.createPhysics ?? createPhysicsWorld)({
+    this.physics = createPhysicsWorld({
       gravity: { x: 0, y: GRAVITY },
       timeStep: STEP_SECONDS,
       wakeSpeed: this.materials.wakeSpeed,

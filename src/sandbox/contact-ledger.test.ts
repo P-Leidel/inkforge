@@ -11,7 +11,8 @@ import {
   type StepReport,
   type Surface,
 } from '../physics';
-import { ContactLedger, TERRAIN_PARTY, type Party } from './contact-ledger';
+import { circleDef, lineDef, objectDef, terrainDef } from '../physics/test-bodies';
+import { ContactLedger, TERRAIN_PARTY, type Party, type Touching } from './contact-ledger';
 
 describe('The Contact ledger', () => {
   /** A ledger whose Objects slide while their body is in `slides`. */
@@ -19,6 +20,7 @@ describe('The Contact ledger', () => {
     const slides = new Set<BodyId>();
     const ledger = new ContactLedger<string>({
       getSlide: (body) => (slides.has(body) ? { x: 0, y: -10 } : null),
+      touchNormal: () => null,
     });
     return { ledger, slides };
   }
@@ -347,7 +349,7 @@ describe('The Contact ledger on the engine', () => {
       { x: 1000, y: 600 },
       { x: 0, y: 600 },
     ];
-    add('terrain', { kind: 'terrain' }, physics.addTerrain([ground], DEAD), TERRAIN_PARTY);
+    add('terrain', { kind: 'terrain' }, physics.addBody(terrainDef([ground], DEAD)), TERRAIN_PARTY);
     // A Line of two Pieces, a shelf the Rubble falls on.
     const line = ledger.newId();
     const pieces: [Vec2, Vec2][] = [
@@ -361,50 +363,58 @@ describe('The Contact ledger on the engine', () => {
       ],
     ];
     for (const [k, [from, to]] of pieces.entries()) {
-      const body = physics.addLine([{ a: from, b: to }], 8, DEAD);
+      const body = physics.addBody(lineDef([{ a: from, b: to }], 8, DEAD));
       add(`piece ${k}`, { kind: 'line', from, to }, body, ledger.newId(), line);
     }
     // A stack of two boxes on the ground.
     for (const [k, y] of [480, 440].entries()) {
-      const body = physics.addObject({
-        position: { x: 300, y },
-        parts: [box(0, 0, 20)],
-        frozen: false,
-        surface: DEAD,
-        mass: 2,
-      });
+      const body = physics.addBody(
+        objectDef({
+          position: { x: 300, y },
+          parts: [box(0, 0, 20)],
+          frozen: false,
+          surface: DEAD,
+          mass: 2,
+        }),
+      );
       add(`stack ${k}`, { kind: 'object', half: 20, mass: 2 }, body, ledger.newId());
     }
     // A Frozen box, and a heavy ball that falls on it and wakes it.
-    const frozen = physics.addObject({
-      position: { x: 480, y: 300 },
-      parts: [box(0, 0, 20)],
-      frozen: true,
-      surface: DEAD,
-      mass: 1,
-    });
+    const frozen = physics.addBody(
+      objectDef({
+        position: { x: 480, y: 300 },
+        parts: [box(0, 0, 20)],
+        frozen: true,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
     add('frozen', { kind: 'object', half: 20, mass: 1 }, frozen, ledger.newId());
-    const ball = physics.addCircle({
-      position: { x: 480, y: 200 },
-      radius: 12,
-      surface: DEAD,
-      mass: 5,
-      velocity: { x: 0, y: 600 },
-    });
+    const ball = physics.addBody(
+      circleDef({
+        position: { x: 480, y: 200 },
+        radius: 12,
+        surface: DEAD,
+        mass: 5,
+        velocity: { x: 0, y: 600 },
+      }),
+    );
     add('ball', { kind: 'circle', radius: 12, mass: 5 }, ball, ledger.newId());
     // A Frozen box across the shelf, squeezed up off it.
-    const squeezed = physics.addObject({
-      position: { x: 700, y: 385 },
-      parts: [box(0, 0, 20)],
-      frozen: true,
-      surface: DEAD,
-      mass: 1,
-    });
+    const squeezed = physics.addBody(
+      objectDef({
+        position: { x: 700, y: 385 },
+        parts: [box(0, 0, 20)],
+        frozen: true,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
     add('squeezed', { kind: 'object', half: 20, mass: 1 }, squeezed, ledger.newId());
     // Rubble raining onto the shelf and the ground.
     for (let k = 0; k < 12; k++) {
       const position = { x: 560 + k * 22, y: 250 - (k % 3) * 30 };
-      const body = physics.addCircle({ position, radius: 6, surface: DEAD, mass: 0.2 });
+      const body = physics.addBody(circleDef({ position, radius: 6, surface: DEAD, mass: 0.2 }));
       add(`rubble ${k}`, { kind: 'circle', radius: 6, mass: 0.2 }, body, ledger.newId());
     }
     physics.slideOut(squeezed, { x: 0, y: -40 }, 250);
@@ -430,30 +440,34 @@ describe('The Contact ledger on the engine', () => {
       for (const [k, thing] of things.entries()) {
         const { build, transform, velocity, angularVelocity, frozen: isFrozen, slide } = saved[k]!;
         let body: BodyId;
-        if (build.kind === 'terrain') body = physics.addTerrain([ground], DEAD);
+        if (build.kind === 'terrain') body = physics.addBody(terrainDef([ground], DEAD));
         else if (build.kind === 'line')
-          body = physics.addLine([{ a: build.from, b: build.to }], 8, DEAD);
+          body = physics.addBody(lineDef([{ a: build.from, b: build.to }], 8, DEAD));
         else if (build.kind === 'object')
-          body = physics.addObject({
-            position: { x: transform!.x, y: transform!.y },
-            angle: transform!.angle,
-            parts: [box(0, 0, build.half)],
-            frozen: isFrozen || slide !== null,
-            surface: DEAD,
-            mass: build.mass,
-            velocity: velocity!,
-            angularVelocity,
-          });
+          body = physics.addBody(
+            objectDef({
+              position: { x: transform!.x, y: transform!.y },
+              angle: transform!.angle,
+              parts: [box(0, 0, build.half)],
+              frozen: isFrozen || slide !== null,
+              surface: DEAD,
+              mass: build.mass,
+              velocity: velocity!,
+              angularVelocity,
+            }),
+          );
         else
-          body = physics.addCircle({
-            position: { x: transform!.x, y: transform!.y },
-            angle: transform!.angle,
-            radius: build.radius,
-            surface: DEAD,
-            mass: build.mass,
-            velocity: velocity!,
-            angularVelocity,
-          });
+          body = physics.addBody(
+            circleDef({
+              position: { x: transform!.x, y: transform!.y },
+              angle: transform!.angle,
+              radius: build.radius,
+              surface: DEAD,
+              mass: build.mass,
+              velocity: velocity!,
+              angularVelocity,
+            }),
+          );
         thing.party = { ...thing.party, body };
         ledger.register(thing.party);
         byBody.set(body, thing.party);
@@ -490,6 +504,15 @@ describe('The Contact ledger on the engine', () => {
         engine.add(keyOf(a!, b!, p));
       }
       expect(ledgerTouching(ledger, things)).toEqual(engine);
+      // Every pair it holds has a direction, from either side.
+      for (const { party } of things) {
+        for (const { pairs } of ledger.touching(party.body)) {
+          for (const p of pairs) {
+            const normal = ledger.normal(party.body, p)!;
+            expect(Math.hypot(normal.x, normal.y)).toBeCloseTo(1, 6);
+          }
+        }
+      }
       if (things.some((t) => sliding(t.party.body))) slidSteps++;
       if (engine.size > 0) touchedSteps++;
     }
@@ -502,5 +525,38 @@ describe('The Contact ledger on the engine', () => {
     expect(touchedSteps).toBeGreaterThan(200);
     const onShelf = [...ledger.touching(bodyOf('piece 1'))];
     expect(onShelf.length).toBeGreaterThan(0);
+  });
+
+  it('passes on which way a touching pair faces, from the other side towards the asker', () => {
+    const physics = createPhysicsWorld({
+      gravity: { x: 0, y: 1000 },
+      timeStep: 1 / 60,
+      wakeSpeed: 80,
+      minBounceSpeed: 50,
+    });
+    worlds.push(physics);
+    const ledger = new ContactLedger<string>(physics);
+    const ground = physics.addBody(terrainDef([box(500, 550, 50)], DEAD));
+    const crate = physics.addBody(
+      objectDef({
+        position: { x: 500, y: 450 },
+        parts: [box(0, 0, 20)],
+        frozen: false,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
+    ledger.register({ id: TERRAIN_PARTY, stroke: TERRAIN_PARTY, body: ground, target: null });
+    const id = ledger.newId();
+    ledger.register({ id, stroke: id, body: crate, target: 'crate' });
+    for (let step = 0; step < 60; step++) ledger.step(physics.step());
+
+    const [{ pairs }] = [...ledger.touching(crate)] as [Touching<string>];
+    const up = ledger.normal(crate, pairs[0]!)!;
+    const down = ledger.normal(ground, pairs[0]!)!;
+    expect(up.x).toBeCloseTo(0, 6);
+    expect(up.y).toBeCloseTo(-1, 6);
+    expect(down.x).toBeCloseTo(0, 6);
+    expect(down.y).toBeCloseTo(1, 6);
   });
 });
