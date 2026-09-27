@@ -1,5 +1,9 @@
 import { COLOURS } from '../materials/colour';
-import { DEFAULT_MATERIAL_TABLE, type MaterialTable } from '../materials/material-table';
+import {
+  DEFAULT_MATERIAL_TABLE,
+  editMaterials,
+  type MaterialTable,
+} from '../materials/material-table';
 import { numberPaths, readPath, writePath } from '../materials/table-paths';
 import { element } from './dom';
 
@@ -106,7 +110,7 @@ export class TuningPanel {
       const value = Number(input.value);
       const valid = input.value.trim() !== '' && Number.isFinite(value);
       input.classList.toggle('invalid', !valid);
-      if (valid) writePath(this.table, path, value);
+      if (valid) editMaterials(this.table, (table) => writePath(table, path, value));
       this.markModified(path, input);
     });
     this.inputs.push({ path, input });
@@ -121,10 +125,12 @@ export class TuningPanel {
   }
 
   private restoreDefaults(): void {
+    editMaterials(this.table, (table) => {
+      for (const { path } of this.inputs)
+        writePath(table, path, readPath(DEFAULT_MATERIAL_TABLE, path));
+    });
     for (const { path, input } of this.inputs) {
-      const value = readPath(DEFAULT_MATERIAL_TABLE, path);
-      writePath(this.table, path, value);
-      input.value = String(value);
+      input.value = String(readPath(this.table, path));
       input.classList.remove('invalid');
       this.markModified(path, input);
     }

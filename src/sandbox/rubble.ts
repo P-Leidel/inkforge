@@ -11,16 +11,10 @@ import { rotate, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
-import {
-  motionOf,
-  type HostSurface,
-  type Kind,
-  type Motion,
-  type Poses,
-  type Solids,
-} from './arena-contents';
+import type { ArenaBodies } from './arena-bodies';
+import { motionOf, type Kind, type Motion, type Poses, type Solids } from './arena-contents';
 import { brushTouchesCircle, type Brush } from './brush';
-import type { PartyId, PartyIndex } from './contact-ledger';
+import type { PartyId } from './contact-ledger';
 import type { PreviousPoses } from './previous-poses';
 import type { Random } from './random';
 
@@ -259,7 +253,7 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
   constructor(
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
-    private readonly contacts: PartyIndex<never>,
+    private readonly bodies: Pick<ArenaBodies<never>, 'newId' | 'addCircle' | 'removeBody'>,
     private readonly poses: Pick<PreviousPoses, 'of'>,
   ) {}
 
@@ -289,22 +283,25 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
   /** Sets Rubble loose, in order, then applies the cap. */
   add(loose: readonly LooseRubble[]): void {
     for (const { motion, ...rubble } of loose)
-      this.addBody({ id: this.nextId++, party: this.contacts.newId(), ...rubble }, motion);
+      this.addBody({ id: this.nextId++, party: this.bodies.newId(), ...rubble }, motion);
     this.cap();
   }
 
   private addBody(rubble: Omit<RubbleRecord, 'body'>, motion: Motion): void {
-    const body = this.physics.addCircle({
-      position: { x: motion.transform.x, y: motion.transform.y },
-      angle: motion.transform.angle,
-      radius: rubble.radius,
-      mass: rubble.mass,
-      surface: this.materials.colours[rubble.colour].outline,
-      velocity: motion.velocity,
-      angularVelocity: motion.angularVelocity,
-    });
+    const { party } = rubble;
+    const { body } = this.bodies.addCircle(
+      {
+        position: { x: motion.transform.x, y: motion.transform.y },
+        angle: motion.transform.angle,
+        radius: rubble.radius,
+        mass: rubble.mass,
+        velocity: motion.velocity,
+        angularVelocity: motion.angularVelocity,
+      },
+      { colour: rubble.colour, role: 'outline' },
+      (body) => ({ id: party, stroke: party, body, target: null }),
+    );
     this.rubble.push({ ...rubble, body });
-    this.contacts.register({ id: rubble.party, stroke: rubble.party, body, target: null });
   }
 
   /** Over the Rubble cap, the oldest Rubble goes at once and fades out where it was. */
@@ -313,13 +310,8 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
     while (this.rubble.length > cap) {
       const { id, colour, radius, body } = this.rubble.shift()!;
       this.fading.push({ id, colour, radius, transform: this.physics.getTransform(body), age: 0 });
-      this.removeBody(body);
+      this.bodies.removeBody(body);
     }
-  }
-
-  private removeBody(body: BodyId): void {
-    this.physics.removeBody(body);
-    this.contacts.unregister(body);
   }
 
   save(): readonly SavedRubble[] {
@@ -343,7 +335,7 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
     this.rubble = this.rubble.filter(({ body, radius }) => {
       const { x, y } = this.physics.getTransform(body);
       if (!brushTouchesCircle(brush, { x, y }, radius)) return true;
-      this.removeBody(body);
+      this.bodies.removeBody(body);
       return false;
     });
   }
@@ -353,7 +345,6 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
   }
 
   clear(): void {
-    for (const { body } of this.rubble) this.removeBody(body);
     this.rubble = [];
     this.fading = [];
   }
@@ -365,18 +356,6 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
       return { centre: { x, y }, radius };
     });
     return { polygons: [], circles };
-  }
-
-  /** A piece of Rubble is a circle. */
-  surfaceOf(party: PartyId): HostSurface | null {
-    const piece = this.rubble.find((r) => r.party === party);
-    return piece ? { kind: 'circle', radius: piece.radius } : null;
-  }
-
-  applySurfaces(): void {
-    for (const { body, colour } of this.rubble) {
-      this.physics.setSurface(body, this.materials.colours[colour].outline);
-    }
   }
 
   /** The ghosts fade. */

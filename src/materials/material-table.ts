@@ -372,6 +372,27 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   },
 };
 
+/** Each table's revision, by the table, so it is never among the table's numbers. */
+const revisions = new WeakMap<MaterialTable, number>();
+
+/**
+ * The table's revision: how many times `editMaterials` has edited it. The
+ * Sandbox world compares it each step to see an edit.
+ */
+export function materialsRevision(table: MaterialTable): number {
+  return revisions.get(table) ?? 0;
+}
+
+/**
+ * Edits the table, as the F2 tuning panel does, and bumps its revision, so
+ * the Sandbox world applies new surfaces, `wakeSpeed` and `minBounceSpeed`
+ * from its next step. Every other number is read where it is used.
+ */
+export function editMaterials(table: MaterialTable, edit: (table: MaterialTable) => void): void {
+  edit(table);
+  revisions.set(table, materialsRevision(table) + 1);
+}
+
 /** A fresh, editable copy of the default table. */
 export function createMaterialTable(): MaterialTable {
   return structuredClone(DEFAULT_MATERIAL_TABLE);

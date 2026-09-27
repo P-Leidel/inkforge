@@ -6,7 +6,7 @@ import type { BodyId, ContactHit, ContactPair, PhysicsWorld, StepReport } from '
  * engine's report order: the step's hits, its new contacts, and who
  * touches whom. It owns everything that decides this:
  *
- * - who each body is (its Party), registered by the kind that adds it;
+ * - who each body is (its Party), registered by Arena bodies as a kind adds it;
  * - the Settled pairs, which deal no damage and aren't new until they
  *   come apart;
  * - the Squeezed Objects, which are in no channel while they slide, and
@@ -86,12 +86,6 @@ export interface SavedContacts {
   readonly settled: readonly number[];
 }
 
-/** What a kind needs of the ledger: Party ids, and its bodies' Parties coming and going. */
-export type PartyIndex<T> = Pick<
-  ContactLedger<T>,
-  'newId' | 'register' | 'unregister' | 'squeezed'
->;
-
 /** One side's entry for two Parties touching. Both sides share `pairs`. */
 interface Contact<T> extends Touching<T> {
   readonly pairs: ContactPair[];
@@ -108,8 +102,6 @@ export class ContactLedger<T> {
   private readonly parties = new Map<BodyId, Party<T>>();
   /** The same Parties by their id. */
   private readonly byId = new Map<PartyId, Party<T>>();
-  /** Parties unregistered since `takeGone`: what was removed. */
-  private gone: PartyId[] = [];
   /** Who touches whom, both ways round, with the shape pairs they touch through. */
   private readonly contacts = new Map<PartyId, Map<PartyId, Contact<T>>>();
   /**
@@ -174,24 +166,12 @@ export class ContactLedger<T> {
     return this.byId.get(id);
   }
 
-  /**
-   * The Parties unregistered since the last call, in the order they went:
-   * what was broken, undone, removed, cleared or capped. A rebuild forgets
-   * Parties without them going.
-   */
-  takeGone(): readonly PartyId[] {
-    const gone = this.gone;
-    if (gone.length > 0) this.gone = [];
-    return gone;
-  }
-
   /** A body was removed: its Party goes, with everything it touched and was Settled with. */
   unregister(body: BodyId): void {
     const party = this.parties.get(body);
     if (!party) return;
     this.parties.delete(body);
     this.byId.delete(party.id);
-    this.gone.push(party.id);
     this.sliding.delete(body);
     this.slideEnded.delete(body);
     const mine = this.contacts.get(party.id);
@@ -346,13 +326,12 @@ export class ContactLedger<T> {
 
   /**
    * After `physics.reset()`: forgets every body, what touched and what slid,
-   * and takes the saved Settled pairs. The kinds register their bodies again
-   * as they restore them. Party ids carry on from where they were.
+   * and takes the saved Settled pairs. Every body is registered again as its
+   * kind restores it. Party ids carry on from where they were.
    */
   restore(saved: SavedContacts): void {
     this.parties.clear();
     this.byId.clear();
-    this.gone = [];
     this.contacts.clear();
     this.sliding.clear();
     this.slideEnded.clear();

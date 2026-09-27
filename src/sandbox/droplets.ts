@@ -4,9 +4,10 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import type { Arena } from './arena';
+import type { ArenaBodies } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses, type Solids } from './arena-contents';
 import { brushTouchesCircle, type Brush } from './brush';
-import type { Party, PartyId, PartyIndex } from './contact-ledger';
+import type { Party, PartyId } from './contact-ledger';
 import type { PreviousPoses } from './previous-poses';
 import type { Random } from './random';
 import { deepestPoint, hexSpots } from './rubble';
@@ -120,7 +121,7 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
     private readonly arena: Arena,
-    private readonly contacts: PartyIndex<never>,
+    private readonly bodies: Pick<ArenaBodies<never>, 'newId' | 'addCircle' | 'removeBody'>,
     private readonly poses: Pick<PreviousPoses, 'of'>,
   ) {}
 
@@ -139,34 +140,35 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
     const { dropletRadius: radius, dropletMass: mass } = this.materials;
     for (const { motion, ...droplet } of loose) {
       const id = this.nextId++;
-      this.addBody({ id, party: this.contacts.newId(), radius, mass, ...droplet }, motion);
+      this.addBody({ id, party: this.bodies.newId(), radius, mass, ...droplet }, motion);
     }
   }
 
   private addBody(droplet: Omit<DropletRecord, 'body'>, motion: Motion): void {
-    const body = this.physics.addCircle({
-      position: { x: motion.transform.x, y: motion.transform.y },
-      angle: motion.transform.angle,
-      radius: droplet.radius,
-      mass: droplet.mass,
-      surface: this.materials.colours[droplet.colour].line,
-      velocity: motion.velocity,
-      angularVelocity: motion.angularVelocity,
-      group: DROPLET_GROUP,
-      wakes: false,
-      bullet: true,
-    });
+    const { party } = droplet;
+    const { body } = this.bodies.addCircle(
+      {
+        position: { x: motion.transform.x, y: motion.transform.y },
+        angle: motion.transform.angle,
+        radius: droplet.radius,
+        mass: droplet.mass,
+        velocity: motion.velocity,
+        angularVelocity: motion.angularVelocity,
+        group: DROPLET_GROUP,
+        wakes: false,
+        bullet: true,
+      },
+      { colour: droplet.colour, role: 'line' },
+      (body) => ({ id: party, stroke: party, body, target: null, harmless: true }),
+    );
     const record = { ...droplet, body };
     this.droplets.push(record);
     this.byBody.set(body, record);
-    const { party } = droplet;
-    this.contacts.register({ id: party, stroke: party, body, target: null, harmless: true });
   }
 
   private removeBody(body: BodyId): void {
-    this.physics.removeBody(body);
-    this.contacts.unregister(body);
     this.byBody.delete(body);
+    this.bodies.removeBody(body);
   }
 
   /** Whether a body is a Droplet's. */
@@ -218,24 +220,13 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
   dropVisuals(): void {}
 
   clear(): void {
-    for (const { body } of this.droplets) this.removeBody(body);
     this.droplets = [];
+    this.byBody.clear();
   }
 
   /** Droplets aren't solid. */
   solids(): Solids {
     return { polygons: [], circles: [] };
-  }
-
-  /** Nothing lands on a Droplet. */
-  surfaceOf(): null {
-    return null;
-  }
-
-  applySurfaces(): void {
-    for (const { body, colour } of this.droplets) {
-      this.physics.setSurface(body, this.materials.colours[colour].line);
-    }
   }
 
   /** Droplets that left the Arena vanish. */

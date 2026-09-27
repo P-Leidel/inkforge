@@ -70,7 +70,16 @@ Drawing a Line through an Object, moving or Frozen, squeezes the Object off the 
 
 Every time physics starts, the sandbox takes a snapshot, and R takes the world back to it and pauses, so you can build, watch it play out and try again. A retry plays out exactly like the first run: every start rebuilds the physics world from its snapshot. R brings back broken Objects and Pieces with the damage they had. Contacts touching when physics starts deal no damage until they come apart, so pressing Space never breaks a build. Undo removes what's left of a Line and skips Strokes that have broken completely, and Clear also sweeps away the Debris.
 
-F2 opens a panel with every number of the material table ([`src/materials/material-table.ts`](src/materials/material-table.ts)): friction, bounce, density, durability, damage threshold, impact limit, glue drag and wear, and whether an Outline sticks or a Line or Outline explodes, per Colour and role, a Fill's kick speed, the size and number of its Rubble, whether it spills or explodes and how bounces wear its Patches, and the shared constants such as the Piece length, damage per impulse, the Rubble cap, the kick's spread, the Droplets' count and size, the Patches' length, thickness, capacity and cap, and the Blasts' speed, size, push and top push speed, and a Piece's Blast's fixed reach and strength. Edits apply from the next physics step (densities to Objects drawn or filled afterwards), survive R and Clear, and are lost on reload; **Copy as JSON** copies the table to paste back over the defaults in the code. Changed values are outlined in yellow, and **Defaults** puts them all back.
+F2 opens a panel with every number of the material table ([`src/materials/material-table.ts`](src/materials/material-table.ts)): friction, bounce, density, durability, damage threshold, impact limit, glue drag and wear, and whether an Outline sticks or a Line or Outline explodes, per Colour and role, a Fill's kick speed, the size and number of its Rubble, whether it spills or explodes and how bounces wear its Patches, and the shared constants such as the Piece length, damage per impulse, the Rubble cap, the kick's spread, the Droplets' count and size, the Patches' length, thickness, capacity and cap, and the Blasts' speed, size, push and top push speed, and a Piece's Blast's fixed reach and strength. Edits survive R and Clear and are lost on reload; **Copy as JSON** copies the table to paste back over the defaults in the code. Changed values are outlined in yellow, and **Defaults** puts them all back. Each kind of edit takes effect at its own time:
+
+| Field                                   | Takes effect                          |
+| --------------------------------------- | ------------------------------------- |
+| surfaces, `wakeSpeed`, `minBounceSpeed` | next step                             |
+| density                                 | next draw or Fill                     |
+| Blast reach, strength                   | next Blast                            |
+| `blast.speed`                           | at once                               |
+| `rubbleCap`, `patchCap`                 | next add                              |
+| `patchCapacity`                         | at once, and it rescales worn Patches |
 
 The toolbar clears the Arena and runs the engine stress tests: **Ball cannon** (3000 px/s balls at a 4 px black Line), **Box tower** (10 drawn boxes) and **Pebbles** (100 drawn pebbles). Each shows its measurements under the toolbar.
 

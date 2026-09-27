@@ -38,9 +38,9 @@ export type HostSurface =
 
 /**
  * One kind of Arena contents. It owns its records and their ids, which are
- * never reused, and keeps nothing for what is gone. It registers each of its
- * bodies' Parties with the Contact ledger as it adds the body, also on
- * restore, and unregisters it as it removes the body.
+ * never reused, and keeps nothing for what is gone. It adds, slides and
+ * removes its bodies, and the shapes it adds on others' bodies, only through
+ * Arena bodies, also on restore.
  */
 export interface Kind<Name extends string, Saved, Views> {
   /** Its key in `world.contents` and in the snapshot. */
@@ -57,26 +57,24 @@ export interface Kind<Name extends string, Saved, Views> {
   restore(saved: Saved): void;
   /** Drops whatever of it is visual only, as R does with Debris. */
   dropVisuals(): void;
-  /** Removes all of it. */
+  /** Forgets all of it: Clear, after Arena bodies has removed every body and shape. */
   clear(): void;
   /** What of it new Objects may not overlap. */
   solids(): Solids;
-  /** The surface of its body with this Party, if it has one: where a Droplet lands. */
-  surfaceOf(party: PartyId): HostSurface | null;
-  /** Re-applies its surfaces after a material table edit. */
-  applySurfaces(): void;
   /**
-   * Hears which Parties a step or a command removed (broken, undone, removed,
-   * erased or capped), its own too: whatever of it was attached to them goes. The
-   * world tells every kind, in kind order, before their turn in a step and
-   * after every command that removes something. Clear tells none: every
-   * kind clears itself.
+   * Hears which Parties went (broken, undone, removed, erased, capped or
+   * vanished), its own too: whatever of it was attached to them goes. Arena
+   * bodies tells every kind, in kind order, as each body goes, before the
+   * removal returns, so it may hear this during any kind's turn, its own
+   * included. It only forgets its own records and lets go of what they held,
+   * and never calls back into anything. Clear tells none: every kind clears
+   * itself.
    */
   gone(parties: ReadonlySet<PartyId>): void;
   /**
    * Removes, quietly, whatever of it the Eraser's brush touches: nothing
-   * breaks, bursts or comes out of it. The world tells every kind what went
-   * after each kind's turn, so a kind never erases what went with a host.
+   * breaks, bursts or comes out of it. What went with a host erased before
+   * it is already gone.
    */
   erase(brush: Brush): void;
   /** Its turn in each step, after the Material rules and breaking. */

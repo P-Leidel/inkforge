@@ -3,7 +3,7 @@ import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, NearBody, PhysicsWorld } from '../physics';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
-import type { HostSurface, Kind, Solids } from './arena-contents';
+import type { Kind, Solids } from './arena-contents';
 import { TERRAIN_PARTY, type Party, type PartyId } from './contact-ledger';
 
 /**
@@ -196,13 +196,6 @@ export class Blasts<T> implements Kind<'blasts', readonly SavedBlast[], readonly
   solids(): Solids {
     return { polygons: [], circles: [] };
   }
-
-  /** Nothing lands on a Blast. */
-  surfaceOf(): HostSurface | null {
-    return null;
-  }
-
-  applySurfaces(): void {}
 
   /** Blasts spread in their own call, `spread`. */
   step(): void {}

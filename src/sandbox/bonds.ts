@@ -107,8 +107,8 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
 
   dropVisuals(): void {}
 
+  /** Every bond went with the bodies it held. */
   clear(): void {
-    for (const { bond } of this.bonds) this.physics.removeBond(bond);
     this.bonds = [];
   }
 
@@ -129,13 +129,6 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
   solids(): Solids {
     return { polygons: [], circles: [] };
   }
-
-  /** Bonds have no bodies. */
-  surfaceOf(): null {
-    return null;
-  }
-
-  applySurfaces(): void {}
 
   step(): void {}
 }

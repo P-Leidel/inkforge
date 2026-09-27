@@ -10,9 +10,10 @@ import { rotate, sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld, ShapeId } from '../physics';
+import type { ArenaBodies } from './arena-bodies';
 import type { HostSurface, Kind, Poses, Solids } from './arena-contents';
 import { brushTouchesCapsules, type Brush } from './brush';
-import type { ContactLedger, Party, PartyId } from './contact-ledger';
+import type { Party, PartyId } from './contact-ledger';
 import type { PreviousPoses } from './previous-poses';
 
 /**
@@ -178,7 +179,8 @@ type SavedPatch = Omit<PatchRecord, 'kind' | 'body' | 'shape'>;
  * are never reused. A Patch has no Party of its own: hits and contacts on
  * it are its host's, and name its shape. So hits on it damage its host by
  * the normal rule and take nothing from the Patch, which wears only by use.
- * It goes when its host goes (host gone). Patches come after their hosts'
+ * Its shape is added on its host through Arena bodies, and goes when its
+ * host goes (host gone). Patches come after their hosts'
  * kinds, so that restoring finds their hosts registered again.
  */
 export class Patches implements Kind<'patches', readonly SavedPatch[], readonly PatchView[]> {
@@ -191,7 +193,7 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   constructor(
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
-    private readonly parties: Pick<ContactLedger<unknown>, 'party'>,
+    private readonly bodies: Pick<ArenaBodies<unknown>, 'addShape' | 'removeShape'>,
     private readonly poses: Pick<PreviousPoses, 'of'>,
   ) {}
 
@@ -241,10 +243,10 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   }
 
   private attach(saved: SavedPatch): void {
-    const body = this.parties.party(saved.host)?.body;
-    if (body === undefined) return;
-    const surface = this.materials.colours[saved.colour].line;
-    const shape = this.physics.addCapsule(body, saved.segment, saved.thickness / 2, surface);
+    const { host, segment, thickness, colour } = saved;
+    const added = this.bodies.addShape(host, segment, thickness / 2, colour);
+    if (!added) return;
+    const { shape, body } = added;
     const patch: PatchRecord = { ...saved, kind: 'patch', body, shape };
     this.patches.push(patch);
     this.byShape.set(shape, patch);
@@ -265,7 +267,7 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
       colour: patch.colour,
     }));
     for (const { shape } of patches) {
-      this.physics.removeShape(shape);
+      this.bodies.removeShape(shape);
       this.byShape.delete(shape);
     }
     this.patches = this.patches.filter(({ shape }) => this.byShape.has(shape));
@@ -310,12 +312,11 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   dropVisuals(): void {}
 
   clear(): void {
-    for (const { shape } of this.patches) this.physics.removeShape(shape);
     this.patches = [];
     this.byShape.clear();
   }
 
-  /** A Patch whose host is gone went with the host's body. */
+  /** A Patch whose host is gone went with the host's body: Arena bodies removed its shape. */
   gone(parties: ReadonlySet<PartyId>): void {
     if (!this.patches.some(({ host }) => parties.has(host))) return;
     this.patches = this.patches.filter(({ host, shape }) => {
@@ -330,7 +331,7 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
     this.patches = this.patches.filter((patch) => {
       if (!brushTouchesCapsules(brush, [this.worldSegment(patch)], patch.thickness / 2))
         return true;
-      this.physics.removeShape(patch.shape);
+      this.bodies.removeShape(patch.shape);
       this.byShape.delete(patch.shape);
       return false;
     });
@@ -339,17 +340,6 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   /** Patches take no room of their own. */
   solids(): Solids {
     return { polygons: [], circles: [] };
-  }
-
-  /** A Droplet landing on a Patch lands on its host. */
-  surfaceOf(): null {
-    return null;
-  }
-
-  applySurfaces(): void {
-    for (const { shape, colour } of this.patches) {
-      this.physics.setShapeSurface(shape, this.materials.colours[colour].line);
-    }
   }
 
   step(): void {}
