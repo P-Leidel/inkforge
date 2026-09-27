@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
-import { FONT_FAMILY, PALETTE } from './palette';
+import { FONT_FAMILY, PALETTE } from '../rendering/palette';
 
 const HELP_TEXT =
   '1–5: Colour    E: eraser    Drag: draw    Click: fill    Right-click: release    Space: run / pause    R: reset    Ctrl+Z: undo    F1: stats / debug    F2: tuning';

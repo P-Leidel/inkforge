@@ -1,6 +1,6 @@
 # Spec: Milestone 3, Ink costs
 
-Roadmap step 3 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 2 spec](m2-colours.md).
+**Done** (closed 2026-09-27; see [Outcome](#outcome)). Roadmap step 3 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 2 spec](m2-colours.md).
 
 ## Problem Statement
 
@@ -164,11 +164,11 @@ Vertical slices, one GitHub issue each, linking to this spec. Each slice extends
 Before the slices, two refactors:
 
 - **Ink measured once** (#58, done in #59). The Ink measure and the commands' Ink outcomes.
-- **Drawing input** (#60). The headless module that turns pointer events into commands. It owns the preview's throttle.
+- **Drawing input** (#60, done in #67). The headless module that turns pointer events into commands. It owns the preview's throttle.
 
 Then:
 
-1. **Game and Ink Tanks** (#61). `src/game/`, and the scene talks to the Game instead of the Sandbox world. Covers:
+1. **Game and Ink Tanks** (#61, done in #68). `src/game/`, and the scene talks to the Game instead of the Sandbox world. Covers:
    - each Piece's Ink on a Line's outcome, and `removeStroke` and `removeFill` in the Sandbox world;
    - the Tanks and the Ink table;
    - Strokes and Fills charged at full price;
@@ -179,18 +179,18 @@ Then:
    - plain gauges on the palette;
    - the **Ink costs** switch in F2, off by default;
    - the Tanks in F1.
-2. **Cost previews** (#62, blocked by 1 and #60). The greyed-out pending cost while drawing and on hover over a fillable Object, red when over.
-3. **Overlap charging** (#64, blocked by 2). The free parts, a price per Piece from them, and the free part in the preview.
-4. **Ink section in F2** (#63, blocked by 1). The prices and Tank maximums, live.
-5. **Readable cost and frame rate** (#65, blocked by 3 and 4; for a person, not an agent). The readability test and the Demolition frame rate on the baseline machine.
+2. **Cost previews** (#62, done in #70). The greyed-out pending cost while drawing and on hover over a fillable Object, red when over.
+3. **Overlap charging** (#64, done in #71). The free parts, a price per Piece from them, and the free part in the preview.
+4. **Ink section in F2** (#63, done in #69). The prices and Tank maximums, live.
+5. **Readable cost and frame rate** (#65, for a person, not an agent; passed). The readability test and the Demolition frame rate on the baseline machine.
 
 2 and 4 can run in parallel.
 
 After the slices, three refactors from the [architecture review after #71](../adr/reports/architecture-review-2026-09-27-after-71.html). They change no behaviour, and land before the milestone 4 spec is written:
 
-- **Ink Tanks in one module** (#72). The Tank rules, their snapshot, and one reading for the gauges and F1, named so that milestone 4's Locked Ink joins it without renaming.
-- **What would this Stroke do** (#73, blocked by #72). One Game query for a Stroke and one for a Fill, the raw-samples measure in the Ink measure, and one throttle rule for both.
-- **Exhaustive switches** (#74). Typed linting, so the compiler lists where enemies must be handled.
+- **Ink Tanks in one module** (#72, done in #82). The Tank rules, their snapshot, and one reading for the gauges and F1, named so that milestone 4's Locked Ink joins it without renaming.
+- **What would this Stroke do** (#73, done in #83). One Game query for a Stroke and one for a Fill, the raw-samples measure in the Ink measure, and one throttle rule for both.
+- **Exhaustive switches** (#74, done in #81). Typed linting, so the compiler lists where enemies must be handled.
 
 The review's other candidates wait for milestone 4 (#75 to #79), each with a note on when to revisit it.
 
@@ -234,3 +234,24 @@ The review's other candidates wait for milestone 4 (#75 to #79), each with a not
 - The Eraser now refunds what was paid for what it removes, so `CONTEXT.md` changes. That is a sandbox rule. GDD §10's "erasing a Stroke from an earlier Wave gives no ink back" is about the game with Waves, and is untouched until milestone 4 or 5 decides whether the game has erasing at all.
 - Locked Ink, Wave Ink, drops and the Core Zone moved to milestone 4 because they need kills and the Ink Core. The GDD roadmap is updated to v0.5.
 - Numbers to tune by feel: `linePrice`, `fillPrice` and the five Tank maximums. They can only be judged against enemies, in milestone 4.
+
+## Outcome
+
+Milestone 3 closed on 2026-09-27. All three exit criteria hold: every slice shipped, and the readability test and the Demolition frame rate passed in the browser (#65).
+
+What the sandbox gained:
+
+- A headless **Game** (`src/game/`) over the Sandbox world, as [ADR 0009](../adr/0009-ink-rules-in-a-game-layer.md) decided. It owns the Ink table, the Ink Tanks, pricing, the **Ink costs** switch, the undo history with its refunds, and the snapshot R returns to. The gallery, the stress tests and `npm run verdict` still build below it, for free.
+- A headless **Drawing input** (`src/input/`) that turns pointer events into Game commands, previews and flashes, so the Phaser scene only forwards events and draws.
+- Gauges on the palette with the pending cost greyed out, red when it's more than is left; "Not enough <Colour>" refusals; overlap charging; and the Ink section in F2.
+
+Refactors along the way, none changing behaviour:
+
+- Before the slices: **Ink measured once** (#58, in #59), so every command reports the Ink it made or took back and the Game only prices it; and **Drawing input** (#60, in #67), which moved the input rules out of the scene.
+- After the slices, from the [architecture review after #71](../adr/reports/architecture-review-2026-09-27-after-71.html):
+  - **Ink Tanks in one module** (#72, in #82). `src/game/ink-tanks.ts` owns spending, refunds, affordability and the snapshot, and gives the gauges and F1 one reading, ready for milestone 4's Locked Ink.
+  - **What would this Stroke do** (#73, in #83). The Ink measure measures raw samples (`samplesInk`), the Game answers with two looks (`lookAtStroke`, `lookAtFill`) priced by `prospect`, and Drawing input keeps one throttle rule. The Game no longer measures Ink itself.
+  - **Exhaustive switches** (#74, in #81). Typed linting with `switch-exhaustiveness-check`, so a new kind of Thing, Form or Happening, such as milestone 4's enemies, fails lint wherever it isn't handled.
+- At the close, `src/rendering/` was split by what it draws: `rendering/` keeps the Arena, `ui/` the controls and `debug/` the F1 and F3 tools.
+
+Carried to milestone 4: the review's other candidates (#75 to #79), and tuning `linePrice`, `fillPrice` and the Tank maximums against enemies.

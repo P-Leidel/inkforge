@@ -4,7 +4,7 @@ import type { Colour } from '../materials/colour';
 import { CLOSE_RADIUS, LINE_THICKNESS } from '../stroke/stroke-rules';
 import { drawInk } from './ink';
 import { PALETTE } from './palette';
-import { drawBrush } from './palette-bar';
+import { drawBrush } from '../ui/palette-bar';
 
 /** Where the pointer's Colour dab sits, relative to the pointer. */
 const POINTER_OFFSET = { x: 16, y: 16 };
