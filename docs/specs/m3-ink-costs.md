@@ -186,6 +186,14 @@ Then:
 
 2 and 4 can run in parallel.
 
+After the slices, three refactors from the [architecture review after #71](../adr/reports/architecture-review-2026-09-27-after-71.html). They change no behaviour, and land before the milestone 4 spec is written:
+
+- **Ink Tanks in one module** (#72). The Tank rules, their snapshot, and one reading for the gauges and F1, named so that milestone 4's Locked Ink joins it without renaming.
+- **What would this Stroke do** (#73, blocked by #72). One Game query for a Stroke and one for a Fill, the raw-samples measure in the Ink measure, and one throttle rule for both.
+- **Exhaustive switches** (#74). Typed linting, so the compiler lists where enemies must be handled.
+
+The review's other candidates wait for milestone 4 (#75 to #79), each with a note on when to revisit it.
+
 ## Testing Decisions
 
 - As before, a good test drives a module through its public commands and checks outcomes the player would notice: "a 400 px grey Line took 400 from the grey Tank", "undoing it gave the 400 back". Tests don't inspect internal stages or engine objects.
