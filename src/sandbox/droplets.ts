@@ -1,4 +1,4 @@
-import { polygonArea, type Polygon } from '../geometry/polygon';
+import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
@@ -42,9 +42,14 @@ export interface PackedSpill {
  * on its own spot of a hex grid clear of the Outline's edges, picked by
  * `random`. Droplets never touch each other, so when fewer spots fit, some
  * share one; if none fits, they all start at the deepest point. The Spill's
- * Patch length is `patchLengthPerArea` × the Fill's area, shared evenly.
+ * Patch length is `patchLengthPerArea` × the Fill's Ink, `ink`, shared evenly.
  */
-export function packSpill(outline: Polygon, table: MaterialTable, random: Random): PackedSpill {
+export function packSpill(
+  outline: Polygon,
+  ink: number,
+  table: MaterialTable,
+  random: Random,
+): PackedSpill {
   const count = dropletCount(table, random);
   const spots = hexSpots(outline, table.dropletRadius);
   if (spots.length === 0) spots.push(deepestPoint(outline).point);
@@ -59,7 +64,7 @@ export function packSpill(outline: Polygon, table: MaterialTable, random: Random
       centres.push(spots[Math.floor(random.next() * spots.length)]!);
     }
   }
-  return { centres, length: (table.patchLengthPerArea * polygonArea(outline)) / count };
+  return { centres, length: (table.patchLengthPerArea * ink) / count };
 }
 
 export interface DropletView extends Poses {

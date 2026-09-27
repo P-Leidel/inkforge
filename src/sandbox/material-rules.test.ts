@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import { fillInk, outlineInk } from '../materials/ink';
 import {
   createMaterialTable,
   DEFAULT_MATERIAL_TABLE,
@@ -200,6 +201,7 @@ function brokenObject(outline: Colour, fill: Colour | null): Broken {
     fill: fill && {
       colour: fill,
       mass: 2,
+      ink: fillInk(SQUARE),
       outline: SQUARE,
       from: {
         transform: { ...centre, angle: 0 },
@@ -207,7 +209,7 @@ function brokenObject(outline: Colour, fill: Colour | null): Broken {
         angularVelocity: 0,
       },
     },
-    outline: { colour: outline, length: 240, centre },
+    outline: { colour: outline, ink: outlineInk(SQUARE), centre },
     piece: null,
   };
 }

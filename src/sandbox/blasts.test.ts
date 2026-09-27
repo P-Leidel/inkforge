@@ -33,9 +33,9 @@ describe('Blast size and falloff', () => {
     expect(at(1e7)).toEqual({ reach: blast.radiusMax, strength: blast.strengthMax });
   });
 
-  it('counts red Outline ink by length × Line thickness and red Fill ink by area, as one Blast', () => {
-    const outline = { length: 100 };
-    const fill = { area: 2000 };
+  it('adds up the red Ink of the Outline and of the Fill, as one Blast', () => {
+    const outline = { ink: 800 };
+    const fill = { ink: 2000 };
 
     expect(blastInk({ ...outline, colour: 'red' }, null, TABLE)).toBe(800);
     expect(blastInk({ ...outline, colour: 'red' }, { ...fill, colour: 'red' }, TABLE)).toBe(2800);

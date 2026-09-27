@@ -1,6 +1,6 @@
-import { polygonArea, polygonPerimeter, type Polygon } from '../geometry/polygon';
-import { LINE_THICKNESS } from '../stroke/stroke-rules';
+import type { Polygon } from '../geometry/polygon';
 import type { Colour } from './colour';
+import { fillInk, outlineInk } from './ink';
 import type { MaterialTable } from './material-table';
 
 /*
@@ -11,13 +11,12 @@ import type { MaterialTable } from './material-table';
  */
 
 export function outlineMass(outline: Polygon, colour: Colour, table: MaterialTable): number {
-  const ink = polygonPerimeter(outline) * LINE_THICKNESS;
-  return table.inkMass * ink * table.colours[colour].outline.density;
+  return table.inkMass * outlineInk(outline) * table.colours[colour].outline.density;
 }
 
 export function fillMass(outline: Polygon, fill: Colour | null, table: MaterialTable): number {
   if (!fill) return 0;
-  return table.inkMass * polygonArea(outline) * table.colours[fill].fill.density;
+  return table.inkMass * fillInk(outline) * table.colours[fill].fill.density;
 }
 
 export function objectMass(

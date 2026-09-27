@@ -28,12 +28,14 @@ import { Random } from './random';
 import { Rubble, type RubbleView } from './rubble';
 import {
   Strokes,
+  type AddedStroke,
   type FillOutcome,
   type LineView,
   type ObjectStroke,
   type ObjectView,
   type StrokeId,
   type StrokeTarget,
+  type UndoOutcome,
 } from './strokes';
 
 export type { BlastView } from './blasts';
@@ -50,6 +52,7 @@ export {
   type ObjectView,
   type PieceView,
   type StrokeId,
+  type UndoOutcome,
 } from './strokes';
 
 /** Fixed physics step: 60 Hz. */
@@ -59,10 +62,12 @@ export const GRAVITY = 1000;
 /** At most this many steps per `advance`, so a long frame can't stall the game. */
 const MAX_STEPS_PER_ADVANCE = 8;
 
-/** What a submitted Stroke became. */
+/**
+ * What a submitted Stroke became. A Line or an Object carries its Colour
+ * and the Ink (px²) it took: a Line's as drawn, an Object's Outline's.
+ */
 export type StrokeOutcome =
-  | { readonly kind: 'line'; readonly id: StrokeId }
-  | { readonly kind: 'object'; readonly id: StrokeId }
+  | AddedStroke
   | { readonly kind: 'rejected'; readonly reason: RejectionReason; readonly path: readonly Vec2[] }
   | { readonly kind: 'dropped' };
 
@@ -298,7 +303,7 @@ export class SandboxWorld {
     switch (result.kind) {
       case 'line':
       case 'object':
-        return { kind: result.kind, id: this.strokes.add(result, colour, this.running) };
+        return this.strokes.add(result, colour, this.running);
       case 'rejected':
         return { kind: 'rejected', reason: result.reason, path: result.path };
       case 'dropped':
@@ -335,7 +340,8 @@ export class SandboxWorld {
   /**
    * Fills the Object under `point` with `colour`: its mass becomes its
    * Outline's plus its Fill's. Works paused and running, on Frozen and moving
-   * Objects, and never wakes a Frozen one. An Object holds one Fill.
+   * Objects, and never wakes a Frozen one. An Object holds one Fill. A Fill
+   * that is added carries its Colour and the Ink it took.
    */
   fillAt(point: Vec2, colour: Colour): FillOutcome {
     return this.strokes.fillAt(point, colour);
@@ -389,10 +395,12 @@ export class SandboxWorld {
   /**
    * Takes back the most recent Stroke or Fill that still exists: what's left
    * of a Line goes as a whole. Broken Objects, and Lines whose every Piece
-   * broke, are gone from the history, so undo skips them.
+   * broke, are gone from the history, so undo skips them. Says what it
+   * took back (a Line, an Object or a Fill) and its Ink; for a Line, also
+   * the Ink of its Pieces still there. Nothing is refunded here.
    */
-  undo(): void {
-    this.strokes.undo();
+  undo(): UndoOutcome {
+    return this.strokes.undo();
   }
 
   /**

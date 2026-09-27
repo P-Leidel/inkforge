@@ -1,10 +1,11 @@
 import { capsuleOverlapsPolygon } from '../geometry/overlap';
 import { bandPolygon, capsulePolygon, shortestWayOut } from '../geometry/separation';
-import { polygonCentroid, polygonPerimeter, type Polygon } from '../geometry/polygon';
+import { polygonCentroid, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
 import { transformPoints } from '../geometry/transform';
 import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import { fillInk, lineInk, outlineInk } from '../materials/ink';
 import { fillMass, outlineMass } from '../materials/mass';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, ObjectBodyDef, PhysicsWorld } from '../physics';
@@ -86,12 +87,51 @@ export interface StrokeViews {
   readonly objects: readonly ObjectView[];
 }
 
+/** What adding a Stroke made: a Line or an Object, in its Colour, and the Ink (px²) it took. */
+export interface AddedStroke {
+  readonly kind: 'line' | 'object';
+  readonly id: StrokeId;
+  readonly colour: Colour;
+  /** A Line's Ink as drawn, or an Object's Outline's. */
+  readonly ink: number;
+}
+
 /** What a Fill click did. */
 export type FillOutcome =
-  | { readonly kind: 'filled'; readonly id: StrokeId }
+  /** The Object under the click took a Fill of `colour`, of `ink` px². */
+  | {
+      readonly kind: 'filled';
+      readonly id: StrokeId;
+      readonly colour: Colour;
+      readonly ink: number;
+    }
   /** The Object under the click holds a Fill already; `outline` is its Outline where it is now. */
   | { readonly kind: 'already-filled'; readonly id: StrokeId; readonly outline: Polygon }
   | { readonly kind: 'missed' };
+
+/** What undo took back, in its Colour, and its Ink (px²). */
+export type UndoOutcome =
+  /**
+   * A Line, whatever is left of it: `ink` as it was drawn, `standing` what
+   * its Pieces still there hold.
+   */
+  | {
+      readonly kind: 'line';
+      readonly id: StrokeId;
+      readonly colour: Colour;
+      readonly ink: number;
+      readonly standing: number;
+    }
+  /** An Object: its Outline's Ink. It has no Fill by then; that is undone first. */
+  | {
+      readonly kind: 'object';
+      readonly id: StrokeId;
+      readonly colour: Colour;
+      readonly ink: number;
+    }
+  /** An Object's Fill; the Object stays. */
+  | { readonly kind: 'fill'; readonly id: StrokeId; readonly colour: Colour; readonly ink: number }
+  | { readonly kind: 'nothing' };
 
 /** What the Stroke pipeline made of a Stroke that is added. */
 export type DrawnStroke = Extract<StrokeResult, { readonly kind: 'line' | 'object' }>;
@@ -115,6 +155,8 @@ interface LineStroke {
   readonly party: PartyId;
   readonly colour: Colour;
   readonly thickness: number;
+  /** Its Ink as drawn, before any Piece broke. */
+  readonly ink: number;
   /** The Pieces still there, in order; broken ones are gone. */
   pieces: Piece[];
 }
@@ -178,6 +220,8 @@ export interface SavedStrokes {
 export interface ReleasedFill {
   readonly colour: Colour;
   readonly mass: number;
+  /** Its Ink, px². */
+  readonly ink: number;
   /** The Outline it fills, relative to the Object's origin. */
   readonly outline: Polygon;
   /** The Object's pose and motion as it broke. */
@@ -187,8 +231,8 @@ export interface ReleasedFill {
 /** A broken Object's Outline, which explodes if its Colour does. */
 export interface BrokenOutline {
   readonly colour: Colour;
-  /** Its length, px. */
-  readonly length: number;
+  /** Its Ink, px². */
+  readonly ink: number;
   /** The Object's centre (its body's origin) as it broke. */
   readonly centre: Vec2;
 }
@@ -283,13 +327,15 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   }
 
   /**
-   * Adds the Line or Object the Stroke pipeline made, in `colour`. While
-   * physics is `running`, it squeezes what it crosses off the Lines at once.
+   * Adds the Line or Object the Stroke pipeline made, in `colour`, and says
+   * how much Ink it took. While physics is `running`, it squeezes what it
+   * crosses off the Lines at once.
    */
-  add(result: DrawnStroke, colour: Colour, running: boolean): StrokeId {
+  add(result: DrawnStroke, colour: Colour, running: boolean): AddedStroke {
     const id = this.nextId++;
     if (result.kind === 'line') {
       const { thickness } = result;
+      const ink = lineInk(result.segments, thickness);
       const party = this.bodies.newId();
       const pieces = result.pieces.map((segments, index) =>
         this.addPiece(
@@ -308,11 +354,11 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
           party,
         ),
       );
-      const line: LineStroke = { kind: 'line', id, party, colour, thickness, pieces };
+      const line: LineStroke = { kind: 'line', id, party, colour, thickness, ink, pieces };
       this.strokes.push(line);
       this.history.push({ kind: 'stroke', id });
       if (running) this.squeeze(this.crossedBy([line]));
-      return id;
+      return { kind: 'line', id, colour, ink };
     }
     // The body's origin is the outline's centroid; shapes are stored relative to it.
     const origin = polygonCentroid(result.outline);
@@ -341,7 +387,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     this.strokes.push(object);
     this.history.push({ kind: 'stroke', id });
     if (running) this.squeeze([object]);
-    return id;
+    return { kind: 'object', id, colour, ink: outlineInk(outline) };
   }
 
   /** Adds a Piece's fixed body. Its Party's Stroke is its Line's, `line`. */
@@ -477,7 +523,8 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   /**
    * Fills the Object under `point` with `colour`: its mass becomes its
    * Outline's plus its Fill's. Works on Frozen and moving Objects, and never
-   * wakes a Frozen one. An Object holds one Fill.
+   * wakes a Frozen one. An Object holds one Fill. Says how much Ink the Fill
+   * took.
    */
   fillAt(point: Vec2, colour: Colour): FillOutcome {
     const object = this.objectAt(point);
@@ -487,7 +534,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     }
     this.setFill(object, colour);
     this.history.push({ kind: 'fill', id: object.id });
-    return { kind: 'filled', id: object.id };
+    return { kind: 'filled', id: object.id, colour, ink: fillInk(object.outline) };
   }
 
   private setFill(object: ObjectStroke, fill: Colour | null): void {
@@ -535,17 +582,27 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   /**
    * Takes back the most recent Stroke or Fill that still exists: what's left
    * of a Line goes as a whole. Broken Objects, and Lines whose every Piece
-   * broke, are gone from the history, so undo skips them.
+   * broke, are gone from the history, so undo skips them. Says what it
+   * took back and its Ink.
    */
-  undo(): void {
+  undo(): UndoOutcome {
     const action = this.history.pop();
-    if (!action) return;
-    if (action.kind === 'stroke') {
-      this.remove(action.id, 'undone');
-      return;
+    const stroke = action && this.strokes.find((s) => s.id === action.id);
+    if (!action || !stroke) return { kind: 'nothing' };
+    const { id } = stroke;
+    if (action.kind === 'fill') {
+      if (stroke.kind !== 'object') return { kind: 'nothing' };
+      const { fill, outline } = stroke;
+      this.setFill(stroke, null);
+      return fill ? { kind: 'fill', id, colour: fill, ink: fillInk(outline) } : { kind: 'nothing' };
     }
-    const object = this.objectStrokes().find((s) => s.id === action.id);
-    if (object) this.setFill(object, null);
+    this.remove(id, 'undone');
+    if (stroke.kind === 'object') {
+      return { kind: 'object', id, colour: stroke.colour, ink: outlineInk(stroke.outline) };
+    }
+    const { colour, ink, thickness, pieces } = stroke;
+    const segments = pieces.flatMap((piece) => piece.segments);
+    return { kind: 'line', id, colour, ink, standing: lineInk(segments, thickness) };
   }
 
   /**
@@ -567,10 +624,10 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     const { fill, fillMass, outline: local } = object;
     return {
       debris: { outline, velocity: from.velocity, colours },
-      fill: fill && { colour: fill, mass: fillMass, outline: local, from },
+      fill: fill && { colour: fill, mass: fillMass, ink: fillInk(local), outline: local, from },
       outline: {
         colour: object.colour,
-        length: polygonPerimeter(local),
+        ink: outlineInk(local),
         centre: { x: from.transform.x, y: from.transform.y },
       },
       piece: null,
