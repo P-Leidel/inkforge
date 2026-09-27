@@ -766,6 +766,34 @@ describe('Bodies within a radius', () => {
 
     expect([...near(179).keys()].sort()).toEqual([line, pebble].sort());
   });
+
+  it('measures a moving or upright body beside the centre to the middle of its nearest edge', () => {
+    const world = createWorld();
+    const moving = world.addBody(
+      objectDef({
+        position: { x: 600, y: 500 },
+        parts: [square(20)],
+        frozen: false,
+        surface: DEAD,
+        mass: 1,
+      }),
+    );
+    const upright = world.addBody({
+      shapes: { kind: 'polygons', polygons: [square(20)] },
+      surface: DEAD,
+      position: { x: 800, y: 500 },
+      motion: { mass: 1, upright: true, driven: true },
+    });
+
+    const near = new Map(world.bodiesWithin({ x: 700, y: 500 }, 90).map((b) => [b.body, b]));
+
+    expect([...near.keys()].sort()).toEqual([moving, upright].sort());
+    expect(near.get(moving)!.distance).toBeCloseTo(80, 6);
+    expect(near.get(moving)!.point.x).toBeCloseTo(620, 6);
+    expect(near.get(moving)!.point.y).toBeCloseTo(500, 6);
+    expect(near.get(upright)!.distance).toBeCloseTo(80, 6);
+    expect(near.get(upright)!.point.x).toBeCloseTo(780, 6);
+  });
 });
 
 describe('Shapes near a box', () => {

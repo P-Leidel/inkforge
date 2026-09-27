@@ -49,7 +49,6 @@ import {
   b2Rot_GetAngle,
   b2Shape_AreHitEventsEnabled,
   b2Shape_GetBody,
-  b2Shape_GetClosestPoint,
   b2Shape_GetContactData,
   b2Shape_GetDensity,
   b2Shape_GetFilter,
@@ -72,8 +71,8 @@ import {
   type b2ShapeId,
   type b2WorldId,
 } from 'phaser-box2d/dist/PhaserBox2D.js';
-import type { Polygon } from '../../geometry/polygon';
-import type { Segment } from '../../geometry/segment';
+import { polygonContainsPoint, type Polygon } from '../../geometry/polygon';
+import { closestParameterOnSegment, type Segment } from '../../geometry/segment';
 import type { Transform } from '../../geometry/transform';
 import type { Vec2 } from '../../geometry/vec2';
 import type {
@@ -884,6 +883,34 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     b2Body_ApplyLinearImpulse(frozen.b2Id, new b2Vec2(j * normal.x, j * normal.y), point, true);
   }
 
+  /**
+   * The point of one of a body's own shapes nearest `target`, px: `target`
+   * itself if it is inside. Measured on the shape as it was described, not
+   * by the engine's `b2Shape_GetClosestPoint`, whose port gives wrong points
+   * where the nearest part of a shape is the middle of an edge.
+   */
+  function closestPoint(rec: BodyRecord, shape: ShapeId, target: Vec2): Vec2 | null {
+    const k = rec.shapes.indexOf(shape);
+    if (k < 0) return null;
+    const p = b2Body_GetPosition(rec.b2Id);
+    const q = b2Body_GetRotation(rec.b2Id);
+    const place = ({ x, y }: Vec2): Vec2 => ({
+      x: toPx(p.x) + q.c * x - q.s * y,
+      y: toPx(p.y) + q.s * x + q.c * y,
+    });
+    const { own } = rec;
+    switch (own.kind) {
+      case 'polygons':
+        return closestOnPolygon(own.polygons[k]!.map(place), target);
+      case 'capsules': {
+        const { a, b } = own.segments[k]!;
+        return closestOnRound(closestOnSegment(place(a), place(b), target), own.radius, target);
+      }
+      case 'circle':
+        return closestOnRound(place({ x: 0, y: 0 }), own.radius, target);
+    }
+  }
+
   function engineState(b2Id: b2BodyId): number[] {
     const p = b2Body_GetPosition(b2Id);
     const q = b2Body_GetRotation(b2Id);
@@ -1173,14 +1200,16 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
         box,
         b2DefaultQueryFilter(),
         (shape) => {
-          if (added.has(b2Shape_GetUserData(shape) as ShapeId)) return true;
-          const p = b2Shape_GetClosestPoint(shape, c);
-          const distance = toPx(Math.hypot(p.x - c.x, p.y - c.y));
-          if (distance > radius) return true;
+          const id = b2Shape_GetUserData(shape) as ShapeId;
+          if (added.has(id)) return true;
           const body = bodyIdOfShape(shape);
+          const point = closestPoint(record(body), id, centre);
+          if (!point) return true;
+          const distance = Math.hypot(point.x - centre.x, point.y - centre.y);
+          if (distance > radius) return true;
           const current = nearest.get(body);
           if (!current || distance < current.distance) {
-            nearest.set(body, { body, point: { x: toPx(p.x), y: toPx(p.y) }, distance });
+            nearest.set(body, { body, point, distance });
           }
           return true;
         },
@@ -1388,4 +1417,34 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     };
   });
   return world;
+}
+
+/** The point of segment ab nearest `target`. */
+function closestOnSegment(a: Vec2, b: Vec2, target: Vec2): Vec2 {
+  const t = closestParameterOnSegment(target, a, b);
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+/** The point of a convex polygon nearest `target`: `target` itself if it is inside. */
+function closestOnPolygon(polygon: Polygon, target: Vec2): Vec2 {
+  if (polygonContainsPoint(polygon, target)) return { ...target };
+  let best = polygon[0]!;
+  let bestDistance = Infinity;
+  for (let i = 0; i < polygon.length; i++) {
+    const point = closestOnSegment(polygon[i]!, polygon[(i + 1) % polygon.length]!, target);
+    const distance = Math.hypot(point.x - target.x, point.y - target.y);
+    if (distance < bestDistance) {
+      best = point;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/** The point of a disc of `radius` about `centre` nearest `target`: `target` itself if it is inside. */
+function closestOnRound(centre: Vec2, radius: number, target: Vec2): Vec2 {
+  const distance = Math.hypot(target.x - centre.x, target.y - centre.y);
+  if (distance <= radius) return { ...target };
+  const t = radius / distance;
+  return { x: centre.x + (target.x - centre.x) * t, y: centre.y + (target.y - centre.y) * t };
 }

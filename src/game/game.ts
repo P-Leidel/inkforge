@@ -557,8 +557,9 @@ export class Game {
         return;
       case 'released':
       case 'burst':
+      case 'popped':
       case 'exploded':
-        // Neither makes nor takes away a Stroke or a Fill.
+        // None makes or takes away a Stroke or a Fill. (A kill's Drop comes with #92.)
         return;
     }
   }

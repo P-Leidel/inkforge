@@ -32,6 +32,8 @@ export const PALETTE = {
   textMuted: '#9aa0ad',
   running: '#62d98b',
   paused: '#f0c05a',
+  /** "Ink Core destroyed". */
+  destroyed: '#ff5a5a',
 } as const;
 
 export const FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", sans-serif';

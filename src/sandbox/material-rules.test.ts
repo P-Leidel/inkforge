@@ -834,7 +834,12 @@ describe('Floor or not', () => {
 });
 
 describe('Material rules: Enemies', () => {
-  const crawler = (id: number): Walker => ({ id, body: (100 + id) as BodyId, type: 'crawler' });
+  const crawler = (id: number): Walker => ({
+    id,
+    body: (100 + id) as BodyId,
+    type: 'crawler',
+    damage: 0,
+  });
   const party = (id: number, body = id): Party<Breakable> => ({
     id,
     stroke: id,
@@ -893,8 +898,8 @@ describe('Material rules: Enemies', () => {
 
     rules.step(STEP);
 
+    expect(arena.handed('kill')).toEqual([1]);
     expect(arena.handed('remove')).toEqual([
-      { thing: { thing: 'enemy', id: 1 }, why: 'died' },
       { thing: { thing: 'object', id: 8 }, why: 'left' },
       { thing: { thing: 'rubble', id: 3, colour: 'grey', radius: 6 }, why: 'left' },
     ]);
@@ -903,10 +908,151 @@ describe('Material rules: Enemies', () => {
   });
 });
 
+describe('Material rules: hurting Enemies', () => {
+  /** The Crawler's HP and damage threshold. */
+  const HP = 3000;
+  const THRESHOLD = 300;
+  const crawler = (id: number): Walker => ({
+    id,
+    body: (100 + id) as BodyId,
+    type: 'crawler',
+    damage: 0,
+  });
+  const partyOf = (id: number, body: number, target: Breakable | null = null) => ({
+    id,
+    stroke: id,
+    body: body as BodyId,
+    target,
+  });
+  const pieceOf = (): Breakable => ({ kind: 'piece', colour: 'grey', damage: 0, impacts: 0 });
+  /** A hit between A and B, its normal pointing from A towards B. */
+  const hit = (
+    a: Party<Breakable>,
+    b: Party<Breakable>,
+    impulse: number,
+    normal: Vec2 = { x: 0, y: 1 },
+    speed = 0,
+  ): PartyHit<Breakable> => ({
+    a,
+    b,
+    hit: {
+      bodyA: a.body,
+      bodyB: b.body,
+      shapeA: a.body as number as ShapeId,
+      shapeB: b.body as number as ShapeId,
+      point: { x: 0, y: 0 },
+      normal,
+      speed,
+      impulse,
+    },
+  });
+  /** The rules with one Crawler, Party 11 on body 101. */
+  function oneCrawler() {
+    const fake = fakeRules<Breakable>(createMaterialTable());
+    const enemy = crawler(1);
+    fake.arena.walking = [enemy];
+    const party = partyOf(11, 101);
+    fake.arena.enemyParties.set(11, enemy);
+    fake.physics.add(101, { mass: 1.2 });
+    return { ...fake, enemy, party };
+  }
+
+  it('damages an Enemy by a hit above its threshold, and what it hit by that one’s own', () => {
+    const { rules, contacts, arena, enemy, party } = oneCrawler();
+    const line = partyOf(20, 20, pieceOf());
+    const soft = partyOf(21, 21, pieceOf());
+
+    contacts.hits = [hit(party, line, 900), hit(soft, party, THRESHOLD, { x: 1, y: 0 })];
+    rules.step(STEP);
+
+    expect(enemy.damage).toBe(900 - THRESHOLD);
+    expect(line.target!.damage).toBe(900 - 400); // grey's threshold
+    expect(soft.target!.damage).toBe(0);
+    expect(arena.handed('kill')).toEqual([]);
+  });
+
+  it('crushes an Enemy standing on something that is hit from above: all the hitter’s weight counts', () => {
+    const { rules, contacts, physics, enemy, party } = oneCrawler();
+    const floor = {
+      bodyA: 0 as BodyId,
+      bodyB: 101 as BodyId,
+      shapeA: 0 as ShapeId,
+      shapeB: 101 as ShapeId,
+    };
+    contacts.touches.set(enemy.body, [{ party: partyOf(TERRAIN_PARTY, 0), pairs: [floor] }]);
+    contacts.normals.set(floor, { x: 0, y: -1 });
+    const boulder = partyOf(30, 30);
+    physics.add(30, { mass: 10 });
+
+    // Falling at 500 px/s onto it: between the two free bodies the hit is about its own weight.
+    contacts.hits = [hit(boulder, party, 550, { x: 0, y: 1 }, 500)];
+    rules.step(STEP);
+
+    expect(enemy.damage).toBe(10 * 500 - THRESHOLD);
+  });
+
+  it('does not crush an Enemy hit from the side or in the air', () => {
+    const sideways = oneCrawler();
+    const floor = {
+      bodyA: 0 as BodyId,
+      bodyB: 101 as BodyId,
+      shapeA: 0 as ShapeId,
+      shapeB: 101 as ShapeId,
+    };
+    sideways.contacts.touches.set(101 as BodyId, [
+      { party: partyOf(TERRAIN_PARTY, 0), pairs: [floor] },
+    ]);
+    sideways.contacts.normals.set(floor, { x: 0, y: -1 });
+    sideways.physics.add(30, { mass: 10 });
+    sideways.contacts.hits = [hit(partyOf(30, 30), sideways.party, 550, { x: 1, y: 0 }, 500)];
+    sideways.rules.step(STEP);
+
+    const inAir = oneCrawler();
+    inAir.physics.add(30, { mass: 10 });
+    inAir.contacts.hits = [hit(partyOf(30, 30), inAir.party, 550, { x: 0, y: 1 }, 500)];
+    inAir.rules.step(STEP);
+
+    expect([sideways.enemy.damage, inAir.enemy.damage]).toEqual([250, 250]);
+  });
+
+  it('damages an Enemy a Blast reaches, above its threshold, and pushes it away', () => {
+    const { rules, physics, arena, enemy, party } = oneCrawler();
+    physics.body(enemy.body).transform = { x: 100, y: 0, angle: 0 };
+    arena.reaching = [[{ party, centre: { x: 0, y: 0 }, point: { x: 80, y: 0 }, strength: 1300 }]];
+
+    rules.step(STEP);
+
+    expect(enemy.damage).toBe(1300 - THRESHOLD);
+    expect(physics.body(enemy.body).velocity.x).toBeGreaterThan(0);
+  });
+
+  it('kills an Enemy at 0 HP in its own phase, after the Ink Core, oldest first; a dead one never reaches it', () => {
+    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const [first, second, alive] = [crawler(1), crawler(2), crawler(3)];
+    first.damage = HP + 1;
+    second.damage = HP;
+    alive.damage = HP - 1;
+    arena.walking = [first, second, alive];
+    arena.inkCore = 50;
+    const core = {
+      bodyA: 50 as BodyId,
+      bodyB: 101 as BodyId,
+      shapeA: 50 as ShapeId,
+      shapeB: 101 as ShapeId,
+    };
+    contacts.touches.set(first.body, [{ party: partyOf(50, 50), pairs: [core] }]);
+
+    rules.step(STEP);
+
+    expect(arena.done).toEqual(['kill', 'kill']);
+    expect(arena.handed('kill')).toEqual([1, 2]);
+  });
+});
+
 describe('Material rules: pressing wear', () => {
   /** The Crawler's pressing rate, durability per second. */
   const PRESSING = 300;
-  const crawler: Walker = { id: 1, body: 101 as BodyId, type: 'crawler' };
+  const crawler: Walker = { id: 1, body: 101 as BodyId, type: 'crawler', damage: 0 };
   const pieceOf = (colour: Colour = 'grey'): Breakable => ({
     kind: 'piece',
     colour,
@@ -1028,7 +1174,7 @@ describe('Material rules: pressing wear', () => {
 
   it('adds up the wear of every Enemy on one Piece', () => {
     const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
-    const other: Walker = { id: 2, body: 102 as BodyId, type: 'crawler' };
+    const other: Walker = { id: 2, body: 102 as BodyId, type: 'crawler', damage: 0 };
     arena.walking = [crawler, other];
     const bridge = pieceOf();
     touch(contacts, [{ target: bridge, normal: FLOOR }]);

@@ -2,7 +2,7 @@ import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { Polygon } from '../geometry/polygon';
-import type { BodyId, PhysicsWorld, ShapeId } from '../physics';
+import type { BodyId, ContactHit, PhysicsWorld, ShapeId } from '../physics';
 import type { HostSurface, Motion } from './arena-contents';
 import {
   blastInk,
@@ -35,8 +35,9 @@ import { Sticking, type Sticker } from './sticking';
  * Blast wakes and pushes, glue drag and wear, Patch wear, what sticks and
  * where a Droplet lands. For Enemies they decide whether one stands on
  * something it can walk on, before each step, and what follows from what
- * it touches and where it is after: pressing and floor wear, reaching the
- * Ink Core, dying below the screen. What a
+ * it touches and where it is after: pressing and floor wear, the damage
+ * hits and Blasts deal to its HP, reaching the Ink Core, dying at 0 HP or
+ * below the screen. What a
  * thing's numbers are they ask `Numbers`. They carry their decisions out
  * through two narrow ports the world wires up: the physics module, and the
  * Arena (its kinds and Debris). Glue drag (`Glue`) and sticking (`Sticking`)
@@ -94,6 +95,16 @@ export function isFloor(normal: Vec2): boolean {
  */
 export function isPressed(normal: Vec2, heading: number): boolean {
   return -heading * normal.x > Math.sin(STEEPEST_FLOOR) + 1e-9;
+}
+
+/**
+ * Whether a hit pushes an Enemy down onto what it stands on, given the unit
+ * hit normal pointing from the hitter towards the Enemy: from above, within
+ * `STEEPEST_FLOOR` of straight down. Standing, it can't give way, so it is
+ * crushed: it takes the hit as a fixed body would.
+ */
+export function isCrushing(normal: Vec2): boolean {
+  return isFloor({ x: -normal.x, y: -normal.y });
 }
 
 /** What damages a Breakable. */
@@ -230,6 +241,10 @@ export interface RulesArena<T, S, W> {
   walk(walker: W, seconds: number): boolean;
   /** Which way along x an Enemy walks: +1 or -1, toward the Ink Core's side of it. */
   heading(walker: W): number;
+  /** The Enemy whose Party this is, if any. */
+  walkerOf(party: Party<unknown>): W | undefined;
+  /** Kills Enemy `id` at once: it pops and goes, releasing nothing physical. */
+  kill(id: number): void;
   /** Whether a Party is the Ink Core. */
   isInkCore(party: Party<unknown>): boolean;
   /** Takes `damage` off the Ink Core's HP. */
@@ -328,10 +343,11 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
    * breaks a worn-out Piece at once; the Blasts spread, and what they break
    * breaks as they do; and the used-up Patches go.
    *
-   * Then come the Enemies' phases: Enemies reaching the Ink Core, kills
-   * below the screen, and removing what went out over the Spawn edge, in
-   * that order. (Drops, which draw from the generator, will come after
-   * kills.)
+   * Hits and Blasts take damage off an Enemy's HP as they come, but it
+   * dies only in its own phase. Then come the Enemies' phases: Enemies
+   * reaching the Ink Core, kills (0 HP, then below the screen), and
+   * removing what went out over the Spawn edge, in that order. (Drops,
+   * which draw from the generator, will come after kills.)
    */
   step(seconds: number): void {
     const broken = this.impacts();
@@ -343,7 +359,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     this.arena.spreadBlasts(seconds, this.blastReached);
     this.arena.removeUsedUpPatches();
     this.reachInkCore();
-    this.killBelowScreen();
+    this.kill();
     this.removeBeyondSpawnEdge();
   }
 
@@ -387,11 +403,13 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
 
   /**
    * Every Enemy touching the Ink Core deals it its type's core damage and
-   * disappears, oldest first.
+   * disappears, oldest first. One already at 0 HP dies instead.
    */
   private reachInkCore(): void {
-    const reached = [...this.arena.walkers()].filter(({ body }) =>
-      [...this.contacts.touching(body)].some(({ party }) => this.arena.isInkCore(party)),
+    const reached = [...this.arena.walkers()].filter(
+      (walker) =>
+        !this.isDead(walker) &&
+        [...this.contacts.touching(walker.body)].some(({ party }) => this.arena.isInkCore(party)),
     );
     for (const { id, type } of reached) {
       this.arena.damageInkCore(this.numbers.enemy(type).coreDamage);
@@ -399,11 +417,31 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     }
   }
 
-  /** Every Enemy wholly below the bottom of the screen dies. */
-  private killBelowScreen(): void {
+  /**
+   * Kills: every Enemy at 0 HP dies, oldest first, then every one wholly
+   * below the bottom of the screen.
+   */
+  private kill(): void {
+    const dead = [...this.arena.walkers()].filter((walker) => this.isDead(walker));
+    for (const { id } of dead) this.arena.kill(id);
     for (const thing of this.arena.belowScreen()) {
-      if (thing.thing === 'enemy') this.arena.remove(thing, 'died');
+      if (thing.thing === 'enemy') this.arena.kill(thing.id);
     }
+  }
+
+  /** Whether an Enemy's damage has reached its type's HP. */
+  private isDead(walker: W): boolean {
+    return walker.damage >= this.numbers.enemy(walker.type).hp;
+  }
+
+  /**
+   * Takes damage off an Enemy's HP, by the one rule: an impact or a Blast
+   * deals what it has above the Enemy type's damage threshold, times k.
+   * Enemies have no impact limit.
+   */
+  private hurt(walker: W, amount: number): void {
+    const { damageThreshold } = this.numbers.enemy(walker.type);
+    walker.damage += impactDamage(amount, damageThreshold, this.materials.damagePerImpulse);
   }
 
   /**
@@ -421,33 +459,54 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
    * Damages by the step's hits: each Party takes the strongest hit of the
    * step from each Stroke it hit (several shapes of one body, or several
    * Pieces of one Line, hitting at once are one impact), against its own
-   * threshold. Hits with a harmless Party (a Droplet) deal no damage either
-   * way. Returns what broke, in the order the hits first reached it, not yet
-   * broken: `step` breaks it later.
+   * threshold: a Breakable its durability, an Enemy its HP. Hits with a
+   * harmless Party (a Droplet) deal no damage either way. An Enemy standing
+   * on something that is hit from above (`isCrushing`) takes the hit as if
+   * it were fixed, since it can't give way: a boulder dropped on it deals
+   * all its weight. Returns what broke, in the order the hits first reached
+   * it, not yet broken: `step` breaks it later.
    */
   private impacts(): T[] {
     const hits = this.contacts.hits;
     if (hits.length === 0) return [];
-    // The strongest hit each target takes from each Stroke, in the order they came.
-    const impacts = new Map<number, { target: T; impulse: number }>();
-    const take = (receiver: Party<T>, other: Party<T>, impulse: number) => {
-      if (!receiver.target) return;
+    // The strongest hit each target or Enemy takes from each Stroke, in the order they came.
+    const impacts = new Map<number, { target: T | null; walker: W | null; impulse: number }>();
+    const take = (receiver: Party<T>, other: Party<T>, hit: ContactHit, towards: Vec2) => {
+      const { target } = receiver;
+      const walker = target ? null : (this.arena.walkerOf(receiver) ?? null);
+      if (!target && !walker) return;
+      const impulse = walker ? this.enemyImpulse(walker, other, hit, towards) : hit.impulse;
       const key = pairKey(receiver.id, other.stroke);
       const current = impacts.get(key);
-      if (!current) impacts.set(key, { target: receiver.target, impulse });
-      else if (current.impulse < impulse) current.impulse = impulse;
+      if (current) current.impulse = Math.max(current.impulse, impulse);
+      else impacts.set(key, { target, walker, impulse });
     };
     for (const { a, b, hit } of hits) {
       if (a.harmless || b.harmless) continue;
-      take(a, b, hit.impulse);
-      take(b, a, hit.impulse);
+      // The hit's normal points from A towards B.
+      take(a, b, hit, { x: -hit.normal.x, y: -hit.normal.y });
+      take(b, a, hit, hit.normal);
     }
 
     const broken: T[] = [];
-    for (const { target, impulse } of impacts.values()) {
-      if (this.damage(target, impulse, 'impact') && !broken.includes(target)) broken.push(target);
+    for (const { target, walker, impulse } of impacts.values()) {
+      if (walker) this.hurt(walker, impulse);
+      else if (target && this.damage(target, impulse, 'impact') && !broken.includes(target))
+        broken.push(target);
     }
     return broken;
+  }
+
+  /**
+   * The impulse a hit deals an Enemy, given the unit normal pointing from
+   * the hitter towards it: the hit's own, or, when it is crushed, what the
+   * hitter's approach would deal a fixed body, the hitter's mass times its
+   * approach speed.
+   */
+  private enemyImpulse(walker: W, other: Party<T>, hit: ContactHit, towards: Vec2): number {
+    if (!isCrushing(towards) || !this.stands(walker) || !this.physics.isFree(other.body))
+      return hit.impulse;
+    return Math.max(hit.impulse, this.physics.getMass(other.body) * hit.speed);
   }
 
   /**
@@ -520,8 +579,8 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
   /**
    * What a Blast does to each body its ring reached, at the strength it has
    * there. It damages a Piece or an Object that isn't sliding off a Line,
-   * when the strength beats its threshold. It wakes a Frozen Object when its
-   * push wakes it (`wakes`). It pushes every moving body (an Object, Rubble
+   * and an Enemy, when the strength beats its threshold. It wakes a Frozen
+   * Object when its push wakes it (`wakes`). It pushes every moving body (an Object, Rubble
    * or a Droplet) outward from its centre by `push` times the strength, but
    * never faster than `maxPushSpeed`. What it broke then breaks, and red
    * explodes in turn.
@@ -531,6 +590,8 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     const broken: T[] = [];
     for (const { party, centre, point, strength } of reached) {
       const { body, target } = party;
+      const walker = target ? undefined : this.arena.walkerOf(party);
+      if (walker) this.hurt(walker, strength);
       if (target && this.physics.getSlide(body) === null) {
         if (this.damage(target, strength, 'blast')) {
           broken.push(target);

@@ -1,3 +1,4 @@
+import { transformPoints } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import {
@@ -303,6 +304,8 @@ export class SandboxWorld {
         walkers: () => this.enemiesKind.walkers(),
         walk: (enemy, seconds) => this.enemiesKind.walk(enemy, seconds),
         heading: (enemy) => this.enemiesKind.heading(enemy),
+        walkerOf: (party) => this.enemiesKind.byParty(party.id),
+        kill: (id) => this.kill(id),
         isInkCore: (party) => this.inkCoreKind.is(party.id),
         damageInkCore: (damage) => this.inkCoreKind.damage(damage),
         belowScreen: () => this.query.below(this.arena.height),
@@ -396,10 +399,34 @@ export class SandboxWorld {
 
   /**
    * Sends in an Enemy of `type` from the Spawn, beyond the left edge,
-   * paused or running. Returns its id.
+   * paused or running. Given `at`, it appears with its centre there instead,
+   * for tests and demos. Returns its id.
    */
-  spawn(type: EnemyType): number {
-    return this.enemiesKind.spawn(type);
+  spawn(type: EnemyType, at?: Vec2): number {
+    return this.enemiesKind.spawn(type, at);
+  }
+
+  /** Whether the Ink Core's HP has run out: physics stops, and only R or Clear go on. */
+  get coreDestroyed(): boolean {
+    return this.inkCoreKind.views.hp <= 0;
+  }
+
+  /**
+   * An Enemy dies: it pops, a burst of its body that is visual only, and
+   * goes, releasing nothing physical.
+   */
+  private kill(id: number): void {
+    const enemy = this.enemiesKind.view(id);
+    if (!enemy) return;
+    const { type, outline, transform, velocity } = enemy;
+    this.happenings.say({
+      kind: 'popped',
+      id,
+      type,
+      outline: transformPoints(outline, transform),
+      velocity,
+    });
+    this.enemiesKind.remove(id, 'died');
   }
 
   /**
@@ -585,9 +612,11 @@ export class SandboxWorld {
    * Starts or pauses physics. Box2D can't save its own state, and a world
    * rebuilt from scratch doesn't play out like one that wasn't, so every
    * start takes a snapshot for R and rebuilds the world from it: the first
-   * run and every retry play out identically.
+   * run and every retry play out identically. Once the Ink Core is
+   * destroyed it doesn't start again: R or Clear first.
    */
   togglePause(): void {
+    if (!this.running && this.coreDestroyed) return;
     this.running = !this.running;
     this.accumulator = 0;
     if (!this.running) return;
@@ -665,7 +694,8 @@ export class SandboxWorld {
    * as the Material rules decide; after the step the rules run every
    * consequence in their own order, and each kind takes its turn. This order
    * must not change: exact replays depend on every engine call and every
-   * draw from `random` coming in the same order.
+   * draw from `random` coming in the same order. A step that destroys the
+   * Ink Core stops physics.
    */
   step(): void {
     if (!this.running) return;
@@ -677,6 +707,10 @@ export class SandboxWorld {
     this.stepsTaken++;
     this.rules.step(STEP_SECONDS);
     for (const kind of this.kinds) kind.step(STEP_SECONDS);
+    if (this.coreDestroyed) {
+      this.running = false;
+      this.accumulator = 0;
+    }
   }
 
   /**
@@ -688,7 +722,11 @@ export class SandboxWorld {
     this.accumulator += seconds;
     let steps = 0;
     // A small tolerance so that e.g. 100 ms of frames gives exactly 6 steps.
-    while (this.accumulator >= STEP_SECONDS - 1e-9 && steps < MAX_STEPS_PER_ADVANCE) {
+    while (
+      this.running &&
+      this.accumulator >= STEP_SECONDS - 1e-9 &&
+      steps < MAX_STEPS_PER_ADVANCE
+    ) {
       this.step();
       this.accumulator -= STEP_SECONDS;
       steps++;

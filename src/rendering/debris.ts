@@ -1,6 +1,5 @@
 import { polygonCentroid, type Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
-import type { Colour } from '../materials/colour';
 import type { Random } from '../sandbox/random';
 
 /** Seconds a Debris particle lives; it fades out over its life. */
@@ -14,7 +13,8 @@ const BURST_MIN = 60;
 const BURST_MAX = 260;
 
 export interface DebrisParticle {
-  readonly colour: Colour;
+  /** Its colour, as 0xRRGGBB. */
+  readonly hue: number;
   /** Side of its square, px. */
   readonly size: number;
   readonly position: Vec2;
@@ -25,7 +25,7 @@ export interface DebrisParticle {
 }
 
 interface Particle {
-  readonly colour: Colour;
+  readonly hue: number;
   readonly size: number;
   x: number;
   y: number;
@@ -37,8 +37,8 @@ interface Particle {
 }
 
 /**
- * Debris: purely visual particles that burst from something that broke, or
- * from a Patch that went. They live outside the physics world, fall under
+ * Debris: purely visual particles that burst from something that broke,
+ * from a Patch that went, or from an Enemy that popped. They live outside the physics world, fall under
  * gravity, collide with nothing and fade out. They move in the simulation's
  * fixed steps, so they stop while it is paused. They are not part of the
  * Reset snapshot, and their randomness is their own, so they never change
@@ -60,7 +60,7 @@ export class Debris {
 
   get views(): readonly DebrisParticle[] {
     return this.particles.map((p) => ({
-      colour: p.colour,
+      hue: p.hue,
       size: p.size,
       position: { x: p.x, y: p.y },
       angle: p.angle,
@@ -69,11 +69,11 @@ export class Debris {
   }
 
   /**
-   * Bursts particles from along a broken Outline (world coordinates), moving
-   * with `velocity`, in the given Colours taken in turn, `steps` steps ago:
-   * they have moved on that far.
+   * Bursts particles from along a broken Outline (world coordinates), or a
+   * popped Enemy's body, moving with `velocity`, in the given colours
+   * (0xRRGGBB) taken in turn, `steps` steps ago: they have moved on that far.
    */
-  burst(outline: Polygon, velocity: Vec2, colours: readonly Colour[], steps = 0): void {
+  burst(outline: Polygon, velocity: Vec2, hues: readonly number[], steps = 0): void {
     const from = this.particles.length;
     const perimeter = outline.reduce((sum, p, i) => {
       const q = outline[(i + 1) % outline.length]!;
@@ -92,7 +92,7 @@ export class Debris {
       const out = Math.atan2(at.y - centre.y, at.x - centre.x) + this.random.range(-0.6, 0.6);
       const speed = this.random.range(BURST_MIN, BURST_MAX);
       this.particles.push({
-        colour: colours[k % colours.length]!,
+        hue: hues[k % hues.length]!,
         size: this.random.range(3, 8),
         x: at.x,
         y: at.y,

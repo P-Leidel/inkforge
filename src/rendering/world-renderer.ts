@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import type { Colour } from '../materials/colour';
 import { Random } from '../sandbox/random';
 import {
   GRAVITY,
@@ -16,7 +17,7 @@ import { BlastsDrawing } from './kinds/blasts-drawing';
 import { BondsDrawing } from './kinds/bonds-drawing';
 import { DropletsDrawing } from './kinds/droplets-drawing';
 import { stepsSince, type DrawnKind } from './kinds/drawn-kind';
-import { EnemiesDrawing } from './kinds/enemies-drawing';
+import { EnemiesDrawing, POP_HUES } from './kinds/enemies-drawing';
 import { InkCoreDrawing } from './kinds/ink-core-drawing';
 import { LinesDrawing } from './kinds/lines-drawing';
 import { ObjectsDrawing } from './kinds/objects-drawing';
@@ -33,6 +34,9 @@ const DEBRIS_SEED = 0x0deb415;
 const SPAWN_ARROW_RISE = 60;
 const SPAWN_ARROW_LENGTH = 22;
 const SPAWN_ARROW_WIDTH = 24;
+
+/** The hues of Debris in these Colours, taken in turn. */
+const inkHues = (colours: readonly Colour[]): number[] => colours.map((colour) => INK_HUES[colour]);
 
 /** The ids of what the renderer holds a drawing for. */
 export interface Held {
@@ -53,8 +57,8 @@ export interface Held {
  * reads the list once a frame, hands each entry to every kind, drops every
  * kind's drawings on `start over`, and has the kinds draw in a fixed order,
  * the way the Sandbox world runs its kinds. It keeps the Terrain and the
- * Debris, which is visual only: Debris bursts where something broke and
- * where a Patch went used up or capped.
+ * Debris, which is visual only: Debris bursts where something broke, where
+ * a Patch went used up or capped, and where an Enemy popped.
  *
  * The world steps at a fixed rate, and a screen can show more frames than
  * that: each body is drawn between its pose as the latest step began and its
@@ -104,7 +108,7 @@ export class WorldRenderer {
       this.baked,
       () => world.patches,
       (outline, velocity, colours, time) =>
-        this.debris.burst(outline, velocity, colours, stepsSince(time, this.world.time)),
+        this.debris.burst(outline, velocity, inkHues(colours), stepsSince(time, this.world.time)),
     );
     this.kinds = [
       inkCore,
@@ -172,7 +176,10 @@ export class WorldRenderer {
   private follow(entry: Entry, now: number): void {
     if (entry.kind === 'burst') {
       const { outline, velocity, colours, time } = entry;
-      this.debris.burst(outline, velocity, colours, stepsSince(time, now));
+      this.debris.burst(outline, velocity, inkHues(colours), stepsSince(time, now));
+    } else if (entry.kind === 'popped') {
+      const { outline, velocity, type, time } = entry;
+      this.debris.burst(outline, velocity, POP_HUES[type], stepsSince(time, now));
     } else if (entry.kind === 'start-over') this.dropAll();
     else for (const kind of this.kinds) kind.follow(entry, now);
   }
@@ -187,10 +194,10 @@ export class WorldRenderer {
   private drawDebris(): void {
     const g = this.debrisGraphics;
     g.clear();
-    for (const { colour, size, position, angle, opacity } of this.debris.views) {
+    for (const { hue, size, position, angle, opacity } of this.debris.views) {
       const c = (Math.cos(angle) * size) / 2;
       const s = (Math.sin(angle) * size) / 2;
-      g.fillStyle(INK_HUES[colour], opacity);
+      g.fillStyle(hue, opacity);
       fillPolygon(g, [
         { x: position.x - c + s, y: position.y - s - c },
         { x: position.x + c + s, y: position.y + s - c },

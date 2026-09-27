@@ -135,7 +135,8 @@ export interface FakeDroplet {
  * `log`: `break`, `burst`, `rubble`, `droplets`, `blast`, `bond`, `land`,
  * `patch` and `use`, each with what it was handed; `reach` when a Blast
  * spreading reached something, and `used-up` for each Patch removed;
- * `walk`, `core` (damage to the Ink Core) and `remove`. An Enemy walks
+ * `walk`, `core` (damage to the Ink Core), `kill` (an Enemy's id) and
+ * `remove`. An Enemy walks
  * right unless `headings` says otherwise, and gets past unless it is among
  * the `stalled`.
  */
@@ -160,6 +161,8 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
   stalled = new Set<W>();
   /** Which way each Enemy walks; +1 if not set. */
   headings = new Map<W, number>();
+  /** Each Enemy by its Party id. */
+  readonly enemyParties = new Map<number, W>();
   /** The Ink Core's Party id. */
   inkCore = -1;
   /** What lies below the screen, and beyond the Spawn edge. */
@@ -268,6 +271,14 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
 
   heading(walker: W): number {
     return this.headings.get(walker) ?? 1;
+  }
+
+  walkerOf(party: Party<unknown>): W | undefined {
+    return this.enemyParties.get(party.id);
+  }
+
+  kill(id: number): void {
+    this.log.push({ what: 'kill', with: id });
   }
 
   isInkCore(party: Party<unknown>): boolean {

@@ -2,17 +2,18 @@ import { describe, expect, it } from 'vitest';
 import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import { DEFAULT_ENEMY_TABLE, editEnemies } from '../materials/enemy-table';
+import { createEnemyTable, DEFAULT_ENEMY_TABLE, editEnemies } from '../materials/enemy-table';
 import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import { SANDBOX_ARENA, type Arena } from './arena';
 import { enemyOutline, walkingForce } from './enemies';
-import type { EnemyView, SandboxWorld } from './sandbox-world';
+import type { EnemyView, PatchView, SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
   entriesOf,
   hear,
+  objectById,
   runFor,
   sandboxWorlds,
   wentOf,
@@ -446,6 +447,224 @@ describe('Pressing wear', () => {
     runFor(world, 16);
 
     expect({ lines: durabilities(world), enemies: world.enemies }).toEqual(first);
+  });
+});
+
+describe('Enemies take damage', () => {
+  /** A black post standing on the ground at `x`, which holds a Crawler walking up to it; returns its path. */
+  function holdAt(world: SandboxWorld, x: number): Vec2[] {
+    const path = [
+      { x, y: GROUND_Y - 4 },
+      { x, y: GROUND_Y - 90 },
+    ];
+    drawLine(world, path, 'black');
+    return path;
+  }
+
+  /**
+   * A Crawler dropped from `height` px (its underside's fall) onto a grey
+   * Line at y 700, with floor wear off so only the landing counts. Returns
+   * its HP and the Pieces' durabilities just after it lands.
+   */
+  function drop(height: number): { hp: number; pieces: number[] } {
+    const world = createWorld();
+    editEnemies(world.enemyTable, (table) => (table.floorWear = 0));
+    drawLine(world, [
+      { x: 700, y: 700 },
+      { x: 900, y: 700 },
+    ]);
+    // The Line's top is 4 px above it; the Crawler's centre half its height above its underside.
+    world.spawn('crawler', { x: 790, y: 700 - 4 - CRAWLER.height / 2 - height });
+    let falling = false;
+    stepUntil(world, 3, () => {
+      const { velocity } = onlyEnemy(world);
+      if (velocity.y > 1) falling = true;
+      return falling && velocity.y <= 1;
+    });
+    world.step();
+    return {
+      hp: onlyEnemy(world).hp,
+      pieces: world.lines[0]!.pieces.map(({ durability }) => durability),
+    };
+  }
+
+  it('hurts a Crawler dropped from high enough on landing, and the Line it lands on; a short drop does nothing', () => {
+    const high = drop(400);
+    const short = drop(15);
+
+    expect(high.hp).toBeLessThan(CRAWLER.hp - 500);
+    expect(Math.min(...high.pieces)).toBeLessThan(6000 - 200);
+    expect(short).toEqual({ hp: CRAWLER.hp, pieces: [6000, 6000, 6000, 6000] });
+  });
+
+  it('shows no damage on a Crawler that only walks', () => {
+    const world = createWorld();
+    floorLine(world, 100, 300, 'grey');
+    world.spawn('crawler');
+
+    runFor(world, 15);
+
+    expect(onlyEnemy(world).hp).toBe(CRAWLER.hp);
+    expect(onlyEnemy(world).fullHp).toBe(CRAWLER.hp);
+  });
+
+  it('kills a Crawler a black boulder is dropped on: it pops and is gone, releasing nothing', () => {
+    const world = createWorld();
+    holdAt(world, 640); // where the boulder falls
+    const id = world.spawn('crawler', { x: 610, y: GROUND_Y - CRAWLER.height / 2 });
+    const boulder = drawObject(world, dragBox(585, GROUND_Y - 300, 50, 50), 'black');
+    world.fillAt({ x: 610, y: GROUND_Y - 275 }, 'black');
+    runFor(world, 0.5);
+    const before = world.bodyCount;
+    const heard = hear(world);
+
+    world.release(boulder);
+    const died = stepUntil(world, 2, () => world.enemies.length === 0);
+
+    expect(died).toBe(true);
+    const entries = heard();
+    expect(wentOf(entries)).toEqual([`enemy ${id} died`]);
+    const [pop] = entriesOf(entries, 'popped');
+    expect(pop).toMatchObject({ id, type: 'crawler' });
+    // The pop is a burst of its body, where it stood.
+    const xs = pop!.outline.map(({ x }) => x);
+    expect(Math.min(...xs)).toBeCloseTo(616 - CRAWLER.width / 2, -1);
+    expect(entriesOf(entries, 'added')).toEqual([]);
+    expect(world.bodyCount).toBe(before - 1);
+    expect(world.rubble).toEqual([]);
+  });
+
+  it('lets a Blast damage and push a Crawler', () => {
+    const world = createWorld();
+    const heard = hear(world);
+    world.spawn('crawler', { x: 600, y: GROUND_Y - CRAWLER.height / 2 });
+    // A red bomb dropped just ahead of it goes off on the ground.
+    const bomb = drawObject(world, dragCircle({ x: 690, y: GROUND_Y - 200 }, 20), 'red');
+    world.fillAt({ x: 690, y: GROUND_Y - 200 }, 'red');
+    world.togglePause();
+    world.release(bomb);
+    stepUntil(world, 3, () => entriesOf(heard(), 'exploded').length > 0);
+    let slowest = Infinity;
+
+    stepUntil(world, 0.5, () => {
+      slowest = Math.min(slowest, onlyEnemy(world).velocity.x);
+      return false;
+    });
+
+    expect(onlyEnemy(world).hp).toBeLessThan(CRAWLER.hp);
+    expect(slowest).toBeLessThan(-100); // thrown back, away from the Blast
+  });
+
+  it('lets a green Object stick to a Crawler and ride along with it', () => {
+    const world = createWorld();
+    world.spawn('crawler', { x: 300, y: GROUND_Y - CRAWLER.height / 2 });
+    const green = drawObject(world, dragBox(280, GROUND_Y - 100, 30, 30), 'green');
+    world.togglePause();
+    world.release(green);
+
+    runFor(world, 1);
+    const stuck = world.bonds.find((bond) => bond.object === green);
+    const from = objectById(world, green).transform.x;
+    runFor(world, 2);
+
+    expect(stuck).toBeDefined();
+    expect(world.bonds.some((bond) => bond.object === green)).toBe(true);
+    expect(objectById(world, green).transform.x).toBeGreaterThan(from + 60);
+  });
+
+  it('lets a Droplet land on a Crawler as a Patch that moves with it', () => {
+    const world = createWorld();
+    const { blue } = world.materials.colours;
+    blue.outline.durability = 1;
+    blue.outline.damageThreshold = 0;
+    blue.fill.kickSpeed = 0;
+    const post = holdAt(world, 640);
+    world.spawn('crawler', { x: 610, y: GROUND_Y - CRAWLER.height / 2 });
+    // A blue box that breaks on the Crawler's head and spills on it.
+    const box = drawObject(world, dragBox(600, GROUND_Y - 100, 30, 30), 'blue');
+    world.fillAt({ x: 615, y: GROUND_Y - 85 }, 'blue');
+    world.togglePause();
+    world.release(box);
+    runFor(world, 1.5);
+    const onTop = (patch: PatchView) =>
+      Math.max(patch.segment.a.y, patch.segment.b.y) < GROUND_Y - CRAWLER.height + 2;
+    const patch = world.patches.find(onTop);
+    expect(patch).toBeDefined();
+    const from = patch!.segment.a.x;
+
+    world.eraseAlong(post, 6); // the Crawler walks on
+    runFor(world, 2);
+
+    const later = world.patches.find(({ id }) => id === patch!.id)!;
+    expect(later.segment.a.x).toBeGreaterThan(from + 60);
+    expect(onTop(later)).toBe(true);
+  });
+
+  it('lets R bring back each Enemy’s HP, and a retry plays out the same', () => {
+    const world = createWorld();
+    world.spawn('crawler', { x: 300, y: 300 }); // a fall that hurts it
+    runFor(world, 2);
+    const hurt = onlyEnemy(world).hp;
+    expect(hurt).toBeLessThan(CRAWLER.hp);
+    const boulder = drawObject(world, dragBox(620, GROUND_Y - 400, 50, 50), 'black');
+    world.fillAt({ x: 645, y: GROUND_Y - 375 }, 'black');
+    world.togglePause();
+    world.togglePause(); // the snapshot
+    world.release(boulder);
+    runFor(world, 4);
+    const first = { enemies: world.enemies, objects: world.objects };
+
+    world.reset();
+    expect(onlyEnemy(world).hp).toBe(hurt);
+    world.togglePause();
+    world.release(boulder);
+    runFor(world, 4);
+
+    expect({ enemies: world.enemies, objects: world.objects }).toEqual(first);
+  });
+});
+
+describe('The Ink Core destroyed', () => {
+  /** A world whose Ink Core has 2 HP, with two Crawlers walking into it on the plateau. */
+  function twoAtTheCore(): SandboxWorld {
+    const enemies = createEnemyTable();
+    enemies.coreHp = 2;
+    const world = createWorld({ enemies });
+    const { minX, maxY } = SANDBOX_ARENA.core;
+    world.spawn('crawler', { x: minX - 150, y: maxY - CRAWLER.height / 2 });
+    world.spawn('crawler', { x: minX - 60, y: maxY - CRAWLER.height / 2 });
+    return world;
+  }
+
+  it('stops physics once enough Crawlers reach the Ink Core, and Space doesn’t start it again', () => {
+    const world = twoAtTheCore();
+
+    const stopped = stepUntil(world, 10, () => !world.isRunning);
+
+    expect(stopped).toBe(true);
+    expect(world.inkCore.hp).toBe(0);
+    expect(world.coreDestroyed).toBe(true);
+    world.togglePause();
+    expect(world.isRunning).toBe(false);
+    expect(world.advance(1)).toBe(0);
+  });
+
+  it('lets R start over: the Ink Core whole and the Crawlers back, and a retry plays out the same', () => {
+    const world = twoAtTheCore();
+    world.togglePause(); // the snapshot
+    const started = world.enemies;
+    stepUntil(world, 10, () => !world.isRunning);
+    const time = world.time;
+
+    world.reset();
+    expect(world.inkCore.hp).toBe(2);
+    expect(world.enemies).toEqual(started);
+    world.togglePause();
+    expect(world.isRunning).toBe(true);
+    stepUntil(world, 10, () => !world.isRunning);
+
+    expect(world.time).toBe(time);
+    expect(world.coreDestroyed).toBe(true);
   });
 });
 
