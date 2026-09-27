@@ -24,14 +24,14 @@ export class Hud {
       })
       .setOrigin(0.5, 0)
       .setDepth(50);
-    // Control hints along the bottom edge, clear of the toolbar.
+    // Control hints along the top edge, above the palette, status and toolbar.
     scene.add
-      .text(scene.scale.width / 2, scene.scale.height - 24, HELP_TEXT, {
+      .text(scene.scale.width / 2, 8, HELP_TEXT, {
         fontFamily: FONT_FAMILY,
         fontSize: '20px',
         color: PALETTE.textMuted,
       })
-      .setOrigin(0.5, 1)
+      .setOrigin(0.5, 0)
       .setDepth(50);
     this.readout = scene.add
       .text(scene.scale.width / 2, 130, '', {

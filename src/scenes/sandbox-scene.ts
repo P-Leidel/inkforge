@@ -6,6 +6,7 @@ import { DebugOverlay } from '../rendering/debug-overlay';
 import { FrameRecorder } from '../rendering/frame-times';
 import { flashRejection, REJECTION_MESSAGES } from '../rendering/rejection-flash';
 import { Hud } from '../rendering/hud';
+import type { Menu } from '../rendering/menu';
 import { ERASER_RADIUS, PaletteBar, type Tool } from '../rendering/palette-bar';
 import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../rendering/toolbar';
@@ -18,9 +19,6 @@ import { PebbleDrop } from '../stress-tests/pebble-drop';
 import type { StressTest } from '../stress-tests/stress-test';
 import { isClosingStroke } from '../stroke/close-detection';
 import { isFillClick } from '../stroke/fill-click';
-
-/** Top edge of the gallery's row of buttons, under the stress-test row. */
-const GALLERY_ROW_TOP = 118;
 
 /** Keys 1–5 pick the Colours in palette order. */
 const COLOUR_KEYS = new Map(COLOURS.map((colour, k) => [String(k + 1), colour]));
@@ -39,6 +37,7 @@ export class SandboxScene extends Phaser.Scene {
   private preview!: StrokePreview;
   private palette!: PaletteBar;
   private tuning!: TuningPanel;
+  private gallery!: Menu;
   /** The Colour new Strokes are drawn in, or the Eraser. */
   private tool: Tool = 'grey';
   /** Whether the pointer is over the game canvas. */
@@ -82,7 +81,12 @@ export class SandboxScene extends Phaser.Scene {
     });
     this.hud = new Hud(this, this.world);
     this.palette = new PaletteBar(this, (tool) => this.pick(tool));
-    new Toolbar(this)
+    const toolbar = new Toolbar(this);
+    this.gallery = toolbar.addMenu(
+      'Gallery',
+      GALLERY.map((demo) => ({ label: demo.name, onPick: () => this.loadDemo(demo) })),
+    );
+    toolbar
       .addButton('Clear', () => this.startStressTest('Sandbox', null))
       .addButton('Pebbles', () => this.startStressTest('Pebbles', (world) => new PebbleDrop(world)))
       .addButton('Box tower', () =>
@@ -91,11 +95,6 @@ export class SandboxScene extends Phaser.Scene {
       .addButton('Ball cannon', () =>
         this.startStressTest('Ball cannon', (world) => new BallCannon(world)),
       );
-    const gallery = new Toolbar(this, GALLERY_ROW_TOP);
-    for (const demo of [...GALLERY].reverse()) {
-      gallery.addButton(demo.name, () => this.loadDemo(demo));
-    }
-    gallery.addLabel('Gallery');
 
     this.bindKeys();
     this.bindPointer();
@@ -166,6 +165,11 @@ export class SandboxScene extends Phaser.Scene {
       Phaser.Input.Events.POINTER_DOWN,
       (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
         if (over.length > 0) return; // a toolbar button
+        // A click beside the open gallery only closes it.
+        if (this.gallery.isOpen) {
+          this.gallery.close();
+          return;
+        }
         const point = { x: pointer.worldX, y: pointer.worldY };
         if (pointer.leftButtonDown()) {
           if (this.tool === 'eraser') {
