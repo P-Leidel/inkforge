@@ -109,12 +109,19 @@ export class Happenings {
   /** Each open reader's place: how many entries it has read in all. */
   private readonly places = new Map<object, number>();
   private quiet = 0;
+  private count = 0;
 
   /** @param clock The simulated time now, s. */
   constructor(private readonly clock: () => number) {}
 
+  /** How many happenings were said in all, kept or not: it goes up whenever anything happens. */
+  get said(): number {
+    return this.count;
+  }
+
   /** Appends what happened, unless it happens quietly. */
   say(happening: Happening): void {
+    this.count++;
     if (this.quiet > 0 || this.places.size === 0) return;
     this.entries.push({ ...happening, time: this.clock() });
   }

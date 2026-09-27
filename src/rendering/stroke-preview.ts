@@ -1,7 +1,6 @@
 import type Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import { isClosingStroke } from '../stroke/close-detection';
 import { CLOSE_RADIUS, LINE_THICKNESS } from '../stroke/stroke-rules';
 import { drawInk } from './ink';
 import { PALETTE } from './palette';
@@ -13,8 +12,9 @@ const POINTER_OFFSET = { x: 16, y: 16 };
 /**
  * Draws the Stroke the player is drawing right now in the current Colour, and
  * the close marker at its start while releasing would close it into an
- * Object. A Stroke that would be refused is drawn flat red with a red marker.
- * Between Strokes, a dab of the current Colour follows the pointer.
+ * Object, as drawing input says. A Stroke that would be refused is drawn
+ * flat red with a red marker. Between Strokes, a dab of the current Colour
+ * follows the pointer.
  */
 export class StrokePreview {
   private readonly g: Phaser.GameObjects.Graphics;
@@ -26,6 +26,7 @@ export class StrokePreview {
   draw(
     points: readonly Vec2[] | null,
     colour: Colour,
+    closes: boolean,
     refused: boolean,
     pointer: Vec2 | null,
   ): void {
@@ -46,7 +47,7 @@ export class StrokePreview {
     } else {
       drawInk(g, colour, points, false, LINE_THICKNESS, 0.8);
     }
-    if (isClosingStroke(points)) {
+    if (closes) {
       const start = points[0]!;
       const marker = refused ? PALETTE.rejected : PALETTE.closeMarker;
       g.lineStyle(3, marker, 1);

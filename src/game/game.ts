@@ -1,5 +1,5 @@
 import type { Polygon } from '../geometry/polygon';
-import { pathLength, type Vec2 } from '../geometry/vec2';
+import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import {
   SandboxWorld,
@@ -12,10 +12,6 @@ import {
   type StrokeId,
   type StrokeOutcome,
 } from '../sandbox/sandbox-world';
-import { outlineInk } from '../materials/ink';
-import { closeRing, isClosingStroke } from '../stroke/close-detection';
-import type { StrokeResult } from '../stroke/stroke-pipeline';
-import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { createInkTable, type InkTable, type ReadonlyInkTable } from './ink-table';
 import { InkTanks, type TankReadings, type TanksState } from './ink-tanks';
 
@@ -51,6 +47,36 @@ export interface CostEstimate {
   readonly price: number;
   /** Whether it costs more than `colour`'s Tank holds, so it would be refused. */
   readonly over: boolean;
+}
+
+/**
+ * What a Stroke or a Fill would be, as the Sandbox world was when the Game
+ * looked: the Ink it would take, and what it would run into. `prospect`
+ * prices it. Its readers keep it while what was looked at stays the same.
+ */
+export type Look =
+  /** A Stroke that doesn't close, as a Line along its raw samples. */
+  | { readonly kind: 'line'; readonly ink: number; readonly onLines: number }
+  /** A closing Stroke, and whether its Object would overlap the Terrain or an Object. */
+  | { readonly kind: 'object'; readonly ink: number; readonly overlaps: boolean }
+  /** The Fill of the hollow Object under a point. */
+  | { readonly kind: 'fill'; readonly ink: number };
+
+/** Why a Stroke or a Fill would be refused. */
+export type Refusal =
+  /** A closing Stroke's Object would overlap the Terrain or an Object. */
+  | 'overlaps'
+  /** It costs more than its Colour's Tank holds. */
+  | 'not-enough';
+
+/** What a Stroke or a Fill would do if it were made now, without making it. */
+export interface Prospect {
+  /** What it would make: a Line, an Object (the Stroke closes) or a Fill. */
+  readonly kind: Look['kind'];
+  /** Why it would be refused, the first reason of those it runs into; null if it wouldn't be. */
+  readonly refusal: Refusal | null;
+  /** What it would cost, and whether its Tank can pay; null with Ink costs off. */
+  readonly cost: CostEstimate | null;
 }
 
 /** One undo step: a Stroke, or the Fill of an Object. */
@@ -250,36 +276,52 @@ export class Game {
   }
 
   /**
-   * What a Stroke would become if it were submitted now, without adding it:
-   * drawing input shows a refused Object in red while drawing.
+   * Looks at what a Stroke with these raw samples would be if it were
+   * submitted now, without the Stroke pipeline but for a closing Stroke,
+   * whose Object may overlap: the Sandbox world measures the samples as
+   * drawn. Null with too few samples to be anything.
    */
-  previewStroke(samples: readonly Vec2[]): StrokeResult {
-    return this.world.previewStroke(samples);
+  lookAtStroke(samples: readonly Vec2[]): Look | null {
+    if (samples.length < 2) return null;
+    const { closes, ink, onLines } = this.world.measureSamples(samples);
+    if (!closes) return { kind: 'line', ink, onLines };
+    const result = this.world.previewStroke(samples);
+    const overlaps = result.kind === 'rejected' && result.reason === 'overlaps';
+    return { kind: 'object', ink, overlaps };
   }
 
   /**
-   * What a Stroke with these raw samples would cost in `colour`, estimated
-   * without the Stroke pipeline: a closing Stroke as an Object, its ring's
-   * Outline, anything else as a Line along the samples, but for the part
-   * lying on another Line. Null with Ink costs off, or with too few samples
-   * to be anything.
+   * Looks at the Fill a click at `point` would make now. Null over nothing,
+   * or over an Object that is already filled.
    */
-  estimateStroke(samples: readonly Vec2[], colour: Colour): CostEstimate | null {
-    if (!this.costs || samples.length < 2) return null;
-    const ink = isClosingStroke(samples)
-      ? outlineInk(closeRing(samples))
-      : pathLength(samples) * LINE_THICKNESS - this.world.inkOnLinesAlong(samples);
-    return this.estimate(colour, this.linePrice(Math.max(0, ink)));
-  }
-
-  /**
-   * What a Fill clicked at `point` in `colour` would cost. Null with Ink
-   * costs off, over nothing, or over an Object that is already filled.
-   */
-  estimateFill(point: Vec2, colour: Colour): CostEstimate | null {
-    if (!this.costs) return null;
+  lookAtFill(point: Vec2): Look | null {
     const ink = this.world.fillInkAt(point);
-    return ink === null ? null : this.estimate(colour, this.fillPrice(ink));
+    return ink === null ? null : { kind: 'fill', ink };
+  }
+
+  /**
+   * What `look` would do in `colour`, priced now: an Object pays for all of
+   * its Outline, a Line for the part not lying on another Line, a Fill for
+   * its Ink. An overlap refuses it before a price its Tank can't pay does.
+   * The Tanks, the Ink table and the Ink costs switch are read as they are
+   * now, whenever the look was taken.
+   */
+  prospect(look: Look, colour: Colour): Prospect {
+    const cost = this.costs ? this.estimate(colour, this.lookPrice(look)) : null;
+    const overlaps = look.kind === 'object' && look.overlaps;
+    const refusal = overlaps ? 'overlaps' : cost?.over ? 'not-enough' : null;
+    return { kind: look.kind, refusal, cost };
+  }
+
+  private lookPrice(look: Look): number {
+    switch (look.kind) {
+      case 'line':
+        return this.linePrice(Math.max(0, look.ink - look.onLines));
+      case 'object':
+        return this.linePrice(look.ink);
+      case 'fill':
+        return this.fillPrice(look.ink);
+    }
   }
 
   private estimate(colour: Colour, price: number): CostEstimate {

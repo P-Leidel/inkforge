@@ -1,5 +1,6 @@
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import { samplesInk, type SamplesInk } from '../materials/ink';
 import {
   createMaterialTable,
   materialsRevision,
@@ -188,6 +189,8 @@ export class SandboxWorld {
   private running = false;
   private accumulator = 0;
   private elapsed = 0;
+  /** Steps taken in all, never taken back: R goes back in time, not in this. */
+  private stepsTaken = 0;
 
   constructor(options: SandboxWorldOptions = {}) {
     this.arena = options.arena ?? SANDBOX_ARENA;
@@ -272,6 +275,15 @@ export class SandboxWorld {
   /** Simulated seconds since the world was created. */
   get time(): number {
     return this.elapsed;
+  }
+
+  /**
+   * A count that goes up at every step and with everything that happens,
+   * quietly or not. While it stays the same, nothing in the Arena moved,
+   * came, went or was filled.
+   */
+  get changes(): number {
+    return this.stepsTaken + this.happenings.said;
   }
 
   get bodyCount(): number {
@@ -382,12 +394,13 @@ export class SandboxWorld {
   }
 
   /**
-   * The Ink of the part of a Line along raw pointer `samples` that would lie
-   * on a standing Line, without the Stroke pipeline or adding anything: to
-   * estimate what a Stroke costs while it is drawn.
+   * Measures a Stroke's raw pointer samples as drawn, without the Stroke
+   * pipeline or adding anything: whether they close, their Ink, and the
+   * part of it lying on a standing Line. To estimate what a Stroke costs
+   * while it is drawn.
    */
-  inkOnLinesAlong(samples: readonly Vec2[]): number {
-    return this.strokes.inkOnLinesAlong(samples);
+  measureSamples(samples: readonly Vec2[]): SamplesInk {
+    return samplesInk(samples, (path) => this.query.lyingOnLines(path));
   }
 
   /**
@@ -575,6 +588,7 @@ export class SandboxWorld {
     this.applyMaterials();
     this.contacts.step(this.physics.step());
     this.elapsed += STEP_SECONDS;
+    this.stepsTaken++;
     // Damage by the ledger's hits. What broke breaks only after sticking and
     // landing: a green Object sticks to its first new contact even if that
     // breaks in this step (it then falls free at once, as when its host
