@@ -32,7 +32,7 @@ import { Droplets, type DropletView } from './droplets';
 import { Enemies, type EnemyRecord, type EnemyView } from './enemies';
 import { Happenings, type Thing, type Why } from './happenings';
 import { InkCore, type InkCoreView } from './ink-core';
-import { MaterialRules } from './material-rules';
+import { MaterialRules, type Killed } from './material-rules';
 import { Numbers } from './numbers';
 import { Patches, type PatchView } from './patches';
 import { PreviousPoses } from './previous-poses';
@@ -57,6 +57,7 @@ export type { BlastView } from './blasts';
 export type { Poses } from './arena-contents';
 export type { BondView } from './bonds';
 export type { DropletView } from './droplets';
+export type { DropInk } from './drops';
 export type { EnemyView } from './enemies';
 export type { Entry, Happening, Reader, Thing, Why } from './happenings';
 export type { InkCoreView } from './ink-core';
@@ -313,6 +314,7 @@ export class SandboxWorld {
         heading: (enemy) => this.enemiesKind.heading(enemy),
         walkerOf: (party) => this.enemiesKind.byParty(party.id),
         kill: (id) => this.kill(id),
+        drop: ({ id, type, at }, ink) => say({ kind: 'dropped', id, type, at, ink }),
         isInkCore: (party) => this.inkCoreKind.is(party.id),
         damageInkCore: (damage) => this.inkCoreKind.damage(damage),
         belowScreen: () => this.query.below(this.arena.height),
@@ -433,11 +435,11 @@ export class SandboxWorld {
 
   /**
    * An Enemy dies: it pops, a burst of its body that is visual only, and
-   * goes, releasing nothing physical.
+   * goes, releasing nothing physical. Says what died and where.
    */
-  private kill(id: number): void {
+  private kill(id: number): Killed | null {
     const enemy = this.enemiesKind.view(id);
-    if (!enemy) return;
+    if (!enemy) return null;
     const { type, outline, transform, velocity } = enemy;
     this.happenings.say({
       kind: 'popped',
@@ -447,6 +449,7 @@ export class SandboxWorld {
       velocity,
     });
     this.enemiesKind.remove(id, 'died');
+    return { id, type, at: { x: transform.x, y: transform.y } };
   }
 
   /**

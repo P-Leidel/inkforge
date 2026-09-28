@@ -185,6 +185,8 @@ describe('A Wave', () => {
 
   it('refuses undo, paused or running, and the Eraser still works', () => {
     const game = wavesGame({ crawler: 1 });
+    // Ink is unlimited, so the Line drawn during the Wave needs no Wave Ink.
+    game.inkCosts = false;
     drawLine(game, 400, 300, 200);
     game.togglePause();
     stepFor(game, 0.1);

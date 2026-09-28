@@ -2,7 +2,7 @@ import type Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
 import type { CostEstimate, Game } from '../game/game';
 import { ERASER_RADIUS, type Tool } from '../input/drawing-input';
-import { COLOURS } from '../materials/colour';
+import { COLOURS, type Colour } from '../materials/colour';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { BakedDrawing, bakingGraphics } from '../rendering/baked-textures';
 import { drawInk, INK_HUES } from '../rendering/ink';
@@ -22,38 +22,53 @@ const TOOLS: readonly Tool[] = [...COLOURS, 'eraser'];
 /** A swatch's label: its key and its name. */
 const label = (tool: Tool, k: number) => (tool === 'eraser' ? 'E eraser' : `${k + 1} ${tool}`);
 
+/** The middle of `colour`'s gauge, on screen: where a Drop's dots of it fly to. */
+export function gaugeCentre(colour: Colour): Vec2 {
+  return {
+    x: LEFT + COLOURS.indexOf(colour) * (WIDTH + GAP) + WIDTH / 2,
+    y: GAUGE_TOP + GAUGE_HEIGHT / 2,
+  };
+}
+
 /** What the gauges read: each Colour's Tank, and whether Ink costs anything. */
 export type Tanks = Pick<Game, 'inkCosts' | 'tanks'>;
 
 /** What one gauge draws. */
 export interface GaugeView {
-  /** How full it is, 0–1, to the nearest half pixel. */
+  /** How full it is, Locked Ink and all, 0–1, to the nearest half pixel. */
   readonly filled: number;
+  /**
+   * The Locked Ink, a dimmed band at the bottom of `filled`, to the nearest
+   * half pixel: what is above it is spendable. 0 outside a Wave.
+   */
+  readonly locked: number;
   /** The pending cost, greyed out at the top of `filled`, to the nearest half pixel. */
   readonly pending: number;
-  /** Whether the pending cost is more than is left, so all of `filled` is red. */
+  /** Whether the pending cost is more than can be spent, so all that can is red. */
   readonly over: boolean;
-  /** The whole units left, under it; ∞ while Ink costs nothing. */
+  /** The whole units that can be spent, under it; ∞ while Ink costs nothing. */
   readonly amount: string;
 }
 
 /**
  * What each Colour's gauge draws, in palette order: its Tank's reading
- * rounded to what the gauge can show, and `cost` on its own Colour's gauge,
- * clamped to what is left. The gauges are baked again only when this changes.
+ * rounded to what the gauge can show, its Locked Ink at the bottom, and
+ * `cost` on its own Colour's gauge, clamped to what can be spent. The
+ * gauges are baked again only when this changes.
  */
 export function gaugeViews(tanks: Tanks, cost: CostEstimate | null): GaugeView[] {
   const halfPixels = (ink: number, maximum: number) =>
     maximum > 0 ? Math.round((ink / maximum) * WIDTH * 2) / (WIDTH * 2) : 0;
   const readings = tanks.tanks;
   return COLOURS.map((colour) => {
-    if (!tanks.inkCosts) return { filled: 1, pending: 0, over: false, amount: '∞' };
-    const { spendable, maximum, units } = readings[colour];
-    const filled = halfPixels(spendable, maximum);
+    if (!tanks.inkCosts) return { filled: 1, locked: 0, pending: 0, over: false, amount: '∞' };
+    const { spendable, locked: lockedInk, maximum, units } = readings[colour];
+    const filled = halfPixels(spendable + lockedInk, maximum);
+    const locked = Math.min(filled, halfPixels(lockedInk, maximum));
     const priced = cost?.colour === colour ? cost : null;
-    const pending = priced ? Math.min(filled, halfPixels(priced.price, maximum)) : 0;
+    const pending = priced ? Math.min(filled - locked, halfPixels(priced.price, maximum)) : 0;
     const over = priced?.over ?? false;
-    return { filled, pending, over, amount: String(units) };
+    return { filled, locked, pending, over, amount: String(units) };
   });
 }
 
@@ -173,12 +188,15 @@ export class PaletteBar {
   private showGauges(tanks: Tanks, cost: CostEstimate | null): void {
     const gauges = gaugeViews(tanks, cost);
     const key = gauges
-      .map(({ filled, pending, over, amount }) => `${filled}:${pending}:${over}:${amount}`)
+      .map(
+        ({ filled, locked, pending, over, amount }) =>
+          `${filled}:${locked}:${pending}:${over}:${amount}`,
+      )
       .join(' ');
     if (key === this.shownGauges) return;
     this.shownGauges = key;
     const g = bakingGraphics(this.scene);
-    gauges.forEach(({ filled, pending, over, amount }, k) => {
+    gauges.forEach(({ filled, locked, pending, over, amount }, k) => {
       const x = LEFT + k * (WIDTH + GAP);
       g.fillStyle(0x2c313b, 1);
       g.fillRoundedRect(x, GAUGE_TOP, WIDTH, GAUGE_HEIGHT, 3);
@@ -186,10 +204,16 @@ export class PaletteBar {
         g.fillStyle(INK_HUES[COLOURS[k]!], 1);
         g.fillRoundedRect(x, GAUGE_TOP, Math.max(WIDTH * filled, 2), GAUGE_HEIGHT, 3);
       }
-      // The pending cost, greyed out at the top of what is left; all of it red when over.
+      // The Locked Ink, dimmed, at the bottom: it takes room but can't be spent.
+      if (locked > 0) {
+        g.fillStyle(0x2c313b, 0.6);
+        g.fillRect(x, GAUGE_TOP, WIDTH * locked, GAUGE_HEIGHT);
+      }
+      // The pending cost, greyed out at the top of what is left; all that can be spent red when over.
       if (over) {
+        const spendable = Math.max(WIDTH * (filled - locked), 2);
         g.fillStyle(PALETTE.rejected, 1);
-        g.fillRect(x, GAUGE_TOP, Math.max(WIDTH * filled, 2), GAUGE_HEIGHT);
+        g.fillRect(x + WIDTH * locked, GAUGE_TOP, spendable, GAUGE_HEIGHT);
       } else if (pending > 0) {
         g.fillStyle(0x8a8f99, 0.85);
         g.fillRect(x + WIDTH * (filled - pending), GAUGE_TOP, WIDTH * pending, GAUGE_HEIGHT);

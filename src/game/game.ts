@@ -1,11 +1,12 @@
 import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
-import type { Colour } from '../materials/colour';
+import { COLOURS, type Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
 import {
   SandboxWorld,
   STEP_SECONDS,
   type AddedStroke,
+  type DropInk,
   type Entry,
   type FillOutcome,
   type MadeStroke,
@@ -91,10 +92,13 @@ export interface Action {
 /**
  * What something still there paid, and from which Tank. `colour` is null for
  * what was made below the Game (a demo, a stress test), which paid nothing.
+ * `wave` is the Wave it was paid in, whose Wave Ink paid for it; null for
+ * what was paid outside a Wave.
  */
 interface Paid {
   readonly colour: Colour | null;
   readonly price: number;
+  readonly wave: number | null;
 }
 
 /** What a Stroke in the Arena paid: an Object for its Outline, a Line Piece by Piece. */
@@ -103,6 +107,8 @@ type Charge =
   | {
       readonly kind: 'line';
       readonly colour: Colour | null;
+      /** The Wave it was paid in, as for `Paid`. */
+      readonly wave: number | null;
       /** What each Piece still standing paid, by its index. */
       readonly pieces: Map<number, number>;
     };
@@ -123,6 +129,8 @@ export type Phase = 'build' | 'wave';
 
 /** A Wave under way: the Enemies still to come, and when the next may. */
 interface Wave {
+  /** Which Wave it is, counting every Wave started: what was paid in it is known by it. */
+  readonly number: number;
   /** Still to come, in the order they arrive. */
   readonly toCome: EnemyType[];
   /** Steps left before the next may arrive. */
@@ -159,7 +167,11 @@ export interface GameOptions {
  * the Wave that Space starts from it, which sends in the Wave table's
  * Enemies from the Spawn and ends when none is left to come and none is
  * alive, or the Ink Core is destroyed. The Sandbox world knows nothing of
- * phases.
+ * phases. As a Wave starts, the Tanks' contents become Locked Ink, and until
+ * it ends only Wave Ink is spent.
+ *
+ * Every kill's Drop, which the Sandbox world reports in the list of what
+ * happened, goes into the Tanks as Wave Ink (ADR 0005), Waves on or off.
  */
 export class Game {
   readonly world: SandboxWorld;
@@ -179,6 +191,8 @@ export class Game {
   private wavesOn: boolean;
   /** The Wave under way, paused or running; null in the Build Phase. */
   private current: Wave | null = null;
+  /** How many Waves were started in all, never taken back: R and Clear keep it. */
+  private wavesStarted = 0;
   /** Sends in the Wave's Enemies before each step and ends it after, as `advance` steps. */
   private readonly around = {
     before: () => this.arrive(),
@@ -207,7 +221,7 @@ export class Game {
   set waves(on: boolean) {
     if (on === this.wavesOn) return;
     this.wavesOn = on;
-    this.current = null;
+    this.endWave();
     if (on) this.world.pause();
   }
 
@@ -277,7 +291,7 @@ export class Game {
     };
     for (const charge of this.strokes.values()) {
       if (charge.kind === 'object') add(charge.paid);
-      else for (const price of charge.pieces.values()) add({ colour: charge.colour, price });
+      else for (const price of charge.pieces.values()) add({ ...charge, price });
     }
     for (const paid of this.fills.values()) add(paid);
     return sum;
@@ -341,7 +355,7 @@ export class Game {
       case 'filled': {
         const price = this.fillPrice(outcome.ink);
         this.inkTanks.spend(colour, price);
-        this.fills.set(outcome.id, { colour, price });
+        this.fills.set(outcome.id, { colour, price, wave: this.paidIn });
         this.undoHistory.push({ kind: 'fill', id: outcome.id });
         break;
       }
@@ -425,7 +439,9 @@ export class Game {
   /**
    * The Eraser: removes what its brush passes over, and refunds what was
    * paid for it: an Object's Outline and Fill, a Piece's price. Rubble,
-   * Droplets and Patches are a broken Fill's, and that Ink is spent.
+   * Droplets and Patches are a broken Fill's, and that Ink is spent. During
+   * a Wave, what was paid from its Wave Ink goes back to it, and what was
+   * paid before it goes back as Locked Ink.
    */
   eraseAlong(path: readonly Vec2[], radius: number): void {
     this.catchUp();
@@ -472,9 +488,9 @@ export class Game {
   /**
    * Space. With Waves off, starts or pauses physics, and every start takes a
    * snapshot of the Tanks, what was paid and the undo history, next to the
-   * Sandbox world's. With Waves on, in the Build Phase it takes the snapshot
-   * and starts a Wave; during a Wave it only pauses and runs, and it stays
-   * the Wave.
+   * Sandbox world's. With Waves on, in the Build Phase it takes the snapshot,
+   * turns every Tank's contents into Locked Ink and starts a Wave; during a
+   * Wave it only pauses and runs, and it stays the Wave.
    */
   togglePause(): void {
     this.catchUp();
@@ -486,7 +502,24 @@ export class Game {
     this.world.togglePause();
     if (!this.world.isRunning) return;
     this.snapshot = this.takeSnapshot();
-    if (this.wavesOn) this.current = { toCome: arrivals(this.waveTable), untilNext: 0 };
+    if (!this.wavesOn) return;
+    this.current = { number: ++this.wavesStarted, toCome: arrivals(this.waveTable), untilNext: 0 };
+    this.inkTanks.lock();
+  }
+
+  /**
+   * Ends a Wave under way, if any: its Locked Ink is spendable again, and
+   * its Wave Ink stays in the Tanks.
+   */
+  private endWave(): void {
+    if (!this.current) return;
+    this.current = null;
+    this.inkTanks.unlock();
+  }
+
+  /** The Wave what is paid now is paid in; null outside a Wave. */
+  private get paidIn(): number | null {
+    return this.current?.number ?? null;
   }
 
   /**
@@ -508,15 +541,18 @@ export class Game {
   /**
    * After a step of a Wave: it ends when none is left to come and none is
    * alive, or when the Ink Core is destroyed. Physics stops and the Game is
-   * back in the Build Phase; nothing is Frozen again.
+   * back in the Build Phase, with Locked Ink spendable again and the Wave
+   * Ink kept; nothing is Frozen again. A kill's Drop in its last step is
+   * picked up first, as Wave Ink.
    */
   private endWaveIfOver(): void {
     const wave = this.current;
     if (!wave) return;
     const over = wave.toCome.length === 0 && this.world.enemyCount === 0;
     if (!over && !this.world.coreDestroyed) return;
+    this.catchUp();
     this.world.pause();
-    this.current = null;
+    this.endWave();
   }
 
   /**
@@ -624,22 +660,38 @@ export class Game {
    */
   private charge(stroke: AddedStroke): void {
     const { id, colour } = stroke;
+    const wave = this.paidIn;
     if (stroke.kind === 'object') {
       const price = this.linePrice(stroke.ink);
       this.inkTanks.spend(colour, price);
-      this.strokes.set(id, { kind: 'object', paid: { colour, price } });
+      this.strokes.set(id, { kind: 'object', paid: { colour, price, wave } });
     } else {
       const pieces = new Map(this.piecePrices(stroke).map((price, index) => [index, price]));
       for (const price of pieces.values()) this.inkTanks.spend(colour, price);
-      this.strokes.set(id, { kind: 'line', colour, pieces });
+      this.strokes.set(id, { kind: 'line', colour, wave, pieces });
     }
     this.undoHistory.push({ kind: 'stroke', id });
   }
 
-  /** Gives back what was paid, never filling a Tank beyond its maximum. */
+  /**
+   * Gives back what was paid, never filling a Tank beyond its maximum: to
+   * the part it was paid from. During a Wave, that is its Wave Ink for what
+   * was paid in it, and Locked Ink for what was paid before it; outside a
+   * Wave, all of it is spendable.
+   */
   private refund(paid: Paid | undefined): void {
     if (!paid?.colour || paid.price === 0) return;
-    this.inkTanks.refund(paid.colour, paid.price);
+    const part = this.current && paid.wave !== this.current.number ? 'locked' : 'spendable';
+    this.inkTanks.refund(paid.colour, paid.price, part);
+  }
+
+  /**
+   * Takes a kill's Drop into the Tanks as Wave Ink: what doesn't fit is
+   * lost. With Ink costs off, Ink is unlimited and a Drop changes nothing.
+   */
+  private pickUp(ink: DropInk): void {
+    if (!this.costs) return;
+    for (const colour of COLOURS) this.inkTanks.pickUp(colour, ink[colour]);
   }
 
   /** Refunds what a Stroke still there paid: an Object's Outline and Fill, a Line's Pieces. */
@@ -648,8 +700,8 @@ export class Game {
       this.refund(charge.paid);
       this.refund(this.fills.get(id));
     } else if (charge) {
-      const { colour } = charge;
-      for (const price of charge.pieces.values()) this.refund({ colour, price });
+      const { colour, wave } = charge;
+      for (const price of charge.pieces.values()) this.refund({ colour, price, wave });
     }
   }
 
@@ -677,7 +729,7 @@ export class Game {
         return this.heardAdded(entry.what);
       case 'filled':
         if (entry.fill && !this.fills.has(entry.id)) {
-          this.fills.set(entry.id, { colour: null, price: 0 });
+          this.fills.set(entry.id, { colour: null, price: 0, wave: null });
           this.undoHistory.push({ kind: 'fill', id: entry.id });
         }
         return;
@@ -692,18 +744,20 @@ export class Game {
         this.fills.clear();
         this.undoHistory = [];
         return;
+      case 'dropped':
+        return this.pickUp(entry.ink);
       case 'released':
       case 'burst':
       case 'popped':
       case 'exploded':
-        // None makes or takes away a Stroke or a Fill. (A kill's Drop comes with #92.)
+        // None makes or takes away a Stroke or a Fill.
         return;
     }
   }
 
   private heardAdded(what: Extract<Entry, { kind: 'added' }>['what']): void {
     if (what.thing === 'object' && !this.strokes.has(what.id)) {
-      this.strokes.set(what.id, { kind: 'object', paid: { colour: null, price: 0 } });
+      this.strokes.set(what.id, { kind: 'object', paid: { colour: null, price: 0, wave: null } });
       this.undoHistory.push({ kind: 'stroke', id: what.id });
     } else if (what.thing === 'piece') {
       const charge = this.strokes.get(what.id);
@@ -711,7 +765,12 @@ export class Game {
         if (charge.colour === null) charge.pieces.set(what.index, 0);
         return;
       }
-      this.strokes.set(what.id, { kind: 'line', colour: null, pieces: new Map([[what.index, 0]]) });
+      this.strokes.set(what.id, {
+        kind: 'line',
+        colour: null,
+        wave: null,
+        pieces: new Map([[what.index, 0]]),
+      });
       this.undoHistory.push({ kind: 'stroke', id: what.id });
     }
   }
@@ -724,7 +783,7 @@ export class Game {
       this.forget(what.id);
     } else if (what.thing === 'piece' && charge?.kind === 'line') {
       const price = charge.pieces.get(what.index);
-      if (erased) this.refund({ colour: charge.colour, price: price ?? 0 });
+      if (erased) this.refund({ colour: charge.colour, price: price ?? 0, wave: charge.wave });
       charge.pieces.delete(what.index);
       if (charge.pieces.size === 0) this.forget(what.id);
     }
