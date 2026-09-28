@@ -111,6 +111,18 @@ describe('Enemies walk', () => {
     expect(second!.transform.y).toBeLessThan(first!.transform.y - CRAWLER.height + 1);
   });
 
+  it("says the lane's far end is taken while an Enemy stands there, and free once it walked on", () => {
+    const world = createWorld();
+    expect(world.spawnClear('heavy')).toBe(true);
+
+    world.spawn('crawler');
+
+    expect(world.spawnClear('crawler')).toBe(false);
+    expect(world.spawnClear('heavy')).toBe(false);
+    expect(stepUntil(world, 3, () => world.spawnClear('heavy'))).toBe(true);
+    expect(world.enemyCount).toBe(1);
+  });
+
   it('walks a Crawler from the Spawn onto the screen, along the ground, up the slope to the Ink Core, which loses 1 HP; the Crawler is gone', () => {
     const world = createWorld();
     const heard = hear(world);

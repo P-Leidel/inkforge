@@ -161,7 +161,7 @@ The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with ph
 ### Simulation
 
 **Game**:
-The rules layer over the Sandbox world: the Ink Tanks, what Strokes and Fills cost, and undo; later the Build Phase and Wave. The gallery and the stress tests build below it, for free.
+The rules layer over the Sandbox world: the Ink Tanks, what Strokes and Fills cost, undo, and with Waves on, the Build Phase and the Wave. The gallery and the stress tests build below it, for free.
 _Avoid_: Controller, manager
 
 **Arena contents**:

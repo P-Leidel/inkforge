@@ -188,6 +188,23 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     return this.enemies;
   }
 
+  /** How many Enemies are in the Arena. */
+  get count(): number {
+    return this.enemies.length;
+  }
+
+  /**
+   * Whether an Enemy of `type` sent in now would stand at the lane's far
+   * end, its back to the wall, with nothing there in its way.
+   */
+  spawnClear(type: EnemyType): boolean {
+    const { width, height } = this.numbers.enemy(type);
+    const x = this.arena.spawn.x + width / 2 + SPAWN_GAP;
+    const y = this.arena.spawn.y - height / 2 - SPAWN_GAP;
+    const outline = transformPoints(enemyOutline(width, height), { x, y, angle: 0 });
+    return !this.query.blocksEnemy(outline);
+  }
+
   /**
    * Sends in an Enemy of `type` from the Spawn: it stands at the lane's far
    * end, its back to the wall, or on top of what already stands there. Or,

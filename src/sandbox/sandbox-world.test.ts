@@ -93,6 +93,44 @@ describe('Sandbox world: pause and stepping', () => {
     expect(world.isRunning).toBe(false);
     expect(world.time).toBe(0);
   });
+
+  it('pauses and resumes without a new start: R still goes back to the last start', () => {
+    const world = createWorld();
+    const id = world.spawn('crawler', { x: 300, y: 859 });
+    world.togglePause();
+    for (let step = 0; step < 30; step++) world.step();
+
+    world.pause();
+    world.step();
+    const paused = world.enemies[0]!.transform.x;
+    world.resume();
+    for (let step = 0; step < 30; step++) world.step();
+
+    expect(world.isRunning).toBe(true);
+    expect(world.enemies[0]!.transform.x).toBeGreaterThan(paused);
+    world.reset();
+    expect(world.enemies[0]).toMatchObject({ id, transform: { x: 300 } });
+  });
+
+  it('runs hooks around every step it advances', () => {
+    const world = createWorld();
+    world.togglePause();
+    const calls: string[] = [];
+
+    world.advance(3 / 60, {
+      before: () => calls.push(`before ${world.time.toFixed(3)}`),
+      after: () => calls.push(`after ${world.time.toFixed(3)}`),
+    });
+
+    expect(calls).toEqual([
+      'before 0.000',
+      'after 0.017',
+      'before 0.017',
+      'after 0.033',
+      'before 0.033',
+      'after 0.050',
+    ]);
+  });
 });
 
 describe('Sandbox world: changes', () => {

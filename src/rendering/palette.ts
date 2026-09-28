@@ -40,6 +40,11 @@ export const PALETTE = {
   paused: '#f0c05a',
   /** "Ink Core destroyed". */
   destroyed: '#ff5a5a',
+  /** The phase label, with Waves on. */
+  buildPhase: '#6fe3ff',
+  wave: '#ff9a5a',
+  /** The number still to come, beside the Spawn arrow. */
+  spawnCount: '#f0c05a',
 } as const;
 
 export const FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", sans-serif';

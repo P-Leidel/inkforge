@@ -1,4 +1,5 @@
 import type { ReadonlyInkTable } from '../game/ink-table';
+import type { ReadonlyWaveTable } from '../game/wave-table';
 import type { EnemyTable } from '../materials/enemy-table';
 import type { MaterialTable } from '../materials/material-table';
 
@@ -8,6 +9,8 @@ export interface TunedTables {
   readonly materials: MaterialTable;
   /** Pasted over `DEFAULT_INK_TABLE` in src/game/ink-table.ts. */
   readonly ink: ReadonlyInkTable;
+  /** Pasted over `DEFAULT_WAVE_TABLE` in src/game/wave-table.ts. */
+  readonly wave: ReadonlyWaveTable;
   /** Pasted over `DEFAULT_ENEMY_TABLE` in src/materials/enemy-table.ts. */
   readonly enemies: EnemyTable;
 }
@@ -17,6 +20,6 @@ export interface TunedTables {
  * the shape of its defaults in the code, to paste back over them.
  */
 export function tablesAsJson(tables: TunedTables): string {
-  const { materials, ink, enemies } = tables;
-  return JSON.stringify({ materials, ink, enemies }, null, 2);
+  const { materials, ink, wave, enemies } = tables;
+  return JSON.stringify({ materials, ink, wave, enemies }, null, 2);
 }

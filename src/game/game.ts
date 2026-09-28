@@ -4,6 +4,7 @@ import type { Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
 import {
   SandboxWorld,
+  STEP_SECONDS,
   type AddedStroke,
   type Entry,
   type FillOutcome,
@@ -15,6 +16,7 @@ import {
 } from '../sandbox/sandbox-world';
 import { createInkTable, type InkTable, type ReadonlyInkTable } from './ink-table';
 import { InkTanks, type TankReadings, type TanksState } from './ink-tanks';
+import { arrivals, createWaveTable, type ReadonlyWaveTable, type WaveTable } from './wave-table';
 
 /** What a Stroke the Game was asked for became. */
 export type GameStrokeOutcome =
@@ -113,9 +115,27 @@ interface Snapshot {
   readonly history: readonly Action[];
 }
 
+/**
+ * Where the Game is, with Waves on: the Build Phase, paused, where the
+ * player builds, or a Wave, paused or running.
+ */
+export type Phase = 'build' | 'wave';
+
+/** A Wave under way: the Enemies still to come, and when the next may. */
+interface Wave {
+  /** Still to come, in the order they arrive. */
+  readonly toCome: EnemyType[];
+  /** Steps left before the next may arrive. */
+  untilNext: number;
+}
+
 export interface GameOptions {
   /** Whether Strokes and Fills cost Ink. Off, Ink is unlimited. */
   readonly inkCosts: boolean;
+  /** Whether the Game has a Build Phase and Waves; off by default. */
+  readonly waves?: boolean;
+  /** The Wave table to read and edit; defaults to a fresh copy of the defaults. */
+  readonly wave?: WaveTable;
   /** The Sandbox world to run; a new one from `worldOptions` by default. */
   readonly world?: SandboxWorld;
   readonly worldOptions?: SandboxWorldOptions;
@@ -134,6 +154,12 @@ export interface GameOptions {
  *
  * Strokes and Fills made below it, by a demo or a stress test, join the
  * undo history at price 0 when it reads that they were added.
+ *
+ * With the Waves switch on, it also owns the phase: the Build Phase, and
+ * the Wave that Space starts from it, which sends in the Wave table's
+ * Enemies from the Spawn and ends when none is left to come and none is
+ * alive, or the Ink Core is destroyed. The Sandbox world knows nothing of
+ * phases.
  */
 export class Game {
   readonly world: SandboxWorld;
@@ -146,9 +172,18 @@ export class Game {
   private fills = new Map<StrokeId, Paid>();
   /** Strokes and Fills in the order they were made, for undo. */
   private undoHistory: Action[] = [];
-  /** Taken whenever physics starts; R returns to it. */
+  /** Taken whenever physics starts, or with Waves on, as a Wave starts; R returns to it. */
   private snapshot: Snapshot | null = null;
   private readonly reader: Reader;
+  private readonly waveTable: WaveTable;
+  private wavesOn: boolean;
+  /** The Wave under way, paused or running; null in the Build Phase. */
+  private current: Wave | null = null;
+  /** Sends in the Wave's Enemies before each step and ends it after, as `advance` steps. */
+  private readonly around = {
+    before: () => this.arrive(),
+    after: () => this.endWaveIfOver(),
+  };
 
   constructor(options: GameOptions) {
     this.world = options.world ?? new SandboxWorld(options.worldOptions);
@@ -156,6 +191,49 @@ export class Game {
     this.costs = options.inkCosts;
     this.inkTanks = new InkTanks(this.table);
     this.reader = this.world.happenings.reader();
+    this.waveTable = options.wave ?? createWaveTable();
+    this.wavesOn = options.waves ?? false;
+  }
+
+  /**
+   * The Waves switch. Off, the Game plays as in milestone 3. Turning it on
+   * puts the Game in the Build Phase, pausing physics if it runs; turning it
+   * off ends a Wave under way where it is, and physics stays as it is.
+   */
+  get waves(): boolean {
+    return this.wavesOn;
+  }
+
+  set waves(on: boolean) {
+    if (on === this.wavesOn) return;
+    this.wavesOn = on;
+    this.current = null;
+    if (on) this.world.pause();
+  }
+
+  /** The Build Phase or a Wave, with Waves on; null with Waves off. */
+  get phase(): Phase | null {
+    if (!this.wavesOn) return null;
+    return this.current ? 'wave' : 'build';
+  }
+
+  /** How many of the Wave's Enemies are still to come: 0 outside a Wave. */
+  get toCome(): number {
+    return this.current?.toCome.length ?? 0;
+  }
+
+  /** The Wave table: the Wave's list and gap. Edit it with `editWave`. */
+  get wave(): ReadonlyWaveTable {
+    return this.waveTable;
+  }
+
+  /**
+   * Edits the Wave table, as the F2 tuning panel does. A Wave under way
+   * keeps its list, and takes a new gap from its next arrival; the next Wave
+   * takes the table as it is when it starts.
+   */
+  editWave(edit: (table: WaveTable) => void): void {
+    edit(this.waveTable);
   }
 
   /** Whether Strokes and Fills cost Ink. Turning it off or on leaves the Tanks as they are. */
@@ -359,9 +437,12 @@ export class Game {
    * Takes back the most recent Stroke or Fill that still exists, and refunds
    * exactly what was paid for it: a Fill's price, an Object's Outline's, or
    * a Line's standing Pieces'. Broken Objects, and Lines whose every Piece
-   * broke, are gone from the history, so undo skips them.
+   * broke, are gone from the history, so undo skips them. During a Wave,
+   * paused or running, it does nothing.
    */
   undo(): void {
+    // A Wave's mistakes stay made.
+    if (this.current) return;
     this.catchUp();
     for (let action = this.undoHistory.pop(); action; action = this.undoHistory.pop()) {
       if (this.takeBack(action)) break;
@@ -389,23 +470,65 @@ export class Game {
   }
 
   /**
-   * Starts or pauses physics. Every start takes a snapshot of the Tanks,
-   * what was paid and the undo history, next to the Sandbox world's.
+   * Space. With Waves off, starts or pauses physics, and every start takes a
+   * snapshot of the Tanks, what was paid and the undo history, next to the
+   * Sandbox world's. With Waves on, in the Build Phase it takes the snapshot
+   * and starts a Wave; during a Wave it only pauses and runs, and it stays
+   * the Wave.
    */
   togglePause(): void {
     this.catchUp();
+    if (this.current) {
+      if (this.world.isRunning) this.world.pause();
+      else this.world.resume();
+      return;
+    }
     this.world.togglePause();
-    if (this.world.isRunning) this.snapshot = this.takeSnapshot();
+    if (!this.world.isRunning) return;
+    this.snapshot = this.takeSnapshot();
+    if (this.wavesOn) this.current = { toCome: arrivals(this.waveTable), untilNext: 0 };
+  }
+
+  /**
+   * Before a step of a Wave: sends in the next Enemy on its list once the
+   * gap since the last one is over and the lane's far end is free. The
+   * first comes as the Wave starts.
+   */
+  private arrive(): void {
+    const wave = this.current;
+    if (!wave) return;
+    if (wave.untilNext > 0) wave.untilNext--;
+    const next = wave.toCome[0];
+    if (next === undefined || wave.untilNext > 0 || !this.world.spawnClear(next)) return;
+    wave.toCome.shift();
+    this.world.spawn(next);
+    wave.untilNext = Math.max(1, Math.round(this.waveTable.gap / STEP_SECONDS));
+  }
+
+  /**
+   * After a step of a Wave: it ends when none is left to come and none is
+   * alive, or when the Ink Core is destroyed. Physics stops and the Game is
+   * back in the Build Phase; nothing is Frozen again.
+   */
+  private endWaveIfOver(): void {
+    const wave = this.current;
+    if (!wave) return;
+    const over = wave.toCome.length === 0 && this.world.enemyCount === 0;
+    if (!over && !this.world.coreDestroyed) return;
+    this.world.pause();
+    this.current = null;
   }
 
   /**
    * R: takes the world back to the moment physics last started, and the
-   * Tanks, what was paid and the undo history with it. Does nothing before
-   * the first start.
+   * Tanks, what was paid and the undo history with it. With Waves on, that
+   * is the Build Phase as it was when the last Wave started: its Enemies
+   * are all to come again. Does nothing before the first start.
    */
   reset(): void {
     const snapshot = this.snapshot;
     if (!snapshot) return;
+    this.current = null;
     this.world.reset();
     // Everything comes back as it was at the snapshot, which already knows it.
     this.reader.read();
@@ -418,9 +541,13 @@ export class Game {
    * to. Then `build`, if given, builds on the Sandbox world below the Game,
    * for free: a gallery demo or a stress test. What it makes joins the undo
    * history at price 0, and if it started physics, R goes back to how it
-   * left the world.
+   * left the world. With Waves on, the Game is then in the Build Phase, and
+   * a demo that started physics is paused where it left it. `wave`, if
+   * given, is a demo's own Wave: the Wave table becomes a copy of it.
    */
-  clear(build?: (world: SandboxWorld) => void): void {
+  clear(build?: (world: SandboxWorld) => void, wave?: ReadonlyWaveTable): void {
+    if (wave) Object.assign(this.waveTable, createWaveTable(wave));
+    this.current = null;
     this.world.clear();
     this.reader.read();
     this.inkTanks.fill();
@@ -432,19 +559,28 @@ export class Game {
     build(this.world);
     this.catchUp();
     // A demo starts physics as its last act, so the world's snapshot is of now.
-    if (this.world.isRunning) this.snapshot = this.takeSnapshot();
+    if (!this.world.isRunning) return;
+    this.snapshot = this.takeSnapshot();
+    if (this.wavesOn) this.world.pause();
   }
 
-  /** Advances by real elapsed time, as the Sandbox world does. Returns the steps taken. */
+  /**
+   * Advances by real elapsed time, as the Sandbox world does, sending in a
+   * Wave's Enemies and ending it step by step. Returns the steps taken.
+   */
   advance(seconds: number): number {
-    const steps = this.world.advance(seconds);
+    const steps = this.world.advance(seconds, this.around);
     this.catchUp();
     return steps;
   }
 
-  /** Advances physics by one fixed step, if running. */
+  /** Advances physics by one fixed step, if running, as `advance` does. */
   step(): void {
-    this.world.step();
+    if (this.world.isRunning) {
+      this.around.before();
+      this.world.step();
+      this.around.after();
+    }
     this.catchUp();
   }
 
@@ -550,6 +686,7 @@ export class Game {
         return;
       case 'start-over':
         // Something below the Game started over: nothing it knew of is left, as after a clear.
+        this.current = null;
         this.inkTanks.fill();
         this.strokes.clear();
         this.fills.clear();
