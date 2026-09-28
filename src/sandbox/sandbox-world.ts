@@ -1,3 +1,4 @@
+import { cutPolylineOutside } from '../geometry/clip';
 import { transformPoints } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
@@ -497,11 +498,16 @@ export class SandboxWorld {
   /**
    * Measures a Stroke's raw pointer samples as drawn, without the Stroke
    * pipeline or adding anything: whether they close, their Ink, and the
-   * part of it lying on a standing Line. To estimate what a Stroke costs
-   * while it is drawn.
+   * part of it lying on a standing Line. A Line is cut where the Arena
+   * query says a new one is, as the Stroke pipeline cuts it. To estimate
+   * what a Stroke costs while it is drawn.
    */
   measureSamples(samples: readonly Vec2[]): SamplesInk {
-    return samplesInk(samples, (path) => this.query.lyingOnLines(path));
+    return samplesInk(
+      samples,
+      (path) => this.query.lyingOnLines(path),
+      (points) => cutPolylineOutside(points, this.query.lineCutters(points)),
+    );
   }
 
   /**

@@ -56,7 +56,7 @@ export interface CostEstimate {
  * prices it. Its readers keep it while what was looked at stays the same.
  */
 export type Look =
-  /** A Stroke that doesn't close, as a Line along its raw samples. */
+  /** A Stroke that doesn't close, as a Line along its raw samples, cut where a new Line is. */
   | { readonly kind: 'line'; readonly ink: number; readonly onLines: number }
   /** A closing Stroke, and whether its Object would overlap the Terrain or an Object. */
   | { readonly kind: 'object'; readonly ink: number; readonly overlaps: boolean }

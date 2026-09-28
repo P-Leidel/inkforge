@@ -73,6 +73,24 @@ describe('Ink', () => {
       expect(samplesInk(samples, firstLeg)).toMatchObject({ ink: 150 * 8, onLines: 100 * 8 });
     });
 
+    it('measure an open path only where it is left after the cut', () => {
+      const samples = [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 50 },
+      ];
+      const firstLegOnly = (points: readonly { x: number; y: number }[]): Segment[] => [
+        { a: points[0]!, b: points[1]! },
+      ];
+      const everything = (path: readonly Segment[]) => path;
+
+      expect(samplesInk(samples, everything, firstLegOnly)).toEqual({
+        closes: false,
+        ink: 100 * 8,
+        onLines: 100 * 8,
+      });
+    });
+
     it("measure a closing path as its ring's Outline, none of it on Lines", () => {
       // Round a 60 px square, ending 2 px short of the start.
       const samples = [
