@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../game/game';
 import { DEFAULT_INK_TABLE } from '../game/ink-table';
+import { DEFAULT_WAVE_TABLE } from '../game/wave-table';
 import { createEnemyTable, DEFAULT_ENEMY_TABLE } from '../materials/enemy-table';
 import { createMaterialTable, DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { numberPaths } from '../materials/table-paths';
@@ -18,6 +19,7 @@ describe("The tuning panel's Copy as JSON", () => {
       tablesAsJson({
         materials: createMaterialTable(),
         ink: game.ink,
+        wave: DEFAULT_WAVE_TABLE,
         enemies: createEnemyTable(),
       }),
     );
@@ -37,7 +39,12 @@ describe("The tuning panel's Copy as JSON", () => {
     materials.colours.blue.line.restitution = 0.5;
 
     const pasted = JSON.parse(
-      tablesAsJson({ materials, ink: DEFAULT_INK_TABLE, enemies: createEnemyTable() }),
+      tablesAsJson({
+        materials,
+        ink: DEFAULT_INK_TABLE,
+        wave: DEFAULT_WAVE_TABLE,
+        enemies: createEnemyTable(),
+      }),
     );
 
     expect(numberPaths(pasted.materials)).toEqual(numberPaths(DEFAULT_MATERIAL_TABLE));
@@ -50,10 +57,39 @@ describe("The tuning panel's Copy as JSON", () => {
     enemies.types.crawler.drop.red.max = 20;
 
     const pasted = JSON.parse(
-      tablesAsJson({ materials: createMaterialTable(), ink: DEFAULT_INK_TABLE, enemies }),
+      tablesAsJson({
+        materials: createMaterialTable(),
+        ink: DEFAULT_INK_TABLE,
+        wave: DEFAULT_WAVE_TABLE,
+        enemies,
+      }),
     );
 
     expect(numberPaths(pasted.enemies)).toEqual(numberPaths(DEFAULT_ENEMY_TABLE));
     expect(pasted.enemies).toEqual(enemies);
+  });
+
+  it('holds the Wave table under `wave`, in the shape of its defaults', () => {
+    const game = new Game({ inkCosts: false, worldOptions: { seed: 1 } });
+    game.editWave((wave) => {
+      wave.counts.runner = 8;
+      wave.gap = 1.5;
+    });
+
+    const pasted = JSON.parse(
+      tablesAsJson({
+        materials: createMaterialTable(),
+        ink: DEFAULT_INK_TABLE,
+        wave: game.wave,
+        enemies: createEnemyTable(),
+      }),
+    );
+
+    expect(numberPaths(pasted.wave)).toEqual(numberPaths(DEFAULT_WAVE_TABLE));
+    expect(pasted.wave).toEqual({
+      counts: { ...DEFAULT_WAVE_TABLE.counts, runner: 8 },
+      gap: 1.5,
+    });
+    game.dispose();
   });
 });

@@ -77,7 +77,7 @@ export class SandboxScene extends Phaser.Scene {
       this.tuning.destroy();
       this.gameLayer.dispose();
     });
-    this.hud = new Hud(this, this.world);
+    this.hud = new Hud(this, this.gameLayer);
     this.palette = new PaletteBar(this, (tool) => this.drawing.pick(tool));
     const toolbar = new Toolbar(this);
     this.gallery = toolbar.addMenu(
@@ -109,10 +109,14 @@ export class SandboxScene extends Phaser.Scene {
     this.frames.sinceStart.restart();
   }
 
-  /** Clears the Arena, fills the Tanks and sets up a gallery demo on it. */
+  /**
+   * Clears the Arena, fills the Tanks and sets up a gallery demo on it, with
+   * its own Wave if it has one.
+   */
   private loadDemo(demo: Demo): void {
     this.stressTest = null;
-    this.gameLayer.clear((world) => demo.build(world));
+    this.gameLayer.clear((world) => demo.build(world), demo.wave);
+    if (demo.wave) this.tuning.refresh();
     this.overlay.setSceneName(demo.name);
     this.frames.sinceStart.restart();
   }

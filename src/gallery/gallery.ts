@@ -1,5 +1,6 @@
 import { add, scale, type Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
+import type { ReadonlyWaveTable } from '../game/wave-table';
 import type { SandboxWorld, StrokeId } from '../sandbox/sandbox-world';
 import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
 
@@ -12,6 +13,8 @@ import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-p
 export interface Demo {
   readonly name: string;
   build(world: SandboxWorld): void;
+  /** Its own Wave, if it has one: loading it sets the Wave table in F2. */
+  readonly wave?: ReadonlyWaveTable;
 }
 
 /** Horizontal centre of the k-th of five side-by-side stations. */

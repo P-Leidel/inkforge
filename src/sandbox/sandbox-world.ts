@@ -106,6 +106,12 @@ export interface StrokeOptions {
   readonly accept?: (made: MadeStroke) => boolean;
 }
 
+/** What runs around each step `advance` takes. */
+export interface StepHooks {
+  readonly before?: () => void;
+  readonly after?: () => void;
+}
+
 export interface FillOptions {
   /** Asked what the Fill would be, with its Ink, before it is added: false declines it. */
   readonly accept?: (fill: MadeFill) => boolean;
@@ -407,6 +413,19 @@ export class SandboxWorld {
     return this.enemiesKind.spawn(type, at);
   }
 
+  /** How many Enemies are in the Arena. */
+  get enemyCount(): number {
+    return this.enemiesKind.count;
+  }
+
+  /**
+   * Whether the lane's far end is free: an Enemy of `type` sent in now would
+   * stand there with nothing in its way, rather than on top of what does.
+   */
+  spawnClear(type: EnemyType): boolean {
+    return this.enemiesKind.spawnClear(type);
+  }
+
   /** Whether the Ink Core's HP has run out: physics stops, and only R or Clear go on. */
   get coreDestroyed(): boolean {
     return this.inkCoreKind.views.hp <= 0;
@@ -634,6 +653,26 @@ export class SandboxWorld {
   }
 
   /**
+   * Runs physics on from where it was paused, without a snapshot or a
+   * rebuild: the engine carries on as if it had never paused, and R still
+   * goes back to the last start. The Game's Wave pauses and runs this way.
+   * Lines drawn while paused squeeze the Objects they cross, as at a start.
+   * Does nothing while running, or once the Ink Core is destroyed.
+   */
+  resume(): void {
+    if (this.running || this.coreDestroyed) return;
+    this.running = true;
+    this.accumulator = 0;
+    this.strokes.squeezeAll();
+  }
+
+  /** Pauses physics, if running. */
+  pause(): void {
+    this.running = false;
+    this.accumulator = 0;
+  }
+
+  /**
    * Takes the world back to the moment physics last started, damage and all,
    * and pauses. Strokes and Fills made since are gone. Does nothing before
    * the first start.
@@ -721,9 +760,12 @@ export class SandboxWorld {
 
   /**
    * Advances by real elapsed time, in whole fixed steps; the remainder
-   * carries over. Returns the steps taken.
+   * carries over. `around`, if given, runs just before and just after each
+   * step: the Game sends in a Wave's Enemies and ends it there, step by
+   * step, so a retry plays out the same whatever the frame times. Returns
+   * the steps taken.
    */
-  advance(seconds: number): number {
+  advance(seconds: number, around: StepHooks = {}): number {
     if (!this.running) return 0;
     this.accumulator += seconds;
     let steps = 0;
@@ -733,7 +775,9 @@ export class SandboxWorld {
       this.accumulator >= STEP_SECONDS - 1e-9 &&
       steps < MAX_STEPS_PER_ADVANCE
     ) {
+      around.before?.();
       this.step();
+      around.after?.();
       this.accumulator -= STEP_SECONDS;
       steps++;
     }
