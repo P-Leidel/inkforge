@@ -1,4 +1,5 @@
 import { cutPolylineOutside } from '../geometry/clip';
+import type { Polygon } from '../geometry/polygon';
 import { transformPoints } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
@@ -193,7 +194,10 @@ export interface SandboxWorldOptions {
  * given with the command; the world holds no selected Colour.
  */
 export class SandboxWorld {
-  readonly arena: Arena;
+  /** The Arena the world was made with: Clear brings back its Terrain. */
+  private readonly baseArena: Arena;
+  /** The Arena as it is now: the base Arena, with a gallery demo's Terrain if one brought its own. */
+  private current: Arena;
   readonly random: Random;
   readonly materials: MaterialTable;
   readonly enemyTable: EnemyTable;
@@ -230,7 +234,8 @@ export class SandboxWorld {
   private stepsTaken = 0;
 
   constructor(options: SandboxWorldOptions = {}) {
-    this.arena = options.arena ?? SANDBOX_ARENA;
+    this.baseArena = options.arena ?? SANDBOX_ARENA;
+    this.current = this.baseArena;
     this.random = new Random(options.seed ?? 1);
     this.materials = options.materials ?? createMaterialTable();
     this.enemyTable = options.enemies ?? createEnemyTable();
@@ -253,7 +258,8 @@ export class SandboxWorld {
     this.query = new ArenaQuery(this.physics, this.bodies);
     this.poses = new PreviousPoses(this.physics);
     this.bodies.addTerrain(this.arena.terrain);
-    const { physics, materials, numbers, arena, bodies, query, poses } = this;
+    // A demo's Terrain changes only the Terrain: the kinds read the rest of the base Arena.
+    const { physics, materials, numbers, baseArena: arena, bodies, query, poses } = this;
     this.inkCoreKind = new InkCore(arena, this.enemyTable, bodies);
     this.strokes = new Strokes(physics, materials, numbers, bodies, query, poses, say);
     this.rubbleKind = new Rubble(physics, materials, bodies, poses);
@@ -322,6 +328,11 @@ export class SandboxWorld {
         remove: (thing, why) => this.removeThing(thing, why),
       },
     });
+  }
+
+  /** The Arena as it is now: its Terrain is a gallery demo's while one is loaded. */
+  get arena(): Arena {
+    return this.current;
   }
 
   /** Whether physics is running (stands in for the Wave) rather than paused (the Build Phase). */
@@ -614,15 +625,21 @@ export class SandboxWorld {
 
   /**
    * Removes every Stroke and Fill, the Rubble, Enemies, Droplets, Patches
-   * and Blasts; the Terrain and the Ink Core stay, and the Ink Core is whole
-   * again. R has nothing to go back to. Nothing is left touching
-   * or Settled, since every kind unregisters its bodies. It starts over: the
-   * Debris goes too.
+   * and Blasts; the Ink Core stays, and is whole again. R has nothing to go
+   * back to. Nothing is left touching or Settled, since every kind
+   * unregisters its bodies. It starts over: the Debris goes too. The Terrain
+   * becomes `terrain`, a gallery demo's own, or else the base Arena's again;
+   * it stays through R.
    */
-  clear(): void {
+  clear(terrain: readonly Polygon[] = this.baseArena.terrain): void {
     this.bodies.clear();
     for (const kind of this.kinds) kind.clear();
     this.poses.forget();
+    if (terrain !== this.current.terrain) {
+      this.current = { ...this.baseArena, terrain };
+      // The Terrain is the first body: start again from a fresh engine state, with the new one.
+      this.rebuild(this.takeSnapshot());
+    }
     this.snapshot = null;
     this.happenings.say({ kind: 'start-over' });
   }

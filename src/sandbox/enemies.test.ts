@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { createEnemyTable, DEFAULT_ENEMY_TABLE, editEnemies } from '../materials/enemy-table';
 import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
-import { SANDBOX_ARENA, type Arena } from './arena';
+import { SANDBOX_ARENA, sandboxTerrainWithPit, type Arena } from './arena';
 import { enemyOutline, walkingForce } from './enemies';
 import type { EnemyView, PatchView, SandboxWorld } from './sandbox-world';
 import {
@@ -892,25 +891,4 @@ describe('The Ink Core destroyed', () => {
 });
 
 /** The sandbox Arena with a Pit: a gap in the ground from x 400 to 520, open to the bottom. */
-const PIT_ARENA: Arena = (() => {
-  const box = (x1: number, y1: number, x2: number, y2: number): Polygon => [
-    { x: x1, y: y1 },
-    { x: x2, y: y1 },
-    { x: x2, y: y2 },
-    { x: x1, y: y2 },
-  ];
-  const { height, spawn } = SANDBOX_ARENA;
-  const [wall, rightWall, ground, ...rest] = SANDBOX_ARENA.terrain;
-  const [left, top, right] = [ground![0]!.x, ground![0]!.y, ground![1]!.x];
-  return {
-    ...SANDBOX_ARENA,
-    terrain: [
-      wall!,
-      rightWall!,
-      box(left, top, 400, height),
-      box(520, top, right, height),
-      ...rest,
-    ],
-    spawn,
-  };
-})();
+const PIT_ARENA: Arena = { ...SANDBOX_ARENA, terrain: sandboxTerrainWithPit(400, 520) };

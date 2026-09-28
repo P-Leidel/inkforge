@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
-import { GALLERY } from '../gallery/gallery';
+import { GALLERY, PIT_DEMO } from '../gallery/gallery';
 import { COLOURS, type Colour } from '../materials/colour';
 import { dragAlong, dragBox, dragCircle } from '../stroke/pointer-paths';
 import { ARENA_HEIGHT, ARENA_WIDTH } from '../sandbox/arena';
@@ -810,6 +810,25 @@ describe('Clear, demos and stress tests', () => {
     expect(game.world.lines).toEqual([]);
     expect(game.world.objects).toEqual([]);
     expect(tanks(game)).toEqual(full(game));
+  });
+
+  it("a demo's own Terrain stays through R; Clear and another demo bring the sandbox Arena's back", () => {
+    const game = createGame(true);
+    const sandbox = game.world.arena.terrain;
+    const bounce = GALLERY.find((demo) => demo.name === 'Bounce')!;
+
+    game.clear((world) => PIT_DEMO.build(world), PIT_DEMO.wave, PIT_DEMO.terrain);
+    expect(game.world.arena.terrain).toBe(PIT_DEMO.terrain);
+    runFor(game, 1);
+    game.reset();
+    expect(game.world.arena.terrain).toBe(PIT_DEMO.terrain);
+
+    game.clear((world) => bounce.build(world), bounce.wave, bounce.terrain);
+    expect(game.world.arena.terrain).toBe(sandbox);
+
+    game.clear((world) => PIT_DEMO.build(world), PIT_DEMO.wave, PIT_DEMO.terrain);
+    game.clear();
+    expect(game.world.arena.terrain).toBe(sandbox);
   });
 
   it('a clear or an R made below the Game fills every Tank, as Clear does', () => {

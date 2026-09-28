@@ -11,6 +11,10 @@ import {
   GALLERY,
   GLUE_DEMO,
   KNOCK_DEMO,
+  loadDemo,
+  PIT_DEMO,
+  PIT_LEFT,
+  PIT_RIGHT,
   RUBBLE_DEMO,
   SHRAPNEL_DEMO,
   SLIDE_DEMO,
@@ -52,15 +56,16 @@ describe('Colour gallery', () => {
     it(`${demo.name}: builds through the Sandbox world and starts physics`, () => {
       const world = createWorld();
 
-      demo.build(world); // throws if any of its Strokes is refused
+      loadDemo(world, demo); // throws if any of its Strokes is refused
 
       expect(world.isRunning).toBe(true);
-      expect(world.objects.some((o) => !o.frozen)).toBe(true);
+      // It lets go of Objects, or sends in Enemies.
+      expect(world.objects.some((o) => !o.frozen) || world.enemyCount > 0).toBe(true);
     });
 
     it(`${demo.name}: plays the same again after R and Space`, () => {
       const world = createWorld();
-      demo.build(world);
+      loadDemo(world, demo);
       runFor(world, 1);
       const first = played(world);
 
@@ -72,7 +77,7 @@ describe('Colour gallery', () => {
 
     it(`${demo.name}: R brings back the Arena contents as they were at Space`, () => {
       const world = createWorld();
-      demo.build(world);
+      loadDemo(world, demo);
       runFor(world, 1);
       const running = arenaContents(world);
 
@@ -280,5 +285,110 @@ describe('Colour gallery', () => {
     expect(droplets).toBeGreaterThanOrEqual(20); // two Spills of 10 to 15
     expect(droplets).toBeLessThanOrEqual(30);
     expect(world.objects).toHaveLength(0); // every bomb, box and Spill went
+  });
+
+  describe('Pit', () => {
+    /** Whether the Terrain has a gap open to the bottom of the screen at `x`. */
+    const openAt = (world: SandboxWorld, x: number) =>
+      !world.arena.terrain.some((polygon) => {
+        const xs = polygon.map((p) => p.x);
+        return Math.min(...xs) < x && x < Math.max(...xs);
+      });
+
+    /** Steps until no Enemy is left or `seconds` pass; the ids of those that died, in order. */
+    function deaths(world: SandboxWorld, seconds: number): number[] {
+      const heard = world.happenings.reader();
+      const died: number[] = [];
+      for (let step = 0; step < seconds * 60 && world.enemyCount > 0; step++) {
+        world.step();
+        for (const entry of heard.read())
+          if (entry.kind === 'went' && entry.what.thing === 'enemy') died.push(entry.what.id);
+      }
+      heard.close();
+      return died;
+    }
+
+    it('loads with its gap, which the sandbox Arena has none of', () => {
+      const world = createWorld();
+      const middle = (PIT_LEFT + PIT_RIGHT) / 2;
+      expect(openAt(world, middle)).toBe(false);
+
+      loadDemo(world, PIT_DEMO);
+
+      expect(openAt(world, middle)).toBe(true);
+      expect(openAt(world, PIT_LEFT - 1)).toBe(false);
+      expect(openAt(world, PIT_RIGHT + 1)).toBe(false);
+      expect(world.enemyCount).toBe(3);
+    });
+
+    it('every Crawler walks into the Pit and dies below the screen, short of the Ink Core', () => {
+      const world = createWorld();
+      loadDemo(world, PIT_DEMO);
+      const lowest = new Map<number, number>();
+      const heard = world.happenings.reader();
+
+      for (let step = 0; step < 30 * 60 && world.enemyCount > 0; step++) {
+        world.step();
+        for (const enemy of world.enemies) {
+          lowest.set(enemy.id, Math.max(lowest.get(enemy.id) ?? 0, enemy.transform.y));
+          expect(enemy.transform.x).toBeLessThan(PIT_RIGHT);
+        }
+      }
+      const died = heard.read().filter((e) => e.kind === 'went' && e.what.thing === 'enemy');
+      heard.close();
+
+      expect(world.enemyCount).toBe(0);
+      expect(died).toHaveLength(3);
+      expect(world.inkCore.hp).toBe(world.inkCore.fullHp);
+      for (const y of lowest.values()) expect(y).toBeGreaterThan(world.arena.height - 60);
+    });
+
+    it('R keeps its Terrain, and the Crawlers fall in again', () => {
+      const world = createWorld();
+      loadDemo(world, PIT_DEMO);
+      const terrain = world.arena.terrain;
+      const first = deaths(world, 30);
+
+      world.reset();
+
+      expect(world.arena.terrain).toBe(terrain);
+      expect(world.enemyCount).toBe(3);
+      world.togglePause();
+      expect(deaths(world, 30)).toEqual(first);
+      expect(world.enemyCount).toBe(0);
+    });
+
+    it('Clear brings the sandbox Arena back', () => {
+      const world = createWorld();
+      const sandbox = world.arena.terrain;
+      loadDemo(world, PIT_DEMO);
+
+      world.clear();
+
+      expect(world.arena.terrain).toBe(sandbox);
+      expect(world.enemyCount).toBe(0);
+      // A Crawler walks straight over where the gap was.
+      world.spawn('crawler', { x: PIT_LEFT - 100, y: world.arena.spawn.y - 22 });
+      world.togglePause();
+      runFor(world, 5);
+      expect(world.enemies[0]!.transform.x).toBeGreaterThan(PIT_RIGHT);
+    });
+
+    for (const demo of GALLERY.filter((d) => d !== PIT_DEMO)) {
+      it(`${demo.name} after it plays as on a fresh world`, () => {
+        const fresh = createWorld();
+        loadDemo(fresh, demo);
+        runFor(fresh, 1);
+        const world = createWorld();
+        loadDemo(world, PIT_DEMO);
+        runFor(world, 1);
+
+        loadDemo(world, demo);
+        runFor(world, 1);
+
+        expect(world.arena.terrain).toBe(fresh.arena.terrain);
+        expect(played(world)).toEqual(played(fresh));
+      });
+    }
   });
 });
