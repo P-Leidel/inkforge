@@ -25,6 +25,36 @@ describe('Enemy table', () => {
     });
   });
 
+  it('starts the Runner and the Heavy as the spec does', () => {
+    expect(DEFAULT_ENEMY_TABLE.types.runner).toMatchObject({
+      width: 32,
+      height: 44,
+      walkingSpeed: 180,
+      push: 0.6,
+      pressing: 150,
+      hp: 1500,
+      damageThreshold: 200,
+      coreDamage: 1,
+    });
+    expect(DEFAULT_ENEMY_TABLE.types.heavy).toMatchObject({
+      width: 64,
+      height: 64,
+      walkingSpeed: 40,
+      push: 3,
+      pressing: 1500,
+      hp: 12000,
+      damageThreshold: 1500,
+      coreDamage: 3,
+    });
+  });
+
+  it('weighs a Heavy about four Crawlers and a Runner about half of one', () => {
+    const weigh = (type: (typeof ENEMY_TYPES)[number]) =>
+      enemyMass(DEFAULT_ENEMY_TABLE.types[type], DEFAULT_MATERIAL_TABLE);
+    expect(weigh('heavy') / weigh('crawler')).toBeCloseTo(4, 1);
+    expect(weigh('runner') / weigh('crawler')).toBeCloseTo(0.5, 1);
+  });
+
   it('shares floor wear, the Ink Core’s HP and the Core Zone’s size', () => {
     const { floorWear, coreHp, coreZone } = DEFAULT_ENEMY_TABLE;
     expect({ floorWear, coreHp, coreZone }).toEqual({ floorWear: 1, coreHp: 10, coreZone: 480 });
