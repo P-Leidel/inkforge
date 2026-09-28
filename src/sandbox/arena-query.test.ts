@@ -151,13 +151,14 @@ describe('Arena query', () => {
     expect(query.objectsAt({ x: 400, y: 300 })).toEqual([]);
   });
 
-  it('counts the Terrain, Objects and Rubble as solid; not Lines, Droplets or Patches', () => {
-    const { query, object, piece, circle, patch } = setup();
+  it('counts the Terrain, Objects, Rubble and Enemies as solid; not Lines, Droplets or Patches', () => {
+    const { query, object, piece, circle, enemy, patch } = setup();
     const at = (x: number, y: number) => square(10).map((p) => ({ x: p.x + x, y: p.y + y }));
     const host = object({ x: 400, y: 400 }, square(20));
     piece([{ a: { x: 600, y: 400 }, b: { x: 700, y: 400 } }]);
     circle({ x: 800, y: 400 }, 6);
     circle({ x: 1000, y: 400 }, 6, true);
+    enemy({ x: 1200, y: 400 }, square(20));
     patch(host.party, { a: { x: -20, y: -24 }, b: { x: 20, y: -24 } });
 
     expect(query.overlapsSolid(at(300, 880))).toBe(true); // the ground
@@ -166,6 +167,8 @@ describe('Arena query', () => {
     expect(query.overlapsSolid(at(650, 400))).toBe(false);
     expect(query.overlapsSolid(at(800, 400))).toBe(true);
     expect(query.overlapsSolid(at(1000, 400))).toBe(false);
+    expect(query.overlapsSolid(at(1225, 400))).toBe(true);
+    expect(query.overlapsSolid(at(1230, 400))).toBe(false); // touching the Enemy's side
     expect(query.overlapsSolid(at(400, 360))).toBe(false); // on the Patch, above the host
   });
 
@@ -201,6 +204,18 @@ describe('Arena query', () => {
         { x: 600, y: 900 },
       ]),
     ).toEqual([...SANDBOX_ARENA.terrain, BEYOND_SPAWN_EDGE]);
+  });
+
+  it('cuts a new Line at an Enemy, by its outline where it is now', () => {
+    const { query, enemy } = setup();
+    enemy({ x: 400, y: 400 }, square(20));
+
+    expect(
+      query.lineCutters([
+        { x: 300, y: 400 },
+        { x: 500, y: 400 },
+      ]),
+    ).toEqual([square(20).map((p) => ({ x: p.x + 400, y: p.y + 400 })), BEYOND_SPAWN_EDGE]);
   });
 
   it('blocks a new Object reaching past the Spawn edge, out of view', () => {
@@ -367,7 +382,7 @@ describe('Arena query', () => {
   });
 
   it('gives the same answers as testing every body, in a heap that has settled', () => {
-    const { physics, bodies, query, object, piece, circle, patch } = setup();
+    const { physics, bodies, query, object, piece, circle, enemy, patch } = setup();
     const random = new Random(7);
     const at = (lo: number, hi: number) => lo + (hi - lo) * random.next();
     const objects = Array.from({ length: 25 }, () => {
@@ -390,6 +405,7 @@ describe('Arena query', () => {
     }
     for (let k = 0; k < 30; k++)
       circle({ x: at(100, 1800), y: at(100, 600) }, at(2, 8), k % 3 === 0);
+    for (let k = 0; k < 6; k++) enemy({ x: at(100, 1800), y: at(100, 600) }, square(at(12, 30)));
     for (const { party } of objects.slice(0, 10)) {
       patch(party, { a: { x: -5, y: -3 }, b: { x: 5, y: -3 } });
     }
@@ -472,11 +488,18 @@ function everyBody(bodies: ArenaBodies<null>, physics: PhysicsWorld) {
           const { x, y } = transform(body);
           return circleOverlapsPolygon({ centre: { x, y }, radius: form.radius }, part);
         }
+        if (form.kind === 'enemy') {
+          return convexPolygonsOverlap(part, transformPoints(form.outline, transform(body)));
+        }
         return false;
       }),
     lineCut: (path: readonly Vec2[]) =>
       cutPolylineOutside(path, [
-        ...figures().flatMap(({ form }) => (form.kind === 'terrain' ? form.polygons : [])),
+        ...figures().flatMap(({ body, form }) => {
+          if (form.kind === 'terrain') return form.polygons;
+          if (form.kind === 'enemy') return [transformPoints(form.outline, transform(body))];
+          return [];
+        }),
         BEYOND_SPAWN_EDGE,
       ]),
     blocksSqueezed: (part: Polygon, squeezed: BodyId) =>

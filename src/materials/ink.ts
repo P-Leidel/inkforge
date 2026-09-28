@@ -40,20 +40,25 @@ export interface SamplesInk {
   readonly onLines: number;
 }
 
+/** A polyline's segments, uncut. */
+const segmentsOf = (points: readonly Vec2[]): Segment[] =>
+  points.slice(1).map((b, k) => ({ a: points[k]!, b }));
+
 /**
  * Measures a Stroke's raw pointer samples as drawn, to estimate what it
  * costs while it is drawn: a closing Stroke as its ring's Outline, anything
- * else as a Line along the samples in the Line thickness, of which the parts
- * `lyingOnLines` finds lie on another Line.
+ * else as a Line along the samples in the Line thickness, cut where `cut`
+ * cuts it, of which the parts `lyingOnLines` finds lie on another Line.
  */
 export function samplesInk(
   samples: readonly Vec2[],
   lyingOnLines: (path: readonly Segment[]) => readonly Segment[],
+  cut: (points: readonly Vec2[]) => readonly Segment[] = segmentsOf,
 ): SamplesInk {
   if (isClosingStroke(samples)) {
     return { closes: true, ink: outlineInk(closeRing(samples)), onLines: 0 };
   }
-  const path = samples.slice(1).map((b, k) => ({ a: samples[k]!, b }));
+  const path = cut(samples);
   return {
     closes: false,
     ink: lineInk(path, LINE_THICKNESS),

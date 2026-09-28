@@ -323,6 +323,75 @@ describe('Enemies walk', () => {
   });
 });
 
+describe('Strokes meet Enemies', () => {
+  /** A Crawler walked in past x = 400 and paused there. */
+  const pausedCrawler = (world: SandboxWorld): EnemyView => {
+    world.spawn('crawler');
+    stepUntil(world, 20, () => onlyEnemy(world).transform.x > 400);
+    world.togglePause();
+    return onlyEnemy(world);
+  };
+  const xsOf = (world: SandboxWorld) =>
+    world.lines.flatMap(({ segments }) => segments.flatMap(({ a, b }) => [a.x, b.x]));
+  const lengthOf = (world: SandboxWorld) =>
+    world.lines
+      .flatMap(({ segments }) => segments)
+      .reduce((sum, { a, b }) => sum + Math.hypot(b.x - a.x, b.y - a.y), 0);
+
+  it('cuts a Line drawn across a paused Crawler at the Crawler', () => {
+    const world = createWorld();
+    const { x, y } = pausedCrawler(world).transform;
+
+    drawLine(world, [
+      { x: x - 150, y },
+      { x: x + 150, y },
+    ]);
+
+    const xs = xsOf(world);
+    const half = CRAWLER.width / 2;
+    expect(xs.filter((at) => at > x - half + 0.5 && at < x + half - 0.5)).toEqual([]);
+    expect(Math.min(...xs)).toBeLessThan(x - half);
+    expect(Math.max(...xs)).toBeGreaterThan(x + half);
+    expect(lengthOf(world)).toBeCloseTo(300 - CRAWLER.width, -1);
+  });
+
+  it('cuts a Line drawn across the Ink Core there', () => {
+    const world = createWorld();
+    const { minX, maxX, minY, maxY } = world.inkCore.bounds;
+    const y = (minY + maxY) / 2;
+
+    drawLine(world, [
+      { x: minX - 200, y },
+      { x: (minX + maxX) / 2, y },
+    ]);
+
+    expect(Math.max(...xsOf(world))).toBeCloseTo(minX, 0);
+    expect(lengthOf(world)).toBeCloseTo(200, -1);
+  });
+
+  it('refuses an Object drawn over a paused Crawler or the Ink Core', () => {
+    const world = createWorld();
+    const { x, y } = pausedCrawler(world).transform;
+    const top = y - CRAWLER.height / 2;
+    const core = world.inkCore.bounds;
+    const middle = (core.minY + core.maxY) / 2;
+
+    // Into the Crawler's top by 10 px, and into the Ink Core's side by 20 px.
+    expect(world.submitStroke(dragBox(x - 25, top - 40, 50, 50), 'grey')).toMatchObject({
+      kind: 'rejected',
+      reason: 'overlaps',
+    });
+    expect(world.submitStroke(dragBox(core.minX - 30, middle - 25, 50, 50), 'grey')).toMatchObject({
+      kind: 'rejected',
+      reason: 'overlaps',
+    });
+    expect(world.objects).toEqual([]);
+    // Clear of the Crawler by 10 px: it may go there.
+    drawObject(world, dragBox(x - 25, top - 60, 50, 50));
+    expect(world.objects).toHaveLength(1);
+  });
+});
+
 describe('Pressing wear', () => {
   /** A grey Line standing upright on the ground at `x`, `height` px tall. */
   const post = (world: SandboxWorld, x: number, height: number, colour: Colour = 'grey') =>

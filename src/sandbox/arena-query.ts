@@ -226,17 +226,18 @@ export class ArenaQuery {
 
   /**
    * Cutting: the convex polygons, in world coordinates, that a new Line
-   * drawn along `path` is cut at, near it: the Terrain's and the Ink
-   * Core's, and everything beyond the Spawn edge. Objects, Lines, Rubble,
-   * Droplets and Patches don't cut one, nor yet do Enemies (#88).
+   * drawn along `path` is cut at, near it: the Terrain's, the Ink Core's,
+   * each Enemy's outline where it is now, and everything beyond the Spawn
+   * edge. Objects, Lines, Rubble, Droplets and Patches don't cut one.
    */
   lineCutters(path: readonly Vec2[]): Polygon[] {
-    const near = this.near(polygonBounds(path), 0).flatMap(({ form }) => {
+    const near = this.near(polygonBounds(path), 0).flatMap(({ body, form }) => {
       switch (form.kind) {
         case 'terrain':
           return form.polygons;
-        case 'object':
         case 'enemy':
+          return [this.enemyOutline(body, form)];
+        case 'object':
         case 'capsules':
         case 'circle':
         case 'capsule':
@@ -249,9 +250,9 @@ export class ArenaQuery {
   /**
    * Overlap: whether a convex part of a new Object, in world coordinates,
    * overlaps something solid by more than `TOUCH_TOLERANCE`: the Terrain,
-   * the Ink Core, an Object's collider parts, Rubble, or what lies beyond
-   * the Spawn edge. Lines aren't solid (an Object drawn over one is
-   * squeezed off it), nor are Droplets or Patches, nor yet Enemies (#88).
+   * the Ink Core, an Object's collider parts, Rubble, an Enemy, or what
+   * lies beyond the Spawn edge. Lines aren't solid (an Object drawn over one
+   * is squeezed off it), nor are Droplets or Patches.
    */
   overlapsSolid(part: Polygon): boolean {
     if (convexPolygonsOverlap(part, BEYOND_SPAWN_EDGE)) return true;
@@ -265,6 +266,7 @@ export class ArenaQuery {
           if (what?.thing !== 'rubble') return false;
           return circleOverlapsPolygon({ centre: this.centre(body), radius: form.radius }, part);
         case 'enemy':
+          return convexPolygonsOverlap(part, this.enemyOutline(body, form));
         case 'capsules':
         case 'capsule':
           // Lines and Patches aren't solid.

@@ -906,4 +906,50 @@ describe('Enemies in the Game', () => {
     game.clear();
     expect(game.world.enemies).toEqual([]);
   });
+
+  /** A Crawler walked in past x = 400 and paused there; where it is. */
+  function pausedCrawler(game: Game): Vec2 {
+    game.spawn('crawler');
+    game.togglePause();
+    for (let step = 0; step < 20 * 60 && game.world.enemies[0]!.transform.x <= 400; step++) {
+      game.step();
+    }
+    game.togglePause();
+    const { x, y } = game.world.enemies[0]!.transform;
+    return { x, y };
+  }
+
+  it('charges only the cut Line for one drawn across a paused Crawler, as it estimates', () => {
+    const game = createGame(true);
+    const { x, y } = pausedCrawler(game);
+    const samples = dragAlong([
+      { x: x - 150, y },
+      { x: x + 150, y },
+    ]);
+    const estimate = game.prospect(game.lookAtStroke(samples)!, 'grey').cost!.price;
+    const before = game.tanks.grey.spendable;
+
+    expect(game.submitStroke(samples, 'grey').kind).toBe('line');
+
+    const charged = before - game.tanks.grey.spendable;
+    expect(inLineLength(charged)).toBeCloseTo(260, -1);
+    expect(Math.abs(estimate - charged) / charged).toBeLessThan(0.05);
+  });
+
+  it('refuses an Object drawn over a paused Crawler or the Ink Core, and charges nothing', () => {
+    const game = createGame(true);
+    const { x, y } = pausedCrawler(game);
+    const core = game.world.inkCore.bounds;
+    const before = game.tanks;
+
+    const onCrawler = game.submitStroke(dragBox(x - 25, y - 60, 50, 50), 'grey');
+    const onCore = game.submitStroke(
+      dragBox(core.minX - 30, (core.minY + core.maxY) / 2 - 25, 50, 50),
+      'grey',
+    );
+
+    expect(onCrawler).toMatchObject({ kind: 'rejected', reason: 'overlaps' });
+    expect(onCore).toMatchObject({ kind: 'rejected', reason: 'overlaps' });
+    expect(game.tanks).toEqual(before);
+  });
 });
