@@ -43,6 +43,37 @@ const box = (x1: number, y1: number, x2: number, y2: number): Polygon => [
   { x: x1, y: y2 },
 ];
 
+/** The ground, from the lane's far wall to where the slope starts. */
+const GROUND = box(-LANE_LENGTH - WALL_WIDTH, GROUND_Y, SLOPE_LEFT, ARENA_HEIGHT);
+
+/** The sandbox Arena's Terrain, with its ground as given. */
+const sandboxTerrain = (ground: readonly Polygon[]): Polygon[] => [
+  box(-LANE_LENGTH - WALL_WIDTH, 0, -LANE_LENGTH, ARENA_HEIGHT), // the lane's far wall
+  box(RIGHT_WALL, 0, ARENA_WIDTH, ARENA_HEIGHT), // right wall
+  ...ground, // ground and lane
+  [
+    // slope
+    { x: SLOPE_LEFT, y: GROUND_Y },
+    { x: PLATEAU_LEFT, y: PLATEAU_Y },
+    { x: PLATEAU_LEFT, y: ARENA_HEIGHT },
+    { x: SLOPE_LEFT, y: ARENA_HEIGHT },
+  ],
+  box(PLATEAU_LEFT, PLATEAU_Y, RIGHT_WALL, ARENA_HEIGHT), // plateau
+];
+
+/**
+ * The sandbox Arena's Terrain with a Pit in its ground from `left` to
+ * `right` (px): a gap open to the bottom of the screen.
+ */
+export function sandboxTerrainWithPit(left: number, right: number): Polygon[] {
+  if (!(0 < left && left < right && right < SLOPE_LEFT))
+    throw new Error(`a Pit from ${left} to ${right} is not in the flat ground`);
+  return sandboxTerrain([
+    box(-LANE_LENGTH - WALL_WIDTH, GROUND_Y, left, ARENA_HEIGHT),
+    box(right, GROUND_Y, SLOPE_LEFT, ARENA_HEIGHT),
+  ]);
+}
+
 /**
  * The sandbox Arena: flat ground from the Spawn, beyond the left edge, to a
  * slope rising to a plateau, where the Ink Core stands against the right
@@ -52,19 +83,7 @@ const box = (x1: number, y1: number, x2: number, y2: number): Polygon => [
 export const SANDBOX_ARENA: Arena = {
   width: ARENA_WIDTH,
   height: ARENA_HEIGHT,
-  terrain: [
-    box(-LANE_LENGTH - WALL_WIDTH, 0, -LANE_LENGTH, ARENA_HEIGHT), // the lane's far wall
-    box(RIGHT_WALL, 0, ARENA_WIDTH, ARENA_HEIGHT), // right wall
-    box(-LANE_LENGTH - WALL_WIDTH, GROUND_Y, SLOPE_LEFT, ARENA_HEIGHT), // ground and lane
-    [
-      // slope
-      { x: SLOPE_LEFT, y: GROUND_Y },
-      { x: PLATEAU_LEFT, y: PLATEAU_Y },
-      { x: PLATEAU_LEFT, y: ARENA_HEIGHT },
-      { x: SLOPE_LEFT, y: ARENA_HEIGHT },
-    ],
-    box(PLATEAU_LEFT, PLATEAU_Y, RIGHT_WALL, ARENA_HEIGHT), // plateau
-  ],
+  terrain: sandboxTerrain([GROUND]),
   spawn: { x: -LANE_LENGTH, y: GROUND_Y },
   core: {
     minX: RIGHT_WALL - CORE_SIZE,

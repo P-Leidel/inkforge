@@ -111,11 +111,11 @@ export class SandboxScene extends Phaser.Scene {
 
   /**
    * Clears the Arena, fills the Tanks and sets up a gallery demo on it, with
-   * its own Wave if it has one.
+   * its own Wave and Terrain if it has them.
    */
   private loadDemo(demo: Demo): void {
     this.stressTest = null;
-    this.gameLayer.clear((world) => demo.build(world), demo.wave);
+    this.gameLayer.clear((world) => demo.build(world), demo.wave, demo.terrain);
     if (demo.wave) this.tuning.refresh();
     this.overlay.setSceneName(demo.name);
     this.frames.sinceStart.restart();

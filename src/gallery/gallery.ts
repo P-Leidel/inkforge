@@ -1,6 +1,8 @@
+import type { Polygon } from '../geometry/polygon';
 import { add, scale, type Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
 import type { ReadonlyWaveTable } from '../game/wave-table';
+import { SANDBOX_ARENA, sandboxTerrainWithPit } from '../sandbox/arena';
 import type { SandboxWorld, StrokeId } from '../sandbox/sandbox-world';
 import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
 
@@ -15,6 +17,17 @@ export interface Demo {
   build(world: SandboxWorld): void;
   /** Its own Wave, if it has one: loading it sets the Wave table in F2. */
   readonly wave?: ReadonlyWaveTable;
+  /**
+   * Its own Terrain, if it has one: loading it clears the Arena onto this
+   * Terrain, and R keeps it. Without one it is the sandbox Arena's.
+   */
+  readonly terrain?: readonly Polygon[];
+}
+
+/** Clears the world onto `demo`'s Terrain (or the sandbox Arena's) and builds it there. */
+export function loadDemo(world: SandboxWorld, demo: Demo): void {
+  world.clear(demo.terrain);
+  demo.build(world);
 }
 
 /** Horizontal centre of the k-th of five side-by-side stations. */
@@ -486,6 +499,26 @@ export const DEMOLITION_DEMO: Demo = {
   },
 };
 
+/** Where the Pit demo's gap is (px): in the flat ground, well short of the slope. */
+export const PIT_LEFT = 800;
+export const PIT_RIGHT = 960;
+
+/**
+ * The sandbox Arena with a Pit in its ground, and Crawlers sent in: one
+ * from the Spawn and two already walking. Each walks into the Pit, falls
+ * below the screen and dies.
+ */
+export const PIT_DEMO: Demo = {
+  name: 'Pit',
+  terrain: sandboxTerrainWithPit(PIT_LEFT, PIT_RIGHT),
+  build(world) {
+    const ground = SANDBOX_ARENA.spawn.y;
+    world.spawn('crawler');
+    for (const x of [250, 550]) world.spawn('crawler', { x, y: ground - 22 });
+    letGo(world, []);
+  },
+};
+
 export const GALLERY: readonly Demo[] = [
   BOUNCE_DEMO,
   SLIDE_DEMO,
@@ -502,4 +535,5 @@ export const GALLERY: readonly Demo[] = [
   FUSE_DEMO,
   MINES_DEMO,
   DEMOLITION_DEMO,
+  PIT_DEMO,
 ];

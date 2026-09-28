@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { Random } from '../sandbox/random';
@@ -81,6 +82,9 @@ export class WorldRenderer {
   private readonly debris = new Debris(new Random(DEBRIS_SEED), GRAVITY, STEP_SECONDS);
   /** The simulated time the Debris has moved on to, s. */
   private debrisTime: number;
+  /** Where the Terrain is drawn, and the Terrain drawn there. */
+  private readonly terrainGraphics: Graphics;
+  private drawnTerrain: readonly Polygon[] = [];
   private readonly debrisGraphics: Graphics;
   /** The dots of each Drop, flying to the gauges: visual only, in real time. */
   private readonly drops: DropBursts;
@@ -109,7 +113,8 @@ export class WorldRenderer {
     this.debrisTime = world.time;
     this.baked = new BakedTextures(scene);
     this.rubble = new RubbleDrawing(this.baked, world.materials, () => world.rubble);
-    this.drawTerrain(scene.add.graphics());
+    this.terrainGraphics = scene.add.graphics();
+    this.drawTerrain();
     this.debrisGraphics = scene.add.graphics().setDepth(DEBRIS_DEPTH);
     this.drops = new DropBursts(new Random(DROP_BURST_SEED), gaugeAt);
     this.dropGraphics = scene.add.graphics().setDepth(DROP_DOTS_DEPTH);
@@ -167,10 +172,13 @@ export class WorldRenderer {
   }
 
   /** The Terrain, and the Spawn arrow at the left edge, where Enemies come in. */
-  private drawTerrain(g: Graphics): void {
+  private drawTerrain(): void {
+    const g = this.terrainGraphics;
+    g.clear();
+    this.drawnTerrain = this.world.arena.terrain;
     g.fillStyle(PALETTE.terrainFill, 1);
     g.lineStyle(2, PALETTE.terrainEdge, 1);
-    for (const polygon of this.world.arena.terrain) {
+    for (const polygon of this.drawnTerrain) {
       fillPolygon(g, polygon);
       strokePolygon(g, polygon);
     }
@@ -185,6 +193,8 @@ export class WorldRenderer {
 
   /** Draws a frame, `seconds` of real time after the last: Drop dots fly on in real time. */
   draw(seconds = 0): void {
+    // A gallery demo may have brought its own Terrain, or Clear the sandbox Arena's back.
+    if (this.world.arena.terrain !== this.drawnTerrain) this.drawTerrain();
     const now = this.world.time;
     this.debris.advance(Math.round((now - this.debrisTime) / STEP_SECONDS));
     this.debrisTime = now;
