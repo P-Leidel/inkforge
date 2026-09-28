@@ -693,6 +693,148 @@ describe('Enemies take damage', () => {
   });
 });
 
+describe('Runner and Heavy', () => {
+  const RUNNER = DEFAULT_ENEMY_TABLE.types.runner;
+  const HEAVY = DEFAULT_ENEMY_TABLE.types.heavy;
+
+  it('sends in a Runner and a Heavy at the Spawn, each its own size', () => {
+    const world = createWorld();
+
+    world.spawn('runner');
+    runFor(world, 3);
+    world.spawn('heavy');
+
+    const [runner, heavy] = world.enemies;
+    expect(runner).toMatchObject({ type: 'runner', width: 32, height: 44, hp: RUNNER.hp });
+    expect(heavy).toMatchObject({ type: 'heavy', width: 64, height: 64, hp: HEAVY.hp });
+    expect(heavy!.transform.x + HEAVY.width / 2).toBeLessThan(0); // out of view
+    expect(Math.abs(heavy!.transform.y - (GROUND_Y - HEAVY.height / 2))).toBeLessThan(1);
+  });
+
+  it('lets a Heavy wear a grey Piece through in about 4 s and a black one in about 13 s', () => {
+    const wearThrough = (colour: Colour) => {
+      const world = createWorld();
+      drawLine(
+        world,
+        [
+          { x: 300, y: GROUND_Y - 4 },
+          { x: 300, y: GROUND_Y - 200 },
+        ],
+        colour,
+      );
+      const full = world.lines[0]!.pieces[0]!.durability;
+      const count = world.lines[0]!.pieces.length;
+      world.spawn('heavy');
+      let pressedFrom: number | null = null;
+      let broke: number | null = null;
+      stepUntil(world, 60, () => {
+        const { pieces } = world.lines[0]!;
+        if (pressedFrom === null && pieces.some(({ durability }) => durability < full))
+          pressedFrom = world.time;
+        if (broke === null && pieces.length < count) broke = world.time;
+        return broke !== null;
+      });
+      expect(broke, colour).not.toBeNull();
+      return broke! - pressedFrom!;
+    };
+
+    expect(wearThrough('grey')).toBeCloseTo(6000 / HEAVY.pressing, 0);
+    expect(wearThrough('black')).toBeCloseTo(20000 / HEAVY.pressing, 0);
+  });
+
+  it('lets a Heavy shove a light Object out of its way, where a Crawler presses it', () => {
+    const push = (type: 'crawler' | 'heavy') => {
+      const world = createWorld();
+      // A filled grey box: too heavy for a Crawler's push, light for a Heavy's.
+      const box = drawObject(world, dragBox(300, GROUND_Y - 60, 50, 56), 'grey');
+      world.fillAt({ x: 325, y: GROUND_Y - 32 }, 'grey');
+      world.togglePause();
+      world.release(box);
+      runFor(world, 0.5);
+      const from = objectById(world, box).transform.x;
+      world.spawn(type);
+      let moved = 0;
+      let durability = Infinity;
+      stepUntil(world, 20, () => {
+        const object = world.objects.find(({ id }) => id === box);
+        if (!object) return true; // worn through
+        moved = Math.max(moved, object.transform.x - from);
+        durability = Math.min(durability, object.durability);
+        return false;
+      });
+      return { moved, durability };
+    };
+
+    const byHeavy = push('heavy');
+    const byCrawler = push('crawler');
+
+    expect(byHeavy.moved).toBeGreaterThan(100);
+    expect(byHeavy.durability).toBe(DEFAULT_MATERIAL_TABLE.colours.grey.outline.durability);
+    expect(byCrawler.moved).toBeLessThan(10);
+    expect(byCrawler.durability).toBeLessThan(
+      DEFAULT_MATERIAL_TABLE.colours.grey.outline.durability,
+    );
+  });
+
+  it('lets glue slow a Runner or a Crawler more than a Heavy', () => {
+    /** How much longer it takes to cross 400 px of a green floor than of a grey one. */
+    const slowedBy = (type: 'crawler' | 'runner' | 'heavy') => {
+      const crossing = (colour: Colour) => {
+        const world = createWorld();
+        floorLine(world, 100, 600, colour);
+        world.spawn(type);
+        let from: number | null = null;
+        stepUntil(world, 40, () => {
+          const { x } = onlyEnemy(world).transform;
+          if (from === null && x > 200) from = world.time;
+          return x > 600;
+        });
+        return world.time - from!;
+      };
+      return crossing('green') / crossing('grey');
+    };
+
+    const heavy = slowedBy('heavy');
+    expect(slowedBy('crawler')).toBeGreaterThan(heavy);
+    expect(slowedBy('runner')).toBeGreaterThan(heavy);
+  });
+
+  it('throws a Runner off a blue Line harder than a Crawler', () => {
+    /** Its fastest speed back, away from a blue wall it walks into. */
+    const thrownBack = (type: 'crawler' | 'runner') => {
+      const world = createWorld();
+      drawLine(
+        world,
+        [
+          { x: 300, y: GROUND_Y - 4 },
+          { x: 300, y: GROUND_Y - 120 },
+        ],
+        'blue',
+      );
+      world.spawn(type);
+      let slowest = 0;
+      stepUntil(world, 12, () => {
+        slowest = Math.min(slowest, onlyEnemy(world).velocity.x);
+        return false;
+      });
+      return -slowest;
+    };
+
+    expect(thrownBack('runner')).toBeGreaterThan(thrownBack('crawler') + 30);
+  });
+
+  it('lets a Heavy reaching the Ink Core take 3 HP', () => {
+    const world = createWorld();
+    const { minX, maxY } = SANDBOX_ARENA.core;
+    world.spawn('heavy', { x: minX - 100, y: maxY - HEAVY.height / 2 });
+
+    const reached = stepUntil(world, 10, () => world.enemies.length === 0);
+
+    expect(reached).toBe(true);
+    expect(world.inkCore.hp).toBe(10 - 3);
+  });
+});
+
 describe('The Ink Core destroyed', () => {
   /** A world whose Ink Core has 2 HP, with two Crawlers walking into it on the plateau. */
   function twoAtTheCore(): SandboxWorld {

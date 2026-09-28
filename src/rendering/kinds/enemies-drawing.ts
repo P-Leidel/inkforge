@@ -22,16 +22,33 @@ const BAR_BORDER = 1;
 /** Below this share of its HP left, the bar shows red. */
 const LOW_HP = 0.3;
 
+/** How an Enemy type looks: its body and edge colours, and how far (px per px up) it leans forward. */
+interface Look {
+  readonly body: number;
+  readonly edge: number;
+  readonly lean: number;
+}
+
+const LOOKS: Readonly<Record<EnemyType, Look>> = {
+  crawler: { body: PALETTE.crawler, edge: PALETTE.crawlerEdge, lean: 0 },
+  runner: { body: PALETTE.runner, edge: PALETTE.runnerEdge, lean: 0.25 },
+  heavy: { body: PALETTE.heavy, edge: PALETTE.heavyEdge, lean: 0 },
+};
+
 /** The colours an Enemy's pop bursts in, by its type, taken in turn: its body, edge and eyes. */
 export const POP_HUES: Readonly<Record<EnemyType, readonly number[]>> = {
   crawler: [PALETTE.crawler, PALETTE.crawler, PALETTE.crawlerEdge, PALETTE.enemyEye],
+  runner: [PALETTE.runner, PALETTE.runner, PALETTE.runnerEdge, PALETTE.enemyEye],
+  heavy: [PALETTE.heavy, PALETTE.heavy, PALETTE.heavyEdge, PALETTE.enemyEye],
 };
 
 /**
  * The Enemies, each as its body's outline, redrawn every frame, with a thin
- * HP bar above it once it is hurt. Placeholder art: a Crawler is a low
- * grey-brown box with two eyes on the side it walks toward, the Ink Core's,
- * which is to the right. Its pop is Debris, which the renderer bursts.
+ * HP bar above it once it is hurt. Placeholder art, with two eyes on the
+ * side it walks toward, the Ink Core's, which is to the right: a Crawler is
+ * a low grey-brown box, a Runner a narrow one leaning forward, a Heavy a
+ * big dark one. The lean is only drawn: its body stays upright. Its pop is
+ * Debris, which the renderer bursts.
  */
 export class EnemiesDrawing implements DrawnKind {
   private readonly graphics: Phaser.GameObjects.Graphics;
@@ -53,12 +70,15 @@ export class EnemiesDrawing implements DrawnKind {
     g.clear();
     for (const enemy of this.views()) {
       const transform = drawn(enemy, fraction);
-      const body = transformPoints(enemy.outline, transform);
-      g.fillStyle(PALETTE.crawler, 1);
+      const { body: hue, edge, lean } = LOOKS[enemy.type];
+      // Leaning forward: each point shifts ahead by how far it is above the underside.
+      const leant = enemy.outline.map(({ x, y }) => ({ x: x + lean * (enemy.height / 2 - y), y }));
+      const body = transformPoints(leant, transform);
+      g.fillStyle(hue, 1);
       fillPolygon(g, body);
-      g.lineStyle(EDGE_WIDTH, PALETTE.crawlerEdge, 1);
+      g.lineStyle(EDGE_WIDTH, edge, 1);
       strokePolygon(g, body);
-      const front = transform.x + enemy.width / 2 - EYE_IN;
+      const front = transform.x + enemy.width / 2 - EYE_IN + lean * (enemy.height - EYE_DOWN);
       const top = transform.y - enemy.height / 2 + EYE_DOWN;
       g.fillStyle(PALETTE.enemyEye, 1);
       g.fillRect(front - EYE_SIZE, top, EYE_SIZE, EYE_SIZE);

@@ -16,6 +16,12 @@ export const PALETTE = {
   /** A Crawler's body and outline, placeholder art. */
   crawler: 0x7a6450,
   crawlerEdge: 0x3e3127,
+  /** A Runner's, placeholder art: lighter and warmer than a Crawler. */
+  runner: 0xb08a5a,
+  runnerEdge: 0x5a4128,
+  /** A Heavy's, placeholder art: dark. */
+  heavy: 0x3a3634,
+  heavyEdge: 0x151312,
   enemyEye: 0xf2e6c8,
   /** The Ink Core: a glowing block. */
   core: 0x6fe3ff,

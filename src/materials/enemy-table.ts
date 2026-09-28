@@ -7,7 +7,7 @@ import type { Colour } from './colour';
  */
 
 /** The Enemy types, in the order Shift+1, Shift+2, ... send them in. */
-export const ENEMY_TYPES = ['crawler'] as const;
+export const ENEMY_TYPES = ['crawler', 'runner', 'heavy'] as const;
 
 export type EnemyType = (typeof ENEMY_TYPES)[number];
 
@@ -83,6 +83,48 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
         green: { min: 0, max: 40 },
         black: { min: 0, max: 15 },
         red: { min: 0, max: 10 },
+      },
+    },
+    runner: {
+      width: 32,
+      height: 44,
+      // About half a Crawler's weight.
+      density: 0.57,
+      friction: 0,
+      restitution: 0,
+      walkingSpeed: 180,
+      push: 0.6,
+      pressing: 150,
+      hp: 1500,
+      damageThreshold: 200,
+      coreDamage: 1,
+      drop: {
+        grey: { min: 20, max: 60 },
+        blue: { min: 20, max: 60 },
+        green: { min: 0, max: 40 },
+        black: { min: 0, max: 10 },
+        red: { min: 0, max: 10 },
+      },
+    },
+    heavy: {
+      width: 64,
+      height: 64,
+      // About four Crawlers' weight.
+      density: 1.5625,
+      friction: 0,
+      restitution: 0,
+      walkingSpeed: 40,
+      push: 3,
+      pressing: 1500,
+      hp: 12000,
+      damageThreshold: 1500,
+      coreDamage: 3,
+      drop: {
+        grey: { min: 60, max: 150 },
+        blue: { min: 0, max: 40 },
+        green: { min: 20, max: 60 },
+        black: { min: 20, max: 60 },
+        red: { min: 10, max: 40 },
       },
     },
   },
