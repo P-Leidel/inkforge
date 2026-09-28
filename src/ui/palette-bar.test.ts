@@ -24,7 +24,7 @@ describe("The palette's gauges", () => {
 
     const grey = gaugeViews(read, null)[0]!;
 
-    expect(grey).toEqual({ filled: 0.75, pending: 0, over: false, amount: '3000' });
+    expect(grey).toEqual({ filled: 0.75, locked: 0, pending: 0, over: false, amount: '3000' });
   });
 
   it("don't change for less than half a pixel, so they aren't baked again", () => {
@@ -57,7 +57,28 @@ describe("The palette's gauges", () => {
     tanks.spend('grey', fromLineLength(1000));
 
     for (const gauge of gaugeViews(read, null)) {
-      expect(gauge).toEqual({ filled: 1, pending: 0, over: false, amount: '∞' });
+      expect(gauge).toEqual({ filled: 1, locked: 0, pending: 0, over: false, amount: '∞' });
     }
+  });
+
+  it('show Locked Ink as a band at the bottom, with what can be spent above it and in the units', () => {
+    const { tanks, read } = gauges();
+    tanks.spend('red', fromLineLength(500));
+    tanks.lock(); // 500 Locked
+    tanks.pickUp('red', fromLineLength(250)); // 250 Wave Ink
+
+    const affordable = gaugeViews(read, { colour: 'red', price: fromLineLength(100), over: false });
+    const over = gaugeViews(read, { colour: 'red', price: fromLineLength(400), over: true });
+
+    // 168 half pixels: three quarters full, half of it Locked; the pending cost within the rest.
+    expect(affordable[4]).toEqual({
+      filled: 126 / 168,
+      locked: 84 / 168,
+      pending: 17 / 168,
+      over: false,
+      amount: '250',
+    });
+    expect(over[4]).toMatchObject({ locked: 84 / 168, pending: 42 / 168, over: true });
+    expect(gaugeViews(read, null)[0]).toMatchObject({ filled: 1, locked: 1, amount: '0' });
   });
 });

@@ -5,6 +5,7 @@ import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
 import type { BlastSize } from './blasts';
+import type { DropInk } from './drops';
 
 /**
  * What happened: each step and each command of the Sandbox world appends,
@@ -93,6 +94,17 @@ export type Happening =
       readonly type: EnemyType;
       readonly outline: Polygon;
       readonly velocity: Vec2;
+    }
+  /**
+   * An Enemy that died let out its Drop, from `at`, where its body was: the
+   * Ink of every Colour, px². It comes straight after it went (`died`).
+   */
+  | {
+      readonly kind: 'dropped';
+      readonly id: number;
+      readonly type: EnemyType;
+      readonly at: Vec2;
+      readonly ink: DropInk;
     }
   /** A Blast started. */
   | {

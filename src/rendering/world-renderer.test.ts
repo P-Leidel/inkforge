@@ -474,6 +474,23 @@ describe('World renderer: by what happened', () => {
     renderer.destroy();
   });
 
+  it("flies a Drop's dots from where an Enemy died to the gauges, in real time, paused or not", () => {
+    const world = createWorld();
+    const { renderer } = renderWorld(world);
+    world.spawn('crawler', { x: 500, y: world.arena.height + 200 });
+    world.togglePause();
+    world.step(); // below the screen: it dies and drops
+    world.pause();
+
+    renderer.draw();
+    expect(renderer.dropDotCount).toBeGreaterThan(0);
+    renderer.draw(0.5);
+    expect(renderer.dropDotCount).toBeGreaterThan(0);
+    renderer.draw(0.5);
+    expect(renderer.dropDotCount).toBe(0);
+    renderer.destroy();
+  });
+
   it('bursts a puff of Debris where a Patch was used up', () => {
     const world = createWorld();
     const { renderer } = renderWorld(world);

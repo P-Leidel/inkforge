@@ -10,7 +10,7 @@ import { FrameRecorder } from '../debug/frame-times';
 import { flashRejection } from '../rendering/rejection-flash';
 import { Hud } from '../ui/hud';
 import type { Menu } from '../ui/menu';
-import { PaletteBar } from '../ui/palette-bar';
+import { gaugeCentre, PaletteBar } from '../ui/palette-bar';
 import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../ui/toolbar';
 import { TuningPanel } from '../ui/tuning-panel';
@@ -59,7 +59,7 @@ export class SandboxScene extends Phaser.Scene {
     this.world = this.gameLayer.world;
     this.drawing = new DrawingInput(this.gameLayer);
     this.tuning = new TuningPanel(this.world.materials, this.world.enemyTable, this.gameLayer);
-    this.worldView = new WorldRenderer(this, this.world);
+    this.worldView = new WorldRenderer(this, this.world, gaugeCentre);
     this.preview = new StrokePreview(this);
     this.overlay = new DebugOverlay(this, this.gameLayer, this.frames, this.worldView);
     // Phaser renders after the scene's update: time it for the frame's record.
@@ -193,7 +193,7 @@ export class SandboxScene extends Phaser.Scene {
     this.frames.physics(performance.now() - start, steps);
     this.stressTest?.update();
     const drawStart = performance.now();
-    this.worldView.draw();
+    this.worldView.draw(deltaMs / 1000);
     const preview = this.drawing.preview();
     if (preview.kind === 'brush') this.preview.drawBrush(preview.pointer);
     else {

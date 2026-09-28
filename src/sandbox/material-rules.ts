@@ -1,5 +1,6 @@
 import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import type { EnemyType } from '../materials/enemy-table';
 import type { MaterialTable } from '../materials/material-table';
 import type { Polygon } from '../geometry/polygon';
 import type { BodyId, ContactHit, PhysicsWorld, ShapeId } from '../physics';
@@ -14,6 +15,7 @@ import {
 } from './blasts';
 import { pairKey, type ContactLedger, type Party } from './contact-ledger';
 import { packSpill, type Landing, type LooseDroplet } from './droplets';
+import { drawDrop, type DropInk } from './drops';
 import type { Walker } from './enemies';
 import { Glue, type Gluer } from './glue';
 import type { Thing, Why } from './happenings';
@@ -37,7 +39,7 @@ import { Sticking, type Sticker } from './sticking';
  * something it can walk on, before each step, and what follows from what
  * it touches and where it is after: pressing and floor wear, the damage
  * hits and Blasts deal to its HP, reaching the Ink Core, dying at 0 HP or
- * below the screen. What a
+ * below the screen, and the Drop it lets out. What a
  * thing's numbers are they ask `Numbers`. They carry their decisions out
  * through two narrow ports the world wires up: the physics module, and the
  * Arena (its kinds and Debris). Glue drag (`Glue`) and sticking (`Sticking`)
@@ -166,6 +168,13 @@ export type Broken =
       readonly fill: ReleasedFill | null;
     };
 
+/** An Enemy that died, and where its body was. */
+export interface Killed {
+  readonly id: number;
+  readonly type: EnemyType;
+  readonly at: Vec2;
+}
+
 /** What the Material rules ask of the physics module. */
 export type RulesPhysics = Pick<
   PhysicsWorld,
@@ -243,8 +252,13 @@ export interface RulesArena<T, S, W> {
   heading(walker: W): number;
   /** The Enemy whose Party this is, if any. */
   walkerOf(party: Party<unknown>): W | undefined;
-  /** Kills Enemy `id` at once: it pops and goes, releasing nothing physical. */
-  kill(id: number): void;
+  /**
+   * Kills Enemy `id` at once: it pops and goes, releasing nothing physical.
+   * Says what died and where; null if it is already gone.
+   */
+  kill(id: number): Killed | null;
+  /** Lets out a dead Enemy's Drop: the Ink of every Colour, from where it died. */
+  drop(killed: Killed, ink: DropInk): void;
   /** Whether a Party is the Ink Core. */
   isInkCore(party: Party<unknown>): boolean;
   /** Takes `damage` off the Ink Core's HP. */
@@ -345,9 +359,9 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
    *
    * Hits and Blasts take damage off an Enemy's HP as they come, but it
    * dies only in its own phase. Then come the Enemies' phases: Enemies
-   * reaching the Ink Core, kills (0 HP, then below the screen), and
-   * removing what went out over the Spawn edge, in that order. (Drops,
-   * which draw from the generator, will come after kills.)
+   * reaching the Ink Core, kills (0 HP, then below the screen), Drops, which
+   * draw from the generator, and removing what went out over the Spawn
+   * edge, in that order.
    */
   step(seconds: number): void {
     const broken = this.impacts();
@@ -359,7 +373,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     this.arena.spreadBlasts(seconds, this.blastReached);
     this.arena.removeUsedUpPatches();
     this.reachInkCore();
-    this.kill();
+    this.drop(this.kill());
     this.removeBeyondSpawnEdge();
   }
 
@@ -419,13 +433,31 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
 
   /**
    * Kills: every Enemy at 0 HP dies, oldest first, then every one wholly
-   * below the bottom of the screen.
+   * below the bottom of the screen. Returns what died, in that order.
    */
-  private kill(): void {
+  private kill(): Killed[] {
+    const killed: Killed[] = [];
+    const kill = (id: number) => {
+      const dead = this.arena.kill(id);
+      if (dead) killed.push(dead);
+    };
     const dead = [...this.arena.walkers()].filter((walker) => this.isDead(walker));
-    for (const { id } of dead) this.arena.kill(id);
+    for (const { id } of dead) kill(id);
     for (const thing of this.arena.belowScreen()) {
-      if (thing.thing === 'enemy') this.arena.kill(thing.id);
+      if (thing.thing === 'enemy') kill(thing.id);
+    }
+    return killed;
+  }
+
+  /**
+   * Drops: every Enemy that died lets out a Drop, in the order they died, a
+   * Pit's and a trap's as much as a fight's. Each draws its amounts from the
+   * generator, one Colour after another, from its type's ranges as they are
+   * now. An Enemy that reached the Ink Core didn't die, and drops nothing.
+   */
+  private drop(killed: readonly Killed[]): void {
+    for (const dead of killed) {
+      this.arena.drop(dead, drawDrop(this.numbers.enemy(dead.type).drop, this.random));
     }
   }
 

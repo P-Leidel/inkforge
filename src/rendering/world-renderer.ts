@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { Random } from '../sandbox/random';
 import {
@@ -11,6 +12,7 @@ import {
 } from '../sandbox/sandbox-world';
 import { BakedTextures } from './baked-textures';
 import { Debris } from './debris';
+import { DropBursts } from './drop-burst';
 import { fillPolygon, strokePolygon } from './draw';
 import { INK_HUES } from './ink';
 import { BlastsDrawing } from './kinds/blasts-drawing';
@@ -28,8 +30,14 @@ import { PALETTE } from './palette';
 type Graphics = Phaser.GameObjects.Graphics;
 
 const DEBRIS_DEPTH = 5;
+/** Drop dots fly over the world, just under the palette they fly to. */
+const DROP_DOTS_DEPTH = 59;
 /** Seed of the Debris' own random generator, apart from the simulation's. */
 const DEBRIS_SEED = 0x0deb415;
+/** Seed of the Drop bursts' own random generator. */
+const DROP_BURST_SEED = 0xd409;
+/** Where the Drop bursts fly to when the renderer is given no gauges: the top-left corner. */
+const NO_GAUGES = (): Vec2 => ({ x: 0, y: 0 });
 /** The Spawn arrow at the left edge: how far above the ground it points in, and its size. */
 const SPAWN_ARROW_RISE = 60;
 const SPAWN_ARROW_LENGTH = 22;
@@ -58,7 +66,8 @@ export interface Held {
  * kind's drawings on `start over`, and has the kinds draw in a fixed order,
  * the way the Sandbox world runs its kinds. It keeps the Terrain and the
  * Debris, which is visual only: Debris bursts where something broke, where
- * a Patch went used up or capped, and where an Enemy popped.
+ * a Patch went used up or capped, and where an Enemy popped. A Drop's dots,
+ * visual only too, fly from where the Enemy died to the gauges.
  *
  * The world steps at a fixed rate, and a screen can show more frames than
  * that: each body is drawn between its pose as the latest step began and its
@@ -73,6 +82,9 @@ export class WorldRenderer {
   /** The simulated time the Debris has moved on to, s. */
   private debrisTime: number;
   private readonly debrisGraphics: Graphics;
+  /** The dots of each Drop, flying to the gauges: visual only, in real time. */
+  private readonly drops: DropBursts;
+  private readonly dropGraphics: Graphics;
   private readonly lines: LinesDrawing;
   private readonly objects: ObjectsDrawing;
   private readonly rubble: RubbleDrawing;
@@ -82,11 +94,13 @@ export class WorldRenderer {
 
   /**
    * Draws `world`, which must hold no Strokes, Rubble or Patches yet: from
-   * here on it knows what is there only by what happens.
+   * here on it knows what is there only by what happens. A Drop's dots fly
+   * to `gaugeAt` each Colour's gauge.
    */
   constructor(
     scene: Phaser.Scene,
     private readonly world: SandboxWorld,
+    gaugeAt: (colour: Colour) => Vec2 = NO_GAUGES,
   ) {
     const { lines, objects, rubble, patches } = world;
     if (lines.length + objects.length + rubble.length + patches.length > 0)
@@ -97,6 +111,8 @@ export class WorldRenderer {
     this.rubble = new RubbleDrawing(this.baked, world.materials, () => world.rubble);
     this.drawTerrain(scene.add.graphics());
     this.debrisGraphics = scene.add.graphics().setDepth(DEBRIS_DEPTH);
+    this.drops = new DropBursts(new Random(DROP_BURST_SEED), gaugeAt);
+    this.dropGraphics = scene.add.graphics().setDepth(DROP_DOTS_DEPTH);
     const inkCore = new InkCoreDrawing(scene, () => world.inkCore);
     const enemies = new EnemiesDrawing(scene, () => world.enemies);
     const bonds = new BondsDrawing(scene, () => world.bonds);
@@ -135,6 +151,11 @@ export class WorldRenderer {
     return this.debris.count;
   }
 
+  /** Drop dots in flight to the gauges. */
+  get dropDotCount(): number {
+    return this.drops.count;
+  }
+
   /** The ids of what it holds a drawing for, for tests. */
   held(): Held {
     return {
@@ -162,14 +183,17 @@ export class WorldRenderer {
     ]);
   }
 
-  draw(): void {
+  /** Draws a frame, `seconds` of real time after the last: Drop dots fly on in real time. */
+  draw(seconds = 0): void {
     const now = this.world.time;
     this.debris.advance(Math.round((now - this.debrisTime) / STEP_SECONDS));
     this.debrisTime = now;
+    this.drops.advance(seconds);
     for (const entry of this.happenings.read()) this.follow(entry, now);
     const fraction = this.world.stepFraction;
     for (const kind of this.kinds) kind.draw(fraction, now);
     this.drawDebris();
+    this.drawDrops();
   }
 
   /** Hands one entry of the list to every kind, and bursts Debris; `now` is the world's time. */
@@ -180,6 +204,8 @@ export class WorldRenderer {
     } else if (entry.kind === 'popped') {
       const { outline, velocity, type, time } = entry;
       this.debris.burst(outline, velocity, POP_HUES[type], stepsSince(time, now));
+    } else if (entry.kind === 'dropped') {
+      this.drops.burst(entry.at, entry.ink);
     } else if (entry.kind === 'start-over') this.dropAll();
     else for (const kind of this.kinds) kind.follow(entry, now);
   }
@@ -188,6 +214,7 @@ export class WorldRenderer {
   private dropAll(): void {
     for (const kind of this.kinds) kind.dropAll();
     this.debris.clear();
+    this.drops.clear();
   }
 
   /** Each particle as a small tumbling square in its Colour, fading out. */
@@ -204,6 +231,18 @@ export class WorldRenderer {
         { x: position.x + c - s, y: position.y + s + c },
         { x: position.x - c - s, y: position.y - s + c },
       ]);
+    }
+  }
+
+  /** Each Drop dot as a small disc in its Colour's hue, ringed dark. */
+  private drawDrops(): void {
+    const g = this.dropGraphics;
+    g.clear();
+    for (const { colour, position, radius } of this.drops.views) {
+      g.fillStyle(INK_HUES[colour], 1);
+      g.fillCircle(position.x, position.y, radius);
+      g.lineStyle(1, 0x1b1f27, 0.8);
+      g.strokeCircle(position.x, position.y, radius);
     }
   }
 }

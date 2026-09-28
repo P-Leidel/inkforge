@@ -61,7 +61,12 @@ export function readingLines({ recent, sinceStart, bodies, render, ink }: Readin
   const phase = ({ mean, max }: { mean: number; max: number }) =>
     `${mean.toFixed(1)} (max ${max.toFixed(1)})`;
   const row = (label: string, text: string) => label.padEnd(13) + text;
-  const tank = (colour: Colour) => `${colour} ${number(Math.round(ink.tanks[colour].spendable))}`;
+  // What can be spent, and during a Wave the Locked Ink beside it.
+  const tank = (colour: Colour) => {
+    const { spendable, locked } = ink.tanks[colour];
+    const lockedText = Math.round(locked) > 0 ? ` +${number(Math.round(locked))} locked` : '';
+    return `${colour} ${number(Math.round(spendable))}${lockedText}`;
+  };
   const [first, second] = [COLOURS.slice(0, 3), COLOURS.slice(3)];
   // Each list of the world's contents, e.g. "Objects 7", over two rows.
   const counts = bodies.contents.map(

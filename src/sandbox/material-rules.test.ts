@@ -12,6 +12,8 @@ import {
 import type { BodyId, ShapeId } from '../physics';
 import { blastSize, blastStrength, pieceBlastSize, type Reach } from './blasts';
 import { TERRAIN_PARTY, type NewContact, type Party, type PartyHit } from './contact-ledger';
+import { LINE_THICKNESS } from '../stroke/stroke-rules';
+import { drawDrop, type DropInk } from './drops';
 import type { Walker } from './enemies';
 import {
   fuseBurns,
@@ -23,6 +25,7 @@ import {
   type Broken,
 } from './material-rules';
 import { Numbers, type Breakable } from './numbers';
+import { Random } from './random';
 import { fakePatch, fakeRules } from './rules-test-support';
 import { WAITING, type Sticker } from './sticking';
 
@@ -1044,8 +1047,73 @@ describe('Material rules: hurting Enemies', () => {
 
     rules.step(STEP);
 
-    expect(arena.done).toEqual(['kill', 'kill']);
+    expect(arena.done).toEqual(['kill', 'kill', 'drop', 'drop']);
     expect(arena.handed('kill')).toEqual([1, 2]);
+  });
+});
+
+describe('Material rules: Drops', () => {
+  const crawler = (id: number, damage = 0): Walker => ({
+    id,
+    body: (100 + id) as BodyId,
+    type: 'crawler',
+    damage,
+  });
+
+  it('lets every Enemy that died out a Drop after the kills, in the order they died', () => {
+    const { rules, arena } = fakeRules<Breakable>(createMaterialTable());
+    arena.walking = [crawler(1, 5000), crawler(2)];
+    arena.below = [{ thing: 'enemy', id: 2 }];
+    arena.killed.set(2, { id: 2, type: 'heavy', at: { x: 300, y: 1200 } });
+    arena.beyond = [{ thing: 'object', id: 8 }];
+
+    rules.step(STEP);
+
+    expect(arena.done).toEqual(['kill', 'kill', 'drop', 'drop', 'remove']);
+    const drops = arena.handed('drop') as { killed: { id: number; type: string } }[];
+    expect(drops.map(({ killed }) => [killed.id, killed.type])).toEqual([
+      [1, 'crawler'],
+      [2, 'heavy'],
+    ]);
+  });
+
+  it("draws each Drop from the generator, within its type's ranges as they are now", () => {
+    const enemies = createEnemyTable();
+    enemies.types.crawler.drop.red = { min: 5, max: 6 };
+    const { rules, arena, random } = fakeRules<Breakable>(createMaterialTable(), enemies);
+    arena.walking = [crawler(1, 5000)];
+    const expected = drawDrop(enemies.types.crawler.drop, new Random(random.state));
+
+    rules.step(STEP);
+
+    const drops = arena.handed('drop') as { ink: DropInk }[];
+    expect(drops).toHaveLength(1);
+    const { ink } = drops[0]!;
+    expect(ink).toEqual(expected);
+    expect(ink.red / LINE_THICKNESS).toBeGreaterThanOrEqual(5);
+    expect(ink.red / LINE_THICKNESS).toBeLessThan(6);
+  });
+
+  it('drops nothing for an Enemy that reached the Ink Core, or one already gone', () => {
+    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const reaching = crawler(1);
+    arena.walking = [reaching];
+    arena.inkCore = 50;
+    const core = {
+      bodyA: 50 as BodyId,
+      bodyB: 101 as BodyId,
+      shapeA: 50 as ShapeId,
+      shapeB: 101 as ShapeId,
+    };
+    contacts.touches.set(reaching.body, [
+      { party: { id: 50, stroke: 50, body: 50 as BodyId, target: null }, pairs: [core] },
+    ]);
+    arena.below = [{ thing: 'enemy', id: 9 }];
+    arena.kill = (id) => (arena.log.push({ what: 'kill', with: id }), null);
+
+    rules.step(STEP);
+
+    expect(arena.handed('drop')).toEqual([]);
   });
 });
 

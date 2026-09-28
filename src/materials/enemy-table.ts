@@ -45,7 +45,7 @@ export interface EnemyMaterial {
   damageThreshold: number;
   /** HP the Ink Core loses when it reaches it. */
   coreDamage: number;
-  /** The Ink of each Colour its Drop holds when it dies (from #92). */
+  /** The Ink of each Colour its Drop holds when it dies. */
   drop: Record<Colour, DropRange>;
 }
 

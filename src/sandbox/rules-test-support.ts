@@ -8,6 +8,7 @@ import type { HostSurface } from './arena-contents';
 import type { BlastSize, Reach } from './blasts';
 import type { NewContact, Party, PartyHit, Touching } from './contact-ledger';
 import type { Landing, LooseDroplet } from './droplets';
+import type { DropInk } from './drops';
 import type { Walker } from './enemies';
 import type { Gluer } from './glue';
 import type { Thing, Why } from './happenings';
@@ -15,6 +16,7 @@ import {
   MaterialRules,
   type Broken,
   type Debris,
+  type Killed,
   type RulesArena,
   type RulesContacts,
   type RulesPhysics,
@@ -135,8 +137,8 @@ export interface FakeDroplet {
  * `log`: `break`, `burst`, `rubble`, `droplets`, `blast`, `bond`, `land`,
  * `patch` and `use`, each with what it was handed; `reach` when a Blast
  * spreading reached something, and `used-up` for each Patch removed;
- * `walk`, `core` (damage to the Ink Core), `kill` (an Enemy's id) and
- * `remove`. An Enemy walks
+ * `walk`, `core` (damage to the Ink Core), `kill` (an Enemy's id), `drop`
+ * (what died and its Drop's Ink) and `remove`. An Enemy walks
  * right unless `headings` says otherwise, and gets past unless it is among
  * the `stalled`.
  */
@@ -168,6 +170,8 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
   /** What lies below the screen, and beyond the Spawn edge. */
   below: Thing[] = [];
   beyond: Thing[] = [];
+  /** What killing each Enemy says died, by its id; a Crawler at the origin if not set. */
+  readonly killed = new Map<number, Killed>();
   readonly log: { readonly what: string; readonly with?: unknown }[] = [];
 
   /** The names of what was done, in order. */
@@ -277,8 +281,14 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
     return this.enemyParties.get(party.id);
   }
 
-  kill(id: number): void {
+  /** Says a Crawler died at the origin, unless `killed` says otherwise for its id. */
+  kill(id: number): Killed | null {
     this.log.push({ what: 'kill', with: id });
+    return this.killed.get(id) ?? { id, type: 'crawler', at: { x: 0, y: 0 } };
+  }
+
+  drop(killed: Killed, ink: DropInk): void {
+    this.log.push({ what: 'drop', with: { killed, ink } });
   }
 
   isInkCore(party: Party<unknown>): boolean {

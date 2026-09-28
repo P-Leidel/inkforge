@@ -94,7 +94,7 @@ describe('Ink Tanks', () => {
 
     some.spend('grey', fromLineLength(300));
     some.spend('blue', fromLineLength(300));
-    expect(snapshot.grey).toBe(fromLineLength(3600));
+    expect(snapshot.grey).toEqual({ spendable: fromLineLength(3600), locked: 0 });
     some.restore(snapshot);
 
     expect(units(some, 'grey')).toBe(3600);
@@ -128,5 +128,91 @@ describe('Ink Tanks', () => {
     some.spend('grey', fromLineLength(0.001)); // well under it
     expect(some.reading().grey.units).toBe(3599);
     expect(some.reading().red.units).toBe(1000);
+  });
+});
+
+describe('Ink Tanks: Locked Ink and Wave Ink', () => {
+  /** What `colour`'s Tank holds, spendable and Locked, in Line length. */
+  const parts = (tanks: InkTanks, colour: Colour) => {
+    const { spendable, locked } = tanks.reading()[colour];
+    return { spendable: inLineLength(spendable), locked: inLineLength(locked) };
+  };
+
+  it('lock everything each Tank holds as a Wave starts, so none of it can be spent', () => {
+    const { tanks: some } = tanks();
+    some.spend('grey', fromLineLength(1000));
+
+    some.lock();
+
+    expect(parts(some, 'grey')).toEqual({ spendable: 0, locked: 3000 });
+    expect(some.reading().grey.units).toBe(0);
+    expect(some.canPay('grey', fromLineLength(1))).toBe(false);
+    expect(some.canPay('grey', 0)).toBe(true);
+  });
+
+  it('pick up a Drop as spendable Ink, losing what does not fit beside the Locked Ink', () => {
+    const { tanks: some } = tanks();
+    some.spend('grey', fromLineLength(100)); // 3900 of 4000
+    some.lock();
+
+    some.pickUp('grey', fromLineLength(60));
+    expect(parts(some, 'grey')).toEqual({ spendable: 60, locked: 3900 });
+    some.pickUp('grey', fromLineLength(60)); // only 40 fit
+    expect(parts(some, 'grey')).toEqual({ spendable: 100, locked: 3900 });
+    expect(some.canPay('grey', fromLineLength(100))).toBe(true);
+    some.spend('grey', fromLineLength(30));
+    expect(parts(some, 'grey')).toEqual({ spendable: 70, locked: 3900 });
+  });
+
+  it('refund to the part asked for, never past the maximum in all', () => {
+    const { tanks: some } = tanks();
+    some.spend('red', fromLineLength(400)); // 600
+    some.lock();
+    some.pickUp('red', fromLineLength(50));
+    some.spend('red', fromLineLength(50));
+
+    some.refund('red', fromLineLength(50), 'spendable');
+    some.refund('red', fromLineLength(100), 'locked');
+    expect(parts(some, 'red')).toEqual({ spendable: 50, locked: 700 });
+    some.refund('red', fromLineLength(500), 'locked'); // only 250 fit
+    expect(parts(some, 'red')).toEqual({ spendable: 50, locked: 950 });
+  });
+
+  it('unlock as the Wave ends: the Locked Ink is spendable again, and the Wave Ink stays', () => {
+    const { tanks: some } = tanks();
+    some.spend('blue', fromLineLength(1000));
+    some.lock();
+    some.pickUp('blue', fromLineLength(40));
+
+    some.unlock();
+
+    expect(parts(some, 'blue')).toEqual({ spendable: 2040, locked: 0 });
+    expect(some.canPay('blue', fromLineLength(2040))).toBe(true);
+  });
+
+  it('go back to a snapshot with its Locked and Wave Ink', () => {
+    const { tanks: some } = tanks();
+    some.spend('grey', fromLineLength(1000));
+    some.lock();
+    some.pickUp('grey', fromLineLength(80));
+    const snapshot = some.snapshot();
+
+    some.unlock();
+    some.spend('grey', fromLineLength(500));
+    some.restore(snapshot);
+
+    expect(parts(some, 'grey')).toEqual({ spendable: 80, locked: 3000 });
+  });
+
+  it('empty Locked Ink first down to a lowered maximum', () => {
+    const { table, tanks: some } = tanks();
+    some.spend('red', fromLineLength(500));
+    some.lock();
+    some.pickUp('red', fromLineLength(100)); // 100 spendable, 500 Locked
+
+    table.tanks.red = 300;
+    some.fitMaximums();
+
+    expect(parts(some, 'red')).toEqual({ spendable: 100, locked: 200 });
   });
 });
