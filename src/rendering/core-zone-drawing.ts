@@ -1,5 +1,5 @@
 import type Phaser from 'phaser';
-import type { CoreZone, Phase } from '../game/game';
+import type { CoreZone, Phase } from '../game/defence-loop';
 import { PALETTE } from './palette';
 
 /** How the Core Zone looks: faint in the Build Phase, clear during a Wave. */

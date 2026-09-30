@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS, type Colour } from '../materials/colour';
-import { DEFAULT_ENEMY_TABLE, editEnemies, type EnemyType } from '../materials/enemy-table';
+import { DEFAULT_ENEMY_TABLE, type EnemyType } from '../materials/enemy-table';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import { dragAlong } from '../stroke/pointer-paths';
 import type { Game } from './game';
@@ -22,8 +22,8 @@ function wavesGame(options: { inkCosts?: boolean; seed?: number } = {}): Game {
     waves: true,
     worldOptions: { seed: options.seed ?? 1 },
   });
-  editEnemies(game.world.enemyTable, (table) => (table.coreZone = WHOLE_ARENA));
-  game.editWave((table) => {
+  game.defence.edit((table) => {
+    table.coreZone = WHOLE_ARENA;
     table.counts = { crawler: 2, runner: 0, heavy: 0 };
     table.gap = 100;
   });
@@ -138,12 +138,12 @@ describe('Wave Ink', () => {
 
   it('comes from a Pit kill; an Enemy reaching the Ink Core drops nothing', () => {
     const game = createGame(true, { waves: true });
-    game.editWave((table) => (table.counts = { crawler: 0, runner: 1, heavy: 0 }));
+    game.defence.edit((table) => (table.counts = { crawler: 0, runner: 1, heavy: 0 }));
     expect(line(game, 400).kind).toBe('line');
     const before = held(game);
     game.togglePause();
 
-    stepFor(game, 60, () => game.phase === 'build');
+    stepFor(game, 60, () => game.defence.reading.phase === 'build');
 
     expect(game.world.inkCore.hp).toBe(9);
     expect(held(game)).toEqual(before);
@@ -151,7 +151,7 @@ describe('Wave Ink', () => {
 
   it('is kept when the Wave ends, and the Locked Ink is spendable again', () => {
     const game = wavesGame();
-    game.editWave((table) => (table.counts = { crawler: 0, runner: 0, heavy: 0 }));
+    game.defence.edit((table) => (table.counts = { crawler: 0, runner: 0, heavy: 0 }));
     expect(line(game, 400).kind).toBe('line');
     const before = held(game).grey.spendable;
     game.togglePause();
@@ -159,7 +159,7 @@ describe('Wave Ink', () => {
     // The only Enemy dies in the Wave's first step: none is left to come or alive.
     pitKill(game);
 
-    expect(game.phase).toBe('build');
+    expect(game.defence.reading.phase).toBe('build');
     const { spendable, locked } = held(game).grey;
     expect(locked).toBe(0);
     expect(spendable - before).toBeGreaterThanOrEqual(40);
@@ -230,12 +230,12 @@ describe('Refunds during a Wave', () => {
 
   it('after the Wave, everything erased is spendable', () => {
     const game = wavesGame({ inkCosts: true });
-    game.editWave((table) => (table.counts = { crawler: 0, runner: 0, heavy: 0 }));
+    game.defence.edit((table) => (table.counts = { crawler: 0, runner: 0, heavy: 0 }));
     expect(line(game, 400).kind).toBe('line');
     game.togglePause();
     game.step(); // an empty Wave ends at once
 
-    expect(game.phase).toBe('build');
+    expect(game.defence.reading.phase).toBe('build');
     game.eraseAlong(
       [
         { x: 595, y: 200 },

@@ -244,14 +244,14 @@ describe('Drawing input', () => {
       build?: (world: SandboxWorld, input: DrawingInput) => void,
     ) {
       const game = createGame(inkCosts, { waves: true });
-      game.editWave((table) => {
+      game.defence.edit((table) => {
         table.counts = { crawler: 1, runner: 0, heavy: 0 };
         table.gap = 100;
       });
       const drawing = drawingOver(game);
       build?.(game.world, drawing.input);
       game.togglePause();
-      expect(game.phase).toBe('wave');
+      expect(game.defence.reading.phase).toBe('wave');
       return { game, ...drawing };
     }
 

@@ -71,7 +71,7 @@ describe("The tuning panel's Copy as JSON", () => {
 
   it('holds the Wave table under `wave`, in the shape of its defaults', () => {
     const game = new Game({ inkCosts: false, worldOptions: { seed: 1 } });
-    game.editWave((wave) => {
+    game.defence.edit((wave) => {
       wave.counts.runner = 8;
       wave.gap = 1.5;
     });
@@ -80,7 +80,7 @@ describe("The tuning panel's Copy as JSON", () => {
       tablesAsJson({
         materials: createMaterialTable(),
         ink: DEFAULT_INK_TABLE,
-        wave: game.wave,
+        wave: game.defence.table,
         enemies: createEnemyTable(),
       }),
     );
@@ -89,6 +89,7 @@ describe("The tuning panel's Copy as JSON", () => {
     expect(pasted.wave).toEqual({
       counts: { ...DEFAULT_WAVE_TABLE.counts, runner: 8 },
       gap: 1.5,
+      coreZone: DEFAULT_WAVE_TABLE.coreZone,
     });
     game.dispose();
   });

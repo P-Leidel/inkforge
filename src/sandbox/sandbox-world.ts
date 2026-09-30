@@ -108,7 +108,7 @@ export interface StrokeOptions {
   readonly accept?: (made: MadeStroke) => boolean;
 }
 
-/** What runs around each step `advance` takes. */
+/** What runs just before and just after each step `step` and `advance` take. */
 export interface StepHooks {
   readonly before?: () => void;
   readonly after?: () => void;
@@ -439,11 +439,6 @@ export class SandboxWorld {
     return this.enemiesKind.spawnClear(type);
   }
 
-  /** Whether the Ink Core's HP has run out: physics stops, and only R or Clear go on. */
-  get coreDestroyed(): boolean {
-    return this.inkCoreKind.views.hp <= 0;
-  }
-
   /**
    * An Enemy dies: it pops, a burst of its body that is visual only, and
    * goes, releasing nothing physical. Says what died and where.
@@ -657,11 +652,9 @@ export class SandboxWorld {
    * Starts or pauses physics. Box2D can't save its own state, and a world
    * rebuilt from scratch doesn't play out like one that wasn't, so every
    * start takes a snapshot for R and rebuilds the world from it: the first
-   * run and every retry play out identically. Once the Ink Core is
-   * destroyed it doesn't start again: R or Clear first.
+   * run and every retry play out identically.
    */
   togglePause(): void {
-    if (!this.running && this.coreDestroyed) return;
     this.running = !this.running;
     this.accumulator = 0;
     if (!this.running) return;
@@ -677,10 +670,10 @@ export class SandboxWorld {
    * rebuild: the engine carries on as if it had never paused, and R still
    * goes back to the last start. The Game's Wave pauses and runs this way.
    * Lines drawn while paused squeeze the Objects they cross, as at a start.
-   * Does nothing while running, or once the Ink Core is destroyed.
+   * Does nothing while running.
    */
   resume(): void {
-    if (this.running || this.coreDestroyed) return;
+    if (this.running) return;
     this.running = true;
     this.accumulator = 0;
     this.strokes.squeezeAll();
@@ -759,11 +752,13 @@ export class SandboxWorld {
    * as the Material rules decide; after the step the rules run every
    * consequence in their own order, and each kind takes its turn. This order
    * must not change: exact replays depend on every engine call and every
-   * draw from `random` coming in the same order. A step that destroys the
-   * Ink Core stops physics.
+   * draw from `random` coming in the same order. `around`, if given, runs
+   * just before and just after the step: the Game's Defence loop sends in a
+   * Wave's Enemies there, and ends the Wave or stops physics.
    */
-  step(): void {
+  step(around: StepHooks = {}): void {
     if (!this.running) return;
+    around.before?.();
     this.poses.remember(this.contacts.bodies());
     this.applyMaterials();
     this.rules.walk(STEP_SECONDS);
@@ -772,18 +767,14 @@ export class SandboxWorld {
     this.stepsTaken++;
     this.rules.step(STEP_SECONDS);
     for (const kind of this.kinds) kind.step(STEP_SECONDS);
-    if (this.coreDestroyed) {
-      this.running = false;
-      this.accumulator = 0;
-    }
+    around.after?.();
   }
 
   /**
    * Advances by real elapsed time, in whole fixed steps; the remainder
    * carries over. `around`, if given, runs just before and just after each
-   * step: the Game sends in a Wave's Enemies and ends it there, step by
-   * step, so a retry plays out the same whatever the frame times. Returns
-   * the steps taken.
+   * step, as `step` runs it, so a retry plays out the same whatever the
+   * frame times. Returns the steps taken.
    */
   advance(seconds: number, around: StepHooks = {}): number {
     if (!this.running) return 0;
@@ -795,9 +786,7 @@ export class SandboxWorld {
       this.accumulator >= STEP_SECONDS - 1e-9 &&
       steps < MAX_STEPS_PER_ADVANCE
     ) {
-      around.before?.();
-      this.step();
-      around.after?.();
+      this.step(around);
       this.accumulator -= STEP_SECONDS;
       steps++;
     }

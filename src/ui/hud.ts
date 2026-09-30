@@ -39,7 +39,7 @@ export class Hud {
 
   constructor(
     scene: Phaser.Scene,
-    private readonly game: Pick<Game, 'world' | 'phase' | 'toCome'>,
+    private readonly game: Pick<Game, 'world' | 'defence'>,
   ) {
     this.status = scene.add
       .text(scene.scale.width / 2, 40, '', {
@@ -95,8 +95,9 @@ export class Hud {
   }
 
   private drawStatus(): void {
-    const { world } = this.game;
-    const shown = world.coreDestroyed ? 'destroyed' : world.isRunning ? 'running' : 'paused';
+    const { world, defence } = this.game;
+    const destroyed = defence.reading.coreDestroyed;
+    const shown = destroyed ? 'destroyed' : world.isRunning ? 'running' : 'paused';
     if (shown === this.shown) return;
     this.shown = shown;
     this.status.setText(STATUS[shown].text);
@@ -105,13 +106,13 @@ export class Hud {
 
   /** The phase label, and the count beside the Spawn arrow during a Wave. */
   private drawPhase(): void {
-    const phase = this.game.phase;
+    const { phase, toCome: left } = this.game.defence.reading;
     if (phase !== this.shownPhase) {
       this.shownPhase = phase;
       this.phase.setText(phase ? PHASE[phase].text : '');
       if (phase) this.phase.setColor(PHASE[phase].color);
     }
-    const toCome = phase === 'wave' ? this.game.toCome : null;
+    const toCome = phase === 'wave' ? left : null;
     if (toCome === this.shownToCome) return;
     this.shownToCome = toCome;
     this.toCome.setText(toCome === null ? '' : String(toCome));

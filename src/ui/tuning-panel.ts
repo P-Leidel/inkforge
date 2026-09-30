@@ -79,10 +79,7 @@ export class TuningPanel {
     private readonly table: MaterialTable,
     private readonly enemyTable: EnemyTable,
     /** Where the Ink costs switch and the Ink table's edits go. */
-    private readonly game: Pick<
-      Game,
-      'inkCosts' | 'ink' | 'editInk' | 'waves' | 'wave' | 'editWave'
-    >,
+    private readonly game: Pick<Game, 'inkCosts' | 'ink' | 'editInk' | 'defence'>,
   ) {
     this.materials = {
       table,
@@ -101,9 +98,9 @@ export class TuningPanel {
       edit: (write) => game.editInk(write),
     };
     this.wave = {
-      table: game.wave,
+      table: game.defence.table,
       defaults: DEFAULT_WAVE_TABLE,
-      edit: (write) => game.editWave(write),
+      edit: (write) => game.defence.edit(write),
     };
 
     this.root = element('div', 'tuning-panel');
@@ -132,8 +129,8 @@ export class TuningPanel {
       element('div', 'tuning-section', 'Wave'),
       this.switch(
         'Waves (off: no Build Phase or Wave)',
-        () => this.game.waves,
-        (on) => (this.game.waves = on),
+        () => this.game.defence.waves,
+        (on) => (this.game.defence.waves = on),
       ),
       this.grid(this.wave, ENEMY_COLUMNS, [{ label: 'count', path: (type) => ['counts', type] }]),
       this.sharedValues(this.wave, (path) => path[0] !== 'counts'),
@@ -279,7 +276,7 @@ export class TuningPanel {
     const json = tablesAsJson({
       materials: this.table,
       ink: this.game.ink,
-      wave: this.game.wave,
+      wave: this.game.defence.table,
       enemies: this.enemyTable,
     });
     try {
