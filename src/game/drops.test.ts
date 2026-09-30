@@ -1,21 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS, type Colour } from '../materials/colour';
-import { DEFAULT_ENEMY_TABLE, type EnemyType } from '../materials/enemy-table';
+import { DEFAULT_ENEMY_TABLE, editEnemies, type EnemyType } from '../materials/enemy-table';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import { dragAlong } from '../stroke/pointer-paths';
 import type { Game } from './game';
 import { inLineLength } from './ink-table';
 import { games } from './test-support';
 
+/** A Core Zone wide enough to take in the whole Arena, px. */
+const WHOLE_ARENA = 10_000;
+
 /** A Game over a new Sandbox world; Ink costs on unless said otherwise. */
 const createGame = games();
 
-/** A Game with Waves on, whose Wave sends in one Crawler, then waits a long while. */
+/**
+ * A Game with Waves on, whose Wave sends in one Crawler, then waits a long
+ * while. Its Core Zone takes in the whole Arena, so it refuses nothing here.
+ */
 function wavesGame(options: { inkCosts?: boolean; seed?: number } = {}): Game {
   const game = createGame(options.inkCosts ?? true, {
     waves: true,
     worldOptions: { seed: options.seed ?? 1 },
   });
+  editEnemies(game.world.enemyTable, (table) => (table.coreZone = WHOLE_ARENA));
   game.editWave((table) => {
     table.counts = { crawler: 2, runner: 0, heavy: 0 };
     table.gap = 100;

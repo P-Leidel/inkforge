@@ -26,6 +26,9 @@ export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
 /** What a flash says about a Stroke or a Fill its Colour's Ink Tank can't pay for. */
 export const notEnough = (colour: Colour) => `Not enough ${colour}`;
 
+/** What a flash says about a Stroke or a Fill reaching outside the Core Zone during a Wave. */
+export const OUTSIDE_CORE_ZONE = 'Outside the Core Zone';
+
 /**
  * The commands drawing input issues, and the questions it asks: the Game
  * implements them. Drawing input never works out what a Stroke becomes,
@@ -68,7 +71,10 @@ export type DrawingPreview =
       readonly samples: readonly Vec2[] | null;
       /** Whether the Stroke being drawn would close into an Object if let go now. */
       readonly closes: boolean;
-      /** Whether it would be refused as an Object overlapping the Terrain or an Object. */
+      /**
+       * Whether it would be refused as an Object overlapping the Terrain or
+       * an Object, or during a Wave, for reaching outside the Core Zone.
+       */
       readonly refused: boolean;
       readonly pointer: Vec2 | null;
       /**
@@ -152,7 +158,8 @@ export class DrawingInput {
    * The button went up. The Eraser erases the rest of its path. A click
    * fills the Object under it, anything longer is a Stroke. Returns what to
    * flash if the Fill or the Stroke was refused: already filled, rejected by
-   * the Stroke pipeline, or more than its Ink Tank holds.
+   * the Stroke pipeline, outside the Core Zone during a Wave, or more than
+   * its Ink Tank holds.
    */
   release(): Flash | null {
     this.erase();
@@ -163,14 +170,30 @@ export class DrawingInput {
     const pointer = stroke[stroke.length - 1]!;
     if (isFillClick(stroke)) {
       const outcome = this.commands.fillAt(stroke[0]!, this.picked);
-      if (outcome.kind !== 'already-filled' && outcome.kind !== 'refused') return null;
+      let message: string;
+      switch (outcome.kind) {
+        case 'already-filled':
+          message = 'Already filled';
+          break;
+        case 'outside':
+          message = OUTSIDE_CORE_ZONE;
+          break;
+        case 'refused':
+          message = notEnough(outcome.colour);
+          break;
+        case 'filled':
+        case 'missed':
+          return null;
+      }
       const { outline } = outcome;
-      const message = outcome.kind === 'refused' ? notEnough(outcome.colour) : 'Already filled';
       return { path: [...outline, outline[0]!], message, pointer };
     }
     const outcome = this.commands.submitStroke(stroke, this.picked);
     if (outcome.kind === 'refused') {
       return { path: outcome.path, message: notEnough(outcome.colour), pointer };
+    }
+    if (outcome.kind === 'outside') {
+      return { path: outcome.path, message: OUTSIDE_CORE_ZONE, pointer };
     }
     if (outcome.kind !== 'rejected') return null;
     return { path: outcome.path, message: REJECTION_MESSAGES[outcome.reason], pointer };
@@ -192,7 +215,7 @@ export class DrawingInput {
 
   /**
    * What the preview shows now: the Stroke being drawn, whether it closes
-   * and is refused, and its pending cost; between Strokes, the pending cost
+   * and is refused (overlapping, or outside the Core Zone), and its pending cost; between Strokes, the pending cost
    * of the Fill under the pointer. The looks behind them are taken again
    * only as `pendingLook` says, and priced afresh each time, so an undo or an
    * F2 edit shows at once.
@@ -209,7 +232,7 @@ export class DrawingInput {
       colour,
       samples,
       closes: prospect?.kind === 'object',
-      refused: prospect?.refusal === 'overlaps',
+      refused: prospect?.refusal === 'overlaps' || prospect?.refusal === 'outside',
       pointer,
       cost: prospect?.cost ?? null,
     };
