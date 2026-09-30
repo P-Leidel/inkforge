@@ -887,11 +887,12 @@ describe('Material rules: Enemies', () => {
     ]);
   });
 
-  it('kills an Enemy below the screen, and removes anything but an Enemy beyond the Spawn edge', () => {
+  it('kills an Enemy below the screen, and removes anything else below it or beyond the Spawn edge, once', () => {
     const { rules, arena } = fakeRules<Breakable>(createMaterialTable());
     arena.below = [
       { thing: 'object', id: 7 },
       { thing: 'enemy', id: 1 },
+      { thing: 'object', id: 8 },
     ];
     arena.beyond = [
       { thing: 'enemy', id: 2 },
@@ -903,6 +904,7 @@ describe('Material rules: Enemies', () => {
 
     expect(arena.handed('kill')).toEqual([1]);
     expect(arena.handed('remove')).toEqual([
+      { thing: { thing: 'object', id: 7 }, why: 'left' },
       { thing: { thing: 'object', id: 8 }, why: 'left' },
       { thing: { thing: 'rubble', id: 3, colour: 'grey', radius: 6 }, why: 'left' },
     ]);

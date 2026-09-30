@@ -19,7 +19,7 @@ Where Enemies appear: beyond the Arena's edge, out of view and out of reach of d
 _Avoid_: Spawn point, gate, portal
 
 **Pit**:
-A gap in the Terrain open to the bottom of the screen. An Enemy that falls in dies when it drops below the screen.
+A gap in the Terrain open to the bottom of the screen. An Enemy that falls in dies when it drops below the screen; anything else that falls in is destroyed there.
 _Avoid_: Hole, chasm, dip (a gap with a floor is not a Pit)
 
 **Terrain**:

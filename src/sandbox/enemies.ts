@@ -174,11 +174,6 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     return enemy && this.viewOf(enemy);
   }
 
-  /** Whether an Enemy's damage has reached its type's HP, as the table is now. */
-  isDead(enemy: Walker): boolean {
-    return enemy.damage >= this.numbers.enemy(enemy.type).hp;
-  }
-
   /** The Enemy whose Party this is, if any. */
   byParty(party: PartyId): EnemyRecord | undefined {
     return this.enemies.find((enemy) => enemy.party === party);
