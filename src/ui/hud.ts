@@ -112,6 +112,8 @@ export class Hud {
       this.phase.setText(phase ? PHASE[phase].text : '');
       if (phase) this.phase.setColor(PHASE[phase].color);
     }
+    // A Level may have brought its own Spawn.
+    this.toCome.setY(this.game.world.arena.spawn.y - SPAWN_COUNT_RISE);
     const toCome = phase === 'wave' ? left : null;
     if (toCome === this.shownToCome) return;
     this.shownToCome = toCome;

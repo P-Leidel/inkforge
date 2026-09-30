@@ -1,8 +1,7 @@
-import type { Polygon } from '../geometry/polygon';
 import { add, scale, type Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
 import type { ReadonlyWaveTable } from '../game/wave-table';
-import { SANDBOX_ARENA, sandboxTerrainWithPit } from '../sandbox/arena';
+import { SANDBOX_ARENA, sandboxTerrainWithPit, type Arena } from '../sandbox/arena';
 import type { SandboxWorld, StrokeId } from '../sandbox/sandbox-world';
 import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
 
@@ -18,15 +17,15 @@ export interface Demo {
   /** Its own Wave, if it has one: loading it sets the Wave table in F2. */
   readonly wave?: ReadonlyWaveTable;
   /**
-   * Its own Terrain, if it has one: loading it clears the Arena onto this
-   * Terrain, and R keeps it. Without one it is the sandbox Arena's.
+   * Its own Arena, if it has one: loading it clears onto this Arena, and R
+   * keeps it. Without one it is the sandbox Arena.
    */
-  readonly terrain?: readonly Polygon[];
+  readonly arena?: Arena;
 }
 
-/** Clears the world onto `demo`'s Terrain (or the sandbox Arena's) and builds it there. */
+/** Clears the world onto `demo`'s Arena (or the sandbox Arena) and builds it there. */
 export function loadDemo(world: SandboxWorld, demo: Demo): void {
-  world.clear(demo.terrain);
+  world.clear(demo.arena);
   demo.build(world);
 }
 
@@ -510,7 +509,7 @@ export const PIT_RIGHT = 960;
  */
 export const PIT_DEMO: Demo = {
   name: 'Pit',
-  terrain: sandboxTerrainWithPit(PIT_LEFT, PIT_RIGHT),
+  arena: { ...SANDBOX_ARENA, terrain: sandboxTerrainWithPit(PIT_LEFT, PIT_RIGHT) },
   build(world) {
     const ground = SANDBOX_ARENA.spawn.y;
     world.spawn('crawler');

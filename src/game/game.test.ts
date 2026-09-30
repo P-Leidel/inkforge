@@ -812,23 +812,23 @@ describe('Clear, demos and stress tests', () => {
     expect(tanks(game)).toEqual(full(game));
   });
 
-  it("a demo's own Terrain stays through R; Clear and another demo bring the sandbox Arena's back", () => {
+  it("a demo's own Arena stays through R; Clear and another demo bring the sandbox Arena back", () => {
     const game = createGame(true);
-    const sandbox = game.world.arena.terrain;
+    const sandbox = game.world.arena;
     const bounce = GALLERY.find((demo) => demo.name === 'Bounce')!;
 
-    game.clear((world) => PIT_DEMO.build(world), PIT_DEMO.wave, PIT_DEMO.terrain);
-    expect(game.world.arena.terrain).toBe(PIT_DEMO.terrain);
+    game.clear((world) => PIT_DEMO.build(world), PIT_DEMO.wave, PIT_DEMO.arena);
+    expect(game.world.arena).toBe(PIT_DEMO.arena);
     runFor(game, 1);
     game.reset();
-    expect(game.world.arena.terrain).toBe(PIT_DEMO.terrain);
+    expect(game.world.arena).toBe(PIT_DEMO.arena);
 
-    game.clear((world) => bounce.build(world), bounce.wave, bounce.terrain);
-    expect(game.world.arena.terrain).toBe(sandbox);
+    game.clear((world) => bounce.build(world), bounce.wave, bounce.arena);
+    expect(game.world.arena).toBe(sandbox);
 
-    game.clear((world) => PIT_DEMO.build(world), PIT_DEMO.wave, PIT_DEMO.terrain);
+    game.clear((world) => PIT_DEMO.build(world), PIT_DEMO.wave, PIT_DEMO.arena);
     game.clear();
-    expect(game.world.arena.terrain).toBe(sandbox);
+    expect(game.world.arena).toBe(sandbox);
   });
 
   it('a clear or an R made below the Game fills every Tank, as Clear does', () => {

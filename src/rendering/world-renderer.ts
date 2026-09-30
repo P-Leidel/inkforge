@@ -1,7 +1,7 @@
 import type Phaser from 'phaser';
-import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
+import type { Arena } from '../sandbox/arena';
 import { Random } from '../sandbox/random';
 import {
   GRAVITY,
@@ -82,9 +82,9 @@ export class WorldRenderer {
   private readonly debris = new Debris(new Random(DEBRIS_SEED), GRAVITY, STEP_SECONDS);
   /** The simulated time the Debris has moved on to, s. */
   private debrisTime: number;
-  /** Where the Terrain is drawn, and the Terrain drawn there. */
+  /** Where the Terrain is drawn, and the Arena whose Terrain and Spawn are drawn there. */
   private readonly terrainGraphics: Graphics;
-  private drawnTerrain: readonly Polygon[] = [];
+  private drawnArena: Arena | null = null;
   private readonly debrisGraphics: Graphics;
   /** The dots of each Drop, flying to the gauges: visual only, in real time. */
   private readonly drops: DropBursts;
@@ -175,14 +175,14 @@ export class WorldRenderer {
   private drawTerrain(): void {
     const g = this.terrainGraphics;
     g.clear();
-    this.drawnTerrain = this.world.arena.terrain;
+    const arena = (this.drawnArena = this.world.arena);
     g.fillStyle(PALETTE.terrainFill, 1);
     g.lineStyle(2, PALETTE.terrainEdge, 1);
-    for (const polygon of this.drawnTerrain) {
+    for (const polygon of arena.terrain) {
       fillPolygon(g, polygon);
       strokePolygon(g, polygon);
     }
-    const y = this.world.arena.spawn.y - SPAWN_ARROW_RISE;
+    const y = arena.spawn.y - SPAWN_ARROW_RISE;
     g.fillStyle(PALETTE.spawn, 0.8);
     fillPolygon(g, [
       { x: 4, y: y - SPAWN_ARROW_WIDTH / 2 },
@@ -193,8 +193,8 @@ export class WorldRenderer {
 
   /** Draws a frame, `seconds` of real time after the last: Drop dots fly on in real time. */
   draw(seconds = 0): void {
-    // A gallery demo may have brought its own Terrain, or Clear the sandbox Arena's back.
-    if (this.world.arena.terrain !== this.drawnTerrain) this.drawTerrain();
+    // A Level may have brought its own Arena, or Clear the sandbox Arena back.
+    if (this.world.arena !== this.drawnArena) this.drawTerrain();
     const now = this.world.time;
     this.debris.advance(Math.round((now - this.debrisTime) / STEP_SECONDS));
     this.debrisTime = now;

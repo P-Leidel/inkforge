@@ -2,6 +2,7 @@ import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
+import type { Arena } from '../sandbox/arena';
 import {
   SandboxWorld,
   type AddedStroke,
@@ -505,17 +506,13 @@ export class Game {
    * left the world. With Waves on, the Game is then in the Build Phase, and
    * a demo that started physics is paused where it left it. `wave`, if
    * given, is a demo's own Wave: the Wave table becomes a copy of it.
-   * `terrain`, if given, is a demo's own Terrain; without it the Terrain is
-   * the sandbox Arena's again.
+   * `arena`, if given, is a demo's own Arena; without it the Arena is the
+   * sandbox Arena again.
    */
-  clear(
-    build?: (world: SandboxWorld) => void,
-    wave?: ReadonlyWaveTable,
-    terrain?: readonly Polygon[],
-  ): void {
+  clear(build?: (world: SandboxWorld) => void, wave?: ReadonlyWaveTable, arena?: Arena): void {
     if (wave) this.defence.edit((table) => Object.assign(table, createWaveTable(wave)));
     this.defence.reset();
-    this.world.clear(terrain);
+    this.world.clear(arena);
     this.reader.read();
     this.inkTanks.fill();
     this.strokes.clear();

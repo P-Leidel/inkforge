@@ -118,7 +118,7 @@ export class SandboxScene extends Phaser.Scene {
    */
   private loadDemo(demo: Demo): void {
     this.stressTest = null;
-    this.gameLayer.clear((world) => demo.build(world), demo.wave, demo.terrain);
+    this.gameLayer.clear((world) => demo.build(world), demo.wave, demo.arena);
     if (demo.wave) this.tuning.refresh();
     this.overlay.setSceneName(demo.name);
     this.frames.sinceStart.restart();

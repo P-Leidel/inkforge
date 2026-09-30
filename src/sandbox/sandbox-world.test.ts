@@ -4,6 +4,7 @@ import type { Vec2 } from '../geometry/vec2';
 import { capsuleOverlapsPolygon } from '../geometry/overlap';
 import { transformPoints } from '../geometry/transform';
 import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
+import { SANDBOX_ARENA, type Arena } from './arena';
 import { GRAVITY, SandboxWorld } from './sandbox-world';
 import { FIXED_BODIES } from './test-support';
 
@@ -48,6 +49,56 @@ describe('Sandbox world: Arena', () => {
   it('simulates the Terrain as one fixed body, and the Ink Core as another', () => {
     const world = createWorld();
     expect(world.bodyCount).toBe(FIXED_BODIES);
+  });
+
+  describe('Clear onto another Arena', () => {
+    /** The sandbox Arena with the Ink Core on the flat ground and the Spawn nearer the edge. */
+    const MOVED: Arena = {
+      ...SANDBOX_ARENA,
+      spawn: { x: -120, y: SANDBOX_ARENA.spawn.y },
+      core: { minX: 1000, minY: 784, maxX: 1096, maxY: 880 },
+    };
+
+    it('moves the Ink Core and the Spawn with it, and R keeps them', () => {
+      const world = createWorld();
+
+      world.clear(MOVED);
+
+      expect(world.arena).toBe(MOVED);
+      expect(world.inkCore.bounds).toEqual(MOVED.core);
+      expect(world.bodyCount).toBe(FIXED_BODIES);
+      world.spawn('crawler', { x: 800, y: 858 });
+      const sent = world.spawn('crawler');
+      expect(world.enemies.find((e) => e.id === sent)!.transform.x).toBeGreaterThan(MOVED.spawn.x);
+      world.togglePause();
+      world.reset();
+      expect(world.arena).toBe(MOVED);
+      expect(world.inkCore.bounds).toEqual(MOVED.core);
+      expect(world.bodyCount).toBe(FIXED_BODIES + 2);
+    });
+
+    it('an Enemy walks to the Ink Core where the Arena now has it and damages it', () => {
+      const world = createWorld();
+      world.clear(MOVED);
+      world.spawn('crawler', { x: 800, y: 858 });
+
+      world.togglePause();
+      for (let step = 0; step < 20 * 60 && world.enemyCount > 0; step++) world.step();
+
+      expect(world.enemyCount).toBe(0);
+      expect(world.inkCore.hp).toBeLessThan(world.inkCore.fullHp);
+    });
+
+    it('a Clear onto no other Arena brings the base Arena back, Ink Core and all', () => {
+      const world = createWorld();
+      world.clear(MOVED);
+
+      world.clear();
+
+      expect(world.arena).toBe(SANDBOX_ARENA);
+      expect(world.inkCore.bounds).toEqual(SANDBOX_ARENA.core);
+      expect(world.bodyCount).toBe(FIXED_BODIES);
+    });
   });
 });
 
