@@ -8,7 +8,7 @@ A 2D side-view physics defense game: the player draws lines and objects with sca
 
 **Arena**:
 One fixed, non-scrolling screen seen from the side, with gravity, terrain, a Spawn and the Ink Core.
-_Avoid_: Map, level screen
+_Avoid_: Map, level screen (a Level is what an Arena starts with)
 
 **Ink Core**:
 The structure the player defends. Only an Enemy reaching it damages it; the run is lost when its HP reaches zero.
@@ -42,8 +42,12 @@ _Avoid_: Round, combat phase
 The cycle of phases the player goes through: the Build Phase, then a Wave, and back to the Build Phase. The Analysis and the Aftermath join it in milestone 5. It says which phase is under way, and it stops everything once the Ink Core is destroyed.
 _Avoid_: Game loop, phase machine, round
 
+**Level**:
+Everything an Arena starts with: the Arena itself (its Terrain, Spawn and Ink Core), its Wave, its Ink Tank maximums, and whatever is already built there, for free. Loading a Level clears the Arena and sets it up. The gallery demos, the stress tests and the sandbox are Levels too.
+_Avoid_: Stage, map, arena description, scenario
+
 **Campaign**:
-The first mode: a fixed sequence of handmade arenas and waves. Ink Tanks reset to a set amount every Wave.
+The first mode: a fixed sequence of handmade Levels. Ink Tanks reset to a set amount every Wave.
 
 **Roguelite Mode**:
 The mode unlocked by beating the Campaign's final boss. Ink carries over between Waves, and the player picks upgrades.
