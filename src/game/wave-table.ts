@@ -2,7 +2,8 @@ import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
 
 /*
  * The Wave table: the Wave's list, the Enemies a Wave sends in and the gap
- * between them. Pure data, owned by the Game, edited in F2's Wave section.
+ * between them, and the size of the Core Zone. Pure data, owned by the
+ * Game's Defence loop, edited in F2's Wave section.
  * A gallery demo can bring a Wave of its own.
  */
 
@@ -11,9 +12,11 @@ export interface WaveTable {
   counts: Record<EnemyType, number>;
   /** Seconds between one arrival and the next, at the least. */
   gap: number;
+  /** Diameter (px) of the Core Zone around the Ink Core, the only place to draw during a Wave. */
+  coreZone: number;
 }
 
-/** The Wave table, read only: the Game's is edited through `Game.editWave`. */
+/** The Wave table, read only: the Game's is edited through its Defence loop's `edit`. */
 export type ReadonlyWaveTable = { readonly [K in keyof WaveTable]: Readonly<WaveTable[K]> };
 
 /**
@@ -27,6 +30,7 @@ export const DEFAULT_WAVE_TABLE: ReadonlyWaveTable = {
     heavy: 2,
   },
   gap: 2,
+  coreZone: 480,
 };
 
 /** A fresh, editable copy of `table`, the default Wave table if none. */
@@ -38,7 +42,7 @@ export function createWaveTable(table: ReadonlyWaveTable = DEFAULT_WAVE_TABLE): 
  * The Enemies a Wave sends in, in the order they arrive: every Crawler,
  * then every Runner, then every Heavy. A count is taken whole, never below 0.
  */
-export function arrivals(table: ReadonlyWaveTable): EnemyType[] {
+export function arrivals(table: Pick<ReadonlyWaveTable, 'counts'>): EnemyType[] {
   return ENEMY_TYPES.flatMap((type) => {
     const count = Math.max(0, Math.floor(table.counts[type]));
     return Array.from({ length: Number.isFinite(count) ? count : 0 }, () => type);

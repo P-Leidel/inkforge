@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inkforge Architecture Review 6</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f1f2f4;
+    --surface: #ffffff;
+    --ink: #15171c;
+    --muted: #5b616e;
+    --rule: #d7dae0;
+    --strong: #1d7f36;
+    --strong-bg: #e1f3e5;
+    --explore: #8c5f0e;
+    --explore-bg: #fbefd6;
+    --spec: #4e5563;
+    --spec-bg: #e6e8ec;
+    --tag-bg: #eceef2;
+    --note-bg: #eef0f4;
+    --leak: #b8322a;
+    --leak-bg: #fbe6e3;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d2027;
+      --surface: #252933;
+      --ink: #e8e2d0;
+      --muted: #9aa0ad;
+      --rule: #3a404d;
+      --strong: #62d98b;
+      --strong-bg: #1d3a28;
+      --explore: #f0c05a;
+      --explore-bg: #3b321d;
+      --spec: #c0c5cf;
+      --spec-bg: #333845;
+      --tag-bg: #2f3440;
+      --note-bg: #2c313c;
+      --leak: #f07a6e;
+      --leak-bg: #3d2524;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d2027;
+    --surface: #252933;
+    --ink: #e8e2d0;
+    --muted: #9aa0ad;
+    --rule: #3a404d;
+    --strong: #62d98b;
+    --strong-bg: #1d3a28;
+    --explore: #f0c05a;
+    --explore-bg: #3b321d;
+    --spec: #c0c5cf;
+    --spec-bg: #333845;
+    --tag-bg: #2f3440;
+    --note-bg: #2c313c;
+    --leak: #f07a6e;
+    --leak-bg: #3d2524;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+  h1 { font-size: 1.9rem; line-height: 1.15; }
+  h2 { font-size: 1.45rem; line-height: 1.2; }
+  p { margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  code { font-size: .9em; }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+  .label { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+
+  .page { max-width: 72rem; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  .head { display: flex; flex-direction: column; gap: 16px; }
+  .titlerow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .scope { font-size: 14px; color: var(--muted); max-width: 52rem; }
+  .legend { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .swatch { display: inline-block; width: 24px; height: 16px; }
+  .swatch-seam { display: inline-block; width: 32px; border-top: 1.5px dashed var(--muted); }
+
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .points { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 60rem; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 8px; }
+  .tile { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: 0 6px; font-size: 13px; line-height: 1.35; }
+  .tile .n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--muted); }
+  .tile .st { grid-column: 2; font-size: 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tile.done { background: var(--note-bg); border-color: transparent; }
+  .tile.done .st { color: var(--muted); }
+  .tile.keep .st { color: var(--strong); }
+  .tile.park .st { color: var(--explore); }
+
+  .candidates { display: flex; flex-direction: column; gap: 36px; }
+  .cand { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 16px; }
+  .cand-head { display: flex; flex-direction: column; gap: 8px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+  .b-strong { background: var(--strong-bg); color: var(--strong); }
+  .b-explore { background: var(--explore-bg); color: var(--explore); }
+  .b-tag { background: var(--tag-bg); color: var(--muted); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .files { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+  .files .note { opacity: .75; }
+
+  .ba { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .prose3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .prose3 > div { display: flex; flex-direction: column; gap: 4px; }
+  .wins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wins li::before { content: "▪"; color: var(--strong); margin-right: 8px; }
+  .callout { background: var(--explore-bg); border-left: 3px solid var(--explore); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+  .evidence { background: var(--note-bg); border-left: 3px solid var(--muted); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+
+  .also ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 64rem; }
+
+  .top { background: var(--surface); border: 3px solid var(--strong); border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .top .label { color: var(--strong); }
+  .top p { max-width: 52rem; }
+
+  @media (min-width: 640px) {
+    .page { padding-inline: 24px; padding-block: 56px 80px; }
+    h1 { font-size: 2.3rem; }
+    h2 { font-size: 1.6rem; }
+    .cand { padding: 28px; }
+    .panel { padding: 20px; }
+    .top { padding: 32px; }
+  }
+  @media (min-width: 768px) { .prose3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .ba { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Diagram sheets are drafting paper in both themes, so the hand-drawn diagrams read the same. */
+  .sheet { background: #fbfbfa; color: #16181d; border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-x: auto; min-width: 0; }
+  /* Mermaid sheets follow the viewer's theme, as the Mermaid rendering does. */
+  .sheet.themed { background: var(--surface); color: var(--ink); }
+  .sheet.themed .s-muted { color: var(--muted); }
+  .s-muted { color: #6a707c; }
+  .s-label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tiny { font-size: 11px; }
+  .small { font-size: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 3px 8px; font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .pad { padding: 8px 10px; }
+  .pad-lg { padding: 14px 16px; }
+  .mod { border: 1.5px solid #5b616e; background: #ffffff; border-radius: 4px; }
+  .plan { border: 1.5px dashed #7a808c; background: #ffffff; border-radius: 4px; color: #4a505b; }
+  .leakbox { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; border-radius: 4px; }
+  .okbox { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; border-radius: 4px; }
+  /* A deep module is drawn like the game's black ink: a heavy dark core in a pale rim. */
+  .deep { background: #050506; color: #eef0f3; border: 3px solid #8a909e; border-radius: 5px; }
+  .deep .faded { color: #8f96a3; }
+  .deep .chip { border: 1px solid #3c414c; color: #d6d9df; border-radius: 3px; }
+  .deep .chip.if { border-color: #eef0f3; color: #ffffff; font-weight: 600; }
+  .mod .chip, .plan .chip { border: 1px solid #c9cdd4; border-radius: 3px; background: #ffffff; color: #2c3038; }
+  .chip.red { border: 1px solid #e3a39c; background: #fde8e5; color: #8f1f16; border-radius: 3px; }
+  .chip.dash { border: 1px dashed #7a808c; background: #ffffff; color: #4a505b; border-radius: 3px; }
+  .seam { border-top: 1.5px dashed #7a808c; }
+  .arrow { text-align: center; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: #6a707c; }
+  .stack { display: flex; flex-direction: column; gap: 12px; min-width: 330px; }
+  .row { display: grid; gap: 8px; }
+  .row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .frame { border: 1.5px dashed #7a808c; border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .frame.solid { border-style: solid; border-color: #5b616e; background: #ffffff; }
+  .strong-t { font-weight: 600; font-size: 12.5px; }
+  .newtag { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; background: #d23a2e; color: #ffffff; border-radius: 2px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
+  .newtag.grey { background: #6a707c; }
+
+  /* Questions and bands */
+  .qrows { display: flex; flex-direction: column; gap: 6px; min-width: 330px; }
+  .qrow { padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .qrow b { font-size: 12.5px; font-weight: 600; }
+  .qrow span { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .band { border-left: 4px solid #7a808c; background: #ffffff; padding: 6px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; color: #2c3038; }
+  .band .t { color: #6a707c; white-space: nowrap; }
+  .band.leak { border-left-color: #d23a2e; background: #fde8e5; color: #8f1f16; }
+  .band.leak .t { color: #8f1f16; }
+  .band.planned { border-left-style: dashed; background: #f6f7f8; color: #4a505b; }
+  .band.thick { border-left: 6px solid #050506; background: #050506; color: #eef0f3; padding: 14px 12px; }
+  .band.thick .t { color: #8f96a3; }
+
+  /* C3: what a thing's numbers come from */
+  .things { display: grid; grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; min-width: 360px; align-items: baseline; }
+  .things .h { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: #6a707c; font-weight: 600; }
+  .things .k { color: #16181d; font-weight: 600; }
+  .things .v { color: #2c3038; }
+  .things .bad { color: #8f1f16; }
+  .things .q { color: #6a707c; font-style: italic; }
+
+  /* C6: a kind across the World renderer */
+  .grid9 { display: grid; grid-template-columns: minmax(5.6rem, auto) repeat(9, 2.35rem) 2.4rem; gap: 5px 2px; align-items: center; min-width: 470px; }
+  .colhead { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; line-height: 1.15; color: #4a505b; }
+  .rowhead { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; color: #2c3038; line-height: 1.25; }
+  .cell { width: 13px; height: 13px; border-radius: 999px; justify-self: center; display: inline-block; }
+  .c-on { background: #16181d; }
+  .c-off { border: 1.5px solid #d7dae0; }
+  .c-plan { border: 1.5px dashed #d23a2e; }
+  .tot { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; font-weight: 600; color: #8f1f16; font-variant-numeric: tabular-nums; }
+  .key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: #6a707c; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .key span { display: flex; align-items: center; gap: 6px; }
+  .kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .kinds .chip { text-align: center; }
+
+  pre.mermaid { background: transparent; margin: 0; font-size: 13px; }
+  pre.mermaid .label { text-transform: none; letter-spacing: normal; font-size: inherit; font-weight: inherit; color: inherit; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
+</head>
+<body>
+<main class="page">
+
+  <header class="head">
+    <div class="titlerow">
+      <h1>Inkforge architecture review</h1>
+      <span class="mono meta">P-Leidel/inkforge · 80b4bd5 (#109) · 2026-09-30</span>
+    </div>
+    <p class="scope">Scope: <code>src/</code> through the end of milestone 4, weighted toward what milestone 4 changed: <code>src/game/</code>, the Enemies, the Material rules, the Sandbox world, the gallery and the scene. Each candidate is judged against milestone 5, the defence loop (Analysis, Build Phase, Wave, Aftermath, sequences of Waves, three arenas), and against milestone 6's Siege Walker. All 848 tests pass on 80b4bd5. Only #94 is still open: the exit test, which a person has to run.</p>
+    <div class="legend">
+      <span class="label">Legend</span>
+      <span class="item"><span class="swatch mod"></span>module</span>
+      <span class="item"><span class="swatch plan"></span>milestone 5 or later</span>
+      <span class="item"><span class="swatch-seam"></span>seam</span>
+      <span class="item"><svg width="30" height="10" aria-hidden="true"><line x1="0" y1="5" x2="22" y2="5" stroke="#d23a2e" stroke-width="2" stroke-dasharray="4 3"/><path d="M22 1 L29 5 L22 9 Z" fill="#d23a2e"/></svg>leakage</span>
+      <span class="item"><span class="swatch deep"></span>deep module, drawn like black ink</span>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="queue-h">
+    <span id="queue-h" class="label">The queue from the review after #71, today</span>
+    <div class="tiles">
+      <div class="tile done"><span class="n">#72</span><span>Keep the Ink Tanks in one module</span><span class="st">done · ink-tanks.ts</span></div>
+      <div class="tile done"><span class="n">#75</span><span>Let the Material rules own the order of a step</span><span class="st">done · rules.step()</span></div>
+      <div class="tile done"><span class="n">#76</span><span>Say what a thing is in one place</span><span class="st">done · numbers.ts</span></div>
+      <div class="tile done"><span class="n">#77</span><span>Shape the physics seam for walkers</span><span class="st">done</span></div>
+      <div class="tile done"><span class="n">#78</span><span>Draw each kind of Arena contents in one place</span><span class="st">done · rendering/kinds</span></div>
+      <div class="tile done"><span class="n">#79</span><span>Ask the Arena query what a new Stroke meets</span><span class="st">done</span></div>
+      <div class="tile done"><span class="n">#85–93</span><span>M4: Enemies, Pressing, damage, Runner and Heavy, Waves, Drops, Pit, Core Zone</span><span class="st">done in #101–#109</span></div>
+      <div class="tile park"><span class="n">#94</span><span>M4 exit test: different answers and frame rate</span><span class="st">open, for a person</span></div>
+    </div>
+    <ul class="points">
+      <li>The refactors made before milestone 4 paid off. Enemy phases went into <code>rules.step()</code> in one tested order, Locked Ink and Wave Ink went into the Ink Tanks, and the Enemy numbers went into <code>numbers.ts</code>.</li>
+      <li>The friction now is in the modules milestone 4 grew by accretion. The Wave sits inside a wide Game. There are two ways to load an Arena. The Enemy's rules are spread across a 27-member port.</li>
+    </ul>
+  </section>
+
+  <section id="candidates" class="candidates" aria-label="Candidates">
+
+    <!-- C1 -->
+    <article id="c1" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 1 · before milestone 5's defence loop</span>
+        <h2>Give the Wave its own module</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">inside the Game layer, as ADR 0009 says</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/game.ts <span class="note">(Phase, Wave 143–157 · waves, phase, toCome, wave, editWave 236–275 · coreZone, insideCoreZone, zoned 276–295 · outside checks 365, 372, 396, 403, 458–459 · togglePause 549–566 · endWave 568 · arrive 584 · endWaveIfOver 601 · clear 640 · advance and step 667–681)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(coreDestroyed 443 · togglePause guard 664 · resume guard 683 · step stops running 775)</span></li>
+        <li>src/materials/enemy-table.ts <span class="note">(coreZone 59: the Core Zone size is kept in the enemy table)</span> · src/ui/hud.ts <span class="note">(99: reads world.coreDestroyed)</span></li>
+        <li>src/rendering/core-zone-drawing.ts <span class="note">(2: imports Phase and CoreZone from game.ts)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the Wave is spread across the Game, and the lose rule has three owners</span>
+          <div class="stack">
+            <div class="frame solid">
+              <span class="strong-t">Game · 878 lines · about 25 public members · four jobs</span>
+              <span class="s-label s-muted">Wave: phase, arrivals, end</span>
+              <div class="chips"><span class="chip red">waves</span><span class="chip red">phase</span><span class="chip red">toCome</span><span class="chip red">current</span><span class="chip red">arrive</span><span class="chip red">endWaveIfOver</span><span class="chip red">endWave</span><span class="chip red">around</span><span class="chip red">step ≈ advance</span></div>
+              <span class="s-label s-muted">Core Zone: rule written at 5 sites</span>
+              <div class="chips"><span class="chip red">coreZone</span><span class="chip red">zoned</span><span class="chip red">outside ×4</span><span class="chip red">refusal order ×2</span></div>
+              <span class="s-label s-muted">Ink pricing, what was paid, undo, looks</span>
+              <div class="chips"><span class="chip dash">priceOf</span><span class="chip dash">charge</span><span class="chip dash">refund</span><span class="chip dash">takeBack</span><span class="chip dash">prospect</span></div>
+            </div>
+            <div class="row row-3">
+              <div class="qrow leakbox"><b>Sandbox world</b><span>won't start once the Ink Core is destroyed · 4 sites</span></div>
+              <div class="qrow leakbox"><b>Enemy table</b><span>holds the Core Zone's size</span></div>
+              <div class="qrow leakbox"><b>HUD</b><span>reads world.coreDestroyed</span></div>
+            </div>
+            <div class="qrow plan"><b>Milestone 5<span class="newtag grey">next</span></b><span>Analysis · Aftermath (Freeze again) · sequences of Waves · per-level Tanks · Campaign reset every Wave → all of it would land in this Game</span></div>
+          </div>
+        </div>
+
+        <div class="sheet">
+          <span class="s-label s-muted">After: the Game prices Ink; the Wave decides phases</span>
+          <div class="stack">
+            <div class="row row-3">
+              <div class="mod pad tiny"><b>Game</b><br>prices · what was paid · undo · asks the Wave what is allowed</div>
+              <div class="mod pad tiny"><b>HUD, Core Zone drawing</b><br>draw the Wave's reading</div>
+              <div class="mod pad tiny"><b>Sandbox world</b><br>physics only: starts when told</div>
+            </div>
+            <div class="arrow">↓ start · each step · may draw here? · may undo? · reading ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Wave</span>
+                <div class="chips"><span class="chip if">start</span><span class="chip if">beforeStep / afterStep</span><span class="chip if">allows(points)</span><span class="chip if">reading</span></div>
+                <div class="chips faded tiny">
+                  <span class="chip">Build Phase or Wave</span><span class="chip">arrivals and gap</span><span class="chip">lane must be clear</span><span class="chip">ends: none left, or Ink Core destroyed</span><span class="chip">Core Zone and its size</span><span class="chip">Tanks lock and unlock</span><span class="chip">M5: Analysis</span><span class="chip">M5: Aftermath</span><span class="chip">M5: next Wave in the sequence</span>
+                </div>
+              </div>
+            </div>
+            <div class="arrow">tested with a fake world: counts of Enemies, a spawn lane, Ink Core HP</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The Wave's rules are private state and helpers spread through the Game. The Game also prices Ink, tracks what was paid, keeps undo and answers looks. The Core Zone rule is written at five sites and its refusal order twice. "Ink Core destroyed" is decided in three modules, and one of them is the Sandbox world, below the Game. Every Wave test runs a real Game over Box2D. Milestone 5's loop is all phases, and the only place for it today is this Game.</p></div>
+        <div><span class="label">Solution</span><p>A Wave module in <code>src/game/</code> holds the phase, the arrivals, the end, the Core Zone and the lose rule. The Game asks it whether a Stroke may be drawn and whether undo is allowed, and hands it each step. The Sandbox world stops refusing to start. The HUD and the Core Zone drawing read the Wave's reading. The Game's <code>step</code> and <code>advance</code> share one way of running the step hooks.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>locality: phases in one module</li>
+          <li>lose rule gets one owner</li>
+          <li>Core Zone rule: 5 sites → 1</li>
+          <li>M5 loop lands in one place</li>
+          <li>Wave tested without Box2D</li>
+          <li>Game shrinks to Ink and undo</li>
+        </ul></div>
+      </div>
+      <div class="evidence">This settles a replay invariant that is written twice. <code>Game.step</code> (<code>game.ts:674</code>) repeats by hand the before, step, after order that <code>SandboxWorld.advance</code> runs (<code>sandbox-world.ts:798</code>), and exact replays depend on that order.</div>
+    </article>
+
+    <!-- C2 -->
+    <article id="c2" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 2 · before milestone 5's three arenas</span>
+        <h2>Load an Arena one way, through the Game</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">after C1, which it feeds</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/game.ts <span class="note">(clear(build, wave, terrain) 640–661: positional, grown one argument per milestone)</span></li>
+        <li>src/gallery/gallery.ts <span class="note">(Demo 12–24: wave declared, set by no demo · loadDemo 28–31: builds on the world, skips the Game and the wave)</span></li>
+        <li>src/gallery/gallery.test.ts <span class="note">(59, 68, 80, 316, 326: tested through loadDemo, not the path the player runs)</span></li>
+        <li>src/scenes/sandbox-scene.ts <span class="note">(110, 119–122: the path the player runs, plus a tuning refresh)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet themed">
+          <span class="s-label s-muted">Before: two load paths, and the tested one is not the played one</span>
+          <pre class="mermaid">
+flowchart TB
+  S[Scene] -->|"clear(build, wave, terrain)"| G[Game]
+  G -->|"clear(terrain)"| W[Sandbox world]
+  G -->|"build(world)"| W
+  T[gallery tests] -->|"loadDemo(world, demo)"| W
+  T -.->|"skips the Game, and demo.wave"| G
+  M5[["M5: three arenas · Wave sequence · Tank amounts · Ink Core place"]] -.-> G
+  classDef leak stroke:#d23a2e,stroke-width:2px,stroke-dasharray:4 3;
+  classDef plan stroke-dasharray:4 4;
+  class T leak
+  class M5 plan
+          </pre>
+        </div>
+        <div class="sheet themed">
+          <span class="s-label s-muted">After: one Arena description, one load</span>
+          <pre class="mermaid">
+flowchart TB
+  S[Scene] -->|"load(arena)"| G[Game]
+  T[gallery tests] -->|"load(arena)"| G
+  A[("Arena description: Terrain · Ink Core · Waves · Tanks · build")] --- G
+  G --> W[Sandbox world]
+  G --> V[Wave, from C1]
+          </pre>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The scene loads a demo through <code>Game.clear(build, wave, terrain)</code>. The gallery tests load it through <code>loadDemo</code>, which builds on the Sandbox world and never sees the Game. <code>Demo.wave</code> is declared, set by no demo and tested nowhere. Milestone 5 adds three arenas, each with its own Terrain, sequence of Waves and Tank amounts. Each would become another positional argument on a path the tests don't run.</p></div>
+        <div><span class="label">Solution</span><p>An Arena description names everything an Arena starts with. One Game call loads it: clear, Terrain, Waves (handed to C1's Wave), Tanks, then the build. The gallery demos, the sandbox Arena and milestone 5's arenas are all descriptions. The tests load them the same way the scene does.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>interface: one load, one argument</li>
+          <li>tests cross the played seam</li>
+          <li>leverage: arenas are data</li>
+          <li>dead <code>Demo.wave</code> path goes</li>
+        </ul></div>
+      </div>
+      <div class="callout">Gallery demos and stress tests are free, and ADR 0009 keeps it that way. The description has to keep that: a build still runs below the Game at price 0, as <code>clear(build)</code> runs it today.</div>
+    </article>
+
+    <!-- C3 -->
+    <article id="c3" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 3 · before milestone 6's Siege Walker</span>
+        <h2>Put the Enemy's rules in one module behind the Material rules</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">keeps #75's one step order</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/material-rules.ts <span class="note">(RulesArena 207–272: 27 members, 10 for Enemies · press 391–416 · reachInkCore 422 · kill 438 · drop 458 · isDead 465 · hurt 474)</span></li>
+        <li>src/sandbox/enemies.ts <span class="note">(isDead 177: same formula, no callers · stalled and walking force 263–271 · heading 250 · Spawn stand position computed twice 201–205, 218–221)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(297–329: each port member wired as a one-line forward)</span></li>
+        <li>src/sandbox/rules-test-support.ts <span class="note">(352 lines of fakes)</span> · src/sandbox/drops.ts <span class="note">(22 lines, one caller)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: interface mass vs implementation mass, per module</span>
+          <div class="stack">
+            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:end;min-height:220px">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div class="leakbox" style="height:120px;display:flex;align-items:center;justify-content:center"><span class="tiny">port: 27</span></div>
+                <div class="mod" style="height:90px;display:flex;align-items:center;justify-content:center"><span class="tiny">rules</span></div>
+                <span class="s-label s-muted">Material rules</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div class="mod" style="height:70px;display:flex;align-items:center;justify-content:center"><span class="tiny">spawn · walk · heading · stalled · isDead · view</span></div>
+                <div class="mod" style="height:60px;display:flex;align-items:center;justify-content:center"><span class="tiny">records</span></div>
+                <span class="s-label s-muted">Enemies kind</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div class="mod" style="height:24px;display:flex;align-items:center;justify-content:center"><span class="tiny">drawDrop</span></div>
+                <div class="mod" style="height:24px;display:flex;align-items:center;justify-content:center"><span class="tiny">22 lines</span></div>
+                <span class="s-label s-muted">drops.ts</span>
+              </div>
+            </div>
+            <div class="arrow">An Enemy's life: arrive → walk → stalled? → press → hurt → reach the Ink Core or die → Drop, across 6 modules</div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the Material rules call one Enemy module in their order</span>
+          <div class="stack">
+            <div class="mod pad tiny"><b>Material rules</b> · <code>step()</code> keeps the whole order · port loses its Enemy half</div>
+            <div class="arrow">↓ walk(seconds) · afterStep(contacts) → worn, killed ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Enemy rules</span>
+                <div class="chips"><span class="chip if">walk</span><span class="chip if">press</span><span class="chip if">hurt</span><span class="chip if">settle deaths</span></div>
+                <div class="chips faded tiny"><span class="chip">stalled</span><span class="chip">heading</span><span class="chip">dead? (once)</span><span class="chip">reach the Ink Core</span><span class="chip">Pit deaths</span><span class="chip">Drops from random</span><span class="chip">M6: Siege Walker legs</span></div>
+              </div>
+            </div>
+            <div class="arrow">tested with a small Enemy port, not the 27-member fake</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The Material rules decide Pressing, but the "stalled" fact it depends on is worked out inside the Enemies kind. "Is it dead" is written twice, and one copy is dead code. Ten of the port's 27 members exist only for Enemies. Every rules test pays for a 352-line fake. The Siege Walker is a multi-legged heavy walker, and it would widen both halves.</p></div>
+        <div><span class="label">Solution</span><p>One Enemy rules module owns walking, stalled, Pressing, hurting, reaching the Ink Core, deaths and Drops. The Material rules keep the one step order from #75 and call into it at the two points they already have. Its port holds only what Enemies need.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>locality: an Enemy's life, one module</li>
+          <li>Material rules port: 27 → ~17</li>
+          <li>one "dead" rule</li>
+          <li>Siege Walker lands in one place</li>
+        </ul></div>
+      </div>
+      <div class="callout">This is Worth exploring rather than Strong because the Material rules are already deep, with two methods behind their step, and the full-world Enemy tests cover the behaviour. It pays off when the Siege Walker is specced. Delete the dead <code>isDead</code> in <code>enemies.ts:177</code> now, whatever you decide.</div>
+    </article>
+
+    <!-- C4 -->
+    <article id="c4" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 4</span>
+        <h2>Hand the scene one reading to draw and tune</h2>
+        <div class="badges"><span class="badge b-tag">Speculative</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/scenes/sandbox-scene.ts <span class="note">(63: TuningPanel gets world.materials and world.enemyTable, past the Game · 65: WorldRenderer gets the world · 199–200: the two render inputs joined here)</span></li>
+        <li>src/rendering/core-zone-drawing.ts <span class="note">(2: imports from game.ts)</span> · src/rendering/kinds/enemies-drawing.ts <span class="note">(91–103)</span> · ink-core-drawing.ts <span class="note">(55–64: the same HP bar maths)</span></li>
+      </ul>
+      <div class="ba">
+        <div class="sheet themed">
+          <span class="s-label s-muted">Before</span>
+          <pre class="mermaid">
+flowchart LR
+  Sc[Scene] --> WR[World renderer]
+  Sc --> CZ[Core Zone drawing]
+  Sc --> TP[Tuning panel]
+  WR --> W[Sandbox world]
+  CZ --> G[Game]
+  TP -.->|"materials, enemyTable"| W
+  TP --> G
+  linkStyle 5 stroke:#d23a2e,stroke-width:2px;
+          </pre>
+        </div>
+        <div class="sheet themed">
+          <span class="s-label s-muted">After</span>
+          <pre class="mermaid">
+flowchart LR
+  Sc[Scene] --> WR[World renderer]
+  Sc --> TP[Tuning panel]
+  WR --> G[Game reading: world + Wave]
+  TP --> G
+          </pre>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The renderer takes the world, the Core Zone drawing takes the Game, and the scene joins the two. The tuning panel edits tables that belong to the world while going past the Game. The HP bar maths is copied into two drawings.</p></div>
+        <div><span class="label">Solution</span><p>The Game hands out one reading of what to draw, the world's and the Wave's together, and one set of tables to tune. The HP bar becomes one shared drawing.</p></div>
+        <div><span class="label">Wins</span><ul class="wins"><li>one render input</li><li>one HP bar</li></ul></div>
+      </div>
+      <div class="callout">This is Speculative: nothing is wrong today, and the render budget test guards drawing. Revisit it after C1, when the Aftermath and the Analysis need drawing.</div>
+    </article>
+  </section>
+
+  <section class="panel also" aria-labelledby="also-h">
+    <span id="also-h" class="label">Also noticed, not candidates</span>
+    <ul>
+      <li><b>A Pit keeps what isn't an Enemy.</b> <code>kill()</code> only acts on the Enemies that <code>belowScreen()</code> returns (<code>material-rules.ts:446</code>). Rubble and Objects that fall into a Pit keep falling and simulating forever. The spec doesn't say what should happen to them. Ask before milestone 5 puts Pits in real arenas: should they be removed as they are over the Spawn edge?</li>
+      <li><b>Spawn stand position</b> is computed twice in <code>enemies.ts</code> (201–205, 218–221), and the Ink Core's centre is computed twice (<code>enemies.ts:252</code>, <code>game.ts:281</code>). These are small copies that could drift.</li>
+      <li><b><code>drops.ts</code></b> fails the deletion test, since deleting it would only move its code. It is harmless. If C3 happens, fold it into the Enemy rules module.</li>
+      <li><b>Sandbox world</b> is shallow for its size: about 15 forwarding getters and a 95-line constructor of wiring. Its depth is in snapshot, rebuild and step. C1 and C3 each take a little out of it, so it isn't a candidate of its own.</li>
+    </ul>
+  </section>
+
+  <section class="top" aria-labelledby="top-h">
+    <span id="top-h" class="label">Top recommendation</span>
+    <h2><a href="#c1">Give the Wave its own module</a></h2>
+    <p>Milestone 5 is the defence loop: Analysis, Build Phase, Wave, Aftermath, in sequences. Every part of it is a phase rule, and today the only place for one is an 878-line Game that already does four jobs, with the lose rule split across three modules. Pull the Wave out first, then do <a href="#c2">C2</a> so arenas load their Waves into it.</p>
+  </section>
+
+</main>
+</body>
+</html>

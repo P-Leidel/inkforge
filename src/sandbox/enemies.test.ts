@@ -858,35 +858,20 @@ describe('The Ink Core destroyed', () => {
     return world;
   }
 
-  it('stops physics once enough Crawlers reach the Ink Core, and Space doesn’t start it again', () => {
-    const world = twoAtTheCore();
-
-    const stopped = stepUntil(world, 10, () => !world.isRunning);
-
-    expect(stopped).toBe(true);
-    expect(world.inkCore.hp).toBe(0);
-    expect(world.coreDestroyed).toBe(true);
-    world.togglePause();
-    expect(world.isRunning).toBe(false);
-    expect(world.advance(1)).toBe(0);
-  });
-
   it('lets R start over: the Ink Core whole and the Crawlers back, and a retry plays out the same', () => {
     const world = twoAtTheCore();
     world.togglePause(); // the snapshot
     const started = world.enemies;
-    stepUntil(world, 10, () => !world.isRunning);
+    stepUntil(world, 10, () => world.inkCore.hp === 0);
     const time = world.time;
 
     world.reset();
     expect(world.inkCore.hp).toBe(2);
     expect(world.enemies).toEqual(started);
     world.togglePause();
-    expect(world.isRunning).toBe(true);
-    stepUntil(world, 10, () => !world.isRunning);
+    stepUntil(world, 10, () => world.inkCore.hp === 0);
 
     expect(world.time).toBe(time);
-    expect(world.coreDestroyed).toBe(true);
   });
 });
 

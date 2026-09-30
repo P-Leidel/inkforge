@@ -56,8 +56,8 @@ describe('Enemy table', () => {
   });
 
   it('shares floor wear, the Ink Core’s HP and the Core Zone’s size', () => {
-    const { floorWear, coreHp, coreZone } = DEFAULT_ENEMY_TABLE;
-    expect({ floorWear, coreHp, coreZone }).toEqual({ floorWear: 1, coreHp: 10, coreZone: 480 });
+    const { floorWear, coreHp } = DEFAULT_ENEMY_TABLE;
+    expect({ floorWear, coreHp }).toEqual({ floorWear: 1, coreHp: 10 });
   });
 
   it('never lets a bounce gain energy, and walks by its push, not its grip', () => {

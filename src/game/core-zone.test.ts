@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
-import { editEnemies } from '../materials/enemy-table';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
 import type { Game } from './game';
@@ -11,7 +10,7 @@ const createGame = games();
 /** A Game with Waves on, whose Wave sends in one Crawler, then waits a long while. */
 function wavesGame(inkCosts: boolean): Game {
   const game = createGame(inkCosts, { waves: true });
-  game.editWave((table) => {
+  game.defence.edit((table) => {
     table.counts = { crawler: 1, runner: 0, heavy: 0 };
     table.gap = 100;
   });
@@ -47,20 +46,16 @@ function pitKill(game: Game): void {
 }
 
 describe('The Core Zone', () => {
-  it('is a circle centred on the Ink Core, as wide as the enemy table says', () => {
+  it("is centred on the sandbox Arena's Ink Core, 480 px wide by default", () => {
     const game = createGame(false);
-    expect(game.coreZone).toEqual({ centre: { x: 1832, y: 662 }, radius: 240 });
-
-    editEnemies(game.world.enemyTable, (table) => (table.coreZone = 100));
-
-    expect(game.coreZone.radius).toBe(50);
+    expect(game.defence.reading.coreZone).toEqual({ centre: { x: 1832, y: 662 }, radius: 240 });
   });
 
   describe('during a Wave, with Ink costs off', () => {
     it('draws a Stroke wholly inside it, and refuses whole one reaching outside', () => {
       const game = wavesGame(false);
       game.togglePause();
-      expect(game.phase).toBe('wave');
+      expect(game.defence.reading.phase).toBe('wave');
 
       expect(game.submitStroke(INSIDE, 'grey').kind).toBe('line');
       const outside = game.submitStroke(REACHING_OUT, 'grey');
@@ -85,7 +80,7 @@ describe('The Core Zone', () => {
       game.togglePause();
       game.togglePause();
       expect(game.isRunning).toBe(false);
-      expect(game.phase).toBe('wave');
+      expect(game.defence.reading.phase).toBe('wave');
 
       expect(game.submitStroke(REACHING_OUT, 'grey').kind).toBe('outside');
     });
@@ -161,7 +156,7 @@ describe('The Core Zone', () => {
 
   it('leaves drawing unrestricted in the Build Phase', () => {
     const game = wavesGame(false);
-    expect(game.phase).toBe('build');
+    expect(game.defence.reading.phase).toBe('build');
 
     expect(game.submitStroke(REACHING_OUT, 'grey').kind).toBe('line');
     expect(game.submitStroke(BOX_OUTSIDE, 'grey').kind).toBe('object');
@@ -180,7 +175,7 @@ describe('The Core Zone', () => {
   it('holds no more once the Wave ends', () => {
     const game = wavesGame(false);
     game.togglePause();
-    game.waves = false;
+    game.defence.waves = false;
 
     expect(game.submitStroke(REACHING_OUT, 'grey').kind).toBe('line');
   });

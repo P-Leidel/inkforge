@@ -196,7 +196,8 @@ export class SandboxScene extends Phaser.Scene {
     this.frames.physics(performance.now() - start, steps);
     this.stressTest?.update();
     const drawStart = performance.now();
-    this.coreZone.draw(this.gameLayer.coreZone, this.gameLayer.phase);
+    const { coreZone, phase } = this.gameLayer.defence.reading;
+    this.coreZone.draw(coreZone, phase);
     this.worldView.draw(deltaMs / 1000);
     const preview = this.drawing.preview();
     if (preview.kind === 'brush') this.preview.drawBrush(preview.pointer);

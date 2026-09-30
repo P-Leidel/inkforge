@@ -38,6 +38,10 @@ _Avoid_: Prep phase, planning phase
 The phase in which physics runs and enemies walk toward the Ink Core. No undo. Pausing does not end it; it ends when no Enemy is left to spawn or alive, or when the Ink Core is destroyed.
 _Avoid_: Round, combat phase
 
+**Defence loop**:
+The cycle of phases the player goes through: the Build Phase, then a Wave, and back to the Build Phase. The Analysis and the Aftermath join it in milestone 5. It says which phase is under way, and it stops everything once the Ink Core is destroyed.
+_Avoid_: Game loop, phase machine, round
+
 **Campaign**:
 The first mode: a fixed sequence of handmade arenas and waves. Ink Tanks reset to a set amount every Wave.
 

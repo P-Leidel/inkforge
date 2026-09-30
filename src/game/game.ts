@@ -1,10 +1,9 @@
 import type { Polygon } from '../geometry/polygon';
-import { distance, type Vec2 } from '../geometry/vec2';
+import type { Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
 import {
   SandboxWorld,
-  STEP_SECONDS,
   type AddedStroke,
   type DropInk,
   type Entry,
@@ -15,9 +14,10 @@ import {
   type StrokeId,
   type StrokeOutcome,
 } from '../sandbox/sandbox-world';
+import { DefenceLoop } from './defence-loop';
 import { createInkTable, type InkTable, type ReadonlyInkTable } from './ink-table';
 import { InkTanks, type TankReadings, type TanksState } from './ink-tanks';
-import { arrivals, createWaveTable, type ReadonlyWaveTable, type WaveTable } from './wave-table';
+import { createWaveTable, type ReadonlyWaveTable, type WaveTable } from './wave-table';
 
 /** What a Stroke the Game was asked for became. */
 export type GameStrokeOutcome =
@@ -47,13 +47,6 @@ export type GameFillOutcome =
     }
   /** During a Wave, the click was outside the Core Zone, so the Object stays hollow. */
   | { readonly kind: 'outside'; readonly id: StrokeId; readonly outline: Polygon };
-
-/** The Core Zone: the circle around the Ink Core, the only place to draw during a Wave. */
-export interface CoreZone {
-  readonly centre: Vec2;
-  /** px */
-  readonly radius: number;
-}
 
 /** What something would cost before it is made, and whether its Tank can pay for it. */
 export interface CostEstimate {
@@ -140,22 +133,6 @@ interface Snapshot {
   readonly history: readonly Action[];
 }
 
-/**
- * Where the Game is, with Waves on: the Build Phase, paused, where the
- * player builds, or a Wave, paused or running.
- */
-export type Phase = 'build' | 'wave';
-
-/** A Wave under way: the Enemies still to come, and when the next may. */
-interface Wave {
-  /** Which Wave it is, counting every Wave started: what was paid in it is known by it. */
-  readonly number: number;
-  /** Still to come, in the order they arrive. */
-  readonly toCome: EnemyType[];
-  /** Steps left before the next may arrive. */
-  untilNext: number;
-}
-
 export interface GameOptions {
   /** Whether Strokes and Fills cost Ink. Off, Ink is unlimited. */
   readonly inkCosts: boolean;
@@ -182,22 +159,23 @@ export interface GameOptions {
  * Strokes and Fills made below it, by a demo or a stress test, join the
  * undo history at price 0 when it reads that they were added.
  *
- * With the Waves switch on, it also owns the phase: the Build Phase, and
- * the Wave that Space starts from it, which sends in the Wave table's
- * Enemies from the Spawn and ends when none is left to come and none is
- * alive, or the Ink Core is destroyed. The Sandbox world knows nothing of
- * phases. As a Wave starts, the Tanks' contents become Locked Ink, and until
- * it ends only Wave Ink is spent.
+ * Its Defence loop owns the phases: with the Waves switch on, the Build
+ * Phase and the Wave that Space starts from it, and Waves on or off, what
+ * Space does and stopping once the Ink Core is destroyed. The Sandbox world
+ * knows nothing of phases. As a Wave starts, the loop turns the Tanks'
+ * contents into Locked Ink, and until it ends only Wave Ink is spent.
  *
  * Every kill's Drop, which the Sandbox world reports in the list of what
  * happened, goes into the Tanks as Wave Ink (ADR 0005), Waves on or off.
  *
  * During a Wave, paused or running, a Stroke must lie wholly inside the
- * Core Zone and a Fill click must be inside it, Ink costs on or off;
- * Releasing works anywhere.
+ * Core Zone and a Fill click must be inside it, Ink costs on or off, as the
+ * Defence loop says; Releasing works anywhere.
  */
 export class Game {
   readonly world: SandboxWorld;
+  /** The phases: read it, flip its Waves switch and edit its Wave table; Space goes through the Game. */
+  readonly defence: DefenceLoop;
   private readonly table: InkTable;
   private readonly inkTanks: InkTanks;
   private costs: boolean;
@@ -210,17 +188,6 @@ export class Game {
   /** Taken whenever physics starts, or with Waves on, as a Wave starts; R returns to it. */
   private snapshot: Snapshot | null = null;
   private readonly reader: Reader;
-  private readonly waveTable: WaveTable;
-  private wavesOn: boolean;
-  /** The Wave under way, paused or running; null in the Build Phase. */
-  private current: Wave | null = null;
-  /** How many Waves were started in all, never taken back: R and Clear keep it. */
-  private wavesStarted = 0;
-  /** Sends in the Wave's Enemies before each step and ends it after, as `advance` steps. */
-  private readonly around = {
-    before: () => this.arrive(),
-    after: () => this.endWaveIfOver(),
-  };
 
   constructor(options: GameOptions) {
     this.world = options.world ?? new SandboxWorld(options.worldOptions);
@@ -228,70 +195,12 @@ export class Game {
     this.costs = options.inkCosts;
     this.inkTanks = new InkTanks(this.table);
     this.reader = this.world.happenings.reader();
-    this.waveTable = options.wave ?? createWaveTable();
-    this.wavesOn = options.waves ?? false;
-  }
-
-  /**
-   * The Waves switch. Off, the Game plays as in milestone 3. Turning it on
-   * puts the Game in the Build Phase, pausing physics if it runs; turning it
-   * off ends a Wave under way where it is, and physics stays as it is.
-   */
-  get waves(): boolean {
-    return this.wavesOn;
-  }
-
-  set waves(on: boolean) {
-    if (on === this.wavesOn) return;
-    this.wavesOn = on;
-    this.endWave();
-    if (on) this.world.pause();
-  }
-
-  /** The Build Phase or a Wave, with Waves on; null with Waves off. */
-  get phase(): Phase | null {
-    if (!this.wavesOn) return null;
-    return this.current ? 'wave' : 'build';
-  }
-
-  /** How many of the Wave's Enemies are still to come: 0 outside a Wave. */
-  get toCome(): number {
-    return this.current?.toCome.length ?? 0;
-  }
-
-  /** The Wave table: the Wave's list and gap. Edit it with `editWave`. */
-  get wave(): ReadonlyWaveTable {
-    return this.waveTable;
-  }
-
-  /**
-   * Edits the Wave table, as the F2 tuning panel does. A Wave under way
-   * keeps its list, and takes a new gap from its next arrival; the next Wave
-   * takes the table as it is when it starts.
-   */
-  editWave(edit: (table: WaveTable) => void): void {
-    edit(this.waveTable);
-  }
-
-  /**
-   * The Core Zone: a circle centred on the Ink Core, as wide as the enemy
-   * table's `coreZone` says now.
-   */
-  get coreZone(): CoreZone {
-    const { minX, minY, maxX, maxY } = this.world.inkCore.bounds;
-    const centre = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
-    return { centre, radius: this.world.enemyTable.coreZone / 2 };
-  }
-
-  /** Whether every one of `points` lies inside the Core Zone, its edge included. */
-  private insideCoreZone(points: readonly Vec2[]): boolean {
-    const { centre, radius } = this.coreZone;
-    return points.every((point) => distance(point, centre) <= radius);
-  }
-
-  /** Whether the Core Zone rule holds now: during a Wave, paused or running. */
-  private get zoned(): boolean {
-    return this.current !== null;
+    this.defence = new DefenceLoop({
+      world: this.world,
+      tanks: this.inkTanks,
+      table: options.wave ?? createWaveTable(),
+      waves: options.waves ?? false,
+    });
   }
 
   /** Whether Strokes and Fills cost Ink. Turning it off or on leaves the Tanks as they are. */
@@ -362,14 +271,16 @@ export class Game {
   submitStroke(samples: readonly Vec2[], colour: Colour): GameStrokeOutcome {
     this.catchUp();
     // The Stroke pipeline keeps a Stroke within its samples, and the Core Zone is convex.
-    const outside = this.zoned && !this.insideCoreZone(samples);
+    const inside = this.defence.inside(samples);
+    const refusal = (made: MadeStroke) =>
+      this.refusal(false, inside, made.colour, this.priceOf(made));
     const outcome = this.world.submitStroke(samples, colour, {
-      accept: (made) => !outside && this.affords(made.colour, this.priceOf(made)),
+      accept: (made) => refusal(made) === null,
     });
     switch (outcome.kind) {
       case 'declined': {
         const { made, path } = outcome;
-        if (outside) return { kind: 'outside', path };
+        if (refusal(made) === 'outside') return { kind: 'outside', path };
         return { kind: 'refused', colour: made.colour, price: this.priceOf(made), path };
       }
       case 'line':
@@ -393,20 +304,21 @@ export class Game {
    */
   fillAt(point: Vec2, colour: Colour): GameFillOutcome {
     this.catchUp();
-    const outside = this.zoned && !this.insideCoreZone([point]);
+    const inside = this.defence.inside([point]);
+    const refusal = (ink: number) => this.refusal(false, inside, colour, this.fillPrice(ink));
     const outcome = this.world.fillAt(point, colour, {
-      accept: (fill) => !outside && this.affords(fill.colour, this.fillPrice(fill.ink)),
+      accept: (fill) => refusal(fill.ink) === null,
     });
     switch (outcome.kind) {
       case 'declined': {
         const { id, outline, ink } = outcome;
-        if (outside) return { kind: 'outside', id, outline };
+        if (refusal(ink) === 'outside') return { kind: 'outside', id, outline };
         return { kind: 'refused', id, colour, price: this.fillPrice(ink), outline };
       }
       case 'filled': {
         const price = this.fillPrice(outcome.ink);
         this.inkTanks.spend(colour, price);
-        this.fills.set(outcome.id, { colour, price, wave: this.paidIn });
+        this.fills.set(outcome.id, { colour, price, wave: this.defence.wave });
         this.undoHistory.push({ kind: 'fill', id: outcome.id });
         break;
       }
@@ -428,7 +340,7 @@ export class Game {
   lookAtStroke(samples: readonly Vec2[]): Look | null {
     if (samples.length < 2) return null;
     const { closes, ink, onLines } = this.world.measureSamples(samples);
-    const inside = this.insideCoreZone(samples);
+    const inside = this.defence.inside(samples);
     if (!closes) return { kind: 'line', ink, onLines, inside };
     const result = this.world.previewStroke(samples);
     const overlaps = result.kind === 'rejected' && result.reason === 'overlaps';
@@ -441,7 +353,7 @@ export class Game {
    */
   lookAtFill(point: Vec2): Look | null {
     const ink = this.world.fillInkAt(point);
-    return ink === null ? null : { kind: 'fill', ink, inside: this.insideCoreZone([point]) };
+    return ink === null ? null : { kind: 'fill', ink, inside: this.defence.inside([point]) };
   }
 
   /**
@@ -453,11 +365,27 @@ export class Game {
    * whenever the look was taken.
    */
   prospect(look: Look, colour: Colour): Prospect {
-    const cost = this.costs ? this.estimate(colour, this.lookPrice(look)) : null;
+    const price = this.lookPrice(look);
+    const cost = this.costs ? this.estimate(colour, price) : null;
     const overlaps = look.kind === 'object' && look.overlaps;
-    const outside = this.zoned && !look.inside;
-    const refusal = overlaps ? 'overlaps' : outside ? 'outside' : cost?.over ? 'not-enough' : null;
-    return { kind: look.kind, refusal, cost };
+    return { kind: look.kind, refusal: this.refusal(overlaps, look.inside, colour, price), cost };
+  }
+
+  /**
+   * Why something would be refused now, the first reason of those it runs
+   * into: an overlap, then, during a Wave, reaching outside the Core Zone
+   * (`inside` says whether it lies wholly inside it), then a price `colour`'s
+   * Tank can't pay. Null if it wouldn't be.
+   */
+  private refusal(
+    overlaps: boolean,
+    inside: boolean,
+    colour: Colour,
+    price: number,
+  ): Refusal | null {
+    if (overlaps) return 'overlaps';
+    if (this.defence.zoned && !inside) return 'outside';
+    return this.affords(colour, price) ? null : 'not-enough';
   }
 
   private lookPrice(look: Look): number {
@@ -512,7 +440,7 @@ export class Game {
    */
   undo(): void {
     // A Wave's mistakes stay made.
-    if (this.current) return;
+    if (this.defence.wave !== null) return;
     this.catchUp();
     for (let action = this.undoHistory.pop(); action; action = this.undoHistory.pop()) {
       if (this.takeBack(action)) break;
@@ -540,73 +468,16 @@ export class Game {
   }
 
   /**
-   * Space. With Waves off, starts or pauses physics, and every start takes a
-   * snapshot of the Tanks, what was paid and the undo history, next to the
-   * Sandbox world's. With Waves on, in the Build Phase it takes the snapshot,
-   * turns every Tank's contents into Locked Ink and starts a Wave; during a
-   * Wave it only pauses and runs, and it stays the Wave.
+   * Space, as the Defence loop says: with Waves off, starts or pauses
+   * physics; with Waves on, starts a Wave in the Build Phase, and during a
+   * Wave only pauses and runs. Every start takes a snapshot of the Tanks,
+   * what was paid and the undo history, next to the Sandbox world's, before
+   * a Wave locks the Tanks. Once the Ink Core is destroyed it starts
+   * nothing until R or Clear.
    */
   togglePause(): void {
     this.catchUp();
-    if (this.current) {
-      if (this.world.isRunning) this.world.pause();
-      else this.world.resume();
-      return;
-    }
-    this.world.togglePause();
-    if (!this.world.isRunning) return;
-    this.snapshot = this.takeSnapshot();
-    if (!this.wavesOn) return;
-    this.current = { number: ++this.wavesStarted, toCome: arrivals(this.waveTable), untilNext: 0 };
-    this.inkTanks.lock();
-  }
-
-  /**
-   * Ends a Wave under way, if any: its Locked Ink is spendable again, and
-   * its Wave Ink stays in the Tanks.
-   */
-  private endWave(): void {
-    if (!this.current) return;
-    this.current = null;
-    this.inkTanks.unlock();
-  }
-
-  /** The Wave what is paid now is paid in; null outside a Wave. */
-  private get paidIn(): number | null {
-    return this.current?.number ?? null;
-  }
-
-  /**
-   * Before a step of a Wave: sends in the next Enemy on its list once the
-   * gap since the last one is over and the lane's far end is free. The
-   * first comes as the Wave starts.
-   */
-  private arrive(): void {
-    const wave = this.current;
-    if (!wave) return;
-    if (wave.untilNext > 0) wave.untilNext--;
-    const next = wave.toCome[0];
-    if (next === undefined || wave.untilNext > 0 || !this.world.spawnClear(next)) return;
-    wave.toCome.shift();
-    this.world.spawn(next);
-    wave.untilNext = Math.max(1, Math.round(this.waveTable.gap / STEP_SECONDS));
-  }
-
-  /**
-   * After a step of a Wave: it ends when none is left to come and none is
-   * alive, or when the Ink Core is destroyed. Physics stops and the Game is
-   * back in the Build Phase, with Locked Ink spendable again and the Wave
-   * Ink kept; nothing is Frozen again. A kill's Drop in its last step is
-   * picked up first, as Wave Ink.
-   */
-  private endWaveIfOver(): void {
-    const wave = this.current;
-    if (!wave) return;
-    const over = wave.toCome.length === 0 && this.world.enemyCount === 0;
-    if (!over && !this.world.coreDestroyed) return;
-    this.catchUp();
-    this.world.pause();
-    this.endWave();
+    this.defence.space(() => (this.snapshot = this.takeSnapshot()));
   }
 
   /**
@@ -618,7 +489,7 @@ export class Game {
   reset(): void {
     const snapshot = this.snapshot;
     if (!snapshot) return;
-    this.current = null;
+    this.defence.reset();
     this.world.reset();
     // Everything comes back as it was at the snapshot, which already knows it.
     this.reader.read();
@@ -642,8 +513,8 @@ export class Game {
     wave?: ReadonlyWaveTable,
     terrain?: readonly Polygon[],
   ): void {
-    if (wave) Object.assign(this.waveTable, createWaveTable(wave));
-    this.current = null;
+    if (wave) this.defence.edit((table) => Object.assign(table, createWaveTable(wave)));
+    this.defence.reset();
     this.world.clear(terrain);
     this.reader.read();
     this.inkTanks.fill();
@@ -657,7 +528,7 @@ export class Game {
     // A demo starts physics as its last act, so the world's snapshot is of now.
     if (!this.world.isRunning) return;
     this.snapshot = this.takeSnapshot();
-    if (this.wavesOn) this.world.pause();
+    if (this.defence.waves) this.world.pause();
   }
 
   /**
@@ -665,18 +536,14 @@ export class Game {
    * Wave's Enemies and ending it step by step. Returns the steps taken.
    */
   advance(seconds: number): number {
-    const steps = this.world.advance(seconds, this.around);
+    const steps = this.world.advance(seconds, this.defence.hooks);
     this.catchUp();
     return steps;
   }
 
   /** Advances physics by one fixed step, if running, as `advance` does. */
   step(): void {
-    if (this.world.isRunning) {
-      this.around.before();
-      this.world.step();
-      this.around.after();
-    }
+    this.world.step(this.defence.hooks);
     this.catchUp();
   }
 
@@ -720,7 +587,7 @@ export class Game {
    */
   private charge(stroke: AddedStroke): void {
     const { id, colour } = stroke;
-    const wave = this.paidIn;
+    const wave = this.defence.wave;
     if (stroke.kind === 'object') {
       const price = this.linePrice(stroke.ink);
       this.inkTanks.spend(colour, price);
@@ -741,7 +608,8 @@ export class Game {
    */
   private refund(paid: Paid | undefined): void {
     if (!paid?.colour || paid.price === 0) return;
-    const part = this.current && paid.wave !== this.current.number ? 'locked' : 'spendable';
+    const wave = this.defence.wave;
+    const part = wave !== null && paid.wave !== wave ? 'locked' : 'spendable';
     this.inkTanks.refund(paid.colour, paid.price, part);
   }
 
@@ -798,7 +666,7 @@ export class Game {
         return;
       case 'start-over':
         // Something below the Game started over: nothing it knew of is left, as after a clear.
-        this.current = null;
+        this.defence.reset();
         this.inkTanks.fill();
         this.strokes.clear();
         this.fills.clear();
