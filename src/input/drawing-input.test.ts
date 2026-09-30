@@ -237,6 +237,98 @@ describe('Drawing input', () => {
     });
   });
 
+  describe('the Core Zone', () => {
+    /** A Game with Waves on, in a Wave of one Crawler that waits a long while for the next. */
+    function inAWave(
+      inkCosts: boolean,
+      build?: (world: SandboxWorld, input: DrawingInput) => void,
+    ) {
+      const game = createGame(inkCosts, { waves: true });
+      game.editWave((table) => {
+        table.counts = { crawler: 1, runner: 0, heavy: 0 };
+        table.gap = 100;
+      });
+      const drawing = drawingOver(game);
+      build?.(game.world, drawing.input);
+      game.togglePause();
+      expect(game.phase).toBe('wave');
+      return { game, ...drawing };
+    }
+
+    // The Ink Core's centre is at (1832, 662); the Core Zone reaches 240 px from it.
+    const inside = dragAlong([
+      { x: 1650, y: 560 },
+      { x: 1690, y: 560 },
+    ]);
+    const reachingOut = dragAlong([
+      { x: 1500, y: 560 },
+      { x: 1700, y: 560 },
+    ]);
+
+    it.each([false, true])(
+      'flashes "Outside the Core Zone" along a Stroke reaching outside it, and draws nothing (Ink costs %s)',
+      (inkCosts) => {
+        const { game, input } = inAWave(inkCosts);
+
+        const flash = drag(input, reachingOut);
+
+        expect(flash).toMatchObject({
+          message: 'Outside the Core Zone',
+          pointer: reachingOut[reachingOut.length - 1],
+        });
+        expect(flash!.path[0]!.x).toBeCloseTo(1500, 0);
+        expect(game.world.lines).toEqual([]);
+      },
+    );
+
+    it('draws a Stroke wholly inside it', () => {
+      const { game, input } = inAWave(false);
+
+      expect(drag(input, inside)).toBeNull();
+      expect(game.world.lines).toHaveLength(1);
+    });
+
+    it('flashes "Outside the Core Zone" around an Object clicked outside it, and leaves it hollow', () => {
+      const { game, input } = inAWave(false, box);
+
+      const flash = click(input, inBox);
+
+      expect(flash).toMatchObject({ message: 'Outside the Core Zone', pointer: inBox });
+      expect(flash!.path[flash!.path.length - 1]).toEqual(flash!.path[0]);
+      expect(game.world.objects[0]!.fill).toBeNull();
+    });
+
+    it('shows a Stroke reaching outside it as refused while it is drawn', () => {
+      const { input } = inAWave(false);
+
+      input.press(reachingOut[0]!, 'left');
+      for (const sample of reachingOut.slice(1)) input.move(sample);
+
+      expect(input.preview()).toMatchObject({ kind: 'stroke', refused: true });
+    });
+
+    it('lets a Stroke reaching outside it be drawn in the Build Phase', () => {
+      const game = createGame(false, { waves: true });
+      const { input } = drawingOver(game);
+
+      expect(drag(input, reachingOut)).toBeNull();
+      expect(input.preview()).toMatchObject({ refused: false });
+      expect(game.world.lines).toHaveLength(1);
+    });
+
+    it('Releases a Frozen Object outside it with the right button', () => {
+      const { game, input } = inAWave(false, box);
+      const id = game.world.objects[0]!.id;
+      for (let k = 0; k < 6; k++) game.step();
+      expect(objectById(game.world, id).frozen).toBe(true);
+
+      input.press(inBox, 'right');
+      input.release();
+
+      expect(objectById(game.world, id).frozen).toBe(false);
+    });
+  });
+
   describe('the refusal preview', () => {
     it('shows a closing Stroke over an Object as refused, worked out again only on new samples', () => {
       const game = createGame(false);

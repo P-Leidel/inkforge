@@ -55,7 +55,7 @@ export interface EnemyTable {
   floorWear: number;
   /** The Ink Core's HP when it is whole. */
   coreHp: number;
-  /** Diameter (px) of the Core Zone around the Ink Core (from #93). */
+  /** Diameter (px) of the Core Zone around the Ink Core, the only place to draw during a Wave. */
   coreZone: number;
 }
 

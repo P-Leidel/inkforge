@@ -27,6 +27,8 @@ export const PALETTE = {
   core: 0x6fe3ff,
   coreEdge: 0xe8fbff,
   coreGlow: 0x6fe3ff,
+  /** The Core Zone's circle around it. */
+  coreZone: 0x6fe3ff,
   /** An HP bar's empty part, and its full part while whole and once low. */
   hpEmpty: 0x16171b,
   hpFull: 0x62d98b,

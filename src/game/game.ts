@@ -1,5 +1,5 @@
 import type { Polygon } from '../geometry/polygon';
-import type { Vec2 } from '../geometry/vec2';
+import { distance, type Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
 import {
@@ -29,7 +29,9 @@ export type GameStrokeOutcome =
       /** Its price, px². */
       readonly price: number;
       readonly path: readonly Vec2[];
-    };
+    }
+  /** During a Wave, it reached outside the Core Zone, so nothing was made: `path` is what it would have been. */
+  | { readonly kind: 'outside'; readonly path: readonly Vec2[] };
 
 /** What a Fill click the Game was asked for did. */
 export type GameFillOutcome =
@@ -42,7 +44,16 @@ export type GameFillOutcome =
       /** Its price, px². */
       readonly price: number;
       readonly outline: Polygon;
-    };
+    }
+  /** During a Wave, the click was outside the Core Zone, so the Object stays hollow. */
+  | { readonly kind: 'outside'; readonly id: StrokeId; readonly outline: Polygon };
+
+/** The Core Zone: the circle around the Ink Core, the only place to draw during a Wave. */
+export interface CoreZone {
+  readonly centre: Vec2;
+  /** px */
+  readonly radius: number;
+}
 
 /** What something would cost before it is made, and whether its Tank can pay for it. */
 export interface CostEstimate {
@@ -55,21 +66,29 @@ export interface CostEstimate {
 
 /**
  * What a Stroke or a Fill would be, as the Sandbox world was when the Game
- * looked: the Ink it would take, and what it would run into. `prospect`
- * prices it. Its readers keep it while what was looked at stays the same.
+ * looked: the Ink it would take, what it would run into, and whether it lies
+ * wholly inside the Core Zone. `prospect` prices it. Its readers keep it
+ * while what was looked at stays the same.
  */
 export type Look =
   /** A Stroke that doesn't close, as a Line along its raw samples, cut where a new Line is. */
-  | { readonly kind: 'line'; readonly ink: number; readonly onLines: number }
-  /** A closing Stroke, and whether its Object would overlap the Terrain or an Object. */
-  | { readonly kind: 'object'; readonly ink: number; readonly overlaps: boolean }
-  /** The Fill of the hollow Object under a point. */
-  | { readonly kind: 'fill'; readonly ink: number };
+  (
+    | { readonly kind: 'line'; readonly ink: number; readonly onLines: number }
+    /** A closing Stroke, and whether its Object would overlap the Terrain or an Object. */
+    | { readonly kind: 'object'; readonly ink: number; readonly overlaps: boolean }
+    /** The Fill of the hollow Object under a point. */
+    | { readonly kind: 'fill'; readonly ink: number }
+  ) & {
+    /** Whether its raw samples, or the Fill's click, lie wholly inside the Core Zone. */
+    readonly inside: boolean;
+  };
 
 /** Why a Stroke or a Fill would be refused. */
 export type Refusal =
   /** A closing Stroke's Object would overlap the Terrain or an Object. */
   | 'overlaps'
+  /** During a Wave, it reaches outside the Core Zone. */
+  | 'outside'
   /** It costs more than its Colour's Tank holds. */
   | 'not-enough';
 
@@ -172,6 +191,10 @@ export interface GameOptions {
  *
  * Every kill's Drop, which the Sandbox world reports in the list of what
  * happened, goes into the Tanks as Wave Ink (ADR 0005), Waves on or off.
+ *
+ * During a Wave, paused or running, a Stroke must lie wholly inside the
+ * Core Zone and a Fill click must be inside it, Ink costs on or off;
+ * Releasing works anywhere.
  */
 export class Game {
   readonly world: SandboxWorld;
@@ -250,6 +273,27 @@ export class Game {
     edit(this.waveTable);
   }
 
+  /**
+   * The Core Zone: a circle centred on the Ink Core, as wide as the enemy
+   * table's `coreZone` says now.
+   */
+  get coreZone(): CoreZone {
+    const { minX, minY, maxX, maxY } = this.world.inkCore.bounds;
+    const centre = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+    return { centre, radius: this.world.enemyTable.coreZone / 2 };
+  }
+
+  /** Whether every one of `points` lies inside the Core Zone, its edge included. */
+  private insideCoreZone(points: readonly Vec2[]): boolean {
+    const { centre, radius } = this.coreZone;
+    return points.every((point) => distance(point, centre) <= radius);
+  }
+
+  /** Whether the Core Zone rule holds now: during a Wave, paused or running. */
+  private get zoned(): boolean {
+    return this.current !== null;
+  }
+
   /** Whether Strokes and Fills cost Ink. Turning it off or on leaves the Tanks as they are. */
   get inkCosts(): boolean {
     return this.costs;
@@ -311,17 +355,21 @@ export class Game {
    * an Object, a rejection or nothing, and charges its price to `colour`'s
    * Tank: `linePrice` × its Ink, a Line's Piece by Piece. The parts of a Line
    * lying on another Line are free, found once, as it is made; an Object
-   * pays for all of its Outline. A Stroke that costs more than the Tank holds
-   * is refused whole.
+   * pays for all of its Outline. During a Wave, a Stroke whose raw samples
+   * reach outside the Core Zone is refused whole; so is one that costs more
+   * than the Tank holds.
    */
   submitStroke(samples: readonly Vec2[], colour: Colour): GameStrokeOutcome {
     this.catchUp();
+    // The Stroke pipeline keeps a Stroke within its samples, and the Core Zone is convex.
+    const outside = this.zoned && !this.insideCoreZone(samples);
     const outcome = this.world.submitStroke(samples, colour, {
-      accept: (made) => this.affords(made.colour, this.priceOf(made)),
+      accept: (made) => !outside && this.affords(made.colour, this.priceOf(made)),
     });
     switch (outcome.kind) {
       case 'declined': {
         const { made, path } = outcome;
+        if (outside) return { kind: 'outside', path };
         return { kind: 'refused', colour: made.colour, price: this.priceOf(made), path };
       }
       case 'line':
@@ -339,17 +387,20 @@ export class Game {
 
   /**
    * Fills the Object under `point` with `colour`, and charges `fillPrice` ×
-   * its Ink to `colour`'s Tank. A Fill that costs more than the Tank holds is
-   * refused, and the Object stays hollow.
+   * its Ink to `colour`'s Tank. During a Wave, a click outside the Core Zone
+   * is refused; so is a Fill that costs more than the Tank holds. Refused,
+   * the Object stays hollow.
    */
   fillAt(point: Vec2, colour: Colour): GameFillOutcome {
     this.catchUp();
+    const outside = this.zoned && !this.insideCoreZone([point]);
     const outcome = this.world.fillAt(point, colour, {
-      accept: (fill) => this.affords(fill.colour, this.fillPrice(fill.ink)),
+      accept: (fill) => !outside && this.affords(fill.colour, this.fillPrice(fill.ink)),
     });
     switch (outcome.kind) {
       case 'declined': {
         const { id, outline, ink } = outcome;
+        if (outside) return { kind: 'outside', id, outline };
         return { kind: 'refused', id, colour, price: this.fillPrice(ink), outline };
       }
       case 'filled': {
@@ -377,10 +428,11 @@ export class Game {
   lookAtStroke(samples: readonly Vec2[]): Look | null {
     if (samples.length < 2) return null;
     const { closes, ink, onLines } = this.world.measureSamples(samples);
-    if (!closes) return { kind: 'line', ink, onLines };
+    const inside = this.insideCoreZone(samples);
+    if (!closes) return { kind: 'line', ink, onLines, inside };
     const result = this.world.previewStroke(samples);
     const overlaps = result.kind === 'rejected' && result.reason === 'overlaps';
-    return { kind: 'object', ink, overlaps };
+    return { kind: 'object', ink, overlaps, inside };
   }
 
   /**
@@ -389,20 +441,22 @@ export class Game {
    */
   lookAtFill(point: Vec2): Look | null {
     const ink = this.world.fillInkAt(point);
-    return ink === null ? null : { kind: 'fill', ink };
+    return ink === null ? null : { kind: 'fill', ink, inside: this.insideCoreZone([point]) };
   }
 
   /**
    * What `look` would do in `colour`, priced now: an Object pays for all of
    * its Outline, a Line for the part not lying on another Line, a Fill for
-   * its Ink. An overlap refuses it before a price its Tank can't pay does.
-   * The Tanks, the Ink table and the Ink costs switch are read as they are
-   * now, whenever the look was taken.
+   * its Ink. An overlap refuses it first, then, during a Wave, reaching
+   * outside the Core Zone, then a price its Tank can't pay. The phase, the
+   * Tanks, the Ink table and the Ink costs switch are read as they are now,
+   * whenever the look was taken.
    */
   prospect(look: Look, colour: Colour): Prospect {
     const cost = this.costs ? this.estimate(colour, this.lookPrice(look)) : null;
     const overlaps = look.kind === 'object' && look.overlaps;
-    const refusal = overlaps ? 'overlaps' : cost?.over ? 'not-enough' : null;
+    const outside = this.zoned && !look.inside;
+    const refusal = overlaps ? 'overlaps' : outside ? 'outside' : cost?.over ? 'not-enough' : null;
     return { kind: look.kind, refusal, cost };
   }
 

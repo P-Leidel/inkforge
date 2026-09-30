@@ -190,7 +190,8 @@ describe('A Wave', () => {
     drawLine(game, 400, 300, 200);
     game.togglePause();
     stepFor(game, 0.1);
-    drawLine(game, 300, 300, 200);
+    // Inside the Core Zone, the only place to draw during a Wave.
+    drawLine(game, 560, 1650, 150);
 
     game.undo();
     game.togglePause();
@@ -200,8 +201,8 @@ describe('A Wave', () => {
 
     game.eraseAlong(
       [
-        { x: 290, y: 300 },
-        { x: 510, y: 300 },
+        { x: 1640, y: 560 },
+        { x: 1810, y: 560 },
       ],
       10,
     );

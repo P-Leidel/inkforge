@@ -12,6 +12,7 @@ import { Hud } from '../ui/hud';
 import type { Menu } from '../ui/menu';
 import { gaugeCentre, PaletteBar } from '../ui/palette-bar';
 import { StrokePreview } from '../rendering/stroke-preview';
+import { CoreZoneDrawing } from '../rendering/core-zone-drawing';
 import { Toolbar } from '../ui/toolbar';
 import { TuningPanel } from '../ui/tuning-panel';
 import { WorldRenderer } from '../rendering/world-renderer';
@@ -39,6 +40,7 @@ export class SandboxScene extends Phaser.Scene {
   private world!: SandboxWorld;
   private drawing!: DrawingInput;
   private worldView!: WorldRenderer;
+  private coreZone!: CoreZoneDrawing;
   private overlay!: DebugOverlay;
   private hud!: Hud;
   private preview!: StrokePreview;
@@ -59,6 +61,7 @@ export class SandboxScene extends Phaser.Scene {
     this.world = this.gameLayer.world;
     this.drawing = new DrawingInput(this.gameLayer);
     this.tuning = new TuningPanel(this.world.materials, this.world.enemyTable, this.gameLayer);
+    this.coreZone = new CoreZoneDrawing(this);
     this.worldView = new WorldRenderer(this, this.world, gaugeCentre);
     this.preview = new StrokePreview(this);
     this.overlay = new DebugOverlay(this, this.gameLayer, this.frames, this.worldView);
@@ -193,6 +196,7 @@ export class SandboxScene extends Phaser.Scene {
     this.frames.physics(performance.now() - start, steps);
     this.stressTest?.update();
     const drawStart = performance.now();
+    this.coreZone.draw(this.gameLayer.coreZone, this.gameLayer.phase);
     this.worldView.draw(deltaMs / 1000);
     const preview = this.drawing.preview();
     if (preview.kind === 'brush') this.preview.drawBrush(preview.pointer);
