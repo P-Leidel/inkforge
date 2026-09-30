@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS } from '../materials/colour';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
+import { SANDBOX_LEVEL } from '../game/level';
+import { games } from '../game/test-support';
 import { objectById, runFor, sandboxWorlds } from '../sandbox/test-support';
 import {
   BOULDER_DEMO,
@@ -11,7 +13,6 @@ import {
   GALLERY,
   GLUE_DEMO,
   KNOCK_DEMO,
-  loadDemo,
   PIT_DEMO,
   PIT_LEFT,
   PIT_RIGHT,
@@ -20,9 +21,18 @@ import {
   SLIDE_DEMO,
   STICK_DEMO,
   THIRD_BOUNCE_DEMO,
+  type Demo,
 } from './gallery';
 
 const createWorld = sandboxWorlds();
+const createGame = games();
+
+/** A new Game with `demo` loaded, as the scene loads it; its Sandbox world. */
+function loaded(demo: Demo): SandboxWorld {
+  const game = createGame(true);
+  game.load(demo); // throws if any of its Strokes is refused
+  return game.world;
+}
 
 /** A copy of `value` with every field named in `keys` left out. */
 function without(value: unknown, keys: ReadonlySet<string>): unknown {
@@ -53,10 +63,8 @@ const arenaContents = (world: SandboxWorld) => without(world.contents, PREVIOUS_
 
 describe('Colour gallery', () => {
   for (const demo of GALLERY) {
-    it(`${demo.name}: builds through the Sandbox world and starts physics`, () => {
-      const world = createWorld();
-
-      loadDemo(world, demo); // throws if any of its Strokes is refused
+    it(`${demo.name}: loads through the Game and starts physics`, () => {
+      const world = loaded(demo);
 
       expect(world.isRunning).toBe(true);
       // It lets go of Objects, or sends in Enemies.
@@ -64,8 +72,7 @@ describe('Colour gallery', () => {
     });
 
     it(`${demo.name}: plays the same again after R and Space`, () => {
-      const world = createWorld();
-      loadDemo(world, demo);
+      const world = loaded(demo);
       runFor(world, 1);
       const first = played(world);
 
@@ -76,8 +83,7 @@ describe('Colour gallery', () => {
     });
 
     it(`${demo.name}: R brings back the Arena contents as they were at Space`, () => {
-      const world = createWorld();
-      loadDemo(world, demo);
+      const world = loaded(demo);
       runFor(world, 1);
       const running = arenaContents(world);
 
@@ -309,11 +315,12 @@ describe('Colour gallery', () => {
     }
 
     it('loads with its gap, which the sandbox Arena has none of', () => {
-      const world = createWorld();
+      const game = createGame(true);
       const middle = (PIT_LEFT + PIT_RIGHT) / 2;
-      expect(openAt(world, middle)).toBe(false);
+      expect(openAt(game.world, middle)).toBe(false);
 
-      loadDemo(world, PIT_DEMO);
+      game.load(PIT_DEMO);
+      const world = game.world;
 
       expect(openAt(world, middle)).toBe(true);
       expect(openAt(world, PIT_LEFT - 1)).toBe(false);
@@ -322,8 +329,7 @@ describe('Colour gallery', () => {
     });
 
     it('every Crawler walks into the Pit and dies below the screen, short of the Ink Core', () => {
-      const world = createWorld();
-      loadDemo(world, PIT_DEMO);
+      const world = loaded(PIT_DEMO);
       const lowest = new Map<number, number>();
       const heard = world.happenings.reader();
 
@@ -344,8 +350,7 @@ describe('Colour gallery', () => {
     });
 
     it('R keeps its Terrain, and the Crawlers fall in again', () => {
-      const world = createWorld();
-      loadDemo(world, PIT_DEMO);
+      const world = loaded(PIT_DEMO);
       const terrain = world.arena.terrain;
       const first = deaths(world, 30);
 
@@ -359,11 +364,12 @@ describe('Colour gallery', () => {
     });
 
     it('Clear brings the sandbox Arena back', () => {
-      const world = createWorld();
+      const game = createGame(true);
+      const world = game.world;
       const sandbox = world.arena.terrain;
-      loadDemo(world, PIT_DEMO);
+      game.load(PIT_DEMO);
 
-      world.clear();
+      game.load(SANDBOX_LEVEL);
 
       expect(world.arena.terrain).toBe(sandbox);
       expect(world.enemyCount).toBe(0);
@@ -376,14 +382,14 @@ describe('Colour gallery', () => {
 
     for (const demo of GALLERY.filter((d) => d !== PIT_DEMO)) {
       it(`${demo.name} after it plays as on a fresh world`, () => {
-        const fresh = createWorld();
-        loadDemo(fresh, demo);
+        const fresh = loaded(demo);
         runFor(fresh, 1);
-        const world = createWorld();
-        loadDemo(world, PIT_DEMO);
-        runFor(world, 1);
+        const game = createGame(true);
+        game.load(PIT_DEMO);
+        runFor(game.world, 1);
 
-        loadDemo(world, demo);
+        game.load(demo);
+        const world = game.world;
         runFor(world, 1);
 
         expect(world.arena.terrain).toBe(fresh.arena.terrain);

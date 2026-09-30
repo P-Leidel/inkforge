@@ -7,6 +7,7 @@ import { ARENA_HEIGHT, ARENA_WIDTH } from '../sandbox/arena';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import type { Game } from './game';
 import { fromLineLength, inLineLength } from './ink-table';
+import { SANDBOX_LEVEL } from './level';
 import { games } from './test-support';
 import { FIXED_BODIES } from '../sandbox/test-support';
 
@@ -710,7 +711,7 @@ describe('Editing the Ink table, with Ink costs on', () => {
     const game = createGame(true);
     game.editInk((ink) => (ink.tanks.blue = 5000));
 
-    game.clear();
+    game.load(SANDBOX_LEVEL);
 
     expect(game.tanks.blue.spendable).toBe(fromLineLength(5000));
     expect(tanks(game)).toEqual(full(game));
@@ -768,7 +769,7 @@ describe('Clear, demos and stress tests', () => {
     fill(game, { x: 550, y: 550 }, 'black');
     game.togglePause();
 
-    game.clear();
+    game.load(SANDBOX_LEVEL);
 
     expect(tanks(game)).toEqual(full(game));
     expect(game.history).toEqual([]);
@@ -781,7 +782,7 @@ describe('Clear, demos and stress tests', () => {
     drawLine(game, 300, 200, 400);
     const boulder = GALLERY.find((demo) => demo.name === 'Boulder')!;
 
-    game.clear((world) => boulder.build(world));
+    game.load(boulder);
 
     expect(tanks(game)).toEqual(full(game));
     const made = game.world.lines.length + game.world.objects.length;
@@ -796,7 +797,7 @@ describe('Clear, demos and stress tests', () => {
   it('R goes back to how a demo left the world, which started physics', () => {
     const game = createGame(true);
     const boulder = GALLERY.find((demo) => demo.name === 'Boulder')!;
-    game.clear((world) => boulder.build(world));
+    game.load(boulder);
     const made = game.world.lines.length + game.world.objects.length;
     const filled = game.world.objects.filter((o) => o.fill).length;
     const objects = game.world.objects.map((o) => o.transform);
@@ -817,17 +818,17 @@ describe('Clear, demos and stress tests', () => {
     const sandbox = game.world.arena;
     const bounce = GALLERY.find((demo) => demo.name === 'Bounce')!;
 
-    game.clear((world) => PIT_DEMO.build(world), PIT_DEMO.wave, PIT_DEMO.arena);
+    game.load(PIT_DEMO);
     expect(game.world.arena).toBe(PIT_DEMO.arena);
     runFor(game, 1);
     game.reset();
     expect(game.world.arena).toBe(PIT_DEMO.arena);
 
-    game.clear((world) => bounce.build(world), bounce.wave, bounce.arena);
+    game.load(bounce);
     expect(game.world.arena).toBe(sandbox);
 
-    game.clear((world) => PIT_DEMO.build(world), PIT_DEMO.wave, PIT_DEMO.arena);
-    game.clear();
+    game.load(PIT_DEMO);
+    game.load(SANDBOX_LEVEL);
     expect(game.world.arena).toBe(sandbox);
   });
 
@@ -922,7 +923,7 @@ describe('Enemies in the Game', () => {
     expect(game.world.enemies).toHaveLength(1);
     expect(game.world.inkCore.hp).toBe(10);
 
-    game.clear();
+    game.load(SANDBOX_LEVEL);
     expect(game.world.enemies).toEqual([]);
   });
 

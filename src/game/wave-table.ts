@@ -4,7 +4,7 @@ import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
  * The Wave table: the Wave's list, the Enemies a Wave sends in and the gap
  * between them, and the size of the Core Zone. Pure data, owned by the
  * Game's Defence loop, edited in F2's Wave section.
- * A gallery demo can bring a Wave of its own.
+ * A Level can bring a Wave of its own.
  */
 
 export interface WaveTable {

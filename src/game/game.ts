@@ -2,7 +2,6 @@ import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
-import type { Arena } from '../sandbox/arena';
 import {
   SandboxWorld,
   type AddedStroke,
@@ -16,9 +15,10 @@ import {
   type StrokeOutcome,
 } from '../sandbox/sandbox-world';
 import { DefenceLoop } from './defence-loop';
+import { checkArenaSize, type Level } from './level';
 import { createInkTable, type InkTable, type ReadonlyInkTable } from './ink-table';
 import { InkTanks, type TankReadings, type TanksState } from './ink-tanks';
-import { createWaveTable, type ReadonlyWaveTable, type WaveTable } from './wave-table';
+import { createWaveTable, type WaveTable } from './wave-table';
 
 /** What a Stroke the Game was asked for became. */
 export type GameStrokeOutcome =
@@ -498,19 +498,22 @@ export class Game {
   }
 
   /**
-   * Removes every Stroke and Fill, the Rubble, Droplets, Patches and Blasts,
-   * fills every Tank and empties the undo history. R has nothing to go back
-   * to. Then `build`, if given, builds on the Sandbox world below the Game,
-   * for free: a gallery demo or a stress test. What it makes joins the undo
-   * history at price 0, and if it started physics, R goes back to how it
-   * left the world. With Waves on, the Game is then in the Build Phase, and
-   * a demo that started physics is paused where it left it. `wave`, if
-   * given, is a demo's own Wave: the Wave table becomes a copy of it.
-   * `arena`, if given, is a demo's own Arena; without it the Arena is the
-   * sandbox Arena again.
+   * Loads `level` (CONTEXT.md): removes every Stroke and Fill, the Rubble,
+   * Droplets, Patches and Blasts, puts the world on the Level's Arena (the
+   * sandbox Arena if it has none), makes the Wave table a copy of its Wave
+   * and sets its Tank maximums, if it has them, fills every Tank and empties
+   * the undo history. R has nothing to go back to. Then the Level's build,
+   * if it has one, builds on the Sandbox world below the Game, for free: a
+   * gallery demo or a stress test. What it makes joins the undo history at
+   * price 0, and if it started physics, R goes back to how it left the
+   * world. With Waves on, the Game is then in the Build Phase, and a build
+   * that started physics is paused where it left it.
    */
-  clear(build?: (world: SandboxWorld) => void, wave?: ReadonlyWaveTable, arena?: Arena): void {
+  load(level: Level): void {
+    const { arena, wave, tanks } = level;
+    if (arena) checkArenaSize(arena);
     if (wave) this.defence.edit((table) => Object.assign(table, createWaveTable(wave)));
+    if (tanks) this.table.tanks = { ...tanks };
     this.defence.reset();
     this.world.clear(arena);
     this.reader.read();
@@ -519,10 +522,10 @@ export class Game {
     this.fills.clear();
     this.undoHistory = [];
     this.snapshot = null;
-    if (!build) return;
-    build(this.world);
+    if (!level.build) return;
+    level.build(this.world);
     this.catchUp();
-    // A demo starts physics as its last act, so the world's snapshot is of now.
+    // A build starts physics as its last act, so the world's snapshot is of now.
     if (!this.world.isRunning) return;
     this.snapshot = this.takeSnapshot();
     if (this.defence.waves) this.world.pause();

@@ -1,33 +1,17 @@
 import { add, scale, type Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
-import type { ReadonlyWaveTable } from '../game/wave-table';
-import { SANDBOX_ARENA, sandboxTerrainWithPit, type Arena } from '../sandbox/arena';
+import type { Level } from '../game/level';
+import { SANDBOX_ARENA, sandboxTerrainWithPit } from '../sandbox/arena';
 import type { SandboxWorld, StrokeId } from '../sandbox/sandbox-world';
 import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
 
 /**
  * The Colour gallery: ready-made demos that show each Colour's behaviour
- * without building it first. Each demo sets itself up on a cleared Arena
- * through the Sandbox world's commands, then starts physics and lets its
- * Objects go, so that R and Space replay it.
+ * without building it first. Each demo is a Level that `Game.load` sets up
+ * on a cleared Arena: its build uses the Sandbox world's commands, then
+ * starts physics and lets its Objects go, so that R and Space replay it.
  */
-export interface Demo {
-  readonly name: string;
-  build(world: SandboxWorld): void;
-  /** Its own Wave, if it has one: loading it sets the Wave table in F2. */
-  readonly wave?: ReadonlyWaveTable;
-  /**
-   * Its own Arena, if it has one: loading it clears onto this Arena, and R
-   * keeps it. Without one it is the sandbox Arena.
-   */
-  readonly arena?: Arena;
-}
-
-/** Clears the world onto `demo`'s Arena (or the sandbox Arena) and builds it there. */
-export function loadDemo(world: SandboxWorld, demo: Demo): void {
-  world.clear(demo.arena);
-  demo.build(world);
-}
+export type Demo = Level & { readonly name: string; build(world: SandboxWorld): void };
 
 /** Horizontal centre of the k-th of five side-by-side stations. */
 const station = (k: number) => 250 + 300 * k;
