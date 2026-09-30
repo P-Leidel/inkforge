@@ -125,7 +125,8 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
   constructor(
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
-    private readonly arena: Arena,
+    /** The Arena as it is now. */
+    private readonly arena: () => Arena,
     private readonly bodies: Pick<ArenaBodies<never>, 'newId' | 'addCircle' | 'removeBody'>,
     private readonly poses: Pick<PreviousPoses, 'of'>,
   ) {}
@@ -228,7 +229,7 @@ export class Droplets implements Kind<'droplets', readonly SavedDroplet[], reado
 
   /** Droplets that left the Arena vanish. */
   step(): void {
-    const { width, height } = this.arena;
+    const { width, height } = this.arena();
     const left = this.droplets.filter(({ body, radius }) => {
       const { x, y } = this.physics.getTransform(body);
       return x < -radius || x > width + radius || y < -radius || y > height + radius;

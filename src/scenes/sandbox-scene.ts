@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
 import { GALLERY, type Demo } from '../gallery/gallery';
 import { Game } from '../game/game';
+import { SANDBOX_LEVEL } from '../game/level';
 import { DrawingInput } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
 import { ENEMY_TYPES } from '../materials/enemy-table';
@@ -107,19 +108,21 @@ export class SandboxScene extends Phaser.Scene {
     create: ((world: SandboxWorld) => StressTest) | null,
   ): void {
     this.stressTest = null;
-    this.gameLayer.clear(create ? (world) => (this.stressTest = create(world)) : undefined);
+    this.gameLayer.load(
+      create ? { build: (world) => (this.stressTest = create(world)) } : SANDBOX_LEVEL,
+    );
     this.overlay.setSceneName(name);
     this.frames.sinceStart.restart();
   }
 
   /**
-   * Clears the Arena, fills the Tanks and sets up a gallery demo on it, with
-   * its own Wave and Terrain if it has them.
+   * Loads a gallery demo's Level: clears the Arena, fills the Tanks and sets
+   * the demo up, with its own Arena, Wave and Tanks if it has them.
    */
   private loadDemo(demo: Demo): void {
     this.stressTest = null;
-    this.gameLayer.clear((world) => demo.build(world), demo.wave, demo.terrain);
-    if (demo.wave) this.tuning.refresh();
+    this.gameLayer.load(demo);
+    if (demo.wave || demo.tanks) this.tuning.refresh();
     this.overlay.setSceneName(demo.name);
     this.frames.sinceStart.restart();
   }

@@ -134,7 +134,7 @@ Enemies are upright physics bodies pushed along by a capped force ([ADR 0010](ad
 
 ([ADR 0006](adr/0006-campaign-before-roguelite.md))
 
-- **Campaign:** a fixed sequence of handmade arenas and waves. Ink Tanks reset to the level's amount every Wave, so each Wave is a clean puzzle. No upgrades.
+- **Campaign:** a fixed sequence of handmade Levels, each an arena with its waves. Ink Tanks reset to the Level's amount every Wave, so each Wave is a clean puzzle. No upgrades.
 - **Roguelite Mode:** unlocked by beating the Campaign's final boss. Ink carries over between Waves, and the player picks 1 of 3 upgrades after each Wave. Tank size starts fixed; an upgrade can raise it. A recycling upgrade could give ink back for erased Strokes. Meta-progression unlocks options, not permanent power.
 
 ## 12. Controls

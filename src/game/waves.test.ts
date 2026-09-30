@@ -277,9 +277,11 @@ describe('R, with Waves on', () => {
 describe('Demos, with Waves on', () => {
   it('leave the Game in the Build Phase, paused where the demo left it, and R goes back there', () => {
     const game = wavesGame();
-    game.clear((world) => {
-      world.submitStroke(dragBox(300, 300, 60, 60), 'grey');
-      world.togglePause();
+    game.load({
+      build(world) {
+        world.submitStroke(dragBox(300, 300, 60, 60), 'grey');
+        world.togglePause();
+      },
     });
 
     expect(game.defence.reading.phase).toBe('build');
@@ -294,7 +296,7 @@ describe('Demos, with Waves on', () => {
   it('can bring a Wave of their own', () => {
     const game = wavesGame();
     const wave = { counts: { crawler: 0, runner: 0, heavy: 1 }, gap: 3, coreZone: 300 };
-    game.clear(() => {}, wave);
+    game.load({ wave });
 
     expect(game.defence.table).toEqual(wave);
     game.togglePause();

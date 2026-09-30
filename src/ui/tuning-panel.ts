@@ -193,7 +193,7 @@ export class TuningPanel {
     return row;
   }
 
-  /** Shows every value as its table holds it now: a gallery demo may have set its own Wave. */
+  /** Shows every value as its table holds it now: a Level may have set its own Wave and Tanks. */
   refresh(): void {
     for (const { tuned, path, input } of this.inputs) {
       input.value = String(readPath(tuned.table, path));

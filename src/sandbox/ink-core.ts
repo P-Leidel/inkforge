@@ -15,7 +15,7 @@ export interface InkCoreView {
   readonly bounds: Bounds;
 }
 
-/** The Ink Core's part of a snapshot: its HP. Its body always stands where the Arena has it. */
+/** The Ink Core's part of a snapshot: its HP. Its body always stands where the Arena now has it. */
 interface SavedInkCore {
   readonly hp: number;
 }
@@ -32,7 +32,8 @@ const blockOf = ({ minX, minY, maxX, maxY }: Bounds): Polygon => [
  * and its HP. Only an Enemy reaching it damages it, as the Material rules
  * decide: hits, Blasts and Rubble don't. It is one Party to the Contact
  * ledger, with no target, the same after every rebuild. Its body stays
- * through Clear, like the Terrain, and Clear makes it whole again.
+ * through Clear, like the Terrain, and Clear makes it whole again; a Clear
+ * onto another Arena rebuilds it where that one has it.
  */
 export class InkCore implements Kind<'inkCore', SavedInkCore, InkCoreView> {
   readonly name = 'inkCore';
@@ -40,7 +41,8 @@ export class InkCore implements Kind<'inkCore', SavedInkCore, InkCoreView> {
   private readonly party: PartyId;
 
   constructor(
-    private readonly arena: Arena,
+    /** The Arena as it is now. */
+    private readonly arena: () => Arena,
     private readonly enemies: EnemyTable,
     private readonly bodies: Pick<ArenaBodies<never>, 'newId' | 'addInkCore'>,
   ) {
@@ -50,11 +52,11 @@ export class InkCore implements Kind<'inkCore', SavedInkCore, InkCoreView> {
   }
 
   get views(): InkCoreView {
-    return { hp: this.hp, fullHp: this.enemies.coreHp, bounds: this.arena.core };
+    return { hp: this.hp, fullHp: this.enemies.coreHp, bounds: this.arena().core };
   }
 
   private addBody(): void {
-    this.bodies.addInkCore(blockOf(this.arena.core), this.party);
+    this.bodies.addInkCore(blockOf(this.arena().core), this.party);
   }
 
   /** Whether this Party is the Ink Core. */

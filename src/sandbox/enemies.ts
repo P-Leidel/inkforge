@@ -140,7 +140,8 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     >,
     private readonly materials: MaterialTable,
     private readonly numbers: Numbers,
-    private readonly arena: Arena,
+    /** The Arena as it is now. */
+    private readonly arena: () => Arena,
     private readonly bodies: Pick<ArenaBodies<never>, 'newId' | 'addEnemy' | 'removeBody'>,
     private readonly query: Pick<ArenaQuery, 'blocksEnemy'>,
     private readonly poses: Pick<PreviousPoses, 'of'>,
@@ -199,8 +200,9 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
    */
   spawnClear(type: EnemyType): boolean {
     const { width, height } = this.numbers.enemy(type);
-    const x = this.arena.spawn.x + width / 2 + SPAWN_GAP;
-    const y = this.arena.spawn.y - height / 2 - SPAWN_GAP;
+    const { spawn } = this.arena();
+    const x = spawn.x + width / 2 + SPAWN_GAP;
+    const y = spawn.y - height / 2 - SPAWN_GAP;
     const outline = transformPoints(enemyOutline(width, height), { x, y, angle: 0 });
     return !this.query.blocksEnemy(outline);
   }
@@ -215,8 +217,9 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     const numbers = this.numbers.enemy(type);
     const { width, height } = numbers;
     const outline = enemyOutline(width, height);
-    const x = at?.x ?? this.arena.spawn.x + width / 2 + SPAWN_GAP;
-    let y = at?.y ?? this.arena.spawn.y - height / 2 - SPAWN_GAP;
+    const { spawn } = this.arena();
+    const x = at?.x ?? spawn.x + width / 2 + SPAWN_GAP;
+    let y = at?.y ?? spawn.y - height / 2 - SPAWN_GAP;
     const blocked = () => this.query.blocksEnemy(transformPoints(outline, { x, y, angle: 0 }));
     while (!at && y - height > 0 && blocked()) y -= height + SPAWN_GAP;
     const id = this.nextId++;
@@ -249,7 +252,7 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
   /** Which way along x an Enemy walks: +1 or -1, toward the Ink Core's side of it. */
   heading(enemy: EnemyRecord): number {
     const { x } = this.physics.getTransform(enemy.body);
-    const core = this.arena.core;
+    const core = this.arena().core;
     return (core.minX + core.maxX) / 2 < x ? -1 : 1;
   }
 
