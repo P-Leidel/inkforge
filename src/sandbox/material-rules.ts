@@ -374,7 +374,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     this.arena.removeUsedUpPatches();
     this.reachInkCore();
     this.drop(this.kill());
-    this.removeBeyondSpawnEdge();
+    this.removeOutOfView();
   }
 
   /**
@@ -477,13 +477,20 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
   }
 
   /**
-   * Anything but an Enemy wholly out of view over the Spawn edge is
-   * removed, as a Droplet that leaves the Arena is: it breaks, bursts,
-   * releases and sets off nothing. An Enemy there walks in again.
+   * Anything but an Enemy wholly out of view, below the screen (down a Pit)
+   * or over the Spawn edge, is removed once, as a Droplet that leaves the
+   * Arena is: it breaks, bursts, releases and sets off nothing. An Enemy
+   * below the screen has died already; one over the Spawn edge walks in
+   * again.
    */
-  private removeBeyondSpawnEdge(): void {
-    for (const thing of this.arena.beyondSpawnEdge()) {
-      if (thing.thing !== 'enemy') this.arena.remove(thing, 'left');
+  private removeOutOfView(): void {
+    const removed = new Set<string>();
+    for (const thing of [...this.arena.belowScreen(), ...this.arena.beyondSpawnEdge()]) {
+      const key =
+        thing.thing === 'piece' ? `piece ${thing.id}.${thing.index}` : `${thing.thing} ${thing.id}`;
+      if (thing.thing === 'enemy' || removed.has(key)) continue;
+      removed.add(key);
+      this.arena.remove(thing, 'left');
     }
   }
 

@@ -215,6 +215,19 @@ describe('Enemies walk', () => {
     expect(world.inkCore.hp).toBe(10);
   });
 
+  it('destroys an Object that falls down a Pit once it is below the screen', () => {
+    const world = createWorld({ arena: PIT_ARENA });
+    const heard = hear(world);
+    const id = drawObject(world, dragBox(440, GROUND_Y - 60, 40, 40));
+    world.togglePause();
+    world.release(id);
+
+    const gone = stepUntil(world, 10, () => world.objects.length === 0);
+
+    expect(gone).toBe(true);
+    expect(wentOf(heard())).toEqual([`object ${id} left`]);
+  });
+
   it('walks an Enemy thrown back over the left edge in again', () => {
     const world = createWorld();
     const heard = hear(world);

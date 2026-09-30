@@ -50,7 +50,7 @@ export type Why =
   | 'landed'
   /**
    * It left the Arena: a Droplet off any edge, or anything but an Enemy
-   * wholly out of view over the Spawn edge.
+   * wholly out of view below the screen or over the Spawn edge.
    */
   | 'left'
   /** An Enemy reached the Ink Core. */
