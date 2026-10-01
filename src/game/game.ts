@@ -25,6 +25,7 @@ import {
   type Bar,
   type BuildAction,
   type LoopPosition,
+  type Rules,
 } from './defence-loop';
 import type { StressTest } from '../stress-tests/stress-test';
 import { checkArenaSize, type Level } from './level';
@@ -176,8 +177,8 @@ export interface GameOptions {
   readonly inkCosts: boolean;
   /** Whether the Game has Waves and Intermissions; off by default. */
   readonly waves?: boolean;
-  /** PROVISIONAL: whether the player may build outside a Wave too; on by default (see `DefenceLoopOptions`). */
-  readonly buildBetweenWaves?: boolean;
+  /** PROVISIONAL: the rules switches, F2's; a fresh copy of the defaults by default (see `Rules`). */
+  readonly rules?: Rules;
   /** The Wave table of the only Wave until a Level brings its own; defaults to a fresh copy of the defaults. */
   readonly wave?: WaveTable;
   /** The Sandbox world to run; a new one from `worldOptions` by default. */
@@ -208,9 +209,14 @@ export interface GameOptions {
  * Every kill's Drop, which the Sandbox world reports in the list of what
  * happened, goes straight into the Tanks, Waves on or off (ADR 0012).
  *
- * With Waves on, drawing, filling, erasing and undo happen only during a
- * Wave, paused or running, Ink costs on or off; there, a Stroke may be drawn
- * anywhere but near an Enemy. Releasing works anywhere.
+ * With Waves on, drawing, filling, erasing and undo happen during a Wave,
+ * paused or running, Ink costs on or off; there, a Stroke may be drawn
+ * anywhere but near an Enemy. PROVISIONAL: the rules switches (`rules`)
+ * also allow them between Waves and while a Wave is paused, and undo during
+ * a Wave, all on by default. Releasing works anywhere.
+ *
+ * The Eraser is a sandbox tool: the Game erases nothing while it is put
+ * away (`eraser`), as it is in the Campaign.
  */
 export class Game {
   readonly world: SandboxWorld;
@@ -219,6 +225,7 @@ export class Game {
   private readonly table: InkTable;
   private readonly inkTanks: InkTanks;
   private costs: boolean;
+  private eraserOnHand = true;
   /** What each Stroke still in the Arena paid, by id. */
   private strokes = new Map<StrokeId, Charge>();
   /** What each Fill still in the Arena paid, by its Object's id. */
@@ -253,7 +260,7 @@ export class Game {
       tanks: this.inkTanks,
       table: options.wave ?? createWaveTable(),
       waves: options.waves ?? false,
-      buildBetweenWaves: options.buildBetweenWaves,
+      rules: options.rules,
     });
   }
 
@@ -264,6 +271,27 @@ export class Game {
 
   set inkCosts(on: boolean) {
     this.costs = on;
+  }
+
+  /**
+   * PROVISIONAL: the rules switches the Defence loop reads, edited in place
+   * by F2. Not a table: lost on reload, and kept by loading a Level.
+   */
+  get rules(): Rules {
+    return this.defence.rules;
+  }
+
+  /**
+   * Whether the Eraser is on hand: a sandbox tool, so the Session puts it
+   * away in the Campaign and back for the Sandbox and the Gallery. Put
+   * away, `eraseAlong` erases nothing. On hand by default.
+   */
+  get eraser(): boolean {
+    return this.eraserOnHand;
+  }
+
+  set eraser(onHand: boolean) {
+    this.eraserOnHand = onHand;
   }
 
   /**
@@ -532,10 +560,11 @@ export class Game {
    * The Eraser: removes what its brush passes over, and refunds what was
    * paid for it: an Object's Outline and Fill, a Piece's price. Rubble,
    * Droplets and Patches are a broken Fill's, and that Ink is spent. It
-   * erases nothing while the Defence loop bars erasing.
+   * erases nothing while the Eraser is put away (the Campaign), or while
+   * the Defence loop bars erasing.
    */
   eraseAlong(path: readonly Vec2[], radius: number): void {
-    if (this.defence.bar('erase')) return;
+    if (!this.eraserOnHand || this.defence.bar('erase')) return;
     this.catchUp();
     this.world.eraseAlong(path, radius);
     this.catchUp();
@@ -546,7 +575,7 @@ export class Game {
    * exactly what was paid for it: a Fill's price, an Object's Outline's, or
    * a Line's standing Pieces'. Broken Objects, and Lines whose every Piece
    * broke, are gone from the history, so undo skips them. It does nothing
-   * while the Defence loop bars undo (see its PROVISIONAL note).
+   * while the Defence loop bars undo (see its PROVISIONAL `Rules`).
    */
   undo(): void {
     if (this.defence.bar('undo')) return;

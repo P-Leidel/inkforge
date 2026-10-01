@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_RULES } from '../game/defence-loop';
 import { Game } from '../game/game';
 import { DEFAULT_INK_TABLE } from '../game/ink-table';
 import { DEFAULT_WAVE_TABLE } from '../game/wave-table';
@@ -21,6 +22,7 @@ describe("The tuning panel's Copy as JSON", () => {
         ink: game.ink,
         wave: DEFAULT_WAVE_TABLE,
         enemies: createEnemyTable(),
+        rules: DEFAULT_RULES,
       }),
     );
 
@@ -44,6 +46,7 @@ describe("The tuning panel's Copy as JSON", () => {
         ink: DEFAULT_INK_TABLE,
         wave: DEFAULT_WAVE_TABLE,
         enemies: createEnemyTable(),
+        rules: DEFAULT_RULES,
       }),
     );
 
@@ -62,6 +65,7 @@ describe("The tuning panel's Copy as JSON", () => {
         ink: DEFAULT_INK_TABLE,
         wave: DEFAULT_WAVE_TABLE,
         enemies,
+        rules: DEFAULT_RULES,
       }),
     );
 
@@ -82,6 +86,7 @@ describe("The tuning panel's Copy as JSON", () => {
         ink: DEFAULT_INK_TABLE,
         wave: game.defence.table,
         enemies: createEnemyTable(),
+        rules: DEFAULT_RULES,
       }),
     );
 
@@ -89,6 +94,28 @@ describe("The tuning panel's Copy as JSON", () => {
     expect(pasted.wave).toEqual({
       counts: { ...DEFAULT_WAVE_TABLE.counts, runner: 8 },
       gap: 1.5,
+    });
+    game.dispose();
+  });
+
+  it('holds the rules switches under `rules`, as the Game has them', () => {
+    const game = new Game({ inkCosts: false, worldOptions: { seed: 1 } });
+    game.rules.undoDuringWave = false;
+
+    const pasted = JSON.parse(
+      tablesAsJson({
+        materials: createMaterialTable(),
+        ink: DEFAULT_INK_TABLE,
+        wave: DEFAULT_WAVE_TABLE,
+        enemies: createEnemyTable(),
+        rules: game.rules,
+      }),
+    );
+
+    expect(pasted.rules).toEqual({
+      buildBetweenWaves: true,
+      undoDuringWave: false,
+      buildWhilePaused: true,
     });
     game.dispose();
   });

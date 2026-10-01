@@ -106,6 +106,33 @@ export interface LoopPosition {
 /** The first Wave's Intermission, with nothing ended: where a Level starts. */
 export const FIRST_INTERMISSION: LoopPosition = { index: 0, ended: [] };
 
+/**
+ * PROVISIONAL (ADR 0012): the rules the exit playtest of milestone 5
+ * decides, each an F2 switch, all on by default. Turned off, each bars what
+ * it names ('not-now'), with Waves on. They go, with this note, once the
+ * playtest's ADR records them.
+ */
+export interface Rules {
+  /** Drawing, filling, erasing and undo in an Intermission and once the Level is cleared. */
+  buildBetweenWaves: boolean;
+  /** Undo during a Wave, with its full refund. */
+  undoDuringWave: boolean;
+  /** Drawing, filling, erasing and undo while a Wave is paused. */
+  buildWhilePaused: boolean;
+}
+
+/** The rules as they are until the playtest decides: everything allowed. */
+export const DEFAULT_RULES: Readonly<Rules> = {
+  buildBetweenWaves: true,
+  undoDuringWave: true,
+  buildWhilePaused: true,
+};
+
+/** A fresh copy of the default rules, to edit. */
+export function createRules(): Rules {
+  return { ...DEFAULT_RULES };
+}
+
 export interface DefenceLoopOptions {
   readonly world: LoopWorld;
   readonly tanks: Refill;
@@ -114,12 +141,10 @@ export interface DefenceLoopOptions {
   /** The Waves switch; off by default. */
   readonly waves?: boolean;
   /**
-   * PROVISIONAL, for manual testing: whether the player may build outside a
-   * Wave too, in an Intermission or once the Level is cleared; on by
-   * default. Turned off, building is barred there ('not-now'), as ADR 0012
-   * has it.
+   * PROVISIONAL: the rules to read, edited in place by F2; a fresh copy of
+   * the defaults by default. See `Rules`.
    */
-  readonly buildBetweenWaves?: boolean;
+  readonly rules?: Rules;
 }
 
 /** A Wave under way: the Enemies still to come, when the next may, and its tally. */
@@ -155,7 +180,8 @@ export class DefenceLoop {
   /** The Level's Waves, in order, each its own Wave table. */
   private tables: WaveTable[];
   private on: boolean;
-  private readonly buildBetweenWaves: boolean;
+  /** PROVISIONAL: the F2 rules switches, read at every `bar`. */
+  readonly rules: Rules;
   /** Which of `tables` is under way, or comes next; the last once cleared. */
   private index = 0;
   /** The Wave under way, paused or running, or the one lost; null in an Intermission or once cleared. */
@@ -169,7 +195,7 @@ export class DefenceLoop {
     this.tanks = options.tanks;
     this.tables = [options.table];
     this.on = options.waves ?? false;
-    this.buildBetweenWaves = options.buildBetweenWaves ?? true;
+    this.rules = options.rules ?? createRules();
   }
 
   /**
@@ -255,10 +281,12 @@ export class DefenceLoop {
 
   /**
    * Why the player may not `action` now, or null if they may. Once the Ink
-   * Core is destroyed, nothing, Waves on or off. With Waves on, nothing
-   * outside a Wave unless building between Waves is on (it is, for now), and
-   * no Stroke whose samples come near an Enemy (`nearEnemy`). With Waves
-   * off, anything.
+   * Core is destroyed, nothing, Waves on or off. With Waves on, no Stroke
+   * whose samples come near an Enemy (`nearEnemy`), and PROVISIONAL, as the
+   * rules switches have it ('not-now'): nothing outside a Wave unless
+   * building between Waves is on, no undo during a Wave unless undo during
+   * a Wave is on, and nothing while a Wave is paused unless building while
+   * paused is on. All three are on by default. With Waves off, anything.
    */
   bar(
     action: BuildAction,
@@ -266,11 +294,13 @@ export class DefenceLoop {
   ): Bar | null {
     if (this.coreDestroyed) return 'lost';
     if (!this.on) return null;
-    if (this.current === null && !this.buildBetweenWaves) return 'not-now';
-    // PROVISIONAL, for manual testing (ADR 0012): during a Wave, undo (with
-    // its full refund) and every action while the Wave is paused stay
-    // allowed. Either may go once playing shows whether Ink scarcity holds
-    // without them: undo by barring it here, pausing by asking the world.
+    const { buildBetweenWaves, undoDuringWave, buildWhilePaused } = this.rules;
+    if (this.current === null) {
+      if (!buildBetweenWaves) return 'not-now';
+    } else {
+      if (action === 'undo' && !undoDuringWave) return 'not-now';
+      if (!this.world.isRunning && !buildWhilePaused) return 'not-now';
+    }
     if (action === 'draw' && nearEnemy) return 'near-enemy';
     return null;
   }

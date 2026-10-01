@@ -329,4 +329,39 @@ describe('A Session in the Campaign', () => {
       expect(session.reading.campaign!.index).toBe(0);
     });
   });
+  describe('the Eraser', () => {
+    const brush = [
+      { x: 290, y: 500 },
+      { x: 510, y: 500 },
+    ];
+
+    it('is put away in a Campaign Level: the Game erases nothing there, after Next Level and Restart Level too', () => {
+      const { game, session } = campaignSession();
+      session.playCampaign(0);
+      playWave(game, session);
+      playWave(game, session);
+      expect(session.playNext()).toBe(true);
+      expect(game.world.lines).toHaveLength(1);
+
+      for (const again of [false, true]) {
+        if (again) session.clear();
+        expect(game.eraser).toBe(false);
+        game.eraseAlong(brush, 12);
+        expect(game.world.lines).toHaveLength(1);
+      }
+    });
+
+    it('is on hand again in the Sandbox and the Gallery', () => {
+      const { game, session } = campaignSession();
+      session.playCampaign(0);
+
+      for (const level of [LINE_LEVEL, THREE_WAVES_DEMO]) {
+        session.play(level);
+        expect(game.eraser).toBe(true);
+      }
+      session.play(LINE_LEVEL);
+      game.eraseAlong(brush, 12);
+      expect(game.world.lines).toEqual([]);
+    });
+  });
 });

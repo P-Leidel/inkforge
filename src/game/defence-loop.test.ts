@@ -3,6 +3,7 @@ import { COLOURS, type Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import {
+  DEFAULT_RULES,
   DefenceLoop,
   FIRST_INTERMISSION,
   type LoopPosition,
@@ -76,7 +77,7 @@ function loop({
     tanks,
     table: table(wave),
     waves: on,
-    buildBetweenWaves: between,
+    rules: { ...DEFAULT_RULES, buildBetweenWaves: between },
   });
   if (waves) defence.load(waves.map(table));
   // Only what the loop asks for after setting up.
@@ -447,6 +448,82 @@ describe('What the player may do now', () => {
       for (const action of ACTIONS) expect(defence.bar(action)).toBeNull();
       expect(defence.bar('draw', { nearEnemy: true })).toBe('near-enemy');
     }
+  });
+
+  describe('with a rules switch turned off (provisional, F2)', () => {
+    it('Build between Waves off bars everything in an Intermission and once cleared, nothing in a Wave', () => {
+      const { defence, world } = loop({ on: true, between: true });
+      defence.rules.buildBetweenWaves = false;
+      for (const action of ACTIONS) expect(defence.bar(action)).toBe('not-now');
+
+      space(defence, world);
+      for (const action of ACTIONS) expect(defence.bar(action)).toBeNull();
+
+      step(defence, world);
+      expect(defence.reading.phase).toBe('cleared');
+      for (const action of ACTIONS) expect(defence.bar(action)).toBe('not-now');
+    });
+
+    it('Undo during a Wave off bars only undo, and only in a Wave, running or paused', () => {
+      const { defence, world } = loop({ on: true, wave: { crawler: 2 }, between: true });
+      defence.rules.undoDuringWave = false;
+      expect(defence.bar('undo')).toBeNull();
+
+      space(defence, world);
+      for (const paused of [false, true]) {
+        if (paused) space(defence, world);
+        expect(world.isRunning).toBe(!paused);
+        expect(defence.bar('undo')).toBe('not-now');
+        for (const action of ['draw', 'fill', 'erase'] as const) {
+          expect(defence.bar(action)).toBeNull();
+        }
+      }
+    });
+
+    it('Build while paused off bars everything in a paused Wave, nothing while it runs or between Waves', () => {
+      const { defence, world } = loop({ on: true, wave: { crawler: 2 }, between: true });
+      defence.rules.buildWhilePaused = false;
+      for (const action of ACTIONS) expect(defence.bar(action)).toBeNull();
+
+      space(defence, world);
+      for (const action of ACTIONS) expect(defence.bar(action)).toBeNull();
+
+      space(defence, world);
+      expect(defence.reading.phase).toBe('wave');
+      for (const action of ACTIONS) expect(defence.bar(action)).toBe('not-now');
+
+      space(defence, world);
+      for (const action of ACTIONS) expect(defence.bar(action)).toBeNull();
+    });
+
+    it('with Waves off, none of them bars anything', () => {
+      const { defence, world } = loop({ wave: { crawler: 2 } });
+      Object.assign(defence.rules, {
+        buildBetweenWaves: false,
+        undoDuringWave: false,
+        buildWhilePaused: false,
+      });
+      for (const action of ACTIONS) expect(defence.bar(action)).toBeNull();
+      space(defence, world);
+      for (const action of ACTIONS) expect(defence.bar(action)).toBeNull();
+    });
+  });
+
+  it('has every rules switch on by default', () => {
+    const { defence } = loop();
+    expect(DEFAULT_RULES).toEqual({
+      buildBetweenWaves: true,
+      undoDuringWave: true,
+      buildWhilePaused: true,
+    });
+    const fresh = new DefenceLoop({
+      world: new FakeWorld(),
+      tanks: new FakeTanks(),
+      table: table(),
+    });
+    expect(fresh.rules).toEqual(DEFAULT_RULES);
+    expect(fresh.rules).not.toBe(DEFAULT_RULES);
+    expect(defence.rules).not.toBe(fresh.rules);
   });
 
   it('once the Ink Core is destroyed, is nothing, Waves on or off, until R', () => {

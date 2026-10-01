@@ -3,8 +3,10 @@ import type { Vec2 } from '../geometry/vec2';
 import { createEnemyTable } from '../materials/enemy-table';
 import { SANDBOX_ARENA } from '../sandbox/arena';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
+import { DEFAULT_RULES } from './defence-loop';
 import type { Game } from './game';
 import { inLineLength } from './ink-table';
+import { SANDBOX_LEVEL } from './level';
 import { games } from './test-support';
 
 const createGame = games();
@@ -70,7 +72,10 @@ describe('With Waves on, in an Intermission (building between Waves, provisional
 
 describe('With Waves on and building between Waves off, in an Intermission', () => {
   it('bars every Stroke and Fill', () => {
-    const game = createGame(false, { waves: true, buildBetweenWaves: false });
+    const game = createGame(false, {
+      waves: true,
+      rules: { ...DEFAULT_RULES, buildBetweenWaves: false },
+    });
     game.waves = false;
     expect(game.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
     game.waves = true;
@@ -81,6 +86,110 @@ describe('With Waves on and building between Waves off, in an Intermission', () 
       kind: 'barred',
       reason: 'not-now',
     });
+    expect(game.world.lines).toEqual([]);
+  });
+});
+
+describe('The rules switches, turned off (provisional, F2)', () => {
+  it("are on by default, the Defence loop's own, and kept by loading a Level", () => {
+    const game = wavesGame(false);
+    expect(game.rules).toEqual(DEFAULT_RULES);
+    expect(game.rules).toBe(game.defence.rules);
+
+    game.rules.undoDuringWave = false;
+    game.load(SANDBOX_LEVEL);
+    expect(game.rules.undoDuringWave).toBe(false);
+  });
+
+  it('Undo during a Wave off: undo takes nothing back in a Wave, running or paused, and refunds nothing', () => {
+    const game = wavesGame(true);
+    game.rules.undoDuringWave = false;
+    game.togglePause();
+    expect(game.defence.reading.phase).toBe('wave');
+    expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
+    const left = game.tanks.grey.spendable;
+
+    for (const running of [true, false]) {
+      expect(game.isRunning).toBe(running);
+      game.undo();
+      expect(game.world.lines).toHaveLength(1);
+      expect(game.tanks.grey.spendable).toBe(left);
+      if (running) game.togglePause();
+    }
+
+    game.rules.undoDuringWave = true;
+    game.undo();
+    expect(game.world.lines).toEqual([]);
+    expect(game.tanks.grey.spendable).toBeGreaterThan(left);
+  });
+
+  it('Undo during a Wave off leaves undo in an Intermission alone', () => {
+    const game = wavesGame(false);
+    game.rules.undoDuringWave = false;
+    expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
+
+    game.undo();
+
+    expect(game.world.lines).toEqual([]);
+  });
+
+  it('Build while paused off: nothing is drawn, filled or undone in a paused Wave; running, it is', () => {
+    const game = wavesGame(false);
+    game.rules.buildWhilePaused = false;
+    expect(game.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
+    game.togglePause();
+    expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
+    game.togglePause();
+    expect(game.isRunning).toBe(false);
+    expect(game.defence.reading.phase).toBe('wave');
+
+    expect(game.submitStroke(across(300, 500, 100), 'grey')).toMatchObject({
+      kind: 'barred',
+      reason: 'not-now',
+    });
+    expect(game.prospect(game.lookAtStroke(FAR)!, 'grey').refusal).toBe('not-now');
+    expect(game.fillAt({ x: 330, y: 330 }, 'blue')).toMatchObject({
+      kind: 'barred',
+      reason: 'not-now',
+    });
+    game.undo();
+    expect(game.world.lines).toHaveLength(1);
+
+    game.togglePause();
+    expect(game.fillAt({ x: 330, y: 330 }, 'blue').kind).toBe('filled');
+  });
+
+  it('Build between Waves off leaves a paused Wave alone', () => {
+    const game = wavesGame(false);
+    game.rules.buildBetweenWaves = false;
+    game.togglePause();
+    game.togglePause();
+    expect(game.defence.reading.phase).toBe('wave');
+
+    expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
+  });
+});
+
+describe('The Eraser, a sandbox tool', () => {
+  it('is on hand by default, and put away erases nothing, Waves on or off; on hand again, it erases', () => {
+    const game = createGame(true);
+    expect(game.eraser).toBe(true);
+    expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
+    const left = game.tanks.grey.spendable;
+    const brush = [
+      { x: 590, y: 200 },
+      { x: 810, y: 200 },
+    ];
+
+    game.eraser = false;
+    game.eraseAlong(brush, 12);
+    game.waves = true;
+    game.eraseAlong(brush, 12);
+    expect(game.world.lines).toHaveLength(1);
+    expect(game.tanks.grey.spendable).toBe(left);
+
+    game.eraser = true;
+    game.eraseAlong(brush, 12);
     expect(game.world.lines).toEqual([]);
   });
 });
