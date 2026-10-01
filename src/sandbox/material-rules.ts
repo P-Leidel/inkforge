@@ -1,6 +1,5 @@
 import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import type { EnemyType } from '../materials/enemy-table';
 import type { MaterialTable } from '../materials/material-table';
 import type { Polygon } from '../geometry/polygon';
 import type { BodyId, ContactHit, PhysicsWorld, ShapeId } from '../physics';
@@ -15,7 +14,7 @@ import {
 } from './blasts';
 import { pairKey, type ContactLedger, type Party } from './contact-ledger';
 import { packSpill, type Landing, type LooseDroplet } from './droplets';
-import { drawDrop, type DropInk } from './drops';
+import type { EnemyRules } from './enemy-rules';
 import type { Walker } from './enemies';
 import { Glue, type Gluer } from './glue';
 import type { Thing, Why } from './happenings';
@@ -27,24 +26,21 @@ import { Sticking, type Sticker } from './sticking';
 
 /**
  * Material rules: everything Colour-specific that follows from things
- * touching, breaking and exploding, and the Enemies' walking. Headless and
- * part of the Sandbox world. Before each physics step the world calls
- * `walk`, and after it one call, `step`, and they run every consequence in
- * their own order: they read the contacts that count
- * from the Contact ledger (hits, new contacts, touching) and what the Blasts
- * reached, and decide damage from any cause and the blue counter, what
- * breaks, what a break lets out (Debris, Rubble, a Spill, a Blast), what a
- * Blast wakes and pushes, glue drag and wear, Patch wear, what sticks and
- * where a Droplet lands. For Enemies they decide whether one stands on
- * something it can walk on, before each step, and what follows from what
- * it touches and where it is after: pressing and floor wear, the damage
- * hits and Blasts deal to its HP, reaching the Ink Core, dying at 0 HP or
- * below the screen, and the Drop it lets out. What a
+ * touching, breaking and exploding. Headless and part of the Sandbox world.
+ * Before each physics step the world calls `walk`, and after it one call,
+ * `step`, and they run every consequence in their own order: they read the
+ * contacts that count from the Contact ledger (hits, new contacts,
+ * touching) and what the Blasts reached, and decide damage from any cause
+ * and the blue counter, what breaks, what a break lets out (Debris, Rubble,
+ * a Spill, a Blast), what a Blast wakes and pushes, glue drag and wear,
+ * Patch wear, what sticks and where a Droplet lands. What a
  * thing's numbers are they ask `Numbers`. They carry their decisions out
  * through two narrow ports the world wires up: the physics module, and the
  * Arena (its kinds and Debris). Glue drag (`Glue`) and sticking (`Sticking`)
- * are parts of them in files of their own; the world only talks to
- * `MaterialRules`.
+ * are parts of them in files of their own. An Enemy's own rules (walking,
+ * climbing, Stacks, pressing, HP, the Ink Core, deaths and Drops) are the
+ * Enemy rules (`EnemyRules`), which these call in their one order; the
+ * world only steps `MaterialRules`.
  */
 
 /** Damage an impact deals to a receiver: the impulse above its threshold, times k. */
@@ -74,56 +70,6 @@ export function fuseBurns(colour: Colour, table: MaterialTable): boolean {
   if (line.explodes <= 0) return false;
   const strength = blastStrength(pieceBlastSize(table), table.pieceLength);
   return impactDamage(strength, line.damageThreshold, table.damagePerImpulse) >= line.durability;
-}
-
-/**
- * A wall an Enemy presses leans over it as an overhang when the contact
- * normal points down more than this (its y): one it never climbs.
- */
-const OVERHANG = 0.25;
-
-/** The steepest surface (radians from level) an Enemy stands on: anything steeper it presses. */
-export const STEEPEST_FLOOR = Math.PI / 4;
-
-/**
- * Floor or not: whether an Enemy stands on a surface it touches, given the
- * unit contact normal pointing from the surface towards the Enemy. It does
- * on one no steeper than `STEEPEST_FLOOR`; anything steeper it presses.
- */
-export function isFloor(normal: Vec2): boolean {
-  return -normal.y >= Math.cos(STEEPEST_FLOOR) - 1e-9;
-}
-
-/**
- * Whether an Enemy walking along x toward `heading` (+1 or -1) presses a
- * surface it touches, given the unit contact normal pointing from the
- * surface towards the Enemy: one steeper than `STEEPEST_FLOOR` in its way,
- * facing it within 45° of head-on. A ceiling above it or a wall behind it
- * isn't in its way.
- */
-export function isPressed(normal: Vec2, heading: number): boolean {
-  return -heading * normal.x > Math.sin(STEEPEST_FLOOR) + 1e-9;
-}
-
-/**
- * Whether what an Enemy walking along x toward `heading` (+1 or -1)
- * touches is ahead of it, given the unit contact normal pointing from it
- * towards the Enemy: the normal leans back against its heading at all. A
- * wall it presses is ahead, and so is the top corner of an Enemy it is
- * climbing; a floor straight below it is not.
- */
-export function isAhead(normal: Vec2, heading: number): boolean {
-  return -heading * normal.x > 1e-9;
-}
-
-/**
- * Whether a hit pushes an Enemy down onto what it stands on, given the unit
- * hit normal pointing from the hitter towards the Enemy: from above, within
- * `STEEPEST_FLOOR` of straight down. Standing, it can't give way, so it is
- * crushed: it takes the hit as a fixed body would.
- */
-export function isCrushing(normal: Vec2): boolean {
-  return isFloor({ x: -normal.x, y: -normal.y });
 }
 
 /** What damages a Breakable. */
@@ -185,13 +131,6 @@ export type Broken =
       readonly fill: ReleasedFill | null;
     };
 
-/** An Enemy that died, and where its body was. */
-export interface Killed {
-  readonly id: number;
-  readonly type: EnemyType;
-  readonly at: Vec2;
-}
-
 /** What the Material rules ask of the physics module. */
 export type RulesPhysics = Pick<
   PhysicsWorld,
@@ -218,10 +157,10 @@ export type RulesContacts<T> = Pick<
 /**
  * What the Material rules' decisions do to the Arena contents, wired by the
  * Sandbox world to its kinds and its Debris. Each call carries out a
- * decision; none decides anything. `T` is what takes damage, `S` what
- * may stick and `W` what walks.
+ * decision; none decides anything. `T` is what takes damage and `S` what
+ * may stick. The Enemies have a port of their own, `EnemyArena`.
  */
-export interface RulesArena<T, S, W> {
+export interface RulesArena<T, S> {
   /** Removes a broken Object or Piece and says what it lets out; null if it is already gone. */
   break(target: T): Broken | null;
   /** Bursts Debris, which is visual only. */
@@ -257,39 +196,6 @@ export interface RulesArena<T, S, W> {
    * a Blast `act` starts spreads in the same call.
    */
   spreadBlasts(seconds: number, act: (reached: readonly Reach<T>[]) => void): void;
-  /** Every Enemy, oldest first. */
-  walkers(): Iterable<W>;
-  /**
-   * Pushes an Enemy through the next step of `seconds` toward its walking
-   * speed: it walks. Returns its drive state: true if it pushes as hard as
-   * it will without getting past.
-   */
-  walk(walker: W, seconds: number): boolean;
-  /**
-   * Pushes an Enemy up through the next step of `seconds`, never harder
-   * than its type's climb: it climbs.
-   */
-  climb(walker: W, seconds: number): void;
-  /** Which way along x an Enemy walks: +1 or -1, toward the Ink Core's side of it. */
-  heading(walker: W): number;
-  /**
-   * Whether the Terrain, the Ink Core, an Object or a Line fills any of
-   * `room`, a convex polygon in world coordinates: no room to climb into.
-   */
-  blocksClimb(room: Polygon): boolean;
-  /** The Enemy whose Party this is, if any. */
-  walkerOf(party: Party<unknown>): W | undefined;
-  /**
-   * Kills Enemy `id` at once: it pops and goes, releasing nothing physical.
-   * Says what died and where; null if it is already gone.
-   */
-  kill(id: number): Killed | null;
-  /** Lets out a dead Enemy's Drop: the Ink of every Colour, from where it died. */
-  drop(killed: Killed, ink: DropInk): void;
-  /** Whether a Party is the Ink Core. */
-  isInkCore(party: Party<unknown>): boolean;
-  /** Takes `damage` off the Ink Core's HP. */
-  damageInkCore(damage: number): void;
   /** What lies wholly below the bottom of the screen, oldest first. */
   belowScreen(): readonly Thing[];
   /** What lies wholly out of view over the Spawn edge, oldest first. */
@@ -298,7 +204,7 @@ export interface RulesArena<T, S, W> {
   remove(thing: Thing, why: Why): void;
 }
 
-export interface MaterialRulesOptions<T, S, W> {
+export interface MaterialRulesOptions<T, S, W extends Walker> {
   readonly materials: MaterialTable;
   /** What a thing's numbers are. */
   readonly numbers: Numbers;
@@ -306,7 +212,9 @@ export interface MaterialRulesOptions<T, S, W> {
   readonly random: Random;
   readonly physics: RulesPhysics;
   readonly contacts: RulesContacts<T>;
-  readonly arena: RulesArena<T, S, W>;
+  readonly arena: RulesArena<T, S>;
+  /** The Enemy rules, which the Material rules call in their order. */
+  readonly enemies: EnemyRules<W>;
 }
 
 /** Whether a gluer is a Patch, which glues through its one shape, rather than a Piece. */
@@ -322,11 +230,10 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
   private readonly random: Random;
   private readonly physics: RulesPhysics;
   private readonly contacts: RulesContacts<T>;
-  private readonly arena: RulesArena<T, S, W>;
+  private readonly arena: RulesArena<T, S>;
+  private readonly enemies: EnemyRules<W>;
   private readonly glueDrag: Glue;
   private readonly sticking: Sticking;
-  /** The Enemies stalled in their walking this step, by id: they press an Object in their way. */
-  private readonly stalled = new Set<number>();
 
   constructor({
     materials,
@@ -335,6 +242,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     physics,
     contacts,
     arena,
+    enemies,
   }: MaterialRulesOptions<T, S, W>) {
     this.materials = materials;
     this.numbers = numbers;
@@ -342,160 +250,14 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     this.physics = physics;
     this.contacts = contacts;
     this.arena = arena;
+    this.enemies = enemies;
     this.glueDrag = new Glue(materials, physics, contacts, (shape) => !!arena.patchOf(shape));
     this.sticking = new Sticking(materials, physics, contacts);
   }
 
-  /**
-   * Before each physics step of `seconds`: every Enemy standing on
-   * something it can walk on walks, oldest first. One in the air, or only
-   * on what is too steep, doesn't push. Each says whether it is stalled,
-   * for pressing after the step. One that climbs (`climbs`) walks too,
-   * standing or not, and climbs as well.
-   */
+  /** Before each physics step of `seconds`: the Enemies walk, and climb (`EnemyRules.walk`). */
   walk(seconds: number): void {
-    this.stalled.clear();
-    for (const walker of this.arena.walkers()) {
-      const climbs = this.climbs(walker);
-      if ((climbs || this.stands(walker)) && this.arena.walk(walker, seconds))
-        this.stalled.add(walker.id);
-      if (climbs) this.arena.climb(walker, seconds);
-    }
-  }
-
-  /**
-   * Whether an Enemy climbs now: its type climbs, and a step low enough
-   * touches it from ahead. Another Enemy is such a step when it touches it
-   * from ahead (`isAhead`), its side or the corner of its top, and its step
-   * is low enough: the top of that Enemy, or of the highest Enemy standing
-   * on it, on another and so on, at most the climbing step (in its own
-   * heights) above its feet. The Terrain, an Object or a Line is one when
-   * the Enemy presses it as a wall (`isPressed`, not an overhang over it) and
-   * its top ahead is as low: there is room for the Enemy's body just ahead,
-   * standing the climbing step above its feet. Once it stands on top, the
-   * contact is below it, not ahead, and it walks on.
-   */
-  private climbs(walker: W): boolean {
-    if (this.numbers.enemy(walker.type).climb <= 0) return false;
-    const heading = this.arena.heading(walker);
-    const step = this.numbers.climbStep * walker.height;
-    const feet = () => this.physics.getTransform(walker.body).y + walker.height / 2;
-    for (const { party, pairs } of this.contacts.touching(walker.body)) {
-      if (party.harmless) continue;
-      const other = this.arena.walkerOf(party);
-      if (other === walker) continue;
-      const touches = (test: (normal: Vec2) => boolean) =>
-        pairs.some((pair) => {
-          const normal = this.contacts.normal(walker.body, pair);
-          return normal !== null && test(normal);
-        });
-      if (other) {
-        if (!touches((normal) => isAhead(normal, heading))) continue;
-        if (feet() - this.stepTop(other, walker) <= step + 1e-9) return true;
-      } else if (!this.arena.isInkCore(party)) {
-        if (!touches((normal) => isPressed(normal, heading) && normal.y < OVERHANG)) continue;
-        if (!this.arena.blocksClimb(this.roomOver(walker, feet() - step))) return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * The room an Enemy needs to stand just ahead of it with its feet at
-   * `top` (y): a box as wide and tall as its body, from its front onward.
-   */
-  private roomOver(walker: W, top: number): Polygon {
-    const { x } = this.physics.getTransform(walker.body);
-    const heading = this.arena.heading(walker);
-    const near = x + (heading * walker.width) / 2;
-    const far = near + heading * walker.width;
-    const [minX, maxX] = [Math.min(near, far), Math.max(near, far)];
-    const minY = top - walker.height;
-    return [
-      { x: minX, y: minY },
-      { x: maxX, y: minY },
-      { x: maxX, y: top },
-      { x: minX, y: top },
-    ];
-  }
-
-  /**
-   * The top (y) of the step an Enemy makes for `climber`: its own top, or
-   * that of the highest Enemy standing on it, on another and so on.
-   */
-  private stepTop(step: W, climber: W): number {
-    const top = (walker: W) => this.physics.getTransform(walker.body).y - walker.height / 2;
-    let highest = top(step);
-    for (const above of this.stackedOn(step, new Set([climber, step]))) {
-      highest = Math.min(highest, top(above));
-    }
-    return highest;
-  }
-
-  /**
-   * The Enemies standing on `base`, on one of those and so on, but not those
-   * in `seen`, to which it adds them.
-   */
-  private stackedOn(base: W, seen: Set<W>): W[] {
-    const found: W[] = [];
-    const stack = [base];
-    for (let below = stack.pop(); below; below = stack.pop()) {
-      for (const above of this.standing(below, 'on')) {
-        if (seen.has(above)) continue;
-        seen.add(above);
-        stack.push(above);
-        found.push(above);
-      }
-    }
-    return found;
-  }
-
-  /**
-   * Every Enemy's Stack: how many other Enemies it stands on, or stand on
-   * it, or on one of those and so on.
-   */
-  private stacks(): Map<W, number> {
-    const sizes = new Map<W, number>();
-    for (const walker of this.arena.walkers()) {
-      if (sizes.has(walker)) continue;
-      const stack = [walker];
-      for (const member of stack) {
-        for (const other of [...this.standing(member, 'on'), ...this.standing(member, 'under')])
-          if (!stack.includes(other)) stack.push(other);
-      }
-      for (const member of stack) sizes.set(member, stack.length - 1);
-    }
-    return sizes;
-  }
-
-  /**
-   * The Enemies standing now on `walker` (`on`), or that it stands on
-   * (`under`): those touching it where the one above stands (`isFloor`).
-   */
-  private standing(walker: W, where: 'on' | 'under'): W[] {
-    const found: W[] = [];
-    for (const { party, pairs } of this.contacts.touching(walker.body)) {
-      const other = this.arena.walkerOf(party);
-      if (!other || other === walker) continue;
-      const above = where === 'on' ? other : walker;
-      const stands = pairs.some((pair) => {
-        const normal = this.contacts.normal(above.body, pair);
-        return normal !== null && isFloor(normal);
-      });
-      if (stands) found.push(other);
-    }
-    return found;
-  }
-
-  /** Whether an Enemy touches, now, a surface it stands on (`isFloor`). */
-  private stands({ body }: W): boolean {
-    for (const { pairs } of this.contacts.touching(body)) {
-      for (const pair of pairs) {
-        const normal = this.contacts.normal(body, pair);
-        if (normal && isFloor(normal)) return true;
-      }
-    }
-    return false;
+    this.enemies.walk(seconds);
   }
 
   /**
@@ -527,111 +289,22 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     this.glue(seconds);
     this.arena.spreadBlasts(seconds, this.blastReached);
     this.arena.removeUsedUpPatches();
-    this.reachInkCore();
-    this.drop(this.kill());
+    this.enemies.afterStep();
     this.removeOutOfView();
   }
 
   /**
-   * Pressing and floor wear over a step of `seconds`, Enemy by Enemy, oldest
-   * first: every Piece or Object an Enemy presses loses durability at its
-   * type's pressing rate per second, times 1 plus `stackWear` for each other
-   * Enemy in its stack, and what it stands on at `floorWear` times its
-   * pressing rate. A Piece is pressed when it is in the Enemy's way
-   * (`isPressed`); an Object only when the Enemy is also stalled, since one
-   * it can shove is pushed, not pressed. Wear depends on the time in
-   * contact alone, and never wakes a Frozen Object. The Terrain, Rubble, the
-   * Ink Core and other Enemies take no damage, so they never wear. Returns
-   * what wore out, not yet broken, in the order it did.
+   * Deals the Enemies' pressing and floor wear over a step of `seconds`
+   * (`EnemyRules.wear`), in the order they deal it. Returns what wore out,
+   * not yet broken, in the order it did.
    */
   private press(seconds: number): T[] {
     const worn: T[] = [];
-    const { floorWear, stackWear } = this.numbers;
-    const stacks = this.stacks();
-    for (const walker of this.arena.walkers()) {
-      const rate = this.numbers.enemy(walker.type).pressing * seconds;
-      const stacked = 1 + stackWear * (stacks.get(walker) ?? 0);
-      const heading = this.arena.heading(walker);
-      const stalled = this.stalled.has(walker.id);
-      for (const { party, pairs } of this.contacts.touching(walker.body)) {
-        const { target } = party;
-        if (!target) continue;
-        let pressed = false;
-        let floor = false;
-        for (const pair of pairs) {
-          const normal = this.contacts.normal(walker.body, pair);
-          if (!normal) continue;
-          if (isFloor(normal)) floor = true;
-          else if (isPressed(normal, heading)) pressed = true;
-        }
-        if (pressed && !this.numbers.of(target).fixed && !stalled) pressed = false;
-        const amount = pressed ? stacked * rate : floor ? floorWear * rate : 0;
-        if (amount > 0 && this.damage(target, amount, 'wear') && !worn.includes(target))
-          worn.push(target);
-      }
+    const fixed = (target: T) => this.numbers.of(target).fixed;
+    for (const { target, amount } of this.enemies.wear(seconds, fixed)) {
+      if (this.damage(target, amount, 'wear') && !worn.includes(target)) worn.push(target);
     }
     return worn;
-  }
-
-  /**
-   * Every Enemy touching the Ink Core deals it its type's core damage and
-   * disappears, oldest first. One already at 0 HP dies instead.
-   */
-  private reachInkCore(): void {
-    const reached = [...this.arena.walkers()].filter(
-      (walker) =>
-        !this.isDead(walker) &&
-        [...this.contacts.touching(walker.body)].some(({ party }) => this.arena.isInkCore(party)),
-    );
-    for (const { id, type } of reached) {
-      this.arena.damageInkCore(this.numbers.enemy(type).coreDamage);
-      this.arena.remove({ thing: 'enemy', id }, 'reached');
-    }
-  }
-
-  /**
-   * Kills: every Enemy at 0 HP dies, oldest first, then every one wholly
-   * below the bottom of the screen. Returns what died, in that order.
-   */
-  private kill(): Killed[] {
-    const killed: Killed[] = [];
-    const kill = (id: number) => {
-      const dead = this.arena.kill(id);
-      if (dead) killed.push(dead);
-    };
-    const dead = [...this.arena.walkers()].filter((walker) => this.isDead(walker));
-    for (const { id } of dead) kill(id);
-    for (const thing of this.arena.belowScreen()) {
-      if (thing.thing === 'enemy') kill(thing.id);
-    }
-    return killed;
-  }
-
-  /**
-   * Drops: every Enemy that died lets out a Drop, in the order they died, a
-   * Pit's and a trap's as much as a fight's. Each draws its amounts from the
-   * generator, one Colour after another, from its type's ranges as they are
-   * now. An Enemy that reached the Ink Core didn't die, and drops nothing.
-   */
-  private drop(killed: readonly Killed[]): void {
-    for (const dead of killed) {
-      this.arena.drop(dead, drawDrop(this.numbers.enemy(dead.type).drop, this.random));
-    }
-  }
-
-  /** Whether an Enemy's damage has reached its type's HP. */
-  private isDead(walker: W): boolean {
-    return walker.damage >= this.numbers.enemy(walker.type).hp;
-  }
-
-  /**
-   * Takes damage off an Enemy's HP, by the one rule: an impact or a Blast
-   * deals what it has above the Enemy type's damage threshold, times k.
-   * Enemies have no impact limit.
-   */
-  private hurt(walker: W, amount: number): void {
-    const { damageThreshold } = this.numbers.enemy(walker.type);
-    walker.damage += impactDamage(amount, damageThreshold, this.materials.damagePerImpulse);
   }
 
   /**
@@ -670,9 +343,9 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     const impacts = new Map<number, { target: T | null; walker: W | null; impulse: number }>();
     const take = (receiver: Party<T>, other: Party<T>, hit: ContactHit, towards: Vec2) => {
       const { target } = receiver;
-      const walker = target ? null : (this.arena.walkerOf(receiver) ?? null);
+      const walker = target ? null : (this.enemies.walkerOf(receiver) ?? null);
       if (!target && !walker) return;
-      const impulse = walker ? this.enemyImpulse(walker, other, hit, towards) : hit.impulse;
+      const impulse = walker ? this.enemies.hitImpulse(walker, other, hit, towards) : hit.impulse;
       const key = pairKey(receiver.id, other.stroke);
       const current = impacts.get(key);
       if (current) current.impulse = Math.max(current.impulse, impulse);
@@ -687,23 +360,11 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
 
     const broken: T[] = [];
     for (const { target, walker, impulse } of impacts.values()) {
-      if (walker) this.hurt(walker, impulse);
+      if (walker) this.enemies.hurt(walker, impulse);
       else if (target && this.damage(target, impulse, 'impact') && !broken.includes(target))
         broken.push(target);
     }
     return broken;
-  }
-
-  /**
-   * The impulse a hit deals an Enemy, given the unit normal pointing from
-   * the hitter towards it: the hit's own, or, when it is crushed, what the
-   * hitter's approach would deal a fixed body, the hitter's mass times its
-   * approach speed.
-   */
-  private enemyImpulse(walker: W, other: Party<T>, hit: ContactHit, towards: Vec2): number {
-    if (!isCrushing(towards) || !this.stands(walker) || !this.physics.isFree(other.body))
-      return hit.impulse;
-    return Math.max(hit.impulse, this.physics.getMass(other.body) * hit.speed);
   }
 
   /**
@@ -787,8 +448,8 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     const broken: T[] = [];
     for (const { party, centre, point, strength } of reached) {
       const { body, target } = party;
-      const walker = target ? undefined : this.arena.walkerOf(party);
-      if (walker) this.hurt(walker, strength);
+      const walker = target ? undefined : this.enemies.walkerOf(party);
+      if (walker) this.enemies.hurt(walker, strength);
       if (target && this.physics.getSlide(body) === null) {
         if (this.damage(target, strength, 'blast')) {
           broken.push(target);

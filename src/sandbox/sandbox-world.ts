@@ -32,7 +32,8 @@ import { Droplets, type DropletView } from './droplets';
 import { Enemies, type EnemyRecord, type EnemyView } from './enemies';
 import { Happenings, type Thing, type Why } from './happenings';
 import { InkCore, type InkCoreView } from './ink-core';
-import { MaterialRules, type Killed } from './material-rules';
+import { EnemyRules, type Killed } from './enemy-rules';
+import { MaterialRules } from './material-rules';
 import { Numbers } from './numbers';
 import { Patches, type PatchView } from './patches';
 import { PreviousPoses } from './previous-poses';
@@ -316,20 +317,31 @@ export class SandboxWorld {
         stickers: () => this.strokes.objectRecords(),
         gluers: () => [...this.strokes.pieces(), ...this.patchesKind.gluers()],
         spreadBlasts: (seconds, act) => this.blastsKind.spread(seconds, act),
-        walkers: () => this.enemiesKind.walkers(),
-        walk: (enemy, seconds) => this.enemiesKind.walk(enemy, seconds),
-        climb: (enemy, seconds) => this.enemiesKind.climb(enemy, seconds),
-        heading: (enemy) => this.enemiesKind.heading(enemy),
-        blocksClimb: (room) => this.query.blocksClimb(room),
-        walkerOf: (party) => this.enemiesKind.byParty(party.id),
-        kill: (id) => this.kill(id),
-        drop: ({ id, type, at }, ink) => say({ kind: 'dropped', id, type, at, ink }),
-        isInkCore: (party) => this.inkCoreKind.is(party.id),
-        damageInkCore: (damage) => this.inkCoreKind.damage(damage),
         belowScreen: () => this.query.below(this.arena.height),
         beyondSpawnEdge: () => this.query.beyondSpawnEdge(),
         remove: (thing, why) => this.removeThing(thing, why),
       },
+      enemies: new EnemyRules({
+        materials: this.materials,
+        numbers: this.numbers,
+        random: this.random,
+        physics: this.physics,
+        contacts: this.contacts,
+        arena: {
+          walkers: () => this.enemiesKind.walkers(),
+          walk: (enemy, seconds) => this.enemiesKind.walk(enemy, seconds),
+          climb: (enemy, seconds) => this.enemiesKind.climb(enemy, seconds),
+          heading: (enemy) => this.enemiesKind.heading(enemy),
+          blocksClimb: (room) => this.query.blocksClimb(room),
+          walkerOf: (party) => this.enemiesKind.byParty(party.id),
+          kill: (id) => this.kill(id),
+          drop: ({ id, type, at }, ink) => say({ kind: 'dropped', id, type, at, ink }),
+          isInkCore: (party) => this.inkCoreKind.is(party.id),
+          damageInkCore: (damage) => this.inkCoreKind.damage(damage),
+          belowScreen: () => this.query.below(this.arena.height),
+          remove: (thing, why) => this.removeThing(thing, why),
+        },
+      }),
     });
   }
 
