@@ -1,11 +1,31 @@
 import type Phaser from 'phaser';
 import type { DefenceReading } from '../game/defence-loop';
-import type { Game } from '../game/game';
+import type { Allowed, Game } from '../game/game';
+import { ENEMY_TYPES } from '../materials/enemy-table';
 import { FONT_FAMILY, PALETTE } from '../rendering/palette';
 import { inward, spawnEdgeX } from '../sandbox/arena';
 
-const HELP_TEXT =
-  '1–5: Colour    E: eraser    Drag: draw    Click: fill    Right-click: release    Space: run / pause    R: reset    Ctrl+Z: undo    F1: stats / debug    F2: tuning';
+/**
+ * The control hints: the sandbox tools, the Eraser (E) and sending in
+ * Enemies (Shift+1–3), only while they are on hand.
+ */
+export function helpText({ eraser, spawning }: Pick<Allowed, 'eraser' | 'spawning'>): string {
+  return [
+    '1–5: Colour',
+    eraser && 'E: eraser',
+    'Drag: draw',
+    'Click: fill',
+    'Right-click: release',
+    'Space: run / pause',
+    'R: reset',
+    'Ctrl+Z: undo',
+    spawning && `Shift+1–${ENEMY_TYPES.length}: Enemy`,
+    'F1: stats / debug',
+    'F2: tuning',
+  ]
+    .filter(Boolean)
+    .join('    ');
+}
 
 /** What the status line says. */
 const STATUS = {
@@ -38,10 +58,12 @@ const SPAWN_COUNT_X = 32;
 /**
  * Pause / running indicator, "Ink Core destroyed" once its HP runs out,
  * the phase with Waves on, how many of the Wave's Enemies are still to
- * come beside the Spawn arrow, control hints and the stress-test readout.
+ * come beside the Spawn arrow, control hints (the sandbox tools' only
+ * while the Game's `allowed` has them on hand) and the stress-test readout.
  */
 export class Hud {
   private readonly status: Phaser.GameObjects.Text;
+  private readonly help: Phaser.GameObjects.Text;
   private readonly phase: Phaser.GameObjects.Text;
   private readonly toCome: Phaser.GameObjects.Text;
   private readonly readout: Phaser.GameObjects.Text;
@@ -52,7 +74,7 @@ export class Hud {
 
   constructor(
     scene: Phaser.Scene,
-    private readonly game: Pick<Game, 'world' | 'defence'>,
+    private readonly game: Pick<Game, 'world' | 'defence' | 'allowed'>,
   ) {
     this.status = scene.add
       .text(scene.scale.width / 2, 40, '', {
@@ -80,8 +102,8 @@ export class Hud {
       .setDepth(50);
     this.placeToCome();
     // Control hints along the top edge, above the palette, status and toolbar.
-    scene.add
-      .text(scene.scale.width / 2, 8, HELP_TEXT, {
+    this.help = scene.add
+      .text(scene.scale.width / 2, 8, helpText(game.allowed), {
         fontFamily: FONT_FAMILY,
         fontSize: '20px',
         color: PALETTE.textMuted,
@@ -103,6 +125,7 @@ export class Hud {
     // Text re-renders its canvas and re-uploads the texture on every change
     // (setColor even when the colour is the same), so touch it only on a change.
     this.readout.setText(readout);
+    this.help.setText(helpText(this.game.allowed));
     this.drawStatus();
     this.drawPhase();
   }

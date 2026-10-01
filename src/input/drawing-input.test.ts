@@ -9,6 +9,7 @@ import { SANDBOX_ARENA } from '../sandbox/arena';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { drawLine, objectById } from '../sandbox/test-support';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
+import type { EraseOutcome, UndoOutcome } from '../game/game';
 import { DrawingInput, ERASER_RADIUS, type DrawingCommands, type Flash } from './drawing-input';
 
 const createGame = games();
@@ -36,11 +37,11 @@ function drawingOver(game: Game) {
     releaseAt: (point) => game.releaseAt(point),
     eraseAlong: (path, radius) => {
       asked.erased.push([...path]);
-      game.eraseAlong(path, radius);
+      return game.eraseAlong(path, radius);
     },
     undo: () => game.undo(),
-    get eraser() {
-      return game.eraser;
+    get allowed() {
+      return game.allowed;
     },
   };
   return {
@@ -736,7 +737,7 @@ describe('Drawing input', () => {
       const { input } = drawingOver(game);
       input.pick('eraser');
 
-      game.eraser = false; // a Campaign Level was loaded
+      game.sandboxTools = false; // a Campaign Level was loaded
       expect(input.tool).toBe('eraser');
       input.tick();
 
@@ -747,11 +748,143 @@ describe('Drawing input', () => {
       const game = createGame(false);
       const { input } = drawingOver(game);
       input.pick('blue');
-      game.eraser = false;
+      game.sandboxTools = false;
 
       input.pick('eraser');
 
       expect(input.tool).toBe('blue');
+    });
+  });
+
+  describe('a refused Eraser or undo, over a fake Game', () => {
+    /** Commands whose Eraser and undo answer as `answers` says now, and whose Eraser is on hand as it says. */
+    function fakeOver(answers: { erase: EraseOutcome; undo: UndoOutcome; eraser: boolean }): {
+      input: DrawingInput;
+      erased: () => number;
+    } {
+      let erased = 0;
+      const commands: DrawingCommands = {
+        submitStroke: () => {
+          throw new Error('not drawn here');
+        },
+        fillAt: () => {
+          throw new Error('not filled here');
+        },
+        lookAtStroke: () => null,
+        lookAtFill: () => null,
+        prospect: () => {
+          throw new Error('nothing to price');
+        },
+        world: { changes: 0 },
+        releaseAt: () => {},
+        eraseAlong: () => {
+          erased++;
+          return answers.erase;
+        },
+        undo: () => answers.undo,
+        get allowed() {
+          return { eraser: answers.eraser };
+        },
+      };
+      return { input: new DrawingInput(commands), erased: () => erased };
+    }
+    const at = { x: 300, y: 200 };
+
+    it('flashes an Eraser press refused once, not every frame it is held, and again on the next press', () => {
+      const answers = {
+        erase: { kind: 'refused', reason: 'not-now' } as EraseOutcome,
+        undo: { kind: 'nothing' } as UndoOutcome,
+        eraser: true,
+      };
+      const { input, erased } = fakeOver(answers);
+      input.pick('eraser');
+
+      expect(input.press(at, 'left')).toEqual({ path: [], message: 'Not now', pointer: at });
+      input.move({ x: 320, y: 200 });
+      expect(input.tick()).toBeNull();
+      expect(input.tick()).toBeNull();
+      expect(input.release()).toBeNull();
+      expect(erased()).toBe(4);
+
+      answers.erase = { kind: 'refused', reason: 'lost' };
+      expect(input.press(at, 'left')).toMatchObject({ message: 'Ink Core destroyed: R or Clear' });
+      expect(input.release()).toBeNull();
+    });
+
+    it('flashes once when erasing is barred partway through a press', () => {
+      const answers = {
+        erase: { kind: 'erased' } as EraseOutcome,
+        undo: { kind: 'nothing' } as UndoOutcome,
+        eraser: true,
+      };
+      const { input } = fakeOver(answers);
+      input.pick('eraser');
+
+      expect(input.press(at, 'left')).toBeNull();
+      answers.erase = { kind: 'refused', reason: 'not-now' };
+      input.move({ x: 320, y: 200 });
+      expect(input.tick()).toEqual({ path: [], message: 'Not now', pointer: { x: 320, y: 200 } });
+      expect(input.tick()).toBeNull();
+      expect(input.release()).toBeNull();
+    });
+
+    it('never flashes an Eraser that erased or missed', () => {
+      const { input } = fakeOver({
+        erase: { kind: 'missed' },
+        undo: { kind: 'nothing' },
+        eraser: true,
+      });
+      input.pick('eraser');
+
+      expect(input.press(at, 'left')).toBeNull();
+      expect(input.tick()).toBeNull();
+      expect(input.release()).toBeNull();
+    });
+
+    it('flashes a refused undo at the pointer, once per Ctrl+Z, and nothing for one that worked', () => {
+      const answers = {
+        erase: { kind: 'missed' } as EraseOutcome,
+        undo: { kind: 'refused', reason: 'not-now' } as UndoOutcome,
+        eraser: true,
+      };
+      const { input } = fakeOver(answers);
+      input.move(at);
+
+      expect(input.undo()).toEqual({ path: [], message: 'Not now', pointer: at });
+      expect(input.undo()).toEqual({ path: [], message: 'Not now', pointer: at });
+      answers.undo = { kind: 'refused', reason: 'lost' };
+      expect(input.undo()).toMatchObject({ message: 'Ink Core destroyed: R or Clear' });
+      answers.undo = { kind: 'nothing' };
+      expect(input.undo()).toBeNull();
+    });
+
+    it('flashes a refused undo where the pointer last was, after it left the canvas', () => {
+      const { input } = fakeOver({
+        erase: { kind: 'missed' },
+        undo: { kind: 'refused', reason: 'lost' },
+        eraser: true,
+      });
+      input.move(at);
+      input.leave();
+
+      expect(input.undo()).toMatchObject({ pointer: at });
+    });
+
+    it('falls back to grey once a frame when the Eraser is no longer on hand, and cannot pick it then', () => {
+      const answers = {
+        erase: { kind: 'missed' } as EraseOutcome,
+        undo: { kind: 'nothing' } as UndoOutcome,
+        eraser: true,
+      };
+      const { input, erased } = fakeOver(answers);
+      input.pick('eraser');
+
+      answers.eraser = false; // a Campaign Level was loaded
+      expect(input.tick()).toBeNull();
+      expect(input.tool).toBe('grey');
+      input.pick('eraser');
+      expect(input.tool).toBe('grey');
+      expect(erased()).toBe(0);
     });
   });
 

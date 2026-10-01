@@ -54,7 +54,7 @@ _Avoid_: Stage, map, arena description, scenario
 The first mode: a fixed sequence of handmade Levels, each unlocked by clearing the one before. Ink Tanks reset to the Level's maximums every Wave; a Colour whose maximum is 0 is not in the Level.
 
 **Free play**:
-Playing any Level outside the Campaign: the Sandbox, a Gallery demo or a stress test. The Eraser is on hand, and what the Level leaves out, its Ink Tank maximums or its Waves, is as tuned, never as the last Level left it.
+Playing any Level outside the Campaign: the Sandbox, a Gallery demo or a stress test. The sandbox tools, the Eraser and sending in Enemies by hand, are on hand, and what the Level leaves out, its Ink Tank maximums or its Waves, is as tuned, never as the last Level left it.
 _Avoid_: Sandbox mode (the Sandbox is a Level)
 
 **Roguelite Mode**:
@@ -96,7 +96,7 @@ What happens to an Object a new Line is drawn across: it slides the shortest way
 _Avoid_: Push-out, overlap
 
 **Eraser**:
-A sandbox tool for testing, not part of the game: on hand in Free play, never in the Campaign. It quietly removes whatever its brush passes over, whole Objects with their Fills, the Pieces of Lines, Rubble, Droplets and Patches. Erasing is not breaking: nothing bursts into Debris, releases its Fill or sets off a Blast. It refunds the Ink paid for what it removes, like undo.
+A sandbox tool for testing, not part of the game: on hand in Free play, never in the Campaign, like sending in Enemies by hand. It quietly removes whatever its brush passes over, whole Objects with their Fills, the Pieces of Lines, Rubble, Droplets and Patches. Erasing is not breaking: nothing bursts into Debris, releases its Fill or sets off a Blast. It refunds the Ink paid for what it removes, like undo.
 _Avoid_: Delete, rubber
 
 ### Breaking

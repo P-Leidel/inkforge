@@ -81,9 +81,9 @@ describe('With Waves on and building between Waves off, in an Intermission', () 
     game.waves = true;
     expect(game.defence.reading.phase).toBe('intermission');
 
-    expect(game.submitStroke(FAR, 'grey')).toMatchObject({ kind: 'barred', reason: 'not-now' });
+    expect(game.submitStroke(FAR, 'grey')).toMatchObject({ kind: 'refused', reason: 'not-now' });
     expect(game.fillAt({ x: 330, y: 330 }, 'blue')).toMatchObject({
-      kind: 'barred',
+      kind: 'refused',
       reason: 'not-now',
     });
     expect(game.world.lines).toEqual([]);
@@ -111,14 +111,14 @@ describe('The rules switches, turned off (provisional, F2)', () => {
 
     for (const running of [true, false]) {
       expect(game.isRunning).toBe(running);
-      game.undo();
+      expect(game.undo()).toEqual({ kind: 'refused', reason: 'not-now' });
       expect(game.world.lines).toHaveLength(1);
       expect(game.tanks.grey.spendable).toBe(left);
       if (running) game.togglePause();
     }
 
     game.rules.undoDuringWave = true;
-    game.undo();
+    expect(game.undo()).toMatchObject({ kind: 'undone', action: { kind: 'stroke' } });
     expect(game.world.lines).toEqual([]);
     expect(game.tanks.grey.spendable).toBeGreaterThan(left);
   });
@@ -144,12 +144,12 @@ describe('The rules switches, turned off (provisional, F2)', () => {
     expect(game.defence.reading.phase).toBe('wave');
 
     expect(game.submitStroke(across(300, 500, 100), 'grey')).toMatchObject({
-      kind: 'barred',
+      kind: 'refused',
       reason: 'not-now',
     });
     expect(game.prospect(game.lookAtStroke(FAR)!, 'grey').refusal).toBe('not-now');
     expect(game.fillAt({ x: 330, y: 330 }, 'blue')).toMatchObject({
-      kind: 'barred',
+      kind: 'refused',
       reason: 'not-now',
     });
     game.undo();
@@ -170,27 +170,115 @@ describe('The rules switches, turned off (provisional, F2)', () => {
   });
 });
 
-describe('The Eraser, a sandbox tool', () => {
-  it('is on hand by default, and put away erases nothing, Waves on or off; on hand again, it erases', () => {
+describe('The sandbox tools: the Eraser and sending in Enemies', () => {
+  const brush = [
+    { x: 590, y: 200 },
+    { x: 810, y: 200 },
+  ];
+
+  it('are on hand by default: the Eraser erases, or misses, and Enemies are sent in', () => {
     const game = createGame(true);
-    expect(game.eraser).toBe(true);
+    expect(game.sandboxTools).toBe(true);
+    expect(game.allowed).toMatchObject({ eraser: true, spawning: true });
+
+    expect(game.eraseAlong(brush, 12)).toEqual({ kind: 'missed' });
+    expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
+    expect(game.eraseAlong(brush, 12)).toEqual({ kind: 'erased' });
+    expect(game.world.lines).toEqual([]);
+    expect(game.spawn('crawler')).toEqual({ kind: 'spawned' });
+    expect(game.world.enemyCount).toBe(1);
+  });
+
+  it('put away, are refused, Waves on or off, and nothing is erased, refunded or sent in; on hand again, they work', () => {
+    const game = createGame(true);
     expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
     const left = game.tanks.grey.spendable;
-    const brush = [
-      { x: 590, y: 200 },
-      { x: 810, y: 200 },
-    ];
 
-    game.eraser = false;
-    game.eraseAlong(brush, 12);
-    game.waves = true;
-    game.eraseAlong(brush, 12);
+    game.sandboxTools = false;
+    expect(game.allowed).toMatchObject({ eraser: false, spawning: false });
+    for (const waves of [false, true]) {
+      game.waves = waves;
+      expect(game.eraseAlong(brush, 12)).toEqual({ kind: 'refused', reason: 'not-on-hand' });
+      expect(game.spawn('crawler')).toEqual({ kind: 'refused', reason: 'not-on-hand' });
+    }
     expect(game.world.lines).toHaveLength(1);
+    expect(game.world.enemyCount).toBe(0);
     expect(game.tanks.grey.spendable).toBe(left);
 
-    game.eraser = true;
-    game.eraseAlong(brush, 12);
+    game.sandboxTools = true;
+    expect(game.eraseAlong(brush, 12)).toEqual({ kind: 'erased' });
     expect(game.world.lines).toEqual([]);
+  });
+});
+
+/**
+ * A Game with Ink costs on whose Ink Core has 1 HP: a Line and a box are
+ * drawn first, then physics starts (a Wave, with Waves on) and a Crawler
+ * on the plateau walks into the Ink Core.
+ */
+function lostGame(waves: boolean): Game {
+  const enemies = createEnemyTable();
+  enemies.coreHp = 1;
+  const game = createGame(true, { waves, worldOptions: { seed: 1, enemies } });
+  game.waves = false;
+  expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
+  expect(game.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
+  game.waves = waves;
+  game.togglePause();
+  const { minX, maxY } = game.world.arena.core;
+  game.world.spawn('crawler', { x: minX - 60, y: maxY - 20 });
+  for (let k = 0; k < 600 && game.isRunning; k++) game.step();
+  expect(game.defence.reading.coreDestroyed).toBe(true);
+  return game;
+}
+
+describe('What the player may do (allowed)', () => {
+  const none = { draw: null, fill: null, erase: null, undo: null };
+  const all = (bar: string) => ({ draw: bar, fill: bar, erase: bar, undo: bar });
+
+  it('with Waves off: anything', () => {
+    const game = createGame(false);
+    expect(game.allowed).toEqual({ eraser: true, spawning: true, ...none });
+  });
+
+  it('with Waves on and the rules on: anything, in an Intermission and during a Wave, paused or running', () => {
+    const game = wavesGame(false);
+    expect(game.allowed).toMatchObject(none);
+    game.togglePause();
+    expect(game.defence.reading.phase).toBe('wave');
+    expect(game.allowed).toMatchObject(none);
+    game.togglePause();
+    expect(game.allowed).toMatchObject(none);
+  });
+
+  it('as each rules switch says, and agrees with what the commands do', () => {
+    const game = wavesGame(false);
+    game.rules.buildBetweenWaves = false;
+    expect(game.allowed).toMatchObject(all('not-now'));
+    expect(game.undo()).toEqual({ kind: 'refused', reason: 'not-now' });
+    game.rules.buildBetweenWaves = true;
+
+    game.togglePause();
+    game.rules.undoDuringWave = false;
+    expect(game.allowed).toMatchObject({ ...none, undo: 'not-now' });
+    game.rules.undoDuringWave = true;
+
+    game.rules.buildWhilePaused = false;
+    expect(game.allowed).toMatchObject(none); // running
+    game.togglePause();
+    expect(game.allowed).toMatchObject(all('not-now'));
+    expect(game.eraseAlong(FAR, 12)).toEqual({ kind: 'refused', reason: 'not-now' });
+  });
+
+  it('nothing once the Ink Core is destroyed, though the sandbox tools stay on hand', () => {
+    const game = lostGame(true);
+
+    expect(game.allowed).toEqual({ eraser: true, spawning: true, ...all('lost') });
+  });
+
+  it('undo with nothing to take back says so', () => {
+    const game = createGame(false);
+    expect(game.undo()).toEqual({ kind: 'nothing' });
   });
 });
 
@@ -214,8 +302,8 @@ describe('During a Wave', () => {
 
     const near = game.submitStroke(NEAR, 'grey');
 
-    expect(near).toMatchObject({ kind: 'barred', reason: 'near-enemy' });
-    expect(near.kind === 'barred' && near.path.length).toBeGreaterThan(1);
+    expect(near).toMatchObject({ kind: 'refused', reason: 'near-enemy' });
+    expect(near.kind === 'refused' && near.path.length).toBeGreaterThan(1);
     expect(game.world.lines).toEqual([]);
     expect(game.prospect(game.lookAtStroke(NEAR)!, 'grey').refusal).toBe('near-enemy');
     expect(game.prospect(game.lookAtStroke(FAR)!, 'grey').refusal).toBeNull();
@@ -227,7 +315,7 @@ describe('During a Wave', () => {
     game.world.spawn('crawler', CRAWLER);
 
     expect(game.submitStroke(dragBox(760, GROUND - 130, 80, 80), 'grey')).toMatchObject({
-      kind: 'barred',
+      kind: 'refused',
       reason: 'near-enemy',
     });
   });
@@ -238,7 +326,7 @@ describe('During a Wave', () => {
     game.togglePause();
     game.world.spawn('crawler', CRAWLER);
 
-    expect(game.submitStroke(NEAR, 'grey').kind).toBe('barred');
+    expect(game.submitStroke(NEAR, 'grey').kind).toBe('refused');
     expect(game.submitStroke(FAR, 'grey').kind).toBe('refused');
   });
 
@@ -279,27 +367,6 @@ describe('With Waves off', () => {
 });
 
 describe('Once the Ink Core is destroyed', () => {
-  /**
-   * A Game with Ink costs on whose Ink Core has 1 HP: a Line and a box are
-   * drawn first, then physics starts (a Wave, with Waves on) and a Crawler
-   * on the plateau walks into the Ink Core.
-   */
-  function lostGame(waves: boolean): Game {
-    const enemies = createEnemyTable();
-    enemies.coreHp = 1;
-    const game = createGame(true, { waves, worldOptions: { seed: 1, enemies } });
-    game.waves = false;
-    expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
-    expect(game.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
-    game.waves = waves;
-    game.togglePause();
-    const { minX, maxY } = game.world.arena.core;
-    game.world.spawn('crawler', { x: minX - 60, y: maxY - 20 });
-    for (let k = 0; k < 600 && game.isRunning; k++) game.step();
-    expect(game.defence.reading.coreDestroyed).toBe(true);
-    return game;
-  }
-
   for (const waves of [true, false]) {
     describe(waves ? 'with Waves on' : 'with Waves off', () => {
       it('bars every Stroke and Fill, and charges nothing', () => {
@@ -307,9 +374,12 @@ describe('Once the Ink Core is destroyed', () => {
         const tanks = game.tanks;
         const stroke = across(300, 150, 100);
 
-        expect(game.submitStroke(stroke, 'grey')).toMatchObject({ kind: 'barred', reason: 'lost' });
+        expect(game.submitStroke(stroke, 'grey')).toMatchObject({
+          kind: 'refused',
+          reason: 'lost',
+        });
         expect(game.fillAt({ x: 330, y: 330 }, 'blue')).toMatchObject({
-          kind: 'barred',
+          kind: 'refused',
           reason: 'lost',
         });
         expect(game.prospect(game.lookAtStroke(stroke)!, 'grey').refusal).toBe('lost');
@@ -320,14 +390,16 @@ describe('Once the Ink Core is destroyed', () => {
       it('leaves undo and the Eraser doing nothing, until R', () => {
         const game = lostGame(waves);
 
-        game.undo();
-        game.eraseAlong(
-          [
-            { x: 590, y: 200 },
-            { x: 810, y: 200 },
-          ],
-          12,
-        );
+        expect(game.undo()).toEqual({ kind: 'refused', reason: 'lost' });
+        expect(
+          game.eraseAlong(
+            [
+              { x: 590, y: 200 },
+              { x: 810, y: 200 },
+            ],
+            12,
+          ),
+        ).toEqual({ kind: 'refused', reason: 'lost' });
         expect(game.world.lines).toHaveLength(1);
         expect(game.world.objects).toHaveLength(1);
 

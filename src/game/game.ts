@@ -21,7 +21,6 @@ import {
 import {
   DefenceLoop,
   FIRST_INTERMISSION,
-  isBar,
   type Bar,
   type BuildAction,
   type LoopPosition,
@@ -31,58 +30,81 @@ import type { StressTest } from '../stress-tests/stress-test';
 import { checkArenaSize, type Level } from './level';
 import { createInkTable, type InkTable, type ReadonlyInkTable } from './ink-table';
 import { InkTanks, type TankReadings, type TanksState } from './ink-tanks';
+import type { Refusal } from './refusal';
 import { createWaveTable, type WaveTable } from './wave-table';
 
 /** What a Stroke the Game was asked for became. */
 export type GameStrokeOutcome =
   | Exclude<StrokeOutcome, { readonly kind: 'declined' }>
   /**
-   * It was refused for its Colour, so nothing was made: the Level doesn't
-   * have it, or it cost more than its Tank holds. `path` is what it would have been.
+   * It was refused (`reason`), so nothing was made: drawn once the Ink Core
+   * is destroyed, when the Defence loop bars drawing, too near an Enemy
+   * during a Wave, in a Colour the Level doesn't have, or costing more than
+   * its Tank holds. `path` is what it would have been.
    */
   | {
       readonly kind: 'refused';
-      readonly reason: ColourRefusal;
+      readonly reason: Refusal;
       readonly colour: Colour;
       /** Its price, px². */
       readonly price: number;
       readonly path: readonly Vec2[];
-    }
-  /**
-   * It was barred, so nothing was made: drawn once the Ink Core is
-   * destroyed, in an Intermission or once the Level is cleared, or during a
-   * Wave, too near an Enemy. `path` is what it would have been.
-   */
-  | { readonly kind: 'barred'; readonly reason: Bar; readonly path: readonly Vec2[] };
+    };
 
 /** What a Fill click the Game was asked for did. */
 export type GameFillOutcome =
   | Exclude<FillOutcome, { readonly kind: 'declined' }>
   /**
-   * It was refused for its Colour, so the Object stays hollow: the Level
-   * doesn't have it, or it cost more than its Tank holds. `outline` is where it is now.
+   * It was refused (`reason`), so the Object stays hollow: once the Ink Core
+   * is destroyed, when the Defence loop bars filling, in a Colour the Level
+   * doesn't have, or costing more than its Tank holds. `outline` is where
+   * it is now.
    */
   | {
       readonly kind: 'refused';
-      readonly reason: ColourRefusal;
+      readonly reason: Refusal;
       readonly id: StrokeId;
       readonly colour: Colour;
       /** Its price, px². */
       readonly price: number;
       readonly outline: Polygon;
-    }
-  /**
-   * The click was barred (`reason`): once the Ink Core is destroyed, or with
-   * Waves on, outside a Wave. The Object stays hollow.
-   */
-  | {
-      readonly kind: 'barred';
-      readonly reason: Bar;
-      readonly id: StrokeId;
-      readonly outline: Polygon;
     };
 
-export type { Bar };
+/** What the Eraser did along its path: removed something, found nothing there, or was refused. */
+export type EraseOutcome =
+  | { readonly kind: 'erased' }
+  | { readonly kind: 'missed' }
+  | { readonly kind: 'refused'; readonly reason: Refusal };
+
+/** What undo did: took back a Stroke or a Fill, found nothing to take back, or was refused. */
+export type UndoOutcome =
+  | { readonly kind: 'undone'; readonly action: Action }
+  | { readonly kind: 'nothing' }
+  | { readonly kind: 'refused'; readonly reason: Refusal };
+
+/** What sending in an Enemy did: sent it in, or was refused. */
+export type SpawnOutcome =
+  { readonly kind: 'spawned' } | { readonly kind: 'refused'; readonly reason: Refusal };
+
+/**
+ * What the player may do now, the one reading of it: whether the sandbox
+ * tools are on hand, and for each command that can be barred, the Bar that
+ * stops it now, or null. Near an Enemy depends on a Stroke's samples, so it
+ * is never here: it is in a Stroke's outcome and prospect. Release works
+ * anywhere, and Space says what it does itself.
+ */
+export interface Allowed {
+  /** Whether the Eraser is on hand: in Free play, never in a Campaign Level. */
+  readonly eraser: boolean;
+  /** Whether sending in Enemies (Shift+1–3) is on hand, as the Eraser is. */
+  readonly spawning: boolean;
+  readonly draw: Bar | null;
+  readonly fill: Bar | null;
+  readonly erase: Bar | null;
+  readonly undo: Bar | null;
+}
+
+export type { Bar, Refusal };
 
 /** What something would cost before it is made, and whether its Tank can pay for it. */
 export interface CostEstimate {
@@ -111,18 +133,6 @@ export type Look =
     /** Whether a Stroke's raw samples come closer to an Enemy than its width; never for a Fill. */
     readonly nearEnemy: boolean;
   };
-
-/** Why a Stroke or a Fill would be refused. */
-export type Refusal =
-  /** A closing Stroke's Object would overlap the Terrain or an Object. */
-  'overlaps' | Bar | ColourRefusal;
-
-/**
- * Why a Stroke or a Fill would be refused for its Colour: the Level doesn't
- * have it (its Tank maximum is 0), checked before the price; or it costs more
- * than its Colour's Tank holds.
- */
-export type ColourRefusal = 'not-in-level' | 'not-enough';
 
 /** What a Stroke or a Fill would do if it were made now, without making it. */
 export interface Prospect {
@@ -215,8 +225,10 @@ export interface GameOptions {
  * also allow them between Waves and while a Wave is paused, and undo during
  * a Wave, all on by default. Releasing works anywhere.
  *
- * The Eraser is a sandbox tool: the Game erases nothing while it is put
- * away (`eraser`), as it is in the Campaign.
+ * The Eraser and sending in Enemies are the sandbox tools, on hand or put
+ * away together (`sandboxTools`): put away, as in the Campaign, erasing and
+ * spawning are refused. What the player may do now is read in one place,
+ * `allowed`.
  *
  * A Level is loaded whole: what it leaves out, its Tank maximums or its
  * Waves, comes from Free play (F2's Ink table and Waves switch), never from
@@ -238,7 +250,7 @@ export class Game {
   private levelWaves: boolean | null = null;
   private readonly inkTanks: InkTanks;
   private costs: boolean;
-  private eraserOnHand = true;
+  private toolsOnHand = true;
   /** What each Stroke still in the Arena paid, by id. */
   private strokes = new Map<StrokeId, Charge>();
   /** What each Fill still in the Arena paid, by its Object's id. */
@@ -317,16 +329,34 @@ export class Game {
   }
 
   /**
-   * Whether the Eraser is on hand: a sandbox tool, so the Session puts it
-   * away in the Campaign and back for the Sandbox and the Gallery. Put
-   * away, `eraseAlong` erases nothing. On hand by default.
+   * Whether the sandbox tools, the Eraser and sending in Enemies, are on
+   * hand: the Session puts them away for a Campaign Level and back for Free
+   * play. Put away, `eraseAlong` and `spawn` are refused ('not-on-hand').
+   * On hand by default.
    */
-  get eraser(): boolean {
-    return this.eraserOnHand;
+  get sandboxTools(): boolean {
+    return this.toolsOnHand;
   }
 
-  set eraser(onHand: boolean) {
-    this.eraserOnHand = onHand;
+  set sandboxTools(onHand: boolean) {
+    this.toolsOnHand = onHand;
+  }
+
+  /**
+   * What the player may do now: whether the sandbox tools are on hand, and
+   * what bars drawing, filling, erasing and undo, as the Defence loop says.
+   * The palette, the HUD, the scene's keys and drawing input read it here.
+   */
+  get allowed(): Allowed {
+    const { defence } = this;
+    return {
+      eraser: this.toolsOnHand,
+      spawning: this.toolsOnHand,
+      draw: defence.bar('draw'),
+      fill: defence.bar('fill'),
+      erase: defence.bar('erase'),
+      undo: defence.bar('undo'),
+    };
   }
 
   /**
@@ -419,10 +449,10 @@ export class Game {
    * an Object, a rejection or nothing, and charges its price to `colour`'s
    * Tank: `linePrice` × its Ink, a Line's Piece by Piece. The parts of a Line
    * lying on another Line are free, found once, as it is made; an Object
-   * pays for all of its Outline. It is barred whenever the Defence loop bars
-   * drawing: once the Ink Core is destroyed, with Waves on outside a Wave,
-   * and during one when its raw samples come too near an Enemy. One that
-   * costs more than the Tank holds is refused.
+   * pays for all of its Outline. It is refused whenever the Defence loop
+   * bars drawing: once the Ink Core is destroyed, with Waves on outside a
+   * Wave, and during one when its raw samples come too near an Enemy; and in
+   * a Colour the Level doesn't have, or costing more than the Tank holds.
    */
   submitStroke(samples: readonly Vec2[], colour: Colour): GameStrokeOutcome {
     this.catchUp();
@@ -436,15 +466,9 @@ export class Game {
     switch (outcome.kind) {
       case 'declined': {
         const { made, path } = outcome;
-        const reason = refusal(made);
-        if (isBar(reason)) return { kind: 'barred', reason, path };
-        return {
-          kind: 'refused',
-          reason: reason === 'not-in-level' ? reason : 'not-enough',
-          colour: made.colour,
-          price: this.priceOf(made),
-          path,
-        };
+        // The world declines only what `accept` refused.
+        const reason = refusal(made)!;
+        return { kind: 'refused', reason, colour: made.colour, price: this.priceOf(made), path };
       }
       case 'line':
       case 'object':
@@ -461,9 +485,9 @@ export class Game {
 
   /**
    * Fills the Object under `point` with `colour`, and charges `fillPrice` ×
-   * its Ink to `colour`'s Tank. It is barred whenever the Defence loop bars
-   * filling; a Fill that costs more than the Tank holds is refused. Either
-   * way, the Object stays hollow.
+   * its Ink to `colour`'s Tank. It is refused whenever the Defence loop bars
+   * filling, in a Colour the Level doesn't have, or costing more than the
+   * Tank holds; the Object then stays hollow.
    */
   fillAt(point: Vec2, colour: Colour): GameFillOutcome {
     this.catchUp();
@@ -475,16 +499,9 @@ export class Game {
     switch (outcome.kind) {
       case 'declined': {
         const { id, outline, ink } = outcome;
-        const reason = refusal(ink);
-        if (isBar(reason)) return { kind: 'barred', reason, id, outline };
-        return {
-          kind: 'refused',
-          reason: reason === 'not-in-level' ? reason : 'not-enough',
-          id,
-          colour,
-          price: this.fillPrice(ink),
-          outline,
-        };
+        // The world declines only what `accept` refused.
+        const reason = refusal(ink)!;
+        return { kind: 'refused', reason, id, colour, price: this.fillPrice(ink), outline };
       }
       case 'filled': {
         const price = this.fillPrice(outcome.ink);
@@ -603,42 +620,54 @@ export class Game {
 
   /**
    * Sends in an Enemy of `type` from the Spawn, paused or running: Shift+1.
-   * It costs nothing and is not in the undo history.
+   * It costs nothing and is not in the undo history. A sandbox tool: refused
+   * while the sandbox tools are put away.
    */
-  spawn(type: EnemyType): void {
+  spawn(type: EnemyType): SpawnOutcome {
+    if (!this.toolsOnHand) return { kind: 'refused', reason: 'not-on-hand' };
     this.catchUp();
     this.world.spawn(type);
     this.catchUp();
+    return { kind: 'spawned' };
   }
 
   /**
    * The Eraser: removes what its brush passes over, and refunds what was
    * paid for it: an Object's Outline and Fill, a Piece's price. Rubble,
-   * Droplets and Patches are a broken Fill's, and that Ink is spent. It
-   * erases nothing while the Eraser is put away (the Campaign), or while
-   * the Defence loop bars erasing.
+   * Droplets and Patches are a broken Fill's, and that Ink is spent. It is
+   * refused while the Eraser is put away (the Campaign), and while the
+   * Defence loop bars erasing.
    */
-  eraseAlong(path: readonly Vec2[], radius: number): void {
-    if (!this.eraserOnHand || this.defence.bar('erase')) return;
+  eraseAlong(path: readonly Vec2[], radius: number): EraseOutcome {
+    if (!this.toolsOnHand) return { kind: 'refused', reason: 'not-on-hand' };
+    const bar = this.defence.bar('erase');
+    if (bar) return { kind: 'refused', reason: bar };
     this.catchUp();
-    this.world.eraseAlong(path, radius);
+    const erased = this.world.eraseAlong(path, radius);
     this.catchUp();
+    return { kind: erased > 0 ? 'erased' : 'missed' };
   }
 
   /**
    * Takes back the most recent Stroke or Fill that still exists, and refunds
    * exactly what was paid for it: a Fill's price, an Object's Outline's, or
    * a Line's standing Pieces'. Broken Objects, and Lines whose every Piece
-   * broke, are gone from the history, so undo skips them. It does nothing
+   * broke, are gone from the history, so undo skips them. It is refused
    * while the Defence loop bars undo (see its PROVISIONAL `Rules`).
    */
-  undo(): void {
-    if (this.defence.bar('undo')) return;
+  undo(): UndoOutcome {
+    const bar = this.defence.bar('undo');
+    if (bar) return { kind: 'refused', reason: bar };
     this.catchUp();
+    let undone: Action | null = null;
     for (let action = this.undoHistory.pop(); action; action = this.undoHistory.pop()) {
-      if (this.takeBack(action)) break;
+      if (this.takeBack(action)) {
+        undone = action;
+        break;
+      }
     }
     this.catchUp();
+    return undone ? { kind: 'undone', action: undone } : { kind: 'nothing' };
   }
 
   /** Takes back one undo step and refunds it; false if it was gone already. */

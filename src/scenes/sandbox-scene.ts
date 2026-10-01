@@ -5,7 +5,7 @@ import { browserStore, Campaign } from '../game/campaign';
 import { Game } from '../game/game';
 import { SANDBOX_LEVEL, type Level } from '../game/level';
 import { Session } from '../game/session';
-import { DrawingInput } from '../input/drawing-input';
+import { DrawingInput, type Flash } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
 import { ENEMY_TYPES } from '../materials/enemy-table';
 import { DebugOverlay } from '../debug/debug-overlay';
@@ -28,7 +28,10 @@ import { CAMPAIGN_LEVELS } from '../levels/campaign-levels';
 
 /** Keys 1–5 pick the Colours in palette order. */
 const COLOUR_KEYS = new Map(COLOURS.map((colour, k) => [String(k + 1), colour]));
-/** Shift+1, Shift+2, ... send in the Enemy types in order, by the key's place on any layout. */
+/**
+ * Shift+1, Shift+2, ... send in the Enemy types in order, by the key's place
+ * on any layout: a sandbox tool, so only while the Game has it on hand.
+ */
 const ENEMY_KEYS = new Map(ENEMY_TYPES.map((type, k) => [`Digit${k + 1}`, type]));
 /** The toolbar's Stress tests menu. */
 const STRESS_TESTS = [PEBBLES_LEVEL, BOX_TOWER_LEVEL, BALL_CANNON_LEVEL];
@@ -209,13 +212,13 @@ export class SandboxScene extends Phaser.Scene {
       if (this.screen.isOpen) return;
       const enemy = event.shiftKey ? ENEMY_KEYS.get(event.code) : undefined;
       if (enemy) {
-        this.gameLayer.spawn(enemy);
+        if (this.gameLayer.allowed.spawning) this.gameLayer.spawn(enemy);
         return;
       }
       const colour = COLOUR_KEYS.get(event.key);
       if (colour) this.drawing.pick(colour);
       else if (event.key.toLowerCase() === 'e' && !event.ctrlKey && !event.metaKey) {
-        this.drawing.pick('eraser');
+        if (this.gameLayer.allowed.eraser) this.drawing.pick('eraser');
       }
     });
     keyboard
@@ -233,7 +236,7 @@ export class SandboxScene extends Phaser.Scene {
       if (!event.ctrlKey && !event.metaKey) return;
       if (this.screen.isOpen) return;
       event.preventDefault();
-      this.drawing.undo();
+      this.flash(this.drawing.undo());
     });
   }
 
@@ -250,25 +253,27 @@ export class SandboxScene extends Phaser.Scene {
           for (const menu of open) menu.close();
           return;
         }
-        if (pointer.leftButtonDown()) this.drawing.press(at(pointer), 'left');
+        if (pointer.leftButtonDown()) this.flash(this.drawing.press(at(pointer), 'left'));
         else if (pointer.rightButtonDown()) this.drawing.press(at(pointer), 'right');
       },
     );
     this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) =>
       this.drawing.move(at(pointer)),
     );
-    const release = () => {
-      const flash = this.drawing.release();
-      if (flash) flashRejection(this, flash.path, flash.message, flash.pointer);
-    };
+    const release = () => this.flash(this.drawing.release());
     this.input.on(Phaser.Input.Events.POINTER_UP, release);
     this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, release);
+  }
+
+  /** Flashes what drawing input says was refused, if anything. */
+  private flash(flash: Flash | null): void {
+    if (flash) flashRejection(this, flash.path, flash.message, flash.pointer);
   }
 
   override update(_time: number, deltaMs: number): void {
     // Phaser smooths `deltaMs` over several frames, which would hide a long one.
     this.frames.begin(this.game.loop.rawDelta, this.world.isRunning);
-    this.drawing.tick();
+    this.flash(this.drawing.tick());
     const start = performance.now();
     // A stress test's update is timed with physics: a few microseconds. Behind
     // a menu screen, nothing is played.
