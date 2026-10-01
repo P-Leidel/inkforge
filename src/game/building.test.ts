@@ -35,32 +35,27 @@ const NEAR = across(760, GROUND - 62, 80);
 /** High in the air, far from it. */
 const FAR = across(600, 200, 200);
 
-describe('With Waves on, in an Intermission', () => {
-  it('bars every Stroke and Fill, and Space starts the Wave', () => {
+describe('With Waves on, in an Intermission (building between Waves, provisional)', () => {
+  it('lets a Stroke and a Fill be made, with physics still paused', () => {
     const game = wavesGame(false);
-    game.waves = false;
-    expect(game.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
-    game.waves = true;
     expect(game.defence.reading.phase).toBe('intermission');
 
-    const stroke = game.submitStroke(FAR, 'grey');
-    expect(stroke).toMatchObject({ kind: 'barred', reason: 'not-now' });
-    expect(stroke.kind === 'barred' && stroke.path.length).toBeGreaterThan(1);
-    expect(game.fillAt({ x: 330, y: 330 }, 'blue')).toMatchObject({
-      kind: 'barred',
-      reason: 'not-now',
-    });
-    expect(game.prospect(game.lookAtStroke(FAR)!, 'grey').refusal).toBe('not-now');
-    expect(game.world.lines).toEqual([]);
+    expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
+    expect(game.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
+    expect(game.fillAt({ x: 330, y: 330 }, 'blue').kind).toBe('filled');
+    expect(game.prospect(game.lookAtStroke(FAR)!, 'grey').refusal).toBeNull();
+    expect(game.world.lines).toHaveLength(1);
+    expect(game.world.isRunning).toBe(false);
+    expect(game.defence.reading.phase).toBe('intermission');
   });
 
-  it('leaves undo and the Eraser doing nothing', () => {
+  it('lets undo and the Eraser work', () => {
     const game = wavesGame(false);
-    game.waves = false;
     expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
-    game.waves = true;
+    expect(game.submitStroke(across(600, 400, 200), 'grey').kind).toBe('line');
 
     game.undo();
+    expect(game.world.lines).toHaveLength(1);
     game.eraseAlong(
       [
         { x: 590, y: 200 },
@@ -69,8 +64,24 @@ describe('With Waves on, in an Intermission', () => {
       12,
     );
 
-    expect(game.world.lines).toHaveLength(1);
-    expect(game.history).toHaveLength(1);
+    expect(game.world.lines).toEqual([]);
+  });
+});
+
+describe('With Waves on and building between Waves off, in an Intermission', () => {
+  it('bars every Stroke and Fill', () => {
+    const game = createGame(false, { waves: true, buildBetweenWaves: false });
+    game.waves = false;
+    expect(game.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
+    game.waves = true;
+    expect(game.defence.reading.phase).toBe('intermission');
+
+    expect(game.submitStroke(FAR, 'grey')).toMatchObject({ kind: 'barred', reason: 'not-now' });
+    expect(game.fillAt({ x: 330, y: 330 }, 'blue')).toMatchObject({
+      kind: 'barred',
+      reason: 'not-now',
+    });
+    expect(game.world.lines).toEqual([]);
   });
 });
 

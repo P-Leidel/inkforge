@@ -164,6 +164,8 @@ export interface GameOptions {
   readonly inkCosts: boolean;
   /** Whether the Game has Waves and Intermissions; off by default. */
   readonly waves?: boolean;
+  /** PROVISIONAL: whether the player may build outside a Wave too; on by default (see `DefenceLoopOptions`). */
+  readonly buildBetweenWaves?: boolean;
   /** The Wave table of the only Wave until a Level brings its own; defaults to a fresh copy of the defaults. */
   readonly wave?: WaveTable;
   /** The Sandbox world to run; a new one from `worldOptions` by default. */
@@ -239,6 +241,7 @@ export class Game {
       tanks: this.inkTanks,
       table: options.wave ?? createWaveTable(),
       waves: options.waves ?? false,
+      buildBetweenWaves: options.buildBetweenWaves,
     });
   }
 

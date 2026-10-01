@@ -31,7 +31,7 @@ The phase in which physics runs, enemies walk toward the Ink Core, and the playe
 _Avoid_: Round, combat phase
 
 **Intermission**:
-The paused phase between two Waves, and before the first. The player can't draw. When a Wave ends, it shows that Wave's rewards (for now a summary: kills, the Ink Core's HP, the Ink picked up), every Ink Tank refills to its maximum and every Object at rest is Frozen again; the Arena otherwise stays as the Wave left it, damage included. Space starts the next Wave.
+The paused phase between two Waves, and before the first. The player can't draw (provisionally, while testing, they can). When a Wave ends, it shows that Wave's rewards (for now a summary: kills, the Ink Core's HP, the Ink picked up), every Ink Tank refills to its maximum and every Object at rest is Frozen again; the Arena otherwise stays as the Wave left it, damage included. Space starts the next Wave.
 _Avoid_: Build Phase, break, shop
 
 **Defence loop**:

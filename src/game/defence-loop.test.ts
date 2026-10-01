@@ -67,10 +67,17 @@ function loop({
   on = false,
   wave = {},
   waves,
-}: { on?: boolean; wave?: WaveSetup; waves?: WaveSetup[] } = {}) {
+  between = false,
+}: { on?: boolean; wave?: WaveSetup; waves?: WaveSetup[]; between?: boolean } = {}) {
   const world = new FakeWorld();
   const tanks = new FakeTanks();
-  const defence = new DefenceLoop({ world, tanks, table: table(wave), waves: on });
+  const defence = new DefenceLoop({
+    world,
+    tanks,
+    table: table(wave),
+    waves: on,
+    buildBetweenWaves: between,
+  });
   if (waves) defence.load(waves.map(table));
   // Only what the loop asks for after setting up.
   world.calls.length = 0;
@@ -409,6 +416,25 @@ describe('What the player may do now', () => {
     step(defence, world);
     expect(defence.reading.phase).toBe('cleared');
     for (const action of ACTIONS) expect(defence.bar(action)).toBe('not-now');
+  });
+
+  it('with building between Waves on, as it is by default for now, is anything outside a Wave but drawing near an Enemy', () => {
+    const world = new FakeWorld();
+    const defence = new DefenceLoop({
+      world,
+      tanks: new FakeTanks(),
+      table: table({}),
+      waves: true,
+    });
+    expect(defence.reading.phase).toBe('intermission');
+    for (const action of ACTIONS) expect(defence.bar(action)).toBeNull();
+    expect(defence.bar('draw', { nearEnemy: true })).toBe('near-enemy');
+
+    const { defence: cleared, world: clearedWorld } = loop({ on: true, between: true });
+    space(cleared, clearedWorld);
+    step(cleared, clearedWorld);
+    expect(cleared.reading.phase).toBe('cleared');
+    for (const action of ACTIONS) expect(cleared.bar(action)).toBeNull();
   });
 
   it('during a Wave, running or paused, is anything but drawing near an Enemy', () => {

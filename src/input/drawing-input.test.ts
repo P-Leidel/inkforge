@@ -306,8 +306,8 @@ describe('Drawing input', () => {
       expect(input.preview()).toMatchObject({ kind: 'stroke', refused: true });
     });
 
-    it('flash "Draw during a Wave" in an Intermission, for a Stroke or a Fill', () => {
-      const game = createGame(false, { waves: true });
+    it('flash "Draw during a Wave" in an Intermission, with building between Waves off, for a Stroke or a Fill', () => {
+      const game = createGame(false, { waves: true, buildBetweenWaves: false });
       game.waves = false;
       const { input } = drawingOver(game);
       box(game.world, input);
