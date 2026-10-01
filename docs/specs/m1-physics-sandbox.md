@@ -1,6 +1,6 @@
 # Spec: Milestone 1, physics sandbox
 
-Roadmap step 1 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md).
+**Done.** Roadmap step 1 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md).
 
 ## Problem Statement
 

@@ -1,6 +1,6 @@
 # Spec: Milestone 2, Colours
 
-Roadmap step 2 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 1 spec](m1-physics-sandbox.md).
+**Done.** Roadmap step 2 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 1 spec](m1-physics-sandbox.md).
 
 ## Problem Statement
 

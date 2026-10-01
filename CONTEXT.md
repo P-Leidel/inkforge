@@ -96,7 +96,7 @@ What happens to an Object a new Line is drawn across: it slides the shortest way
 _Avoid_: Push-out, overlap
 
 **Eraser**:
-A sandbox tool for testing, not part of the game: on hand in the Sandbox and the Gallery, never in the Campaign. It quietly removes whatever its brush passes over, whole Objects with their Fills, the Pieces of Lines, Rubble, Droplets and Patches. Erasing is not breaking: nothing bursts into Debris, releases its Fill or sets off a Blast. It refunds the Ink paid for what it removes, like undo.
+A sandbox tool for testing, not part of the game: on hand in Free play, never in the Campaign. It quietly removes whatever its brush passes over, whole Objects with their Fills, the Pieces of Lines, Rubble, Droplets and Patches. Erasing is not breaking: nothing bursts into Debris, releases its Fill or sets off a Blast. It refunds the Ink paid for what it removes, like undo.
 _Avoid_: Delete, rubber
 
 ### Breaking
