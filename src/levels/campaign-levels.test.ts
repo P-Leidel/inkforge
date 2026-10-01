@@ -10,7 +10,7 @@ describe('The Campaign Levels', () => {
   });
 
   it.each(CAMPAIGN_LEVELS.map((level) => [level.name, level] as const))(
-    '%s loads at its first Wave of two or three',
+    '%s loads at its first Wave',
     (_, level) => {
       const game = createGame(true);
 
@@ -18,8 +18,7 @@ describe('The Campaign Levels', () => {
 
       const reading = game.defence.reading;
       expect(reading).toMatchObject({ phase: 'intermission', wave: 1 });
-      expect(reading.waves).toBeGreaterThanOrEqual(2);
-      expect(reading.waves).toBeLessThanOrEqual(3);
+      expect(reading.waves).toBe(level.waves!.length);
     },
   );
 });
