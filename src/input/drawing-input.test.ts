@@ -3,6 +3,7 @@ import type { Vec2 } from '../geometry/vec2';
 import type { Game } from '../game/game';
 import { inLineLength } from '../game/ink-table';
 import { games } from '../game/test-support';
+import { SANDBOX_ARENA } from '../sandbox/arena';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { drawLine, objectById } from '../sandbox/test-support';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
@@ -63,6 +64,9 @@ function box(world: SandboxWorld, input: DrawingInput): number {
 
 /** Inside the box `box` draws. */
 const inBox = { x: 400, y: 430 };
+
+/** The sandbox Arena's ground, where its Spawn stands. */
+const GROUND = SANDBOX_ARENA.spawn.y;
 
 describe('Drawing input', () => {
   describe('a press, a drag and a release', () => {
@@ -237,7 +241,7 @@ describe('Drawing input', () => {
     });
   });
 
-  describe('the Core Zone', () => {
+  describe('the Waves', () => {
     /** A Game with Waves on, in a Wave of one Crawler that waits a long while for the next. */
     function inAWave(
       inkCosts: boolean,
@@ -249,74 +253,75 @@ describe('Drawing input', () => {
         table.gap = 100;
       });
       const drawing = drawingOver(game);
-      build?.(game.world, drawing.input);
       game.togglePause();
       expect(game.defence.reading.phase).toBe('wave');
+      build?.(game.world, drawing.input);
       return { game, ...drawing };
     }
 
-    // The Ink Core's centre is at (1832, 662); the Core Zone reaches 240 px from it.
-    const inside = dragAlong([
-      { x: 1650, y: 560 },
-      { x: 1690, y: 560 },
+    /** A Crawler sent in by hand onto the ground at x = 800; 20 px above its head, and far from it. */
+    const crawler = (world: SandboxWorld) => world.spawn('crawler', { x: 800, y: GROUND - 22 });
+    const near = dragAlong([
+      { x: 760, y: GROUND - 62 },
+      { x: 840, y: GROUND - 62 },
     ]);
-    const reachingOut = dragAlong([
-      { x: 1500, y: 560 },
-      { x: 1700, y: 560 },
+    const far = dragAlong([
+      { x: 600, y: 200 },
+      { x: 800, y: 200 },
     ]);
 
     it.each([false, true])(
-      'flashes "Outside the Core Zone" along a Stroke reaching outside it, and draws nothing (Ink costs %s)',
+      'flash "Too close to an Enemy" along a Stroke near one, and draw nothing (Ink costs %s)',
       (inkCosts) => {
         const { game, input } = inAWave(inkCosts);
+        crawler(game.world);
 
-        const flash = drag(input, reachingOut);
+        const flash = drag(input, near);
 
         expect(flash).toMatchObject({
-          message: 'Outside the Core Zone',
-          pointer: reachingOut[reachingOut.length - 1],
+          message: 'Too close to an Enemy',
+          pointer: near[near.length - 1],
         });
-        expect(flash!.path[0]!.x).toBeCloseTo(1500, 0);
+        expect(flash!.path[0]!.x).toBeCloseTo(760, 0);
         expect(game.world.lines).toEqual([]);
       },
     );
 
-    it('draws a Stroke wholly inside it', () => {
+    it('let a Stroke away from the Enemies be drawn anywhere', () => {
       const { game, input } = inAWave(false);
+      crawler(game.world);
 
-      expect(drag(input, inside)).toBeNull();
+      expect(drag(input, far)).toBeNull();
       expect(game.world.lines).toHaveLength(1);
     });
 
-    it('flashes "Outside the Core Zone" around an Object clicked outside it, and leaves it hollow', () => {
-      const { game, input } = inAWave(false, box);
+    it('show a Stroke near an Enemy as refused while it is drawn', () => {
+      const { game, input } = inAWave(false);
+      crawler(game.world);
 
-      const flash = click(input, inBox);
-
-      expect(flash).toMatchObject({ message: 'Outside the Core Zone', pointer: inBox });
-      expect(flash!.path[flash!.path.length - 1]).toEqual(flash!.path[0]);
-      expect(game.world.objects[0]!.fill).toBeNull();
-    });
-
-    it('shows a Stroke reaching outside it as refused while it is drawn', () => {
-      const { input } = inAWave(false);
-
-      input.press(reachingOut[0]!, 'left');
-      for (const sample of reachingOut.slice(1)) input.move(sample);
+      input.press(near[0]!, 'left');
+      for (const sample of near.slice(1)) input.move(sample);
 
       expect(input.preview()).toMatchObject({ kind: 'stroke', refused: true });
     });
 
-    it('lets a Stroke reaching outside it be drawn in the Build Phase', () => {
+    it('flash "Draw during a Wave" in an Intermission, for a Stroke or a Fill', () => {
       const game = createGame(false, { waves: true });
+      game.defence.waves = false;
       const { input } = drawingOver(game);
+      box(game.world, input);
+      game.defence.waves = true;
+      expect(game.defence.reading.phase).toBe('intermission');
 
-      expect(drag(input, reachingOut)).toBeNull();
-      expect(input.preview()).toMatchObject({ refused: false });
-      expect(game.world.lines).toHaveLength(1);
+      expect(drag(input, far)).toMatchObject({ message: 'Draw during a Wave' });
+      const flash = click(input, inBox);
+      expect(flash).toMatchObject({ message: 'Draw during a Wave', pointer: inBox });
+      expect(flash!.path[flash!.path.length - 1]).toEqual(flash!.path[0]);
+      expect(game.world.lines).toEqual([]);
+      expect(game.world.objects[0]!.fill).toBeNull();
     });
 
-    it('Releases a Frozen Object outside it with the right button', () => {
+    it('Release a Frozen Object with the right button', () => {
       const { game, input } = inAWave(false, box);
       const id = game.world.objects[0]!.id;
       for (let k = 0; k < 6; k++) game.step();

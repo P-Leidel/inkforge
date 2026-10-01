@@ -39,6 +39,7 @@ import { PreviousPoses } from './previous-poses';
 import { Random } from './random';
 import { Rubble, type RubbleView } from './rubble';
 import {
+  freezeResting,
   Strokes,
   type AddedStroke,
   type FillOutcome,
@@ -336,7 +337,7 @@ export class SandboxWorld {
     return this.current;
   }
 
-  /** Whether physics is running (stands in for the Wave) rather than paused (the Build Phase). */
+  /** Whether physics is running rather than paused. */
   get isRunning(): boolean {
     return this.running;
   }
@@ -685,6 +686,22 @@ export class SandboxWorld {
   pause(): void {
     this.running = false;
     this.accumulator = 0;
+  }
+
+  /**
+   * Freezes again every Object at rest where it is, as a Wave ends (the
+   * Aftermath); moving ones are left as they are. Only while paused: it
+   * rebuilds the world from a snapshot of now, as a start does, so nothing
+   * comes or goes, and R still goes back to the last start.
+   */
+  freezeResting(): void {
+    if (this.running) return;
+    const now = this.takeSnapshot();
+    const snapshot = {
+      ...now,
+      contents: { ...now.contents, strokes: freezeResting(now.contents.strokes) },
+    };
+    this.happenings.quietly(() => this.rebuild(snapshot));
   }
 
   /**

@@ -49,8 +49,8 @@ const ENEMY_COLUMNS: readonly Column[] = ENEMY_TYPES.map((type) => ({
 /**
  * The F2 tuning panel. Its Ink section holds the **Ink costs** switch and
  * the Game's Ink table: the prices and the Tank maximums. Its Wave section
- * holds the **Waves** switch and the Wave table: a count per Enemy type and
- * the gap between arrivals. Below them is every number of the material
+ * holds the **Waves** switch and the current Wave's table: a count per
+ * Enemy type and the gap between arrivals; `refresh` shows another Wave's. Below them is every number of the material
  * table, and then of the enemy table. All are editable while the sandbox
  * runs, and "Copy as JSON" copies the four tables to paste back over their
  * defaults in the code. It lists whatever the tables hold, so values added later appear
@@ -97,8 +97,11 @@ export class TuningPanel {
       defaults: DEFAULT_INK_TABLE,
       edit: (write) => game.editInk(write),
     };
+    // The current Wave's table: it changes as the Level goes from Wave to Wave.
     this.wave = {
-      table: game.defence.table,
+      get table() {
+        return game.defence.table;
+      },
       defaults: DEFAULT_WAVE_TABLE,
       edit: (write) => game.defence.edit(write),
     };
@@ -126,9 +129,9 @@ export class TuningPanel {
         { label: 'tank maximum (Line length)', path: (colour) => ['tanks', colour] },
       ]),
       this.sharedValues(this.ink, (path) => path[0] !== 'tanks'),
-      element('div', 'tuning-section', 'Wave'),
+      element('div', 'tuning-section', 'Wave (the current one)'),
       this.switch(
-        'Waves (off: no Build Phase or Wave)',
+        'Waves (off: no Wave or Intermission)',
         () => this.game.defence.waves,
         (on) => (this.game.defence.waves = on),
       ),

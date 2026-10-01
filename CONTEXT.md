@@ -26,24 +26,20 @@ _Avoid_: Hole, chasm, dip (a gap with a floor is not a Pit)
 The arena's own, hand-built ground and walls. Not drawn by the player and never breaks.
 _Avoid_: Ground (when drawn strokes are meant)
 
-**Core Zone**:
-The visible circle around the Ink Core, the only place the player may draw during a Wave.
-_Avoid_: Build zone, safe zone
-
-**Build Phase**:
-The untimed phase before a Wave. Physics is paused, the player can draw anywhere and undo.
-_Avoid_: Prep phase, planning phase
-
 **Wave**:
-The phase in which physics runs and enemies walk toward the Ink Core. No undo. Pausing does not end it; it ends when no Enemy is left to spawn or alive, or when the Ink Core is destroyed.
+The phase in which physics runs, enemies walk toward the Ink Core, and the player builds: drawing anywhere but near an Enemy, paid from the Ink Tanks. Pausing does not end it; it ends when no Enemy is left to spawn or alive. If the Ink Core is destroyed first, the Wave is lost and only R or Clear go on.
 _Avoid_: Round, combat phase
 
+**Intermission**:
+The paused phase between two Waves, and before the first. The player can't draw. When a Wave ends, it shows that Wave's rewards (for now a summary: kills, the Ink Core's HP, the Ink picked up), every Ink Tank refills to its maximum and every Object at rest is Frozen again; the Arena otherwise stays as the Wave left it, damage included. Space starts the next Wave.
+_Avoid_: Build Phase, break, shop
+
 **Defence loop**:
-The cycle of phases the player goes through: the Build Phase, then a Wave, and back to the Build Phase. The Analysis and the Aftermath join it in milestone 5. It says which phase is under way, and it stops everything once the Ink Core is destroyed.
+The cycle of phases the player goes through: an Intermission, then a Wave, then the next Intermission, through the Level's Waves; after the last, the Level is cleared. It says which phase is under way, and it stops everything once the Ink Core is destroyed.
 _Avoid_: Game loop, phase machine, round
 
 **Level**:
-Everything an Arena starts with: the Arena itself (its Terrain, Spawn and Ink Core), its Wave, its Ink Tank maximums, and whatever is already built there, for free. Loading a Level clears the Arena and sets it up. The gallery demos, the stress tests and the sandbox are Levels too.
+Everything an Arena starts with: the Arena itself (its Terrain, Spawn and Ink Core), its Waves in order, its Ink Tank maximums, and whatever is already built there, for free. Loading a Level clears the Arena and sets it up at its first Wave. The gallery demos, the stress tests and the sandbox are Levels too.
 _Avoid_: Stage, map, arena description, scenario
 
 **Campaign**:
@@ -131,17 +127,11 @@ The resource spent on Strokes and Fills, held per Colour. Also what enemies drop
 _Avoid_: Pigment, paint, mana
 
 **Ink Tank**:
-The per-Colour store of Ink, with a maximum.
+The per-Colour store of Ink, with a maximum. Strokes and Fills during a Wave are paid from it, Drops go into it, and every Intermission refills it to its maximum.
 _Avoid_: Pool, budget
 
-**Locked Ink**:
-Ink left over from the Build Phase. It stays in the Ink Tank but cannot be spent during the Wave.
-
-**Wave Ink**:
-Ink dropped by enemies killed during the current Wave, spendable immediately inside the Core Zone.
-
 **Drop**:
-The Ink of every Colour an Enemy lets out when it dies, picked up into the Ink Tanks at once. An Enemy that reaches the Ink Core drops nothing.
+The Ink of every Colour an Enemy lets out when it dies, picked up straight into the Ink Tanks and spendable at once. What doesn't fit is lost. An Enemy that reaches the Ink Core drops nothing.
 _Avoid_: Loot, reward
 
 ### Enemies
@@ -173,7 +163,7 @@ The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with ph
 ### Simulation
 
 **Game**:
-The rules layer over the Sandbox world: the Ink Tanks, what Strokes and Fills cost, undo, and with Waves on, the Build Phase and the Wave. The gallery and the stress tests build below it, for free.
+The rules layer over the Sandbox world: the Ink Tanks, what Strokes and Fills cost, undo, and with Waves on, the Waves and the Intermissions. The gallery and the stress tests build below it, for free.
 _Avoid_: Controller, manager
 
 **Arena contents**:
@@ -187,3 +177,12 @@ _Avoid_: Resting contact
 **Bond**:
 What holds a green Object to the first new thing it touched after it started moving: a rigid joint where they touched. It lasts until either side breaks, is undone or is removed by a cap; the green Object then falls free and never sticks again.
 _Avoid_: Weld, glue joint
+
+## Retired terms
+
+No longer part of the game since [ADR 0012](docs/adr/0012-continuous-building-between-intermissions.md); their code is kept at the git tag `build-phase-core-zone`.
+
+- **Build Phase**: the paused phase before a Wave, where the player drew anywhere and undid freely. Replaced by building during the Wave and the Intermission.
+- **Core Zone**: the circle around the Ink Core, the only place the player could draw during a Wave.
+- **Locked Ink**: Ink left over from the Build Phase, kept in the Ink Tank but not spendable during the Wave.
+- **Wave Ink**: Ink dropped by kills in the current Wave, the only Ink spendable during it.

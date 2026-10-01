@@ -1,10 +1,10 @@
 import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
 
 /*
- * The Wave table: the Wave's list, the Enemies a Wave sends in and the gap
- * between them, and the size of the Core Zone. Pure data, owned by the
- * Game's Defence loop, edited in F2's Wave section.
- * A Level can bring a Wave of its own.
+ * The Wave table: one Wave's list, the Enemies it sends in, and the gap
+ * between them. Pure data, owned by the Game's Defence loop, which holds
+ * one for each of the Level's Waves; F2's Wave section edits the current
+ * Wave's. A Level can bring Waves of its own.
  */
 
 export interface WaveTable {
@@ -12,8 +12,6 @@ export interface WaveTable {
   counts: Record<EnemyType, number>;
   /** Seconds between one arrival and the next, at the least. */
   gap: number;
-  /** Diameter (px) of the Core Zone around the Ink Core, the only place to draw during a Wave. */
-  coreZone: number;
 }
 
 /** The Wave table, read only: the Game's is edited through its Defence loop's `edit`. */
@@ -30,7 +28,6 @@ export const DEFAULT_WAVE_TABLE: ReadonlyWaveTable = {
     heavy: 2,
   },
   gap: 2,
-  coreZone: 480,
 };
 
 /** A fresh, editable copy of `table`, the default Wave table if none. */

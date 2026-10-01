@@ -17,9 +17,8 @@ describe('Readings', () => {
     ],
     debris: 40,
   };
-  const tank = (spendable: number, maximum: number, locked = 0) => ({
+  const tank = (spendable: number, maximum: number) => ({
     spendable,
-    locked,
     maximum,
     units: Math.floor(spendable / 8),
   });
@@ -84,21 +83,5 @@ describe('Readings', () => {
     expect(lines[0]).toBe('last 1 s     -');
     expect(lines[1]).toBe('since start  -   longest -   1% low -');
     expect(lines.at(-1)).toBe('             black 12,000   red 8,000   costs off');
-  });
-
-  it('shows the Locked Ink beside what can be spent, during a Wave', () => {
-    const sinceStart = new FrameTimes();
-    sinceStart.restart();
-    const tanks = { ...ink.tanks, grey: tank(480, 32000, 30000) };
-
-    const lines = readingLines({
-      recent: null,
-      sinceStart,
-      bodies,
-      render,
-      ink: { ...ink, tanks },
-    });
-
-    expect(lines.at(-2)).toBe('ink, px²     grey 480 +30,000 locked   blue 24,000   green 0');
   });
 });

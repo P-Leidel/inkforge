@@ -9,14 +9,17 @@ import type { ReadonlyWaveTable } from './wave-table';
  * the sandbox and the Campaign's Levels are all Levels.
  *
  * What a Level leaves out: without an Arena it is the sandbox Arena; without
- * a Wave or Tanks, the Wave table and the Tank maximums stay as they are, as
- * the F2 tuning panel left them.
+ * Waves, it has one Wave, the current Wave table as the F2 tuning panel left
+ * it; without Tanks, the Tank maximums stay as they are.
  */
 export interface Level {
   /** Its Arena: Terrain, Spawn and Ink Core. It must be one screen, as every Arena is. */
   readonly arena?: Arena;
-  /** Its Wave: loading it makes the Wave table a copy of it. */
-  readonly wave?: ReadonlyWaveTable;
+  /**
+   * Its Waves, in the order they come, each a Wave table: loading it makes
+   * the Defence loop's list a copy of them, starting at the first.
+   */
+  readonly waves?: readonly ReadonlyWaveTable[];
   /** Each Ink Tank's maximum, in Line length: loading it sets them in the Ink table, and fills the Tanks. */
   readonly tanks?: Readonly<Record<Colour, number>>;
   /**
@@ -28,7 +31,7 @@ export interface Level {
   build?(world: SandboxWorld): void;
 }
 
-/** The sandbox: the sandbox Arena, empty, with the Wave and the Tanks as they are. */
+/** The sandbox: the sandbox Arena, empty, with one Wave and the Tanks as they are. */
 export const SANDBOX_LEVEL: Level = {};
 
 /** Throws unless `arena` is one screen, the size every Arena is. */

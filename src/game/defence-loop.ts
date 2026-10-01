@@ -1,15 +1,14 @@
-import type { Bounds } from '../geometry/polygon';
-import { distance, type Vec2 } from '../geometry/vec2';
+import { COLOURS, type Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
 import { STEP_SECONDS, type StepHooks } from '../sandbox/sandbox-world';
-import { arrivals, type ReadonlyWaveTable, type WaveTable } from './wave-table';
+import { arrivals, createWaveTable, type ReadonlyWaveTable, type WaveTable } from './wave-table';
 
 /** What the Defence loop needs of the Sandbox world. The Sandbox world is one. */
 export interface LoopWorld {
   readonly isRunning: boolean;
   /** How many Enemies are in the Arena. */
   readonly enemyCount: number;
-  readonly inkCore: { readonly hp: number; readonly bounds: Bounds };
+  readonly inkCore: { readonly hp: number };
   /** Starts physics, taking the world's own snapshot, or pauses it. */
   togglePause(): void;
   /** Runs physics on from where it was paused, without a snapshot. */
@@ -18,93 +17,124 @@ export interface LoopWorld {
   /** Whether an Enemy of `type` sent in now would stand at the lane's far end with nothing in its way. */
   spawnClear(type: EnemyType): boolean;
   spawn(type: EnemyType): unknown;
+  /** Freezes again every Object at rest, while paused: the Aftermath. */
+  freezeResting(): void;
 }
 
-/** What the Defence loop does to the Ink Tanks as a Wave starts and ends. */
-export interface WaveLock {
-  lock(): void;
-  unlock(): void;
+/** What the Defence loop does to the Ink Tanks as an Intermission begins. */
+export interface Refill {
+  /** Fills every Tank to its maximum. */
+  fill(): void;
 }
 
 /**
- * Where the Defence loop is, with Waves on: the Build Phase, paused, where
- * the player builds, or a Wave, paused or running.
+ * Where the Defence loop is, with Waves on: an Intermission, paused, before
+ * a Wave; a Wave, paused or running; or the Level cleared, after its last
+ * Wave.
  */
-export type Phase = 'build' | 'wave';
+export type Phase = 'intermission' | 'wave' | 'cleared';
 
-/** The Core Zone: the circle around the Ink Core, the only place to draw during a Wave. */
-export interface CoreZone {
-  readonly centre: Vec2;
-  /** px */
-  readonly radius: number;
+/** What a Wave came to: the rewards screen's summary. */
+export interface WaveSummary {
+  /** Which of the Level's Waves it was, from 1. */
+  readonly wave: number;
+  /** How many Enemies died in it. */
+  readonly kills: number;
+  /** The Ink Core's HP as it ended. */
+  readonly coreHp: number;
+  /** The Ink picked up from Drops into each Tank, px²: what didn't fit is not counted. */
+  readonly ink: Readonly<Record<Colour, number>>;
 }
 
-/** The Defence loop as the HUD and the Core Zone drawing read it. */
+/**
+ * The rewards an Intermission offers for the Wave that ended: for now only
+ * its summary. A choice of rewards (pick one of three) slots in here, and the
+ * refill would then wait for the pick.
+ */
+export interface Rewards {
+  readonly summary: WaveSummary;
+}
+
+/** The Defence loop as the HUD and the rewards screen read it. */
 export interface DefenceReading {
-  /** The Build Phase or a Wave, with Waves on; null with Waves off. */
+  /** The Intermission, a Wave or the Level cleared, with Waves on; null with Waves off. */
   readonly phase: Phase | null;
+  /** The Wave under way, or the next to come in an Intermission, from 1; the last once cleared. */
+  readonly wave: number;
+  /** How many Waves the Level has. */
+  readonly waves: number;
   /** How many of the Wave's Enemies are still to come: 0 outside a Wave. */
   readonly toCome: number;
   /** Whether the Ink Core's HP has run out: physics stops, and only R or Clear go on. */
   readonly coreDestroyed: boolean;
-  /** Where the Core Zone is, whatever the phase: it holds only during a Wave. */
-  readonly coreZone: CoreZone;
+  /** The rewards of the Wave that last ended, in an Intermission or once cleared; null before the first. */
+  readonly rewards: Rewards | null;
 }
 
 export interface DefenceLoopOptions {
   readonly world: LoopWorld;
-  readonly tanks: WaveLock;
-  /** The Wave table to read and edit. */
+  readonly tanks: Refill;
+  /** The Wave table of the Level's only Wave, until a Level brings its own list. */
   readonly table: WaveTable;
   /** The Waves switch; off by default. */
   readonly waves?: boolean;
 }
 
-/** A Wave under way: the Enemies still to come, and when the next may. */
+/** A Wave under way: the Enemies still to come, when the next may, and its tally. */
 interface Wave {
-  /** Which Wave it is, counting every Wave started: what was paid in it is known by it. */
-  readonly number: number;
   /** Still to come, in the order they arrive. */
   readonly toCome: EnemyType[];
   /** Steps left before the next may arrive. */
   untilNext: number;
+  kills: number;
+  /** Ink picked up so far, px². */
+  readonly ink: Record<Colour, number>;
 }
 
 /**
  * The Defence loop (CONTEXT.md): which phase is under way, and what Space
- * does in it. With the Waves switch on, Space in the Build Phase starts a
- * Wave, which sends in the Wave table's Enemies from the Spawn and ends when
- * none is left to come and none is alive; the Tanks' contents are Locked Ink
- * until it ends, and during it only the Core Zone may be drawn in. Waves on
- * or off, once the Ink Core is destroyed physics stops and Space starts
- * nothing until R or Clear bring it back whole.
+ * does in it. With the Waves switch on, a Level is played Wave by Wave from
+ * its list: Space in an Intermission starts the next Wave, which sends in
+ * its Wave table's Enemies from the Spawn and ends when none is left to come
+ * and none is alive. Physics then pauses and the Intermission begins: its
+ * rewards, then every Tank refilled, and every Object at rest Frozen again.
+ * After the last Wave the Level is cleared. Waves on or off, once the Ink
+ * Core is destroyed physics stops and Space starts nothing until R or Clear
+ * bring it back whole.
  *
  * It lives in the Game (ADR 0009) and reaches the Sandbox world through
  * `LoopWorld`, so it knows nothing of Box2D. The Game runs its hooks around
- * every step and asks it which Wave pays and whether something may be drawn.
+ * every step and asks it whether drawing is allowed now.
  */
 export class DefenceLoop {
   private readonly world: LoopWorld;
-  private readonly tanks: WaveLock;
-  private readonly waveTable: WaveTable;
+  private readonly tanks: Refill;
+  /** The Level's Waves, in order, each its own Wave table. */
+  private tables: WaveTable[];
   private on: boolean;
-  /** The Wave under way, paused or running; null in the Build Phase. */
+  /** Which of `tables` is under way, or comes next; the last once cleared. */
+  private index = 0;
+  /** Which of `tables` R retries: the one whose start the Game's snapshot is of. */
+  private retryIndex = 0;
+  /** The Wave under way, paused or running; null in an Intermission or once cleared. */
   private current: Wave | null = null;
-  /** How many Waves were started in all, never taken back: R and Clear keep it. */
-  private wavesStarted = 0;
+  private cleared = false;
+  /** The rewards of each Wave that ended, by its index. */
+  private ended: Rewards[] = [];
 
   constructor(options: DefenceLoopOptions) {
     this.world = options.world;
     this.tanks = options.tanks;
-    this.waveTable = options.table;
+    this.tables = [options.table];
     this.on = options.waves ?? false;
   }
 
   /**
    * The Waves switch. Off, there are no phases: Space runs and pauses
-   * physics, as in milestone 3. Turning it on puts the loop in the Build
-   * Phase, pausing physics if it runs; turning it off ends a Wave under way
-   * where it is, and physics stays as it is.
+   * physics, as in milestone 3. Turning it on puts the loop in an
+   * Intermission before the Wave it is at, pausing physics if it runs;
+   * turning it off ends a Wave under way where it is, and physics stays as
+   * it is.
    */
   get waves(): boolean {
     return this.on;
@@ -113,58 +143,68 @@ export class DefenceLoop {
   set waves(on: boolean) {
     if (on === this.on) return;
     this.on = on;
-    this.endWave();
+    this.current = null;
     if (on) this.world.pause();
   }
 
   get reading(): DefenceReading {
     return {
       phase: this.phase,
+      wave: this.index + 1,
+      waves: this.tables.length,
       toCome: this.current?.toCome.length ?? 0,
       coreDestroyed: this.coreDestroyed,
-      coreZone: this.coreZone,
+      rewards: this.ended[this.index - (this.cleared ? 0 : 1)] ?? null,
     };
   }
 
-  /** The Wave table: the Wave's list, its gap and the Core Zone's size. Edit it with `edit`. */
+  /** The current Wave's table: its list and its gap. Edit it with `edit`. */
   get table(): ReadonlyWaveTable {
-    return this.waveTable;
+    return this.tables[this.index]!;
+  }
+
+  /** Every Wave's table, in order. */
+  get list(): readonly ReadonlyWaveTable[] {
+    return this.tables;
   }
 
   /**
-   * Edits the Wave table, as the F2 tuning panel does. A Wave under way
-   * keeps its list, and takes a new gap from its next arrival; the next Wave
-   * takes the table as it is when it starts. The Core Zone takes a new size
-   * at once.
+   * Edits the current Wave's table, as the F2 tuning panel does. A Wave
+   * under way keeps its list, and takes a new gap from its next arrival; a
+   * Wave not yet started takes the table as it is when it starts.
    */
   edit(edit: (table: WaveTable) => void): void {
-    edit(this.waveTable);
-  }
-
-  /** A circle centred on the Ink Core, as wide as the Wave table's `coreZone` says now. */
-  private get coreZone(): CoreZone {
-    const { minX, minY, maxX, maxY } = this.world.inkCore.bounds;
-    const centre = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
-    return { centre, radius: this.waveTable.coreZone / 2 };
-  }
-
-  /** Whether every one of `points` lies inside the Core Zone, its edge included, whatever the phase. */
-  inside(points: readonly Vec2[]): boolean {
-    const { centre, radius } = this.coreZone;
-    return points.every((point) => distance(point, centre) <= radius);
-  }
-
-  /** Whether the Core Zone holds now: during a Wave, paused or running. */
-  get zoned(): boolean {
-    return this.current !== null;
+    edit(this.tables[this.index]!);
   }
 
   /**
-   * Whether something may be drawn at `points` now: anywhere outside a Wave,
-   * and during one only wholly inside the Core Zone.
+   * Loading a Level: the list becomes a copy of `waves`, or without them,
+   * one Wave, the current Wave's table as it is. Back to the first Wave's
+   * Intermission, with nothing ended.
    */
-  allows(points: readonly Vec2[]): boolean {
-    return !this.zoned || this.inside(points);
+  load(waves?: readonly ReadonlyWaveTable[]): void {
+    this.tables =
+      waves && waves.length > 0
+        ? waves.map((table) => createWaveTable(table))
+        : [createWaveTable(this.table)];
+    this.index = 0;
+    this.retryIndex = 0;
+    this.ended = [];
+    this.current = null;
+    this.cleared = false;
+  }
+
+  /**
+   * Whether the player may draw, fill, erase or undo now: always with Waves
+   * off, and with Waves on, only during a Wave, paused or running.
+   */
+  get building(): boolean {
+    return !this.on || this.current !== null;
+  }
+
+  /** Whether a Wave is under way, paused or running, with Waves on. */
+  get underWay(): boolean {
+    return this.on && this.current !== null;
   }
 
   private get coreDestroyed(): boolean {
@@ -173,12 +213,8 @@ export class DefenceLoop {
 
   private get phase(): Phase | null {
     if (!this.on) return null;
-    return this.current ? 'wave' : 'build';
-  }
-
-  /** The Wave under way, by its number, whose Wave Ink pays now; null outside a Wave. */
-  get wave(): number | null {
-    return this.current?.number ?? null;
+    if (this.current) return 'wave';
+    return this.cleared ? 'cleared' : 'intermission';
   }
 
   /** Run just before and just after each step of physics, so a retry plays out the same. */
@@ -186,6 +222,17 @@ export class DefenceLoop {
     before: () => this.arrive(),
     after: () => this.stopIfOver(),
   };
+
+  /**
+   * A kill during a Wave, and the Ink its Drop put in the Tanks, px²: the
+   * Wave's tally, for its summary. Outside a Wave it counts for nothing.
+   */
+  killed(ink: Readonly<Record<Colour, number>>): void {
+    const wave = this.current;
+    if (!wave) return;
+    wave.kills++;
+    for (const colour of COLOURS) wave.ink[colour] += ink[colour];
+  }
 
   /**
    * Before a step of a Wave: sends in the next Enemy on its list once the
@@ -200,55 +247,74 @@ export class DefenceLoop {
     if (next === undefined || wave.untilNext > 0 || !this.world.spawnClear(next)) return;
     wave.toCome.shift();
     this.world.spawn(next);
-    wave.untilNext = Math.max(1, Math.round(this.waveTable.gap / STEP_SECONDS));
+    wave.untilNext = Math.max(1, Math.round(this.table.gap / STEP_SECONDS));
   }
 
   /**
    * After a step: once the Ink Core is destroyed, physics stops, Waves on or
-   * off, and a Wave under way ends with it. A Wave also ends when none is
-   * left to come and none is alive. Either way, physics stops and the loop
-   * is back in the Build Phase.
+   * off, and a Wave under way stays where it was lost. A Wave also ends when
+   * none is left to come and none is alive, and the Intermission begins.
    */
   private stopIfOver(): void {
+    if (this.coreDestroyed) return this.world.pause();
     const wave = this.current;
-    const over = wave !== null && wave.toCome.length === 0 && this.world.enemyCount === 0;
-    if (!over && !this.coreDestroyed) return;
+    if (wave === null || wave.toCome.length > 0 || this.world.enemyCount > 0) return;
     this.world.pause();
-    this.endWave();
+    this.endWave(wave);
   }
 
   /**
-   * Ends a Wave under way, if any: its Locked Ink is spendable again, and
-   * its Wave Ink stays in the Tanks. Nothing is Frozen again.
+   * Ends a Wave the Ink Core survived: its rewards, then every Tank refilled
+   * and every Object at rest Frozen again (the Aftermath). Everything else
+   * stays as it ended, damage included. The loop moves on to the next Wave's
+   * Intermission, or after the last, the Level is cleared.
    */
-  private endWave(): void {
-    if (!this.current) return;
+  private endWave(wave: Wave): void {
     this.current = null;
-    this.tanks.unlock();
+    const summary = {
+      wave: this.index + 1,
+      kills: wave.kills,
+      coreHp: this.world.inkCore.hp,
+      ink: { ...wave.ink },
+    };
+    this.ended[this.index] = { summary };
+    this.tanks.fill();
+    this.world.freezeResting();
+    if (this.index + 1 < this.tables.length) this.index++;
+    else this.cleared = true;
   }
 
   /**
-   * R, Clear, or the world starting over below the Game: back to the Build
-   * Phase with Waves on, with no Wave under way. The Game brings the Tanks
-   * back itself, so they are left as they are. The count of Waves started
-   * is kept, so what was paid in one Wave is never taken for another's.
+   * R, or the world starting over below the Game: back to the Intermission
+   * before the Wave whose start the Game's snapshot is of, with that Wave
+   * and those after it not yet played. The Game brings the Tanks back
+   * itself.
    */
   reset(): void {
     this.current = null;
+    this.cleared = false;
+    this.index = this.retryIndex;
+    this.ended.length = this.index;
   }
 
   /**
    * Space. `beforeStart` runs just before physics starts, so the Game can
-   * take its snapshot.
+   * take its snapshot: with Waves on, the Intermission as it is, right
+   * after the refill.
    */
   space(beforeStart: () => void): void {
     if (this.world.isRunning) return this.world.pause();
+    if (this.coreDestroyed || (this.on && this.cleared)) return;
     if (this.current) return this.world.resume();
-    if (this.coreDestroyed) return;
     beforeStart();
     this.world.togglePause();
     if (!this.on) return;
-    this.current = { number: ++this.wavesStarted, toCome: arrivals(this.waveTable), untilNext: 0 };
-    this.tanks.lock();
+    this.retryIndex = this.index;
+    this.current = {
+      toCome: arrivals(this.table),
+      untilNext: 0,
+      kills: 0,
+      ink: Object.fromEntries(COLOURS.map((colour) => [colour, 0])) as Record<Colour, number>,
+    };
   }
 }

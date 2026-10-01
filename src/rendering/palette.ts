@@ -27,8 +27,6 @@ export const PALETTE = {
   core: 0x6fe3ff,
   coreEdge: 0xe8fbff,
   coreGlow: 0x6fe3ff,
-  /** The Core Zone's circle around it. */
-  coreZone: 0x6fe3ff,
   /** An HP bar's empty part, and its full part while whole and once low. */
   hpEmpty: 0x16171b,
   hpFull: 0x62d98b,
@@ -43,8 +41,9 @@ export const PALETTE = {
   /** "Ink Core destroyed". */
   destroyed: '#ff5a5a',
   /** The phase label, with Waves on. */
-  buildPhase: '#6fe3ff',
+  intermission: '#6fe3ff',
   wave: '#ff9a5a',
+  cleared: '#62d98b',
   /** The number still to come, beside the Spawn arrow. */
   spawnCount: '#f0c05a',
 } as const;

@@ -89,7 +89,6 @@ describe("The tuning panel's Copy as JSON", () => {
     expect(pasted.wave).toEqual({
       counts: { ...DEFAULT_WAVE_TABLE.counts, runner: 8 },
       gap: 1.5,
-      coreZone: DEFAULT_WAVE_TABLE.coreZone,
     });
     game.dispose();
   });
