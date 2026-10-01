@@ -554,6 +554,15 @@ export class SandboxWorld {
   }
 
   /**
+   * Whether a Stroke along raw `samples` would come within an Enemy's
+   * width of it, where it is now (`ArenaQuery.nearEnemy`).
+   */
+  nearEnemy(samples: readonly Vec2[]): boolean {
+    const widest = Math.max(0, ...this.enemiesKind.views.map(({ width }) => width));
+    return widest > 0 && this.query.nearEnemy(samples, widest);
+  }
+
+  /**
    * Fills the Object under `point` with `colour`: its mass becomes its
    * Outline's plus its Fill's. Works paused and running, on Frozen and moving
    * Objects, and never wakes a Frozen one. An Object holds one Fill. A Fill

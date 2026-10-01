@@ -423,6 +423,26 @@ export class ArenaQuery {
   }
 
   /**
+   * Near an Enemy: whether a path along `samples`, in world coordinates,
+   * comes within an Enemy body's width of its outline, where it is now:
+   * every body an Enemy has counts, each by its own width. `widest` is at
+   * least the widest Enemy body's width, how far around the path to look.
+   */
+  nearEnemy(samples: readonly Vec2[], widest: number): boolean {
+    if (samples.length === 0) return false;
+    const path: Segment[] =
+      samples.length === 1
+        ? [{ a: samples[0]!, b: samples[0]! }]
+        : samples.slice(1).map((b, k) => ({ a: samples[k]!, b }));
+    return this.near(polygonBounds(samples), widest).some(({ body, form }) => {
+      if (form.kind !== 'enemy') return false;
+      const outline = this.enemyOutline(body, form);
+      const { minX, maxX } = polygonBounds(outline);
+      return path.some(({ a, b }) => capsuleOverlapsPolygon(a, b, maxX - minX, outline, 0));
+    });
+  }
+
+  /**
    * Brush: everything the Eraser's brush touches, oldest first: Objects by
    * their Outline, Pieces, Rubble, Droplets and Patches. Never the Terrain,
    * the Ink Core or an Enemy.

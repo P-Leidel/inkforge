@@ -297,6 +297,24 @@ describe('Arena query', () => {
     expect(query.blocksEnemy(at(1230, 400))).toBe(false); // touching the Enemy's side
   });
 
+  it('measures how near a Stroke comes to every Enemy body, each within its own width; nothing else counts', () => {
+    const { query, object, piece, enemy } = setup();
+    object({ x: 400, y: 400 }, square(20));
+    piece([{ a: { x: 600, y: 380 }, b: { x: 600, y: 420 } }]);
+    enemy({ x: 1200, y: 400 }, square(20)); // 40 wide
+    enemy({ x: 1500, y: 400 }, square(5)); // 10 wide
+    const near = (...samples: Vec2[]) => query.nearEnemy(samples, 40);
+
+    expect(near()).toBe(false);
+    expect(near({ x: 400, y: 400 }, { x: 600, y: 400 })).toBe(false);
+    expect(near({ x: 1255, y: 400 })).toBe(true); // 35 from its side
+    expect(near({ x: 1265, y: 400 })).toBe(false); // 45 from it
+    expect(near({ x: 1100, y: 350 }, { x: 1300, y: 350 })).toBe(true); // 30 over its top
+    expect(near({ x: 1100, y: 300 }, { x: 1300, y: 300 })).toBe(false); // 80 over it
+    expect(near({ x: 1512, y: 400 })).toBe(true); // 7 from the narrow one
+    expect(near({ x: 1520, y: 400 })).toBe(false); // 15 from it: beyond its width
+  });
+
   it('keeps a squeezed Object clear of the Terrain, other Objects, Rubble and Lines; not itself, Droplets or Patches', () => {
     const { query, object, piece, circle, patch } = setup();
     const at = (x: number, y: number) => square(10).map((p) => ({ x: p.x + x, y: p.y + y }));

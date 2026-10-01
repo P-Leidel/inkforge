@@ -1,6 +1,4 @@
-import { capsuleOverlapsPolygon } from '../geometry/overlap';
 import type { Polygon } from '../geometry/polygon';
-import { transformPoints } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
@@ -8,7 +6,6 @@ import {
   SandboxWorld,
   type AddedStroke,
   type DropInk,
-  type EnemyView,
   type Entry,
   type FillOutcome,
   type MadeStroke,
@@ -594,8 +591,7 @@ export class Game {
    * that Enemy's width: so close it would be drawn onto it.
    */
   private nearEnemy(samples: readonly Vec2[]): boolean {
-    if (samples.length === 0) return false;
-    return this.world.enemies.some((enemy) => strokeNear(samples, enemy));
+    return this.world.nearEnemy(samples);
   }
 
   private lookPrice(look: Look): number {
@@ -970,21 +966,6 @@ export class Game {
     this.undoHistory = [...checkpoint.history];
     this.defence.restore(checkpoint.loop);
   }
-}
-
-/**
- * Whether a Stroke along `samples` reaches closer to `enemy` than the
- * Enemy's width, from its outline where it is now.
- */
-function strokeNear(samples: readonly Vec2[], enemy: EnemyView): boolean {
-  const outline = transformPoints(enemy.outline, enemy.transform);
-  if (samples.length === 1) {
-    return capsuleOverlapsPolygon(samples[0]!, samples[0]!, enemy.width, outline, 0);
-  }
-  for (let k = 1; k < samples.length; k++) {
-    if (capsuleOverlapsPolygon(samples[k - 1]!, samples[k]!, enemy.width, outline, 0)) return true;
-  }
-  return false;
 }
 
 /** A copy of what Strokes paid, with each Line's Pieces its own. */
