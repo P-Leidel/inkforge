@@ -113,6 +113,13 @@ export interface DefenceLoopOptions {
   readonly table: WaveTable;
   /** The Waves switch; off by default. */
   readonly waves?: boolean;
+  /**
+   * PROVISIONAL, for manual testing: whether the player may build outside a
+   * Wave too, in an Intermission or once the Level is cleared; on by
+   * default. Turned off, building is barred there ('not-now'), as ADR 0012
+   * has it.
+   */
+  readonly buildBetweenWaves?: boolean;
 }
 
 /** A Wave under way: the Enemies still to come, when the next may, and its tally. */
@@ -148,6 +155,7 @@ export class DefenceLoop {
   /** The Level's Waves, in order, each its own Wave table. */
   private tables: WaveTable[];
   private on: boolean;
+  private readonly buildBetweenWaves: boolean;
   /** Which of `tables` is under way, or comes next; the last once cleared. */
   private index = 0;
   /** The Wave under way, paused or running, or the one lost; null in an Intermission or once cleared. */
@@ -161,6 +169,7 @@ export class DefenceLoop {
     this.tanks = options.tanks;
     this.tables = [options.table];
     this.on = options.waves ?? false;
+    this.buildBetweenWaves = options.buildBetweenWaves ?? true;
   }
 
   /**
@@ -247,8 +256,9 @@ export class DefenceLoop {
   /**
    * Why the player may not `action` now, or null if they may. Once the Ink
    * Core is destroyed, nothing, Waves on or off. With Waves on, nothing
-   * outside a Wave, and during one, no Stroke whose samples come near an
-   * Enemy (`nearEnemy`). With Waves off, anything.
+   * outside a Wave unless building between Waves is on (it is, for now), and
+   * no Stroke whose samples come near an Enemy (`nearEnemy`). With Waves
+   * off, anything.
    */
   bar(
     action: BuildAction,
@@ -256,7 +266,7 @@ export class DefenceLoop {
   ): Bar | null {
     if (this.coreDestroyed) return 'lost';
     if (!this.on) return null;
-    if (this.current === null) return 'not-now';
+    if (this.current === null && !this.buildBetweenWaves) return 'not-now';
     // PROVISIONAL, for manual testing (ADR 0012): during a Wave, undo (with
     // its full refund) and every action while the Wave is paused stay
     // allowed. Either may go once playing shows whether Ink scarcity holds
