@@ -140,7 +140,7 @@ Performance is judged on one baseline machine: a desktop with an NVIDIA GeForce 
 │   ├── materials/       The Colours and the material table (pure data)
 │   ├── stroke/          Stroke pipeline: raw pointer samples → Line, Object or rejection
 │   ├── physics/         Physics module; the only code that talks to the engine (ADR 0001)
-│   ├── sandbox/         Headless Sandbox world: a module per kind of Arena contents, the Contact ledger, the Material rules, pause, Reset
+│   ├── sandbox/         Headless Sandbox world: a module per kind of Arena contents, the Contact ledger, the Material rules and the Enemy rules, pause, Reset
 │   ├── game/            Headless Game over the Sandbox world: the Ink table, Ink Tanks, prices, undo and refunds (ADR 0009); the Session, what is being played; the Campaign, which Levels are unlocked
 │   ├── levels/          The Campaign's Levels (plain data)
 │   ├── stress-tests/    Scripted engine stress tests (ball cannon, box tower, pebbles)

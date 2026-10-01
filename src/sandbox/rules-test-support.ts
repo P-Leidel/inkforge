@@ -13,11 +13,11 @@ import type { DropInk } from './drops';
 import type { Walker } from './enemies';
 import type { Gluer } from './glue';
 import type { Thing, Why } from './happenings';
+import { EnemyRules, type EnemyArena, type Killed } from './enemy-rules';
 import {
   MaterialRules,
   type Broken,
   type Debris,
-  type Killed,
   type RulesArena,
   type RulesContacts,
   type RulesPhysics,
@@ -29,7 +29,7 @@ import type { LooseRubble } from './rubble';
 import type { Sticker } from './sticking';
 
 /**
- * Fakes of the Material rules' ports, so that tests drive the rules with
+ * Fakes of the Material rules' and Enemy rules' ports, so that tests drive the rules with
  * hand-made Parties, hits and bodies and no engine. Only test files import
  * this module.
  */
@@ -148,7 +148,7 @@ export interface FakeDroplet {
  * right unless `headings` says otherwise, and gets past unless it is among
  * the `stalled`.
  */
-export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
+export class FakeArena<T, S, W = Walker> implements RulesArena<T, S>, EnemyArena<W> {
   /** What breaking each target lets out; a target not in it is already gone. */
   readonly breaks = new Map<T, Broken>();
   readonly droplets = new Map<BodyId, FakeDroplet>();
@@ -341,13 +341,22 @@ export function fakeRules<
   const contacts = new FakeContacts<T>();
   const arena = new FakeArena<T, S, W>();
   const random = new Random(1);
+  const numbers = new Numbers(materials, enemies);
   const rules = new MaterialRules<T, S, W>({
     materials,
-    numbers: new Numbers(materials, enemies),
+    numbers,
     random,
     physics,
     contacts,
     arena,
+    enemies: new EnemyRules<W>({
+      materials,
+      numbers,
+      random,
+      physics,
+      contacts,
+      arena,
+    }),
   });
   return { rules, physics, contacts, arena, random };
 }
