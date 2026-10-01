@@ -47,11 +47,15 @@ The cycle of phases the player goes through: an Intermission, then a Wave, then 
 _Avoid_: Game loop, phase machine, round
 
 **Level**:
-Everything an Arena starts with: the Arena itself (its Terrain, Spawn and Ink Core), its Waves in order, its Ink Tank maximums, and whatever is already built there, for free. Loading a Level clears the Arena and sets it up at its first Wave. The gallery demos, the stress tests and the sandbox are Levels too.
+Everything an Arena starts with: the Arena itself (its Terrain, Spawn and Ink Core), its Waves in order, its Ink Tank maximums, and whatever is already built there, for free. Loading a Level clears the Arena and sets it up at its first Wave. What a Level leaves out, it starts with as in Free play, never as the last Level left it. The gallery demos, the stress tests and the sandbox are Levels too.
 _Avoid_: Stage, map, arena description, scenario
 
 **Campaign**:
 The first mode: a fixed sequence of handmade Levels, each unlocked by clearing the one before. Ink Tanks reset to the Level's maximums every Wave; a Colour whose maximum is 0 is not in the Level.
+
+**Free play**:
+Playing any Level outside the Campaign: the Sandbox, a Gallery demo or a stress test. The Eraser is on hand, and what the Level leaves out, its Ink Tank maximums or its Waves, is as tuned, never as the last Level left it.
+_Avoid_: Sandbox mode (the Sandbox is a Level)
 
 **Roguelite Mode**:
 The mode unlocked by beating the Campaign's final boss. Ink carries over between Waves, and the player picks upgrades.
