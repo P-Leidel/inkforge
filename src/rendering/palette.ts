@@ -11,7 +11,7 @@ export const PALETTE = {
   eraser: 0xe8e2d0,
   rejected: 0xff5a5a,
   debug: 0x39ff88,
-  /** The arrow at the left edge where Enemies come in. */
+  /** The arrow at the Spawn edge where Enemies come in. */
   spawn: 0xf0c05a,
   /** A Crawler's body and outline, placeholder art. */
   crawler: 0x7a6450,

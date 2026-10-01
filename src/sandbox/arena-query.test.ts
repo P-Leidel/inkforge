@@ -13,7 +13,7 @@ import { cutPolylineOutside, partsInsideCapsules } from '../geometry/clip';
 import type { Colour } from '../materials/colour';
 import { createMaterialTable } from '../materials/material-table';
 import { createPhysicsWorld, type BodyId, type PhysicsWorld } from '../physics';
-import { SANDBOX_ARENA } from './arena';
+import { SANDBOX_ARENA, type Arena } from './arena';
 import { ArenaBodies } from './arena-bodies';
 import { ArenaQuery, type Capsule } from './arena-query';
 import { brushTouchesCapsules, brushTouchesCircle, brushTouchesPolygon, type Brush } from './brush';
@@ -21,13 +21,14 @@ import { ContactLedger, type Party } from './contact-ledger';
 import type { Thing } from './happenings';
 import { Numbers } from './numbers';
 import { Random } from './random';
+import { mirrored } from './test-support';
 
 const worlds: PhysicsWorld[] = [];
 afterEach(() => {
   for (const world of worlds.splice(0)) world.destroy();
 });
 
-/** Everything beyond the Spawn edge, the screen's left edge, as the query has it. */
+/** Everything beyond the sandbox Arena's Spawn edge, the screen's left edge, as the query has it. */
 const BEYOND_SPAWN_EDGE: Polygon = [
   { x: -1e5, y: -1e5 },
   { x: 0, y: -1e5 },
@@ -42,8 +43,8 @@ const square = (half: number): Polygon => [
   { x: -half, y: half },
 ];
 
-/** The Sandbox Arena with its Terrain, and a way to add each kind of body to it. */
-function setup() {
+/** An Arena with its Terrain, the sandbox one by default, and a way to add each kind of body to it. */
+function setup(arena: Arena = SANDBOX_ARENA) {
   const physics = createPhysicsWorld({
     gravity: { x: 0, y: 1000 },
     timeStep: 1 / 60,
@@ -59,8 +60,8 @@ function setup() {
     () => {},
     () => {},
   );
-  bodies.addTerrain(SANDBOX_ARENA.terrain);
-  const query = new ArenaQuery(physics, bodies);
+  bodies.addTerrain(arena.terrain);
+  const query = new ArenaQuery(physics, bodies, () => arena);
 
   let things = 0;
   const own =
@@ -238,6 +239,43 @@ describe('Arena query', () => {
 
     expect(query.beyondSpawnEdge()).toEqual([out.what, rubble.what]);
     expect(query.below(1080)).toEqual([fallen.what]);
+  });
+
+  describe('with the Spawn on the right', () => {
+    const MIRRORED = mirrored(SANDBOX_ARENA);
+    const WIDTH = MIRRORED.width;
+    const at = (x: number, y: number) => square(10).map((p) => ({ x: p.x + x, y: p.y + y }));
+
+    it('cuts a new Line beyond the right edge, and blocks a new Object reaching past it, not the left', () => {
+      const { query } = setup(MIRRORED);
+
+      expect(
+        query.lineCutters([
+          { x: 1500, y: 400 },
+          { x: 1600, y: 400 },
+        ]),
+      ).toEqual([
+        [
+          { x: WIDTH, y: -1e5 },
+          { x: 1e5, y: -1e5 },
+          { x: 1e5, y: 1e5 },
+          { x: WIDTH, y: 1e5 },
+        ],
+      ]);
+      expect(query.overlapsSolid(at(WIDTH - 5, 400))).toBe(true);
+      expect(query.overlapsSolid(at(WIDTH - 10, 400))).toBe(false); // touching the edge
+    });
+
+    it('finds what lies wholly beyond the right edge, oldest first', () => {
+      const { query, object, circle } = setup(MIRRORED);
+      const out = object({ x: WIDTH + 40, y: 400 }, square(30));
+      object({ x: WIDTH - 20, y: 400 }, square(30)); // half out
+      const rubble = circle({ x: WIDTH + 7, y: 600 }, 6);
+      circle({ x: WIDTH + 5, y: 700 }, 6); // just over the edge
+      object({ x: -40, y: 400 }, square(30)); // over the left edge, not the Spawn's
+
+      expect(query.beyondSpawnEdge()).toEqual([out.what, rubble.what]);
+    });
   });
 
   it('finds room for an Enemy clear of the Terrain, Objects, Rubble and other Enemies; not Lines, Droplets or Patches', () => {

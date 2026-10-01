@@ -255,7 +255,7 @@ export class SandboxWorld {
       (parties) => this.passOnGone(parties),
       say,
     );
-    this.query = new ArenaQuery(this.physics, this.bodies);
+    this.query = new ArenaQuery(this.physics, this.bodies, () => this.arena);
     this.poses = new PreviousPoses(this.physics);
     this.bodies.addTerrain(this.arena.terrain);
     // The kinds read the Arena as it is now: a Clear can put the world on another.
@@ -421,7 +421,7 @@ export class SandboxWorld {
   }
 
   /**
-   * Sends in an Enemy of `type` from the Spawn, beyond the left edge,
+   * Sends in an Enemy of `type` from the Spawn, out of view,
    * paused or running. Given `at`, it appears with its centre there instead,
    * for tests and demos. Returns its id.
    */

@@ -5,7 +5,7 @@ import type { EnemyType } from '../materials/enemy-table';
 import { enemyMass } from '../materials/mass';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
-import type { Arena } from './arena';
+import { inward, type Arena } from './arena';
 import type { ArenaBodies } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
 import type { ArenaQuery } from './arena-query';
@@ -196,9 +196,7 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
    */
   spawnClear(type: EnemyType): boolean {
     const { width, height } = this.numbers.enemy(type);
-    const { spawn } = this.arena();
-    const x = spawn.x + width / 2 + SPAWN_GAP;
-    const y = spawn.y - height / 2 - SPAWN_GAP;
+    const { x, y } = this.atSpawn(width, height);
     const outline = transformPoints(enemyOutline(width, height), { x, y, angle: 0 });
     return !this.query.blocksEnemy(outline);
   }
@@ -213,9 +211,9 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     const numbers = this.numbers.enemy(type);
     const { width, height } = numbers;
     const outline = enemyOutline(width, height);
-    const { spawn } = this.arena();
-    const x = at?.x ?? spawn.x + width / 2 + SPAWN_GAP;
-    let y = at?.y ?? spawn.y - height / 2 - SPAWN_GAP;
+    const standing = this.atSpawn(width, height);
+    const x = at?.x ?? standing.x;
+    let y = at?.y ?? standing.y;
     const blocked = () => this.query.blocksEnemy(transformPoints(outline, { x, y, angle: 0 }));
     while (!at && y - height > 0 && blocked()) y -= height + SPAWN_GAP;
     const id = this.nextId++;
@@ -227,6 +225,19 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
       angularVelocity: 0,
     });
     return id;
+  }
+
+  /**
+   * Where a new Enemy `width` by `height` stands at the Spawn: on the lane's
+   * floor, its back to the wall, in from the Spawn's side.
+   */
+  private atSpawn(width: number, height: number): Vec2 {
+    const arena = this.arena();
+    const { spawn } = arena;
+    return {
+      x: spawn.x + inward(arena) * (width / 2 + SPAWN_GAP),
+      y: spawn.y - height / 2 - SPAWN_GAP,
+    };
   }
 
   private addBody(enemy: Omit<EnemyRecord, 'body'>, motion: Motion): void {

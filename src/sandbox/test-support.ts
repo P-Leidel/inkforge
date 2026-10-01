@@ -2,6 +2,7 @@ import { afterEach } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { dragAlong } from '../stroke/pointer-paths';
+import type { Arena } from './arena';
 import {
   SandboxWorld,
   STEP_SECONDS,
@@ -14,6 +15,23 @@ import {
  * Helpers for tests that drive the headless Sandbox world. Only test files
  * import this module.
  */
+
+/**
+ * `arena` mirrored left to right: its Terrain, Spawn and Ink Core, with its
+ * Spawn on the other side.
+ */
+export function mirrored(arena: Arena): Arena {
+  const { width, core } = arena;
+  const flip = ({ x, y }: Vec2): Vec2 => ({ x: width - x, y });
+  return {
+    ...arena,
+    // Mirroring turns a polygon's winding round; reversing it turns it back.
+    terrain: arena.terrain.map((polygon) => polygon.map(flip).reverse()),
+    spawnSide: arena.spawnSide === 'left' ? 'right' : 'left',
+    spawn: flip(arena.spawn),
+    core: { ...core, minX: width - core.maxX, maxX: width - core.minX },
+  };
+}
 
 /** The bodies an empty Arena has: the Terrain and the Ink Core, which stay through Clear. */
 export const FIXED_BODIES = 2;

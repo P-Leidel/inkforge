@@ -1,7 +1,7 @@
 import type Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import type { Arena } from '../sandbox/arena';
+import { inward, spawnEdgeX, type Arena } from '../sandbox/arena';
 import { Random } from '../sandbox/random';
 import {
   GRAVITY,
@@ -39,10 +39,12 @@ const DEBRIS_SEED = 0x0deb415;
 const DROP_BURST_SEED = 0xd409;
 /** Where the Drop bursts fly to when the renderer is given no gauges: the top-left corner. */
 const NO_GAUGES = (): Vec2 => ({ x: 0, y: 0 });
-/** The Spawn arrow at the left edge: how far above the ground it points in, and its size. */
+/** The Spawn arrow at the Spawn edge: how far above the ground it points in, and its size. */
 const SPAWN_ARROW_RISE = 60;
 const SPAWN_ARROW_LENGTH = 22;
 const SPAWN_ARROW_WIDTH = 24;
+/** How far in from the Spawn edge the arrow's base is (px). */
+const SPAWN_ARROW_INSET = 4;
 
 /** The hues of Debris in these Colours, taken in turn. */
 const inkHues = (colours: readonly Colour[]): number[] => colours.map((colour) => INK_HUES[colour]);
@@ -171,7 +173,7 @@ export class WorldRenderer {
     };
   }
 
-  /** The Terrain, and the Spawn arrow at the left edge, where Enemies come in. */
+  /** The Terrain, and the Spawn arrow at the Spawn edge, where Enemies come in. */
   private drawTerrain(): void {
     const g = this.terrainGraphics;
     g.clear();
@@ -183,11 +185,13 @@ export class WorldRenderer {
       strokePolygon(g, polygon);
     }
     const y = arena.spawn.y - SPAWN_ARROW_RISE;
+    const into = inward(arena);
+    const base = spawnEdgeX(arena) + into * SPAWN_ARROW_INSET;
     g.fillStyle(PALETTE.spawn, 0.8);
     fillPolygon(g, [
-      { x: 4, y: y - SPAWN_ARROW_WIDTH / 2 },
-      { x: 4 + SPAWN_ARROW_LENGTH, y },
-      { x: 4, y: y + SPAWN_ARROW_WIDTH / 2 },
+      { x: base, y: y - SPAWN_ARROW_WIDTH / 2 },
+      { x: base + into * SPAWN_ARROW_LENGTH, y },
+      { x: base, y: y + SPAWN_ARROW_WIDTH / 2 },
     ]);
   }
 
