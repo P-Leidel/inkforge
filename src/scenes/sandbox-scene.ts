@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
 import { GALLERY } from '../gallery/gallery';
+import { browserStore, Campaign } from '../game/campaign';
 import { Game } from '../game/game';
 import { SANDBOX_LEVEL, type Level } from '../game/level';
 import { Session } from '../game/session';
@@ -11,8 +12,9 @@ import { DebugOverlay } from '../debug/debug-overlay';
 import { FrameRecorder } from '../debug/frame-times';
 import { flashRejection } from '../rendering/rejection-flash';
 import { Hud } from '../ui/hud';
-import { RewardsScreen } from '../ui/rewards-screen';
+import { RewardsScreen, type PanelAction } from '../ui/rewards-screen';
 import type { Menu } from '../ui/menu';
+import { levelEntries, MenuScreen } from '../ui/menu-screen';
 import { gaugeCentre, PaletteBar } from '../ui/palette-bar';
 import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../ui/toolbar';
@@ -22,20 +24,23 @@ import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { BALL_CANNON_LEVEL } from '../stress-tests/ball-cannon';
 import { BOX_TOWER_LEVEL } from '../stress-tests/box-tower';
 import { PEBBLES_LEVEL } from '../stress-tests/pebble-drop';
+import { CAMPAIGN_LEVELS } from '../levels/campaign-levels';
 
 /** Keys 1–5 pick the Colours in palette order. */
 const COLOUR_KEYS = new Map(COLOURS.map((colour, k) => [String(k + 1), colour]));
 /** Shift+1, Shift+2, ... send in the Enemy types in order, by the key's place on any layout. */
 const ENEMY_KEYS = new Map(ENEMY_TYPES.map((type, k) => [`Digit${k + 1}`, type]));
-/** The toolbar's Levels, after Clear: the sandbox and the stress tests. */
-const TOOLBAR_LEVELS = [SANDBOX_LEVEL, PEBBLES_LEVEL, BOX_TOWER_LEVEL, BALL_CANNON_LEVEL];
+/** The toolbar's Stress tests menu. */
+const STRESS_TESTS = [PEBBLES_LEVEL, BOX_TOWER_LEVEL, BALL_CANNON_LEVEL];
 
 /**
  * The sandbox scene: forwards pointer and tool events to drawing input,
  * which turns them into commands to the Game, and draws the Sandbox world's
  * state, the Ink Tanks and what drawing input says to preview and flash. The
  * rules live in the Game and the Sandbox world below it; what is being
- * played, in the Session over the Game.
+ * played, in the Session over the Game, and which Levels are unlocked, in
+ * the Campaign. It opens on the title screen (Campaign, Sandbox, Gallery);
+ * while that or the Level list is open, nothing is played behind it.
  */
 export class SandboxScene extends Phaser.Scene {
   /** The rules layer: Phaser's own `game` is the Phaser game. */
@@ -52,7 +57,11 @@ export class SandboxScene extends Phaser.Scene {
   private preview!: StrokePreview;
   private palette!: PaletteBar;
   private tuning!: TuningPanel;
-  private gallery!: Menu;
+  /** The toolbar's menus, Gallery and Stress tests: a click beside an open one closes it. */
+  private menus!: Menu[];
+  /** The title screen, the Level list and the Gallery's list, over everything. */
+  private screen!: MenuScreen;
+  private campaign!: Campaign;
   /** Every frame's timings, for the F1 stats. */
   private readonly frames = new FrameRecorder();
 
@@ -84,20 +93,92 @@ export class SandboxScene extends Phaser.Scene {
       this.tuning.destroy();
       this.gameLayer.dispose();
     });
-    this.session = new Session(this.gameLayer);
+    this.campaign = new Campaign(CAMPAIGN_LEVELS, browserStore());
+    this.session = new Session(this.gameLayer, this.campaign);
     this.hud = new Hud(this, this.gameLayer);
-    this.rewards = new RewardsScreen(this);
+    this.rewards = new RewardsScreen(this, (action) => this.onPanel(action));
     this.palette = new PaletteBar(this, (tool) => this.drawing.pick(tool));
     const toolbar = new Toolbar(this);
-    this.gallery = toolbar.addMenu(
+    const gallery = toolbar.addMenu(
       'Gallery',
       GALLERY.map((demo) => ({ label: demo.name, onPick: () => this.play(demo) })),
     );
     toolbar.addButton('Clear', () => this.clear());
-    for (const level of TOOLBAR_LEVELS) toolbar.addButton(level.name, () => this.play(level));
+    toolbar.addButton(SANDBOX_LEVEL.name, () => this.play(SANDBOX_LEVEL));
+    const stressTests = toolbar.addMenu(
+      'Stress tests',
+      STRESS_TESTS.map((level) => ({ label: level.name, onPick: () => this.play(level) })),
+    );
+    this.menus = [gallery, stressTests];
+    toolbar.addButton('Title', () => this.showTitle());
+    this.screen = new MenuScreen(this);
 
     this.bindKeys();
     this.bindPointer();
+    this.showTitle();
+  }
+
+  /** The title screen: Campaign, Sandbox and Gallery. */
+  private showTitle(): void {
+    this.open('INKFORGE', [
+      { label: 'Campaign', onPick: () => this.showLevelList() },
+      // As a new page opened it: the sandbox, Waves off.
+      { label: 'Sandbox', onPick: () => this.playSandbox() },
+      { label: 'Gallery', onPick: () => this.showGallery() },
+    ]);
+  }
+
+  /** The Level list: the Campaign's Levels, the locked ones shown but shut. */
+  private showLevelList(): void {
+    this.open('CAMPAIGN', [
+      ...levelEntries(this.campaign).map(({ index, label, locked }) => ({
+        label,
+        locked,
+        onPick: () => this.playCampaign(index),
+      })),
+      { label: 'Back', onPick: () => this.showTitle() },
+    ]);
+  }
+
+  /** The Gallery's demos, as the toolbar's Gallery menu lists them. */
+  private showGallery(): void {
+    this.open('GALLERY', [
+      ...GALLERY.map((demo) => ({ label: demo.name, onPick: () => this.play(demo) })),
+      { label: 'Back', onPick: () => this.showTitle() },
+    ]);
+  }
+
+  /** Opens a menu screen; a Stroke being drawn is dropped. */
+  private open(title: string, items: Parameters<MenuScreen['show']>[1]): void {
+    this.drawing.leave();
+    for (const menu of this.menus) menu.close();
+    this.screen.show(title, items);
+  }
+
+  /** A button on the rewards screen, once a Campaign Level is cleared or lost. */
+  private onPanel(action: PanelAction): void {
+    switch (action) {
+      case 'next-level':
+        if (this.session.playNext()) this.started();
+        return;
+      case 'retry-wave':
+        return this.reset();
+      case 'restart-level':
+        return this.clear();
+      case 'level-list':
+        return this.showLevelList();
+    }
+  }
+
+  private playSandbox(): void {
+    this.gameLayer.waves = false;
+    this.play(SANDBOX_LEVEL);
+  }
+
+  /** Loads the Campaign's Level at `index`, if it is unlocked. */
+  private playCampaign(index: number): void {
+    if (!this.session.playCampaign(index)) return;
+    this.started();
   }
 
   /**
@@ -115,8 +196,9 @@ export class SandboxScene extends Phaser.Scene {
     this.started();
   }
 
-  /** A Level was loaded: names it for F1, and times it from now. */
+  /** A Level was loaded: closes any menu screen, names it for F1, and times it from now. */
   private started(): void {
+    this.screen.hide();
     this.overlay.setSceneName(this.session.reading.name);
     this.frames.sinceStart.restart();
   }
@@ -130,6 +212,7 @@ export class SandboxScene extends Phaser.Scene {
   private bindKeys(): void {
     const keyboard = this.input.keyboard!;
     keyboard.on('keydown', (event: KeyboardEvent) => {
+      if (this.screen.isOpen) return;
       const enemy = event.shiftKey ? ENEMY_KEYS.get(event.code) : undefined;
       if (enemy) {
         this.gameLayer.spawn(enemy);
@@ -143,15 +226,18 @@ export class SandboxScene extends Phaser.Scene {
     });
     keyboard
       .addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
-      .on('down', () => this.gameLayer.togglePause());
+      .on('down', () => !this.screen.isOpen && this.gameLayer.togglePause());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.cycle());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F2).on('down', () => this.tuning.toggle());
     keyboard
       .addKey(Phaser.Input.Keyboard.KeyCodes.F3)
       .on('down', () => void this.overlay.copyReadings());
-    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R).on('down', () => this.reset());
+    keyboard
+      .addKey(Phaser.Input.Keyboard.KeyCodes.R)
+      .on('down', () => !this.screen.isOpen && this.reset());
     keyboard.on('keydown-Z', (event: KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
+      if (this.screen.isOpen) return;
       event.preventDefault();
       this.drawing.undo();
     });
@@ -164,9 +250,10 @@ export class SandboxScene extends Phaser.Scene {
       Phaser.Input.Events.POINTER_DOWN,
       (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
         if (over.length > 0) return; // a toolbar button
-        // A click beside the open gallery only closes it.
-        if (this.gallery.isOpen) {
-          this.gallery.close();
+        // A click beside an open menu only closes it.
+        const open = this.menus.filter((menu) => menu.isOpen);
+        if (open.length > 0) {
+          for (const menu of open) menu.close();
           return;
         }
         if (pointer.leftButtonDown()) this.drawing.press(at(pointer), 'left');
@@ -189,12 +276,13 @@ export class SandboxScene extends Phaser.Scene {
     this.frames.begin(this.game.loop.rawDelta, this.world.isRunning);
     this.drawing.tick();
     const start = performance.now();
-    // A stress test's update is timed with physics: a few microseconds.
-    const steps = this.session.advance(deltaMs / 1000);
+    // A stress test's update is timed with physics: a few microseconds. Behind
+    // a menu screen, nothing is played.
+    const steps = this.screen.isOpen ? 0 : this.session.advance(deltaMs / 1000);
     this.frames.physics(performance.now() - start, steps);
     const drawStart = performance.now();
     this.tuning.draw();
-    this.rewards.draw(this.gameLayer.defence.reading);
+    this.rewards.draw(this.gameLayer.defence.reading, this.session.reading.campaign);
     this.worldView.draw(deltaMs / 1000);
     const preview = this.drawing.preview();
     if (preview.kind === 'brush') this.preview.drawBrush(preview.pointer);

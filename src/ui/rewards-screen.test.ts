@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DefenceReading } from '../game/defence-loop';
 import { fromLineLength } from '../game/ink-table';
-import { rewardsLines } from './rewards-screen';
+import { panelActions, rewardsLines } from './rewards-screen';
 
 const summary = {
   wave: 1,
@@ -46,5 +46,42 @@ describe('The rewards screen', () => {
     expect(rewardsLines(reading({ wave: 1, rewards: null }))).toBeNull();
     expect(rewardsLines(reading({ phase: 'wave' }))).toBeNull();
     expect(rewardsLines(reading({ phase: null }))).toBeNull();
+  });
+
+  it('shows nothing once lost outside the Campaign: the HUD says R or Clear', () => {
+    expect(rewardsLines(reading({ phase: 'lost', coreDestroyed: true }))).toBeNull();
+  });
+});
+
+describe('The rewards screen in the Campaign', () => {
+  const second = { index: 1, levels: 3, hasNext: true };
+  const last = { index: 2, levels: 3, hasNext: false };
+  const cleared = reading({
+    phase: 'cleared',
+    wave: 3,
+    rewards: { summary: { ...summary, wave: 3 } },
+  });
+  const lost = reading({ phase: 'lost', coreDestroyed: true });
+
+  it('offers Next Level and the Level list once a Level is cleared', () => {
+    expect(rewardsLines(cleared, second)!.at(-1)).toBe('Level 3 unlocked');
+    expect(panelActions(cleared, second)).toEqual(['next-level', 'level-list']);
+  });
+
+  it('says the Campaign is cleared after the last Level, and offers the Level list', () => {
+    expect(rewardsLines(cleared, last)!.at(-1)).toBe('Campaign cleared');
+    expect(panelActions(cleared, last)).toEqual(['level-list']);
+  });
+
+  it('offers Retry Wave, Restart Level and the Level list once a Level is lost', () => {
+    expect(rewardsLines(lost, second)![0]).toBe('WAVE 2 OF 3 LOST');
+    expect(panelActions(lost, second)).toEqual(['retry-wave', 'restart-level', 'level-list']);
+  });
+
+  it('offers nothing while the Level goes on, nor outside the Campaign', () => {
+    expect(panelActions(reading(), second)).toEqual([]);
+    expect(panelActions(reading({ phase: 'wave' }), second)).toEqual([]);
+    expect(panelActions(cleared, null)).toEqual([]);
+    expect(panelActions(lost, null)).toEqual([]);
   });
 });
