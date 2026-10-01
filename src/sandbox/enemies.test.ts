@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import { createEnemyTable, DEFAULT_ENEMY_TABLE, editEnemies } from '../materials/enemy-table';
+import {
+  createEnemyTable,
+  DEFAULT_ENEMY_TABLE,
+  editEnemies,
+  type EnemyType,
+} from '../materials/enemy-table';
 import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import { SANDBOX_ARENA, sandboxTerrainWithPit, type Arena } from './arena';
@@ -188,21 +193,6 @@ describe('Enemies walk', () => {
     expect(onGreen).toBeLessThan(onGrey - 5);
   });
 
-  it('collides with other Enemies: one behind another queues up', () => {
-    const world = createWorld();
-    ramp(world, 300, 60); // too steep: the first one stops at it
-    world.spawn('crawler');
-    runFor(world, 2);
-    world.spawn('crawler');
-
-    runFor(world, 14);
-
-    const [first, second] = world.enemies;
-    expect(first!.transform.x).toBeLessThan(300);
-    expect(second!.transform.x).toBeLessThan(first!.transform.x - CRAWLER.width + 1);
-    expect(second!.transform.x).toBeGreaterThan(first!.transform.x - CRAWLER.width - 2);
-  });
-
   it('kills an Enemy below the bottom of the screen', () => {
     const world = createWorld({ arena: PIT_ARENA });
     const heard = hear(world);
@@ -344,6 +334,113 @@ describe('Enemies walk', () => {
     runFor(world, 3);
 
     expect(world.inkCore.hp).toBe(10);
+  });
+});
+
+describe('Climbing', () => {
+  const HEAVY = DEFAULT_ENEMY_TABLE.types.heavy;
+  /** Where the wall's near face is (px). */
+  const WALL_X = 600;
+  /** The sandbox Arena with a Terrain wall `height` px tall standing on its ground at `WALL_X`. */
+  const walled = (height: number): Arena => ({
+    ...SANDBOX_ARENA,
+    terrain: [
+      ...SANDBOX_ARENA.terrain,
+      [
+        { x: WALL_X, y: GROUND_Y - height },
+        { x: WALL_X + 40, y: GROUND_Y - height },
+        { x: WALL_X + 40, y: GROUND_Y },
+        { x: WALL_X, y: GROUND_Y },
+      ],
+    ],
+  });
+  /** How high (px) an Enemy's feet are above the ground. */
+  const feet = (enemy: EnemyView) => GROUND_Y - (enemy.transform.y + enemy.height / 2);
+  /** Sends in each type in turn, `gap` seconds apart, then runs on for `after` seconds. */
+  const sendIn = (world: SandboxWorld, types: EnemyType[], gap: number, after: number) => {
+    for (const type of types) {
+      world.spawn(type);
+      runFor(world, gap);
+    }
+    runFor(world, after);
+  };
+
+  it('lets a Crawler climb onto one stopped in its way, whose top is within its step', () => {
+    const world = createWorld({ arena: walled(200) });
+
+    sendIn(world, ['crawler', 'crawler'], 2, 14);
+
+    const [first, second] = world.enemies;
+    expect(feet(first!)).toBeLessThan(1);
+    expect(feet(second!)).toBeCloseTo(CRAWLER.height, -0.5); // on top of the first
+    expect(Math.abs(second!.transform.x - first!.transform.x)).toBeLessThan(CRAWLER.width / 2);
+  });
+
+  it('lets a Runner climb onto a Crawler too', () => {
+    const world = createWorld({ arena: walled(200) });
+
+    // The Runner sent in once the Crawler is at the wall: sooner, it would climb over it on the way.
+    sendIn(world, ['crawler', 'runner'], 12, 6);
+
+    const [, runner] = world.enemies;
+    expect(feet(runner!)).toBeCloseTo(CRAWLER.height, -0.5);
+  });
+
+  it('refuses a step higher than its climbing step: it only presses it and waits', () => {
+    // A Heavy is 64 px tall, more than 1.2 Crawler heights (48 px).
+    const world = createWorld({ arena: walled(200) });
+
+    sendIn(world, ['heavy', 'crawler'], 18, 12);
+
+    const [heavy, crawler] = world.enemies;
+    expect(feet(crawler!)).toBeLessThan(1);
+    expect(crawler!.transform.x).toBeLessThan(heavy!.transform.x - HEAVY.width / 2);
+  });
+
+  it('never lets a Heavy climb, but lets an Enemy climb a Heavy where its step allows', () => {
+    const world = createWorld({ arena: walled(200) });
+    sendIn(world, ['crawler', 'heavy'], 2, 20);
+    const [, heavy] = world.enemies;
+    expect(feet(heavy!)).toBeLessThan(1);
+
+    const tuned = createWorld({ arena: walled(200) });
+    editEnemies(tuned.enemyTable, (table) => (table.climbStep = 2));
+    sendIn(tuned, ['heavy', 'crawler'], 18, 12);
+    const [, crawler] = tuned.enemies;
+    expect(feet(crawler!)).toBeCloseTo(HEAVY.height, -0.5);
+  });
+
+  it('never climbs the Terrain or a Line this way, however low', () => {
+    const terrain = createWorld({ arena: walled(CRAWLER.height) });
+    terrain.spawn('crawler');
+    runFor(terrain, 16);
+    expect(onlyEnemy(terrain).transform.x).toBeLessThan(WALL_X);
+
+    const line = createWorld();
+    drawLine(line, [
+      { x: WALL_X, y: GROUND_Y - 4 },
+      { x: WALL_X, y: GROUND_Y - 4 - CRAWLER.height },
+    ]);
+    line.spawn('crawler');
+    runFor(line, 16);
+    expect(onlyEnemy(line).transform.x).toBeLessThan(WALL_X);
+  });
+
+  it('builds a staircase at a wall two Crawlers tall, and the Crawlers after the third get over it', () => {
+    const world = createWorld({ arena: walled(2 * CRAWLER.height) });
+
+    sendIn(world, Array<EnemyType>(6).fill('crawler'), 3, 12);
+
+    // #1 presses the wall, #2 stands on #1, #3 meets a 2-high step and waits: the stair.
+    const [first, second, third, ...rest] = world.enemies;
+    expect([first, second, third].map((enemy) => enemy!.id)).toEqual([1, 2, 3]);
+    expect(feet(first!)).toBeLessThan(1);
+    expect(feet(second!)).toBeCloseTo(CRAWLER.height, -0.5);
+    expect(feet(third!)).toBeLessThan(1);
+    expect(third!.transform.x).toBeLessThan(first!.transform.x - CRAWLER.width + 1);
+    // #4 to #6 climbed #3, then #2, and walked on over the wall.
+    const over = 6 - 3 - rest.filter((enemy) => enemy.transform.x < WALL_X).length;
+    expect(over).toBe(3);
   });
 });
 
@@ -494,7 +591,7 @@ describe('Pressing wear', () => {
     expect(world.time - steppedOn!).toBeLessThan(1.2);
   });
 
-  it('lets a queue of Crawlers standing on a grey bridge wear it through', () => {
+  it('lets Crawlers stacked on a grey bridge wear it through', () => {
     const world = createWorld({ arena: PIT_ARENA });
     const heard = hear(world);
     const bridge = drawLine(world, [
@@ -511,7 +608,8 @@ describe('Pressing wear', () => {
 
     expect(through).toBe(true);
     const went = wentOf(heard());
-    expect(went.filter((what) => what.startsWith(`piece ${bridge}.`))).toHaveLength(3);
+    // They climb onto each other at the post, so they stand on, and wear through, two Pieces.
+    expect(went.filter((what) => what.startsWith(`piece ${bridge}.`))).toHaveLength(2);
     expect(went.filter((what) => what.endsWith(' died'))).toHaveLength(4);
   });
 

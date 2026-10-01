@@ -89,6 +89,8 @@ export interface Walker {
   readonly id: number;
   readonly body: BodyId;
   readonly type: EnemyType;
+  /** Height (px) of its body, from the enemy table when it was sent in. */
+  readonly height: number;
   /** Damage taken so far: it dies once this reaches its type's HP. */
   damage: number;
 }
@@ -112,9 +114,8 @@ export interface EnemyView extends Poses {
 export interface EnemyRecord extends Walker {
   /** Its Party id, the same after a rebuild. */
   readonly party: PartyId;
-  /** Its size and weight, from the enemy table when it was sent in. */
+  /** Its width and weight, from the enemy table when it was sent in. */
   readonly width: number;
-  readonly height: number;
   readonly mass: number;
 }
 
@@ -266,6 +267,22 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     const force = walkingForce(velocity, toward * walkingSpeed, most, enemy.mass, seconds);
     this.physics.applyForce(enemy.body, { x: force, y: 0 });
     return toward * velocity < STALLED_SPEED * walkingSpeed;
+  }
+
+  /**
+   * Pushes an Enemy up through the next step toward its walking speed,
+   * holding up its weight as it goes, never harder than its climb: its
+   * climbing. The Material rules call it for each one that presses another
+   * Enemy low enough to climb. Like its walking, it is a capped force, not a
+   * set velocity (ADR 0011), so whatever else acts on it still does.
+   */
+  climb(enemy: EnemyRecord, seconds: number): void {
+    const { walkingSpeed, climb } = this.numbers.enemy(enemy.type);
+    const rising = -this.physics.getVelocity(enemy.body).y;
+    const most = climb * enemy.mass * this.gravity;
+    const wanted = enemy.mass * ((walkingSpeed - rising) / seconds + this.gravity);
+    const force = Math.max(0, Math.min(most, wanted));
+    this.physics.applyForce(enemy.body, { x: 0, y: -force });
   }
 
   /** Removes Enemy `id` at once, for `why`. */

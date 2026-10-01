@@ -127,6 +127,11 @@ export class Numbers {
     return this.enemies.floorWear;
   }
 
+  /** The highest step an Enemy climbs, in its own heights, as it is now. */
+  get climbStep(): number {
+    return this.enemies.climbStep;
+  }
+
   /** A thing's surface, from the tables as they are now. */
   surface(type: ThingType): SurfaceMaterial {
     return this.of(type).surface;

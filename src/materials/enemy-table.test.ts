@@ -55,9 +55,16 @@ describe('Enemy table', () => {
     expect(weigh('runner') / weigh('crawler')).toBeCloseTo(0.5, 1);
   });
 
-  it('shares floor wear, the Ink Core’s HP and the Core Zone’s size', () => {
-    const { floorWear, coreHp } = DEFAULT_ENEMY_TABLE;
-    expect({ floorWear, coreHp }).toEqual({ floorWear: 1, coreHp: 10 });
+  it('shares floor wear, the climbing step, the Ink Core’s HP and the Core Zone’s size', () => {
+    const { floorWear, climbStep, coreHp } = DEFAULT_ENEMY_TABLE;
+    expect({ floorWear, climbStep, coreHp }).toEqual({ floorWear: 1, climbStep: 1.2, coreHp: 10 });
+  });
+
+  it('lets Crawlers and Runners climb, by more than their weight, and never Heavies', () => {
+    const { crawler, runner, heavy } = DEFAULT_ENEMY_TABLE.types;
+    expect(crawler.climb).toBeGreaterThan(1);
+    expect(runner.climb).toBeGreaterThan(1);
+    expect(heavy.climb).toBe(0);
   });
 
   it('never lets a bounce gain energy, and walks by its push, not its grip', () => {

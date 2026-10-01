@@ -113,15 +113,20 @@ export class FakeContacts<T> implements RulesContacts<T> {
   newContacts: NewContact<T>[] = [];
   /** What touches each body now. */
   readonly touches = new Map<BodyId, Touching<T>[]>();
-  /** Which way each touching shape pair faces, towards the body asked about; none by default. */
+  /**
+   * Which way each touching shape pair faces, towards its `bodyB`; none by
+   * default. Asked about its `bodyA`, it faces the other way.
+   */
   readonly normals = new Map<ContactPair, Vec2>();
 
   touching(body: BodyId): Iterable<Touching<T>> {
     return this.touches.get(body) ?? [];
   }
 
-  normal(_body: BodyId, pair: ContactPair): Vec2 | null {
-    return this.normals.get(pair) ?? null;
+  normal(body: BodyId, pair: ContactPair): Vec2 | null {
+    const normal = this.normals.get(pair);
+    if (!normal) return null;
+    return body === pair.bodyA && body !== pair.bodyB ? { x: -normal.x, y: -normal.y } : normal;
   }
 }
 
@@ -137,7 +142,7 @@ export interface FakeDroplet {
  * `log`: `break`, `burst`, `rubble`, `droplets`, `blast`, `bond`, `land`,
  * `patch` and `use`, each with what it was handed; `reach` when a Blast
  * spreading reached something, and `used-up` for each Patch removed;
- * `walk`, `core` (damage to the Ink Core), `kill` (an Enemy's id), `drop`
+ * `walk`, `climb`, `core` (damage to the Ink Core), `kill` (an Enemy's id), `drop`
  * (what died and its Drop's Ink) and `remove`. An Enemy walks
  * right unless `headings` says otherwise, and gets past unless it is among
  * the `stalled`.
@@ -271,6 +276,10 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
   walk(walker: W): boolean {
     this.log.push({ what: 'walk', with: walker });
     return this.stalled.has(walker);
+  }
+
+  climb(walker: W): void {
+    this.log.push({ what: 'climb', with: walker });
   }
 
   heading(walker: W): number {
