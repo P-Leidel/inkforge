@@ -196,9 +196,13 @@ export class SandboxScene extends Phaser.Scene {
     this.started();
   }
 
-  /** A Level was loaded: closes any menu screen, names it for F1, and times it from now. */
+  /**
+   * A Level was loaded: closes any menu screen, names it for F1, and times it
+   * from now. With the Eraser put away (the Campaign), the pick goes back to grey.
+   */
   private started(): void {
     this.screen.hide();
+    if (!this.gameLayer.eraser && this.drawing.tool === 'eraser') this.drawing.pick('grey');
     this.overlay.setSceneName(this.session.reading.name);
     this.frames.sinceStart.restart();
   }
@@ -220,7 +224,12 @@ export class SandboxScene extends Phaser.Scene {
       }
       const colour = COLOUR_KEYS.get(event.key);
       if (colour) this.drawing.pick(colour);
-      else if (event.key.toLowerCase() === 'e' && !event.ctrlKey && !event.metaKey) {
+      else if (
+        event.key.toLowerCase() === 'e' &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        this.gameLayer.eraser
+      ) {
         this.drawing.pick('eraser');
       }
     });

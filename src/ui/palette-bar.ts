@@ -33,6 +33,9 @@ export function gaugeCentre(colour: Colour): Vec2 {
 /** What the gauges read: each Colour's Tank, and whether Ink costs anything. */
 export type Tanks = Pick<Game, 'inkCosts' | 'tanks'>;
 
+/** What the palette reads of the Game: the Tanks, and whether the Eraser is on hand. */
+export type PaletteGame = Tanks & Pick<Game, 'eraser'>;
+
 /** What one gauge draws. */
 export interface GaugeView {
   /** How full it is, 0–1, to the nearest half pixel. */
@@ -72,7 +75,8 @@ export function gaugeViews(tanks: Tanks, cost: CostEstimate | null): GaugeView[]
 /**
  * The palette: one swatch per Colour in the top-left corner, each showing a
  * dab of ink in its texture, its key (1–5) and its name, and one for the
- * Eraser (E), showing its brush. Clicking a swatch picks its tool; the
+ * Eraser (E), showing its brush, unless the Eraser is put away (the
+ * Campaign). Clicking a swatch picks its tool; the
  * picked one is highlighted. Under each Colour's swatch, a gauge shows its
  * Ink Tank, and the Ink left in Line length; ∞ while Ink costs nothing. The
  * swatches and the gauges are baked into textures, again only when the pick
@@ -87,6 +91,9 @@ export class PaletteBar {
   private shown = '';
   /** What the gauges show, so they are baked again only when that changes. */
   private shownGauges = '';
+  /** The Eraser's label and the zone that picks it, shut while it is put away. */
+  private eraserLabel: Phaser.GameObjects.Text | null = null;
+  private eraserZone: Phaser.GameObjects.Zone | null = null;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -120,7 +127,7 @@ export class PaletteBar {
     TOOLS.forEach((tool, k) => {
       const x = LEFT + k * (WIDTH + GAP);
       const cx = x + WIDTH / 2;
-      scene.add
+      const text = scene.add
         .text(cx, TOP + HEIGHT - 6, label(tool, k), {
           fontFamily: FONT_FAMILY,
           fontSize: '16px',
@@ -128,36 +135,48 @@ export class PaletteBar {
         })
         .setOrigin(0.5, 1)
         .setDepth(61);
-      scene.add
+      const zone = scene.add
         .zone(x, TOP, WIDTH, HEIGHT)
         .setOrigin(0, 0)
         .setInteractive({ useHandCursor: true })
         .on('pointerdown', (pointer: Phaser.Input.Pointer) => {
           if (pointer.leftButtonDown()) onPick(tool);
         });
+      if (tool === 'eraser') {
+        this.eraserLabel = text;
+        this.eraserZone = zone;
+      }
     });
   }
 
   /**
    * Highlights the picked tool, and shows each Colour's Tank, with `cost`
-   * greyed out at the top of its Colour's gauge, red if it is more than is left.
+   * greyed out at the top of its Colour's gauge, red if it is more than is
+   * left. The Eraser's swatch shows only while the Game has it on hand.
    */
-  show(picked: Tool, tanks: Tanks, cost: CostEstimate | null = null): void {
-    const gauges = gaugeViews(tanks, cost);
+  show(picked: Tool, game: PaletteGame, cost: CostEstimate | null = null): void {
+    const gauges = gaugeViews(game, cost);
     this.showSwatches(
       picked,
       gauges.map((gauge) => gauge.inLevel),
+      game.eraser,
     );
     this.showGauges(gauges);
   }
 
-  /** The swatches, each Colour the Level doesn't have greyed out: it can still be picked. */
-  private showSwatches(picked: Tool, inLevel: readonly boolean[]): void {
-    const key = `${picked} ${inLevel.join()}`;
+  /**
+   * The swatches, each Colour the Level doesn't have greyed out: it can
+   * still be picked. The Eraser's, only if `eraser`.
+   */
+  private showSwatches(picked: Tool, inLevel: readonly boolean[], eraser: boolean): void {
+    const key = `${picked} ${inLevel.join()} ${eraser}`;
     if (key === this.shown) return;
     this.shown = key;
+    this.eraserLabel?.setVisible(eraser);
+    if (this.eraserZone?.input) this.eraserZone.input.enabled = eraser;
     const g = bakingGraphics(this.scene);
     TOOLS.forEach((tool, k) => {
+      if (tool === 'eraser' && !eraser) return;
       const x = LEFT + k * (WIDTH + GAP);
       const selected = tool === picked;
       g.fillStyle(selected ? 0x3b4250 : 0x2c313b, 1);

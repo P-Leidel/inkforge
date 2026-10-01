@@ -1,3 +1,4 @@
+import { DEFAULT_RULES, type Rules } from '../game/defence-loop';
 import type { Game } from '../game/game';
 import { DEFAULT_INK_TABLE } from '../game/ink-table';
 import { DEFAULT_WAVE_TABLE } from '../game/wave-table';
@@ -46,16 +47,30 @@ const ENEMY_COLUMNS: readonly Column[] = ENEMY_TYPES.map((type) => ({
   look: 'tuning-enemy',
 }));
 
+/** The Rules section's switches: the provisional rules of ADR 0012, in the order the spec names them. */
+const RULE_SWITCHES: readonly { readonly rule: keyof Rules; readonly label: string }[] = [
+  {
+    rule: 'buildBetweenWaves',
+    label: 'Build between Waves (draw, fill and undo in an Intermission and once cleared)',
+  },
+  { rule: 'undoDuringWave', label: 'Undo during a Wave (with its full refund)' },
+  { rule: 'buildWhilePaused', label: 'Build while paused (draw, fill and undo in a paused Wave)' },
+];
+
 /**
  * The F2 tuning panel. Its Ink section holds the **Ink costs** switch and
  * the Game's Ink table: the prices and the Tank maximums. Its Wave section
  * holds the **Waves** switch and the current Wave's table: a count per
- * Enemy type and the gap between arrivals; `draw` shows another Wave's once the Level moves on to it. Below them is every number of the material
+ * Enemy type and the gap between arrivals; `draw` shows another Wave's once
+ * the Level moves on to it. Its Rules section holds the provisional rules
+ * switches, all on by default. Below them is every number of the material
  * table, and then of the enemy table. All are editable while the sandbox
- * runs, and "Copy as JSON" copies the four tables to paste back over their
- * defaults in the code. It lists whatever the tables hold, so values added later appear
- * without changes here. Edits go straight into the tables the Game and the
- * Sandbox world read, so they survive R and Clear.
+ * runs. "Copy as JSON" copies the four tables to paste back over their
+ * defaults in the code, and the rules under `rules`; Defaults restores the
+ * tables and turns every rule back on. It lists whatever the tables hold,
+ * so values added later appear without changes here. Edits go straight into
+ * the tables the Game and the Sandbox world read, so they survive R and
+ * Clear.
  *
  * A plain HTML overlay (styles in index.html). Keys typed into it don't reach
  * the game; clicking the game gives the keys back.
@@ -83,7 +98,10 @@ export class TuningPanel {
     private readonly table: MaterialTable,
     private readonly enemyTable: EnemyTable,
     /** Where the Ink costs switch and the Ink table's edits go. */
-    private readonly game: Pick<Game, 'inkCosts' | 'waves' | 'ink' | 'editInk' | 'defence'>,
+    private readonly game: Pick<
+      Game,
+      'inkCosts' | 'waves' | 'ink' | 'editInk' | 'defence' | 'rules'
+    >,
   ) {
     this.materials = {
       table,
@@ -141,6 +159,14 @@ export class TuningPanel {
       ),
       this.grid(this.wave, ENEMY_COLUMNS, [{ label: 'count', path: (type) => ['counts', type] }]),
       this.sharedValues(this.wave, (path) => path[0] !== 'counts'),
+      element('div', 'tuning-section', 'Rules (provisional)'),
+      ...RULE_SWITCHES.map(({ rule, label }) =>
+        this.switch(
+          label,
+          () => this.game.rules[rule],
+          (on) => (this.game.rules[rule] = on),
+        ),
+      ),
       element('div', 'tuning-section', 'Material table'),
       this.grid(
         this.materials,
@@ -187,8 +213,8 @@ export class TuningPanel {
   }
 
   /**
-   * A switch of the Game's, off by default: Ink costs or Waves. Not a table
-   * value: Defaults leaves it, and it is lost on reload.
+   * A switch of the Game's: Ink costs or Waves, which Defaults leaves, or a
+   * rule, which Defaults turns back on. Lost on reload.
    */
   private switch(label: string, read: () => boolean, write: (on: boolean) => void): HTMLElement {
     const row = element('label', 'tuning-ink');
@@ -293,6 +319,7 @@ export class TuningPanel {
         for (const path of paths) writePath(table, path, readPath(tuned.defaults, path));
       });
     }
+    Object.assign(this.game.rules, DEFAULT_RULES);
     this.refresh();
     this.say('Defaults restored');
   }
@@ -303,13 +330,14 @@ export class TuningPanel {
       ink: this.game.ink,
       wave: this.game.defence.table,
       enemies: this.enemyTable,
+      rules: this.game.rules,
     });
     try {
       await navigator.clipboard.writeText(json);
       this.say('Copied');
     } catch {
       // No clipboard access: show the JSON to copy by hand.
-      window.prompt('Copy the material, Ink, Wave and enemy tables:', json);
+      window.prompt('Copy the material, Ink, Wave and enemy tables and the rules:', json);
     }
   }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
+import { DEFAULT_RULES } from '../game/defence-loop';
 import type { Game } from '../game/game';
 import { inLineLength } from '../game/ink-table';
 import { createEnemyTable } from '../materials/enemy-table';
@@ -331,17 +332,20 @@ describe('Drawing input', () => {
       expect(input.preview()).toMatchObject({ kind: 'stroke', refused: true });
     });
 
-    it('flash "Draw during a Wave" in an Intermission, with building between Waves off, for a Stroke or a Fill', () => {
-      const game = createGame(false, { waves: true, buildBetweenWaves: false });
+    it('flash "Not now" in an Intermission, with building between Waves off, for a Stroke or a Fill', () => {
+      const game = createGame(false, {
+        waves: true,
+        rules: { ...DEFAULT_RULES, buildBetweenWaves: false },
+      });
       game.waves = false;
       const { input } = drawingOver(game);
       box(game.world, input);
       game.waves = true;
       expect(game.defence.reading.phase).toBe('intermission');
 
-      expect(drag(input, far)).toMatchObject({ message: 'Draw during a Wave' });
+      expect(drag(input, far)).toMatchObject({ message: 'Not now' });
       const flash = click(input, inBox);
-      expect(flash).toMatchObject({ message: 'Draw during a Wave', pointer: inBox });
+      expect(flash).toMatchObject({ message: 'Not now', pointer: inBox });
       expect(flash!.path[flash!.path.length - 1]).toEqual(flash!.path[0]);
       expect(game.world.lines).toEqual([]);
       expect(game.world.objects[0]!.fill).toBeNull();
