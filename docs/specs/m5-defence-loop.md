@@ -1,6 +1,6 @@
 # Spec: Milestone 5, Defence loop
 
-**Planned.** Roadmap step 5 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 4 spec](m4-enemies-and-ink-core.md) and on [ADR 0012](../adr/0012-continuous-building-between-intermissions.md), which replaced its Build Phase.
+**Built**; its exit test, [#138](https://github.com/P-Leidel/inkforge/issues/138), is still to run. Roadmap step 5 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 4 spec](m4-enemies-and-ink-core.md) and on [ADR 0012](../adr/0012-continuous-building-between-intermissions.md), which replaced its Build Phase.
 
 ## Problem Statement
 
