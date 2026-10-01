@@ -1,6 +1,7 @@
 import type { Colour } from '../materials/colour';
 import { ARENA_HEIGHT, ARENA_WIDTH, type Arena } from '../sandbox/arena';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
+import type { StressTest } from '../stress-tests/stress-test';
 import type { ReadonlyWaveTable } from './wave-table';
 
 /**
@@ -10,14 +11,18 @@ import type { ReadonlyWaveTable } from './wave-table';
  *
  * What a Level leaves out: without an Arena it is the sandbox Arena; without
  * Waves, it has one Wave, the current Wave table as the F2 tuning panel left
- * it; without Tanks, the Tank maximums stay as they are.
+ * it, and the Waves switch stays as it is; without Tanks, the Tank maximums
+ * stay as they are.
  */
 export interface Level {
+  /** What the player sees it called: on the toolbar, in the Gallery, in F1's readings. */
+  readonly name?: string;
   /** Its Arena: Terrain, Spawn and Ink Core. It must be one screen, as every Arena is. */
   readonly arena?: Arena;
   /**
    * Its Waves, in the order they come, each a Wave table: loading it makes
-   * the Defence loop's list a copy of them, starting at the first.
+   * the Defence loop's list a copy of them, starting at the first, and turns
+   * the Waves switch on.
    */
   readonly waves?: readonly ReadonlyWaveTable[];
   /** Each Ink Tank's maximum, in Line length: loading it sets them in the Ink table, and fills the Tanks. */
@@ -26,13 +31,14 @@ export interface Level {
    * What is already built there, for free (ADR 0009): it runs on the Sandbox
    * world below the Game, and what it makes joins the undo history at price
    * 0. If it starts physics as its last act, R goes back to how it left the
-   * world.
+   * world. A stress test's returns its `StressTest`, which measures it from
+   * then on; a demo's returns nothing.
    */
-  build?(world: SandboxWorld): void;
+  build?(world: SandboxWorld): StressTest | void;
 }
 
 /** The sandbox: the sandbox Arena, empty, with one Wave and the Tanks as they are. */
-export const SANDBOX_LEVEL: Level = {};
+export const SANDBOX_LEVEL = { name: 'Sandbox' } as const satisfies Level;
 
 /** Throws unless `arena` is one screen, the size every Arena is. */
 export function checkArenaSize(arena: Arena): void {

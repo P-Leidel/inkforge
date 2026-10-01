@@ -2,6 +2,7 @@ import type { Transform } from '../geometry/transform';
 import type { ObjectView, SandboxWorld, StrokeId } from '../sandbox/sandbox-world';
 import { dragBox } from '../stroke/pointer-paths';
 import { SettleWatch } from './settling';
+import type { Level } from '../game/level';
 import type { StressTest } from './stress-test';
 
 const BOXES = 10;
@@ -94,3 +95,9 @@ export class BoxTower implements StressTest {
     return `Box tower: settled in ${settle.toFixed(2)} s, jitter since ${this.maxDrift.toFixed(2)} px, ${state}`;
   }
 }
+
+/** The box tower as a Level: the sandbox, with the tower let go. */
+export const BOX_TOWER_LEVEL = {
+  name: 'Box tower',
+  build: (world) => new BoxTower(world),
+} as const satisfies Level;

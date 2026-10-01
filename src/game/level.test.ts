@@ -75,6 +75,7 @@ describe('Loading a Level', () => {
     const game = createGame(true);
 
     game.load(LEVEL);
+    game.waves = false; // its Waves turned them on, and they bar undo outside a Wave
 
     expect(game.world.lines).toHaveLength(1);
     expect(spendable(game)).toEqual(maximums(game));

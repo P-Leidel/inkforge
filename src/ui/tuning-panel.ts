@@ -50,7 +50,7 @@ const ENEMY_COLUMNS: readonly Column[] = ENEMY_TYPES.map((type) => ({
  * The F2 tuning panel. Its Ink section holds the **Ink costs** switch and
  * the Game's Ink table: the prices and the Tank maximums. Its Wave section
  * holds the **Waves** switch and the current Wave's table: a count per
- * Enemy type and the gap between arrivals; `refresh` shows another Wave's. Below them is every number of the material
+ * Enemy type and the gap between arrivals; `draw` shows another Wave's once the Level moves on to it. Below them is every number of the material
  * table, and then of the enemy table. All are editable while the sandbox
  * runs, and "Copy as JSON" copies the four tables to paste back over their
  * defaults in the code. It lists whatever the tables hold, so values added later appear
@@ -68,6 +68,10 @@ export class TuningPanel {
   private readonly enemies: Tuned;
   private readonly wave: Tuned;
   private readonly inputs: { tuned: Tuned; path: string[]; input: HTMLInputElement }[] = [];
+  /** The switches' checkboxes, each with how to read its switch. */
+  private readonly switches: { box: HTMLInputElement; read: () => boolean }[] = [];
+  /** The tables shown last, to show them again once one is replaced: see `draw`. */
+  private shown: { wave: object; tanks: object } | null = null;
   /** Clicking the game gives the keys back to it. */
   private readonly giveKeysBack = (event: PointerEvent) => {
     if (!this.root.contains(event.target as Node)) {
@@ -79,7 +83,7 @@ export class TuningPanel {
     private readonly table: MaterialTable,
     private readonly enemyTable: EnemyTable,
     /** Where the Ink costs switch and the Ink table's edits go. */
-    private readonly game: Pick<Game, 'inkCosts' | 'ink' | 'editInk' | 'defence'>,
+    private readonly game: Pick<Game, 'inkCosts' | 'waves' | 'ink' | 'editInk' | 'defence'>,
   ) {
     this.materials = {
       table,
@@ -132,8 +136,8 @@ export class TuningPanel {
       element('div', 'tuning-section', 'Wave (the current one)'),
       this.switch(
         'Waves (off: no Wave or Intermission)',
-        () => this.game.defence.waves,
-        (on) => (this.game.defence.waves = on),
+        () => this.game.waves,
+        (on) => (this.game.waves = on),
       ),
       this.grid(this.wave, ENEMY_COLUMNS, [{ label: 'count', path: (type) => ['counts', type] }]),
       this.sharedValues(this.wave, (path) => path[0] !== 'counts'),
@@ -192,12 +196,30 @@ export class TuningPanel {
     box.type = 'checkbox';
     box.checked = read();
     box.addEventListener('change', () => write(box.checked));
+    this.switches.push({ box, read });
     row.append(box, element('span', '', label));
     return row;
   }
 
+  /**
+   * Keeps the panel in step, once a frame: shows the tables again once what
+   * it shows is replaced (the Level moves on to another Wave, or a load
+   * brings new Waves or Tanks), and each switch as it is (a Level may turn
+   * Waves on).
+   */
+  draw(): void {
+    for (const { box, read } of this.switches) {
+      if (box.checked !== read()) box.checked = read();
+    }
+    const wave = this.game.defence.table;
+    const tanks = this.game.ink.tanks;
+    if (this.shown?.wave === wave && this.shown.tanks === tanks) return;
+    this.shown = { wave, tanks };
+    this.refresh();
+  }
+
   /** Shows every value as its table holds it now: a Level may have set its own Wave and Tanks. */
-  refresh(): void {
+  private refresh(): void {
     for (const { tuned, path, input } of this.inputs) {
       input.value = String(readPath(tuned.table, path));
       input.classList.remove('invalid');

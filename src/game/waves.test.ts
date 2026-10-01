@@ -3,6 +3,8 @@ import { createEnemyTable, editEnemies } from '../materials/enemy-table';
 import { STEP_SECONDS, type SandboxWorld } from '../sandbox/sandbox-world';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
 import type { Game } from './game';
+import { SANDBOX_LEVEL } from './level';
+import { Session } from './session';
 import { games } from './test-support';
 import { arrivals, DEFAULT_WAVE_TABLE, type ReadonlyWaveTable } from './wave-table';
 
@@ -73,7 +75,7 @@ describe('The Wave table', () => {
 describe('The Waves switch', () => {
   it('is off by default: Space runs and pauses physics as in milestone 3', () => {
     const game = createGame(true);
-    expect(game.defence.waves).toBe(false);
+    expect(game.waves).toBe(false);
     expect(game.defence.reading.phase).toBeNull();
 
     game.togglePause();
@@ -82,6 +84,65 @@ describe('The Waves switch', () => {
     expect(game.isRunning).toBe(true);
     expect(game.world.enemies).toEqual([]);
     expect(game.defence.reading.toCome).toBe(0);
+  });
+
+  it("turned on, puts the Game in the Intermission before the Wave it's at, pausing physics", () => {
+    const game = createGame(true);
+    game.togglePause();
+    stepFor(game, 0.5);
+
+    game.waves = true;
+
+    expect(game.waves).toBe(true);
+    expect(game.defence.waves).toBe(true);
+    expect(game.defence.reading.phase).toBe('intermission');
+    expect(game.isRunning).toBe(false);
+  });
+
+  it('turned off during a Wave, ends it where it is: physics runs on, no more arrivals', () => {
+    const game = wavesGame({ crawler: 3, gap: 1 });
+    game.togglePause();
+    game.step();
+
+    game.waves = false;
+    stepFor(game, 3);
+
+    expect(game.defence.reading.phase).toBeNull();
+    expect(game.isRunning).toBe(true);
+    expect(game.world.enemies).toHaveLength(1);
+  });
+
+  it('is turned on by loading a Level with its own Waves', () => {
+    const game = createGame(true);
+
+    game.load({ waves: [{ counts: { crawler: 1, runner: 0, heavy: 0 }, gap: 1 }] });
+
+    expect(game.waves).toBe(true);
+    expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1 });
+  });
+
+  it('is left as it is by loading a Level without Waves, on or off', () => {
+    const game = createGame(true);
+    game.load(SANDBOX_LEVEL);
+    expect(game.waves).toBe(false);
+
+    game.waves = true;
+    game.load(SANDBOX_LEVEL);
+    expect(game.waves).toBe(true);
+  });
+
+  it('is left as it is by Clear in the sandbox', () => {
+    const game = createGame(true);
+    const session = new Session(game);
+    session.play(SANDBOX_LEVEL);
+    game.waves = true;
+
+    session.clear();
+    expect(game.waves).toBe(true);
+
+    game.waves = false;
+    session.clear();
+    expect(game.waves).toBe(false);
   });
 });
 
@@ -243,8 +304,9 @@ describe('A Level of three Waves', () => {
   });
 
   it('R mid-Wave goes back to the Arena right after the refill; Clear goes back to Wave 1', () => {
-    const game = createGame(true, { waves: true });
-    game.load(LEVEL);
+    const game = createGame(true);
+    const session = new Session(game);
+    session.play(LEVEL);
     game.togglePause();
     drawLine(game, 400, 300, 200);
     playWave(game);
@@ -262,7 +324,7 @@ describe('A Level of three Waves', () => {
     expect(game.world.inkCore.hp).toBe(9);
     expect(game.world.enemies).toEqual([]);
 
-    game.load(LEVEL);
+    session.clear();
     expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1, rewards: null });
     expect(game.world.lines).toEqual([]);
     expect(game.world.inkCore.hp).toBe(10);
@@ -319,10 +381,10 @@ describe('R, with Waves on', () => {
 
   it('plays a retry out the same, whatever the frame times and pauses', () => {
     const game = wavesGame({ crawler: 2, runner: 2, heavy: 1, gap: 1.5 });
-    game.defence.waves = false;
+    game.waves = false;
     drawLine(game, 860, 600, 300);
     drawLine(game, 760, 900, 40);
-    game.defence.waves = true;
+    game.waves = true;
 
     game.togglePause();
     // Uneven frames, and a pause in the middle.
@@ -371,12 +433,12 @@ describe('R, with Waves on', () => {
     playWave(game);
     expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
 
-    game.defence.waves = false;
+    game.waves = false;
     drawLine(game, 400, 300, 200);
     game.togglePause();
     drawLine(game, 300, 600, 300);
     stepFor(game, 1);
-    game.defence.waves = true;
+    game.waves = true;
     game.reset();
 
     expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });

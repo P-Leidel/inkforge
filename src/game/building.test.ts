@@ -38,9 +38,9 @@ const FAR = across(600, 200, 200);
 describe('With Waves on, in an Intermission', () => {
   it('bars every Stroke and Fill, and Space starts the Wave', () => {
     const game = wavesGame(false);
-    game.defence.waves = false;
+    game.waves = false;
     expect(game.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
-    game.defence.waves = true;
+    game.waves = true;
     expect(game.defence.reading.phase).toBe('intermission');
 
     const stroke = game.submitStroke(FAR, 'grey');
@@ -56,9 +56,9 @@ describe('With Waves on, in an Intermission', () => {
 
   it('leaves undo and the Eraser doing nothing', () => {
     const game = wavesGame(false);
-    game.defence.waves = false;
+    game.waves = false;
     expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
-    game.defence.waves = true;
+    game.waves = true;
 
     game.undo();
     game.eraseAlong(
@@ -133,9 +133,9 @@ describe('During a Wave', () => {
 
   it('lets undo take back anything, with a full refund (provisional)', () => {
     const game = wavesGame(true);
-    game.defence.waves = false;
+    game.waves = false;
     expect(game.submitStroke(across(600, 100, 400), 'grey').kind).toBe('line');
-    game.defence.waves = true;
+    game.waves = true;
     game.togglePause();
     expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
 
@@ -168,10 +168,10 @@ describe('Once the Ink Core is destroyed', () => {
     const enemies = createEnemyTable();
     enemies.coreHp = 1;
     const game = createGame(true, { waves, worldOptions: { seed: 1, enemies } });
-    game.defence.waves = false;
+    game.waves = false;
     expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
     expect(game.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
-    game.defence.waves = waves;
+    game.waves = waves;
     game.togglePause();
     const { minX, maxY } = game.world.arena.core;
     game.world.spawn('crawler', { x: minX - 60, y: maxY - 20 });

@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
-import { GALLERY, type Demo } from '../gallery/gallery';
+import { GALLERY } from '../gallery/gallery';
 import { Game } from '../game/game';
-import type { ReadonlyWaveTable } from '../game/wave-table';
-import { SANDBOX_LEVEL } from '../game/level';
+import { SANDBOX_LEVEL, type Level } from '../game/level';
+import { Session } from '../game/session';
 import { DrawingInput } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
 import { ENEMY_TYPES } from '../materials/enemy-table';
@@ -19,25 +19,29 @@ import { Toolbar } from '../ui/toolbar';
 import { TuningPanel } from '../ui/tuning-panel';
 import { WorldRenderer } from '../rendering/world-renderer';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
-import { BallCannon } from '../stress-tests/ball-cannon';
-import { BoxTower } from '../stress-tests/box-tower';
-import { PebbleDrop } from '../stress-tests/pebble-drop';
-import type { StressTest } from '../stress-tests/stress-test';
+import { BALL_CANNON_LEVEL } from '../stress-tests/ball-cannon';
+import { BOX_TOWER_LEVEL } from '../stress-tests/box-tower';
+import { PEBBLES_LEVEL } from '../stress-tests/pebble-drop';
 
 /** Keys 1–5 pick the Colours in palette order. */
 const COLOUR_KEYS = new Map(COLOURS.map((colour, k) => [String(k + 1), colour]));
 /** Shift+1, Shift+2, ... send in the Enemy types in order, by the key's place on any layout. */
 const ENEMY_KEYS = new Map(ENEMY_TYPES.map((type, k) => [`Digit${k + 1}`, type]));
+/** The toolbar's Levels, after Clear: the sandbox and the stress tests. */
+const TOOLBAR_LEVELS = [SANDBOX_LEVEL, PEBBLES_LEVEL, BOX_TOWER_LEVEL, BALL_CANNON_LEVEL];
 
 /**
  * The sandbox scene: forwards pointer and tool events to drawing input,
  * which turns them into commands to the Game, and draws the Sandbox world's
  * state, the Ink Tanks and what drawing input says to preview and flash. The
- * rules live in the Game and the Sandbox world below it.
+ * rules live in the Game and the Sandbox world below it; what is being
+ * played, in the Session over the Game.
  */
 export class SandboxScene extends Phaser.Scene {
   /** The rules layer: Phaser's own `game` is the Phaser game. */
   private gameLayer!: Game;
+  /** What is being played: the toolbar, the Gallery and the frame go through it. */
+  private session!: Session;
   /** The Sandbox world below the Game: what is drawn, and what demos build on. */
   private world!: SandboxWorld;
   private drawing!: DrawingInput;
@@ -49,11 +53,6 @@ export class SandboxScene extends Phaser.Scene {
   private palette!: PaletteBar;
   private tuning!: TuningPanel;
   private gallery!: Menu;
-  private stressTest: StressTest | null = null;
-  /** Loads the current Level again from Wave 1: what Clear does. */
-  private reload: () => void = () => this.startStressTest('Sandbox', null);
-  /** The Wave table F2 showed last, to show another when the Level moves on to it. */
-  private tunedWave: ReadonlyWaveTable | null = null;
   /** Every frame's timings, for the F1 stats. */
   private readonly frames = new FrameRecorder();
 
@@ -85,57 +84,40 @@ export class SandboxScene extends Phaser.Scene {
       this.tuning.destroy();
       this.gameLayer.dispose();
     });
+    this.session = new Session(this.gameLayer);
     this.hud = new Hud(this, this.gameLayer);
     this.rewards = new RewardsScreen(this);
     this.palette = new PaletteBar(this, (tool) => this.drawing.pick(tool));
     const toolbar = new Toolbar(this);
     this.gallery = toolbar.addMenu(
       'Gallery',
-      GALLERY.map((demo) => ({ label: demo.name, onPick: () => this.loadDemo(demo) })),
+      GALLERY.map((demo) => ({ label: demo.name, onPick: () => this.play(demo) })),
     );
-    toolbar
-      .addButton('Clear', () => this.reload())
-      .addButton('Sandbox', () => this.startStressTest('Sandbox', null))
-      .addButton('Pebbles', () => this.startStressTest('Pebbles', (world) => new PebbleDrop(world)))
-      .addButton('Box tower', () =>
-        this.startStressTest('Box tower', (world) => new BoxTower(world)),
-      )
-      .addButton('Ball cannon', () =>
-        this.startStressTest('Ball cannon', (world) => new BallCannon(world)),
-      );
+    toolbar.addButton('Clear', () => this.clear());
+    for (const level of TOOLBAR_LEVELS) toolbar.addButton(level.name, () => this.play(level));
 
     this.bindKeys();
     this.bindPointer();
   }
 
   /**
-   * Clears the Arena, fills the Tanks and starts a stress test on it (or
-   * none: the sandbox). Clear does it again.
+   * Loads `level`: clears the Arena, fills the Tanks and sets it up, with
+   * its own Arena, Waves and Tanks if it has them. Clear does it again.
    */
-  private startStressTest(
-    name: string,
-    create: ((world: SandboxWorld) => StressTest) | null,
-  ): void {
-    this.reload = () => this.startStressTest(name, create);
-    this.stressTest = null;
-    this.gameLayer.load(
-      create ? { build: (world) => (this.stressTest = create(world)) } : SANDBOX_LEVEL,
-    );
-    this.overlay.setSceneName(name);
-    this.frames.sinceStart.restart();
+  private play(level: Level): void {
+    this.session.play(level);
+    this.started();
   }
 
-  /**
-   * Loads a gallery demo's Level: clears the Arena, fills the Tanks and sets
-   * the demo up, with its own Arena, Waves and Tanks if it has them. Clear
-   * does it again.
-   */
-  private loadDemo(demo: Demo): void {
-    this.reload = () => this.loadDemo(demo);
-    this.stressTest = null;
-    this.gameLayer.load(demo);
-    if (demo.tanks) this.tuning.refresh();
-    this.overlay.setSceneName(demo.name);
+  /** Clear: loads the Level being played again, from Wave 1. */
+  private clear(): void {
+    this.session.clear();
+    this.started();
+  }
+
+  /** A Level was loaded: names it for F1, and times it from now. */
+  private started(): void {
+    this.overlay.setSceneName(this.session.reading.name);
     this.frames.sinceStart.restart();
   }
 
@@ -207,17 +189,12 @@ export class SandboxScene extends Phaser.Scene {
     this.frames.begin(this.game.loop.rawDelta, this.world.isRunning);
     this.drawing.tick();
     const start = performance.now();
-    const steps = this.gameLayer.advance(deltaMs / 1000);
+    // A stress test's update is timed with physics: a few microseconds.
+    const steps = this.session.advance(deltaMs / 1000);
     this.frames.physics(performance.now() - start, steps);
-    this.stressTest?.update();
     const drawStart = performance.now();
-    const defence = this.gameLayer.defence;
-    // F2 shows the current Wave's table: another once the Level moves on.
-    if (defence.table !== this.tunedWave) {
-      this.tunedWave = defence.table;
-      this.tuning.refresh();
-    }
-    this.rewards.draw(defence.reading);
+    this.tuning.draw();
+    this.rewards.draw(this.gameLayer.defence.reading);
     this.worldView.draw(deltaMs / 1000);
     const preview = this.drawing.preview();
     if (preview.kind === 'brush') this.preview.drawBrush(preview.pointer);
@@ -228,7 +205,7 @@ export class SandboxScene extends Phaser.Scene {
     const cost = preview.kind === 'stroke' ? preview.cost : null;
     this.palette.show(this.drawing.tool, this.gameLayer, cost);
     this.overlay.draw();
-    this.hud.draw(this.stressTest?.status());
+    this.hud.draw(this.session.reading.status ?? undefined);
     this.frames.draw(performance.now() - drawStart);
   }
 }

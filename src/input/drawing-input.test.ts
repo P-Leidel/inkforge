@@ -308,10 +308,10 @@ describe('Drawing input', () => {
 
     it('flash "Draw during a Wave" in an Intermission, for a Stroke or a Fill', () => {
       const game = createGame(false, { waves: true });
-      game.defence.waves = false;
+      game.waves = false;
       const { input } = drawingOver(game);
       box(game.world, input);
-      game.defence.waves = true;
+      game.waves = true;
       expect(game.defence.reading.phase).toBe('intermission');
 
       expect(drag(input, far)).toMatchObject({ message: 'Draw during a Wave' });
