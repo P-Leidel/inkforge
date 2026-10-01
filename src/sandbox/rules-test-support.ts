@@ -1,3 +1,4 @@
+import type { Polygon } from '../geometry/polygon';
 import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
@@ -168,6 +169,8 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
   stalled = new Set<W>();
   /** Which way each Enemy walks; +1 if not set. */
   headings = new Map<W, number>();
+  /** Whether a room over a step is filled: always, if not set, so no wall is low enough to climb. */
+  blocked: (room: Polygon) => boolean = () => true;
   /** Each Enemy by its Party id. */
   readonly enemyParties = new Map<number, W>();
   /** The Ink Core's Party id. */
@@ -284,6 +287,10 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S, W> {
 
   heading(walker: W): number {
     return this.headings.get(walker) ?? 1;
+  }
+
+  blocksClimb(room: Polygon): boolean {
+    return this.blocked(room);
   }
 
   walkerOf(party: Party<unknown>): W | undefined {

@@ -3,7 +3,7 @@ import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { fillInk, outlineInk } from '../materials/ink';
-import { createEnemyTable } from '../materials/enemy-table';
+import { createEnemyTable, type EnemyTable } from '../materials/enemy-table';
 import {
   createMaterialTable,
   DEFAULT_MATERIAL_TABLE,
@@ -11,7 +11,13 @@ import {
 } from '../materials/material-table';
 import type { BodyId, ShapeId } from '../physics';
 import { blastSize, blastStrength, pieceBlastSize, type Reach } from './blasts';
-import { TERRAIN_PARTY, type NewContact, type Party, type PartyHit } from './contact-ledger';
+import {
+  TERRAIN_PARTY,
+  type NewContact,
+  type Party,
+  type PartyHit,
+  type Touching,
+} from './contact-ledger';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { drawDrop, type DropInk } from './drops';
 import type { Walker } from './enemies';
@@ -841,6 +847,7 @@ describe('Material rules: Enemies', () => {
     id,
     body: (100 + id) as BodyId,
     type: 'crawler',
+    width: 40,
     height: 40,
     damage: 0,
   });
@@ -858,9 +865,10 @@ describe('Material rules: Enemies', () => {
   });
 
   it('walks each Enemy that stands on something, before the step, and not one in the air or on a wall', () => {
-    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const { rules, physics, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
     const [onGround, inAir, onWall] = [crawler(1), crawler(2), crawler(3)];
     arena.walking = [onGround, inAir, onWall];
+    for (const { body } of arena.walking) physics.add(body);
     const ground = pair(0, 101);
     const wall = pair(0, 103);
     contacts.touches.set(onGround.body, [{ party: party(TERRAIN_PARTY), pairs: [ground] }]);
@@ -875,11 +883,12 @@ describe('Material rules: Enemies', () => {
 
   describe('climbing', () => {
     const GROUND = 0;
-    /** An Enemy of `type` and `height` standing with its feet at `feet` (y grows down). */
+    /** An Enemy of `type`, `height` tall and as wide, standing with its feet at `feet` (y grows down). */
     const enemy = (id: number, type: Walker['type'], height: number): Walker => ({
       id,
       body: (100 + id) as BodyId,
       type,
+      width: height,
       height,
       damage: 0,
     });
@@ -1009,11 +1018,72 @@ describe('Material rules: Enemies', () => {
       expect(arena.handed('climb')).toEqual([climber]);
     });
 
-    it('never climbs the Terrain, a Line or an Object this way, however low', () => {
+    it('climbs a wall of the Terrain, a Line or an Object whose top is within its step', () => {
+      for (const wall of [TERRAIN_PARTY, 60]) {
+        const { rules, contacts, arena } = arenaOf([[enemy(1, 'crawler', 40), GROUND]]);
+        const [climber] = arena.walking;
+        const rooms: Polygon[] = [];
+        arena.blocked = (room) => (rooms.push(room), false);
+        touch(contacts, climber!, wall, SIDE);
+
+        rules.walk(STEP);
+
+        expect(arena.handed('climb')).toEqual([climber]);
+        // Room for its body just ahead, its feet 1.2 of its heights (48 px) up.
+        expect(rooms).toEqual([
+          [
+            { x: 20, y: -88 },
+            { x: 60, y: -88 },
+            { x: 60, y: -48 },
+            { x: 20, y: -48 },
+          ],
+        ]);
+      }
+    });
+
+    it('looks for the room on the side it walks to', () => {
       const { rules, contacts, arena } = arenaOf([[enemy(1, 'crawler', 40), GROUND]]);
       const [climber] = arena.walking;
+      arena.headings.set(climber!, -1);
+      const rooms: Polygon[] = [];
+      arena.blocked = (room) => (rooms.push(room), false);
+      touch(contacts, climber!, TERRAIN_PARTY, { x: 1, y: 0 });
+
+      rules.walk(STEP);
+
+      expect(arena.handed('climb')).toEqual([climber]);
+      expect(rooms.map((room) => room.map(({ x }) => x))).toEqual([[-60, -20, -20, -60]]);
+    });
+
+    it('never climbs a wall too high, with no room over its step', () => {
+      const { rules, contacts, arena } = arenaOf([[enemy(1, 'crawler', 40), GROUND]]);
+      const [climber] = arena.walking;
+      arena.blocked = () => true;
       touch(contacts, climber!, TERRAIN_PARTY, SIDE);
-      touch(contacts, climber!, 60, SIDE); // a Piece or an Object: no Enemy
+
+      rules.walk(STEP);
+
+      expect(arena.handed('climb')).toEqual([]);
+    });
+
+    it('never climbs a wall it only touches from behind, a floor, an overhang, the Ink Core or a Droplet', () => {
+      const touched: [number, Vec2][] = [
+        [60, { x: 1, y: 0 }], // behind it
+        [61, { x: -0.6, y: -0.8 }], // a floor ahead
+        [62, { x: -Math.SQRT1_2, y: Math.SQRT1_2 }], // an overhang
+        [63, SIDE], // the Ink Core
+      ];
+      const { rules, contacts, arena } = arenaOf([[enemy(1, 'crawler', 40), GROUND]]);
+      const [climber] = arena.walking;
+      arena.blocked = () => false;
+      arena.inkCore = 63;
+      for (const [wall, normal] of touched) touch(contacts, climber!, wall, normal);
+      const droplet = pair(64, climber!.body);
+      contacts.normals.set(droplet, SIDE);
+      contacts.touches.get(climber!.body)!.push({
+        party: { ...party(64), harmless: true },
+        pairs: [droplet],
+      });
 
       rules.walk(STEP);
 
@@ -1083,6 +1153,7 @@ describe('Material rules: hurting Enemies', () => {
     id,
     body: (100 + id) as BodyId,
     type: 'crawler',
+    width: 40,
     height: 40,
     damage: 0,
   });
@@ -1222,6 +1293,7 @@ describe('Material rules: Drops', () => {
     id,
     body: (100 + id) as BodyId,
     type: 'crawler',
+    width: 40,
     height: 40,
     damage,
   });
@@ -1286,7 +1358,14 @@ describe('Material rules: Drops', () => {
 describe('Material rules: pressing wear', () => {
   /** The Crawler's pressing rate, durability per second. */
   const PRESSING = 300;
-  const crawler: Walker = { id: 1, body: 101 as BodyId, type: 'crawler', height: 40, damage: 0 };
+  const crawler: Walker = {
+    id: 1,
+    body: 101 as BodyId,
+    type: 'crawler',
+    width: 40,
+    height: 40,
+    damage: 0,
+  };
   const pieceOf = (colour: Colour = 'grey'): Breakable => ({
     kind: 'piece',
     colour,
@@ -1315,11 +1394,18 @@ describe('Material rules: pressing wear', () => {
       }),
     );
   }
+  /** Fake rules with the Crawler's body, and another's, at the origin. */
+  function rulesFor(enemies?: EnemyTable) {
+    const fake = fakeRules<Breakable>(createMaterialTable(), enemies);
+    fake.physics.add(101);
+    fake.physics.add(102);
+    return fake;
+  }
   const WALL = { x: -1, y: 0 }; // in the way of a Crawler walking right
   const FLOOR = { x: 0, y: -1 };
 
   it('wears a Piece in its way at its pressing rate, stalled or not', () => {
-    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const { rules, contacts, arena } = rulesFor();
     arena.walking = [crawler];
     const piece = pieceOf();
     touch(contacts, [{ target: piece, normal: WALL }]);
@@ -1332,7 +1418,7 @@ describe('Material rules: pressing wear', () => {
   });
 
   it('wears an Object in its way only while stalled: one it gets past, it pushes', () => {
-    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const { rules, contacts, arena } = rulesFor();
     arena.walking = [crawler];
     const object = objectOf();
     touch(contacts, [
@@ -1351,7 +1437,7 @@ describe('Material rules: pressing wear', () => {
   });
 
   it('never wakes a Frozen Object it presses', () => {
-    const { rules, physics, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const { rules, physics, contacts, arena } = rulesFor();
     arena.walking = [crawler];
     arena.stalled.add(crawler);
     const object = objectOf();
@@ -1373,7 +1459,7 @@ describe('Material rules: pressing wear', () => {
   it('wears what it stands on at floor wear times its pressing rate', () => {
     const enemies = createEnemyTable();
     enemies.floorWear = 0.5;
-    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable(), enemies);
+    const { rules, contacts, arena } = rulesFor(enemies);
     arena.walking = [crawler];
     const [under, sloped] = [pieceOf(), objectOf()];
     touch(contacts, [
@@ -1389,7 +1475,7 @@ describe('Material rules: pressing wear', () => {
   });
 
   it('wears nothing it only touches from behind or above, nor the Terrain, Rubble or the Ink Core', () => {
-    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const { rules, contacts, arena } = rulesFor();
     arena.walking = [crawler];
     arena.stalled.add(crawler);
     const [behind, above] = [pieceOf(), pieceOf()];
@@ -1406,9 +1492,72 @@ describe('Material rules: pressing wear', () => {
     expect(arena.done).toEqual([]);
   });
 
+  it('wears what a stack presses harder: stackWear more for each other Enemy in it', () => {
+    const enemies = createEnemyTable();
+    enemies.stackWear = 0.5;
+    const { rules, physics, contacts, arena } = rulesFor(enemies);
+    const middle: Walker = { ...crawler, id: 2, body: 102 as BodyId };
+    const top: Walker = { ...crawler, id: 3, body: 103 as BodyId };
+    physics.add(103);
+    const lone: Walker = { ...crawler, id: 4, body: 104 as BodyId };
+    physics.add(104);
+    arena.walking = [crawler, middle, top, lone];
+    for (const walker of arena.walking) arena.enemyParties.set(walker.id, walker);
+    // The Crawler at the bottom, with `middle` on it and `top` on that, each pressing a Piece.
+    const walls = [pieceOf(), pieceOf(), pieceOf(), pieceOf()];
+    const touches = new Map<Walker, Touching<Breakable>[]>(
+      arena.walking.map((walker) => [walker, []]),
+    );
+    const meet = (a: Walker, b: Party<Breakable>, normal: Vec2, back?: Party<Breakable>) => {
+      const body = b.body as number;
+      const contact = {
+        bodyA: body as BodyId,
+        bodyB: a.body,
+        shapeA: body as ShapeId,
+        shapeB: a.body as number as ShapeId,
+      };
+      contacts.normals.set(contact, normal);
+      touches.get(a)!.push({ party: b, pairs: [contact] });
+      const other = arena.walking.find((walker) => walker.body === b.body);
+      if (other && back) touches.get(other)!.push({ party: back, pairs: [contact] });
+    };
+    const partyOf = (walker: Walker): Party<Breakable> => ({
+      id: walker.id,
+      stroke: walker.id,
+      body: walker.body,
+      target: null,
+    });
+    arena.walking.forEach((walker, k) =>
+      meet(
+        walker,
+        { id: 10 + k, stroke: 10 + k, body: (10 + k) as BodyId, target: walls[k]! },
+        WALL,
+      ),
+    );
+    meet(middle, partyOf(crawler), FLOOR, partyOf(middle));
+    meet(top, partyOf(middle), FLOOR, partyOf(top));
+    for (const [walker, touching] of touches) contacts.touches.set(walker.body, touching);
+
+    rules.walk(STEP);
+    for (let step = 0; step < 60; step++) rules.step(STEP);
+
+    const worn = walls.map(({ damage }) => damage / PRESSING);
+    expect(worn[0]).toBeCloseTo(2, 6); // two others in its stack
+    expect(worn[1]).toBeCloseTo(2, 6);
+    expect(worn[2]).toBeCloseTo(2, 6);
+    expect(worn[3]).toBeCloseTo(1, 6); // alone
+  });
+
   it('adds up the wear of every Enemy on one Piece', () => {
-    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
-    const other: Walker = { id: 2, body: 102 as BodyId, type: 'crawler', height: 40, damage: 0 };
+    const { rules, contacts, arena } = rulesFor();
+    const other: Walker = {
+      id: 2,
+      body: 102 as BodyId,
+      type: 'crawler',
+      width: 40,
+      height: 40,
+      damage: 0,
+    };
     arena.walking = [crawler, other];
     const bridge = pieceOf();
     touch(contacts, [{ target: bridge, normal: FLOOR }]);
@@ -1420,7 +1569,7 @@ describe('Material rules: pressing wear', () => {
   });
 
   it('breaks what it wore out as a hit would, before sticking, and red goes off', () => {
-    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const { rules, contacts, arena } = rulesFor();
     arena.walking = [crawler];
     const red = pieceOf('red');
     red.damage = DEFAULT_MATERIAL_TABLE.colours.red.line.durability - 1;

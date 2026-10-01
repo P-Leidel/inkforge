@@ -39,8 +39,8 @@ export interface EnemyMaterial {
   push: number;
   /**
    * The most its climbing force can be, in multiples of its own weight: the
-   * upward push it gets while it presses another Enemy low enough to climb
-   * (`climbStep`). Above one weight it rises; 0 never climbs.
+   * upward push it gets while it presses another Enemy or a wall low enough
+   * to climb (`climbStep`). Above one weight it rises; 0 never climbs.
    */
   climb: number;
   /** Durability per second it wears off what it presses. */
@@ -61,10 +61,17 @@ export interface EnemyTable {
   floorWear: number;
   /**
    * The highest step an Enemy climbs, in its own heights: the top of the
-   * Enemy it presses (and of whatever Enemies stand on that one) at most
-   * this far above its feet. Above that, it just presses.
+   * Enemy it presses (and of whatever Enemies stand on that one), or of the
+   * wall it presses, however steep, at most this far above its feet. Above
+   * that, it just presses.
    */
   climbStep: number;
+  /**
+   * How much harder a stack presses: an Enemy wears what it presses at its
+   * pressing rate times 1 plus this for each other Enemy in its stack (those
+   * standing on it, those it stands on, and so on).
+   */
+  stackWear: number;
   /** The Ink Core's HP when it is whole. */
   coreHp: number;
 }
@@ -144,6 +151,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
   },
   floorWear: 1,
   climbStep: 1.2,
+  stackWear: 0.5,
   coreHp: 10,
 };
 

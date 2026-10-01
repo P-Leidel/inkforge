@@ -503,16 +503,17 @@ export const PIT_DEMO: Demo = {
   },
 };
 
-/** Where the Staircase demo's wall stands (px), and how tall it is: two Crawlers. */
+/** Where the Staircase demo's wall stands (px), and how tall it is: three Crawlers. */
 export const STAIRCASE_WALL_X = 900;
-export const STAIRCASE_WALL_HEIGHT = 80;
+export const STAIRCASE_WALL_HEIGHT = 120;
 
 /**
- * The sandbox Arena with a Terrain wall two Crawlers tall in its ground, and
- * six Crawlers walking at it, one after another. Nothing is scripted: the
- * first presses the wall, the second climbs onto it, and the third meets a
- * step two high, too high to climb, so it waits and becomes a step itself.
- * The rest climb the third, then the second, and get over the wall.
+ * The sandbox Arena with a Terrain wall three Crawlers tall in its ground,
+ * and six Crawlers walking at it, one after another. Nothing is scripted:
+ * the first presses the wall, the second climbs onto it, and the third
+ * meets a step two high, too high to climb, so it waits and becomes a step
+ * itself. The rest climb the third, then the second, and from there the
+ * wall, its top now within their step.
  */
 export const STAIRCASE_DEMO: Demo = {
   name: 'Staircase',

@@ -110,7 +110,7 @@ Details:
 
 ## 9. Enemies
 
-Enemies are upright physics bodies pushed along by a capped force ([ADR 0010](adr/0010-enemies-walk-by-capped-force.md)), so glue, bounce and Blasts act on them through the simulation. They always walk toward the Ink Core over whatever they stand on and climb slopes up to about 45°. Anything steeper, or an Object they can't shove, they press against and wear down. There is no pathfinding.
+Enemies are upright physics bodies pushed along by a capped force ([ADR 0010](adr/0010-enemies-walk-by-capped-force.md)), so glue, bounce and Blasts act on them through the simulation. They always walk toward the Ink Core over whatever they stand on and climb slopes up to about 45°. Climbing types also climb other Enemies and walls, however steep, whose top is within about 1.2 of their height, so a pile of them gets over a taller wall. Anything else steeper, or an Object they can't shove, they press against and wear down, harder when they are stacked. There is no pathfinding.
 
 | Enemy | Role | In MVP |
 |---|---|---|
