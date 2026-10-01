@@ -7,23 +7,16 @@ import type { Game } from './game';
 import { inLineLength } from './ink-table';
 import { games } from './test-support';
 
-/** A Core Zone wide enough to take in the whole Arena, px. */
-const WHOLE_ARENA = 10_000;
-
 /** A Game over a new Sandbox world; Ink costs on unless said otherwise. */
 const createGame = games();
 
-/**
- * A Game with Waves on, whose Wave sends in one Crawler, then waits a long
- * while. Its Core Zone takes in the whole Arena, so it refuses nothing here.
- */
+/** A Game with Waves on, whose Wave sends in two Crawlers, the second a long while after the first. */
 function wavesGame(options: { inkCosts?: boolean; seed?: number } = {}): Game {
   const game = createGame(options.inkCosts ?? true, {
     waves: true,
     worldOptions: { seed: options.seed ?? 1 },
   });
   game.defence.edit((table) => {
-    table.coreZone = WHOLE_ARENA;
     table.counts = { crawler: 2, runner: 0, heavy: 0 };
     table.gap = 100;
   });
@@ -55,78 +48,52 @@ const line = (game: Game, length: number, colour: Colour = 'grey', y = 200) =>
     colour,
   );
 
-/** Each Tank's spendable and Locked Ink, in Line length. */
+/** What each Tank holds, in Line length. */
 const held = (game: Game) =>
   Object.fromEntries(
-    COLOURS.map((colour) => {
-      const { spendable, locked } = game.tanks[colour];
-      return [colour, { spendable: inLineLength(spendable), locked: inLineLength(locked) }];
-    }),
-  ) as Record<Colour, { spendable: number; locked: number }>;
+    COLOURS.map((colour) => [colour, inLineLength(game.tanks[colour].spendable)]),
+  ) as Record<Colour, number>;
 
-describe('Wave Ink', () => {
-  it('starting a Wave locks every Tank: only Wave Ink can be spent, and there is none yet', () => {
+describe('Drops', () => {
+  it('land straight in the Tanks within their ranges, and can be spent at once', () => {
     const game = wavesGame();
     game.togglePause();
-
-    for (const colour of COLOURS) {
-      expect(game.tanks[colour].spendable).toBe(0);
-      expect(game.tanks[colour].locked).toBe(game.tanks[colour].maximum);
-    }
-    const refused = line(game, 100);
-    expect(refused).toMatchObject({ kind: 'refused', colour: 'grey' });
-    expect(game.world.lines).toEqual([]);
-  });
-
-  it("a kill's Drop lands as Wave Ink within its ranges, and can be spent at once", () => {
-    const game = wavesGame();
     // Room in every Tank for a Drop: the Tanks hold 400 less of each.
     for (const colour of COLOURS) {
       expect(line(game, 400, colour, 100 + 60 * COLOURS.indexOf(colour)).kind).toBe('line');
     }
     const before = held(game);
-    game.togglePause();
 
     pitKill(game);
 
     const after = held(game);
     const ranges = DEFAULT_ENEMY_TABLE.types.crawler.drop;
     for (const colour of COLOURS) {
-      expect(after[colour].locked).toBeCloseTo(before[colour].spendable, 6);
-      expect(after[colour].spendable).toBeGreaterThanOrEqual(ranges[colour].min);
-      expect(after[colour].spendable).toBeLessThanOrEqual(ranges[colour].max);
+      expect(after[colour] - before[colour]).toBeGreaterThanOrEqual(ranges[colour].min - 1e-6);
+      expect(after[colour] - before[colour]).toBeLessThanOrEqual(ranges[colour].max + 1e-6);
     }
-    // At least 40 grey: a 20 px Line costs less than that.
-    expect(line(game, 20).kind).toBe('line');
-    expect(held(game).grey.spendable).toBeLessThan(after.grey.spendable);
-    expect(held(game).grey.locked).toBeCloseTo(after.grey.locked, 6);
+    expect(line(game, 20, 'grey', 500).kind).toBe('line');
+    expect(held(game).grey).toBeLessThan(after.grey);
   });
 
-  it("loses what doesn't fit: Locked Ink still takes room", () => {
+  it("lose what doesn't fit", () => {
     const game = wavesGame();
-    expect(line(game, 20).kind).toBe('line'); // about 28 grey of room
-    const room = inLineLength(game.tanks.grey.maximum) - held(game).grey.spendable;
     game.togglePause();
+    expect(line(game, 20).kind).toBe('line'); // about 28 grey of room
 
     pitKill(game);
 
     // A Crawler drops at least 40 grey, and full Tanks take none of the rest.
-    expect(held(game).grey.spendable).toBeCloseTo(room, 6);
-    expect(held(game).blue).toEqual({
-      spendable: 0,
-      locked: inLineLength(game.tanks.blue.maximum),
-    });
     for (const colour of COLOURS) {
-      const { spendable, locked, maximum } = game.tanks[colour];
-      expect(spendable + locked).toBeLessThanOrEqual(maximum + 1e-6);
+      expect(game.tanks[colour].spendable).toBeCloseTo(game.tanks[colour].maximum, 6);
     }
   });
 
-  it('gives the same Drops for the same seed', () => {
+  it('are the same for the same seed', () => {
     const run = (seed: number) => {
       const game = wavesGame({ seed });
-      for (const colour of COLOURS) line(game, 400, colour, 100 + 60 * COLOURS.indexOf(colour));
       game.togglePause();
+      for (const colour of COLOURS) line(game, 400, colour, 100 + 60 * COLOURS.indexOf(colour));
       pitKill(game);
       pitKill(game, 'heavy');
       return held(game);
@@ -136,37 +103,44 @@ describe('Wave Ink', () => {
     expect(run(5)).not.toEqual(run(6));
   });
 
-  it('comes from a Pit kill; an Enemy reaching the Ink Core drops nothing', () => {
+  it('come from a Pit kill; an Enemy reaching the Ink Core drops nothing', () => {
     const game = createGame(true, { waves: true });
     game.defence.edit((table) => (table.counts = { crawler: 0, runner: 1, heavy: 0 }));
+    game.togglePause();
     expect(line(game, 400).kind).toBe('line');
     const before = held(game);
-    game.togglePause();
+    let picked = held(game);
 
-    stepFor(game, 60, () => game.defence.reading.phase === 'build');
+    stepFor(game, 60, () => {
+      // Read before the Wave's end refills the Tanks.
+      if (game.defence.reading.phase !== 'wave') return true;
+      picked = held(game);
+      return false;
+    });
 
     expect(game.world.inkCore.hp).toBe(9);
-    expect(held(game)).toEqual(before);
+    expect(picked).toEqual(before);
+    expect(game.defence.reading.rewards?.summary).toMatchObject({ kills: 0 });
   });
 
-  it('is kept when the Wave ends, and the Locked Ink is spendable again', () => {
-    const game = wavesGame();
-    game.defence.edit((table) => (table.counts = { crawler: 0, runner: 0, heavy: 0 }));
-    expect(line(game, 400).kind).toBe('line');
-    const before = held(game).grey.spendable;
+  it("count for the Wave's summary: its kills and the Ink the Tanks took", () => {
+    const game = createGame(true, { waves: true });
+    game.defence.edit((table) => (table.counts = { crawler: 0, runner: 1, heavy: 0 }));
     game.togglePause();
-
-    // The only Enemy dies in the Wave's first step: none is left to come or alive.
+    expect(line(game, 400).kind).toBe('line');
+    const before = game.tanks.grey.spendable;
     pitKill(game);
+    const taken = game.tanks.grey.spendable - before;
 
-    expect(game.defence.reading.phase).toBe('build');
-    const { spendable, locked } = held(game).grey;
-    expect(locked).toBe(0);
-    expect(spendable - before).toBeGreaterThanOrEqual(40);
-    expect(line(game, 1000).kind).toBe('line');
+    stepFor(game, 60, () => game.defence.reading.phase !== 'wave');
+
+    expect(taken).toBeGreaterThan(0);
+    const summary = game.defence.reading.rewards!.summary;
+    expect(summary.kills).toBe(1);
+    expect(summary.ink.grey).toBeCloseTo(taken, 6);
   });
 
-  it('changes nothing with Ink costs off, Waves on or off', () => {
+  it('change nothing with Ink costs off, Waves on or off', () => {
     const waves = wavesGame({ inkCosts: false });
     waves.togglePause();
     pitKill(waves);
@@ -179,80 +153,21 @@ describe('Wave Ink', () => {
     expect(held(sandbox)).toEqual(before);
   });
 
-  it('goes into the Tanks with Waves off too, as spendable Ink', () => {
+  it('go into the Tanks with Waves off too', () => {
     const game = createGame(true);
     expect(line(game, 400).kind).toBe('line');
-    const before = held(game).grey.spendable;
+    const before = held(game).grey;
     game.togglePause();
 
     pitKill(game);
 
-    expect(held(game).grey.spendable - before).toBeGreaterThanOrEqual(40);
-    expect(held(game).grey.locked).toBe(0);
+    expect(held(game).grey - before).toBeGreaterThanOrEqual(40);
   });
 });
 
-describe('Refunds during a Wave', () => {
-  it('go back to the part they were paid from, and never leave a Tank above what it held', () => {
-    const game = wavesGame();
-    expect(line(game, 400, 'grey', 200).kind).toBe('line'); // paid in the Build Phase
-    const full = inLineLength(game.tanks.grey.maximum);
-    game.togglePause();
-    pitKill(game);
-    const drop = held(game).grey.spendable;
-    expect(line(game, 20, 'grey', 300).kind).toBe('line'); // paid from Wave Ink
-    const afterPaying = held(game).grey;
-
-    // Erase the Wave's Line: its price goes back to Wave Ink.
-    game.eraseAlong(
-      [
-        { x: 595, y: 300 },
-        { x: 625, y: 300 },
-      ],
-      12,
-    );
-    expect(held(game).grey.spendable).toBeCloseTo(drop, 6);
-    expect(held(game).grey.locked).toBeCloseTo(afterPaying.locked, 6);
-
-    // Erase the Build Phase's Line: its price goes back as Locked Ink, up to the maximum.
-    game.eraseAlong(
-      [
-        { x: 595, y: 200 },
-        { x: 1005, y: 200 },
-      ],
-      12,
-    );
-    const { spendable, locked } = held(game).grey;
-    expect(spendable).toBeCloseTo(drop, 6);
-    expect(spendable + locked).toBeLessThanOrEqual(full + 1e-6);
-    expect(locked).toBeCloseTo(full - drop, 6);
-  });
-
-  it('after the Wave, everything erased is spendable', () => {
-    const game = wavesGame({ inkCosts: true });
-    game.defence.edit((table) => (table.counts = { crawler: 0, runner: 0, heavy: 0 }));
-    expect(line(game, 400).kind).toBe('line');
-    game.togglePause();
-    game.step(); // an empty Wave ends at once
-
-    expect(game.defence.reading.phase).toBe('build');
-    game.eraseAlong(
-      [
-        { x: 595, y: 200 },
-        { x: 1005, y: 200 },
-      ],
-      12,
-    );
-    expect(held(game).grey).toEqual({
-      spendable: inLineLength(game.tanks.grey.maximum),
-      locked: 0,
-    });
-  });
-});
-
-describe('R, with Locked and Wave Ink', () => {
+describe('R, with Drops', () => {
   it('brings the Tanks back as at the snapshot, and a retry drops the same', () => {
-    const game = wavesGame();
+    const game = createGame(true);
     for (const colour of COLOURS) line(game, 400, colour, 100 + 60 * COLOURS.indexOf(colour));
     const atStart = game.tanks;
     game.togglePause();

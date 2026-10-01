@@ -55,7 +55,7 @@ describe('Enemy table', () => {
     expect(weigh('runner') / weigh('crawler')).toBeCloseTo(0.5, 1);
   });
 
-  it('shares floor wear, the climbing step, the Ink Core’s HP and the Core Zone’s size', () => {
+  it('shares floor wear, the climbing step and the Ink Core’s HP', () => {
     const { floorWear, climbStep, coreHp } = DEFAULT_ENEMY_TABLE;
     expect({ floorWear, climbStep, coreHp }).toEqual({ floorWear: 1, climbStep: 1.2, coreHp: 10 });
   });

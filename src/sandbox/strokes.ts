@@ -228,6 +228,34 @@ export interface SavedStrokes {
   readonly strokes: readonly SavedStroke[];
 }
 
+/** The fastest an Object may move and still be at rest, to be Frozen again, px/s. */
+const REST_SPEED = 5;
+/** The fastest an Object may turn and still be at rest, rad/s. */
+const REST_SPIN = 0.05;
+
+/**
+ * `saved` with every Object at rest Frozen again, where it is: one moving
+ * slower than `REST_SPEED` and turning slower than `REST_SPIN`, and not
+ * sliding off a Line. The Aftermath of a Wave.
+ */
+export function freezeResting(saved: SavedStrokes): SavedStrokes {
+  return {
+    strokes: saved.strokes.map((stroke) => {
+      if (stroke.kind === 'line') return stroke;
+      const { motion } = stroke;
+      const resting =
+        Math.hypot(motion.velocity.x, motion.velocity.y) < REST_SPEED &&
+        Math.abs(motion.angularVelocity) < REST_SPIN &&
+        motion.slide === null;
+      if (motion.frozen || !resting) return stroke;
+      return {
+        ...stroke,
+        motion: { ...motion, frozen: true, velocity: { x: 0, y: 0 }, angularVelocity: 0 },
+      };
+    }),
+  };
+}
+
 /**
  * The Strokes: Lines with their Pieces, Objects with their Fills, taking
  * them back, the squeeze, and breaking Objects and Pieces. Stroke ids are

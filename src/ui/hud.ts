@@ -1,4 +1,5 @@
 import type Phaser from 'phaser';
+import type { DefenceReading } from '../game/defence-loop';
 import type { Game } from '../game/game';
 import { FONT_FAMILY, PALETTE } from '../rendering/palette';
 
@@ -12,11 +13,20 @@ const STATUS = {
   destroyed: { text: 'Ink Core destroyed    R: start over', color: PALETTE.destroyed },
 } as const;
 
-/** What the phase label says, with Waves on. */
-const PHASE = {
-  build: { text: 'BUILD PHASE    Space: start the Wave', color: PALETTE.buildPhase },
-  wave: { text: 'WAVE', color: PALETTE.wave },
-} as const;
+/** What the phase label says, with Waves on; nothing with Waves off. */
+export function phaseLabel({ phase, wave, waves }: DefenceReading): string {
+  switch (phase) {
+    case null:
+      return '';
+    // Short: the toolbar is close beside it. The rewards screen says the rest.
+    case 'intermission':
+      return `Space: WAVE ${wave} of ${waves}`;
+    case 'wave':
+      return `WAVE ${wave} of ${waves}`;
+    case 'cleared':
+      return 'LEVEL CLEARED';
+  }
+}
 
 /** How far above the ground the Spawn arrow is (see the World renderer), and right of the edge. */
 const SPAWN_COUNT_RISE = 60;
@@ -34,7 +44,7 @@ export class Hud {
   private readonly readout: Phaser.GameObjects.Text;
   /** What the status, the phase label and the count show, so each is redrawn only on a change. */
   private shown: keyof typeof STATUS | null = null;
-  private shownPhase: keyof typeof PHASE | null | undefined = undefined;
+  private shownPhase: string | undefined = undefined;
   private shownToCome: number | null | undefined = undefined;
 
   constructor(
@@ -106,11 +116,13 @@ export class Hud {
 
   /** The phase label, and the count beside the Spawn arrow during a Wave. */
   private drawPhase(): void {
-    const { phase, toCome: left } = this.game.defence.reading;
-    if (phase !== this.shownPhase) {
-      this.shownPhase = phase;
-      this.phase.setText(phase ? PHASE[phase].text : '');
-      if (phase) this.phase.setColor(PHASE[phase].color);
+    const reading = this.game.defence.reading;
+    const { phase, toCome: left } = reading;
+    const label = phaseLabel(reading);
+    if (label !== this.shownPhase) {
+      this.shownPhase = label;
+      this.phase.setText(label);
+      if (phase) this.phase.setColor(PALETTE[phase]);
     }
     // A Level may have brought its own Spawn.
     this.toCome.setY(this.game.world.arena.spawn.y - SPAWN_COUNT_RISE);

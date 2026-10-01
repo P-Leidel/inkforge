@@ -536,6 +536,41 @@ export const STAIRCASE_DEMO: Demo = {
   },
 };
 
+/**
+ * A Level of three Waves, each bigger than the last, to play with Waves on
+ * (F2): two grey Lines on the way to the Ink Core to start with, a grey box
+ * dropped onto the first, and the Arena kept from Wave to Wave. With Waves
+ * off, only the box drops.
+ */
+export const THREE_WAVES_DEMO: Demo = {
+  name: 'Three Waves',
+  waves: [
+    { counts: { crawler: 3, runner: 0, heavy: 0 }, gap: 2 },
+    { counts: { crawler: 4, runner: 2, heavy: 0 }, gap: 1.5 },
+    { counts: { crawler: 4, runner: 3, heavy: 2 }, gap: 1.5 },
+  ],
+  build(world) {
+    const ground = SANDBOX_ARENA.spawn.y;
+    drawLine(
+      world,
+      [
+        { x: 700, y: ground - 120 },
+        { x: 900, y: ground - 120 },
+      ],
+      'grey',
+    );
+    drawLine(
+      world,
+      [
+        { x: 1100, y: ground - 60 },
+        { x: 1100, y: ground - 200 },
+      ],
+      'grey',
+    );
+    letGo(world, [drawObject(world, dragBox(770, ground - 220, 60, 60), 'grey')]);
+  },
+};
+
 export const GALLERY: readonly Demo[] = [
   BOUNCE_DEMO,
   SLIDE_DEMO,
@@ -554,4 +589,5 @@ export const GALLERY: readonly Demo[] = [
   DEMOLITION_DEMO,
   PIT_DEMO,
   STAIRCASE_DEMO,
+  THREE_WAVES_DEMO,
 ];
