@@ -142,7 +142,7 @@ export function createRules(): Rules {
 export interface DefenceLoopOptions {
   readonly world: LoopWorld;
   readonly tanks: Refill;
-  /** The Wave table of the Level's only Wave, until a Level brings its own list. */
+  /** Free play's Wave table: the only Wave of every Level without Waves of its own. */
   readonly table: WaveTable;
   /** The Waves switch; off by default. */
   readonly waves?: boolean;
@@ -185,6 +185,8 @@ export class DefenceLoop {
   private readonly tanks: Refill;
   /** The Level's Waves, in order, each its own Wave table. */
   private tables: WaveTable[];
+  /** Free play's Wave table, F2's: kept across every load, never a Level's. */
+  private readonly freePlay: WaveTable;
   private on: boolean;
   /** PROVISIONAL: the F2 rules switches, read at every `bar`. */
   readonly rules: Rules;
@@ -199,6 +201,7 @@ export class DefenceLoop {
   constructor(options: DefenceLoopOptions) {
     this.world = options.world;
     this.tanks = options.tanks;
+    this.freePlay = options.table;
     this.tables = [options.table];
     this.on = options.waves ?? false;
     this.rules = options.rules ?? createRules();
@@ -265,15 +268,14 @@ export class DefenceLoop {
 
   /**
    * Loading a Level, once it is built: the list becomes a copy of `waves`,
-   * or without them, one Wave, the current Wave's table as it is. Back to
+   * or without them, one Wave, Free play's table itself, so F2's edits to it
+   * outlast the load, never the last Level's. Back to
    * the first Wave's Intermission, with nothing ended; with Waves on, physics
    * pauses where the build left it, as the Waves switch does.
    */
   load(waves?: readonly ReadonlyWaveTable[]): void {
     this.tables =
-      waves && waves.length > 0
-        ? waves.map((table) => createWaveTable(table))
-        : [createWaveTable(this.table)];
+      waves && waves.length > 0 ? waves.map((table) => createWaveTable(table)) : [this.freePlay];
     this.restore(FIRST_INTERMISSION);
     if (this.on) this.world.pause();
   }

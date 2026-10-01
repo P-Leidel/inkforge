@@ -10,10 +10,10 @@ import type { ReadonlyWaveTable } from './wave-table';
  * the Arena and sets it up from one. The gallery demos, the stress tests,
  * the sandbox and the Campaign's Levels are all Levels.
  *
- * What a Level leaves out: without an Arena it is the sandbox Arena; without
- * Waves, it has one Wave, the current Wave table as the F2 tuning panel left
- * it, and the Waves switch stays as it is; without Tanks, the Tank maximums
- * stay as they are.
+ * What a Level leaves out comes from Free play, never from the last Level:
+ * without an Arena it is the sandbox Arena; without Waves, it has one Wave,
+ * Free play's Wave table, and plays as Free play's Waves switch says;
+ * without Tanks, its maximums are Free play's, F2's Ink table.
  */
 export interface Level {
   /** What the player sees it called: on the toolbar, in the Gallery, in F1's readings. */
@@ -22,11 +22,15 @@ export interface Level {
   readonly arena?: Arena;
   /**
    * Its Waves, in the order they come, each a Wave table: loading it makes
-   * the Defence loop's list a copy of them, starting at the first, and turns
-   * the Waves switch on.
+   * the Defence loop's list a copy of them, starting at the first, and plays
+   * it with Waves on, leaving Free play's Waves switch as it is.
    */
   readonly waves?: readonly ReadonlyWaveTable[];
-  /** Each Ink Tank's maximum, in Line length: loading it sets them in the Ink table, and fills the Tanks. */
+  /**
+   * Each Ink Tank's maximum, in Line length: loading it puts a copy of them
+   * in force for this play, over Free play's Ink table, which it never
+   * touches, and fills the Tanks.
+   */
   readonly tanks?: Readonly<Record<Colour, number>>;
   /**
    * A Campaign Level's hints: one line for each Colour and Enemy type it is
@@ -43,7 +47,7 @@ export interface Level {
   build?(world: SandboxWorld): StressTest | void;
 }
 
-/** The sandbox: the sandbox Arena, empty, with one Wave and the Tanks as they are. */
+/** The sandbox: the sandbox Arena, empty, with Free play's Wave, Waves switch and Tanks. */
 export const SANDBOX_LEVEL = { name: 'Sandbox' } as const satisfies Level;
 
 /** Throws unless `arena` is one screen, the size every Arena is. */

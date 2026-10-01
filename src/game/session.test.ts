@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { THREE_WAVES_DEMO } from '../gallery/gallery';
+import { GALLERY, THREE_WAVES_DEMO } from '../gallery/gallery';
+import { CAMPAIGN_LEVELS } from '../levels/campaign-levels';
+import { COLOURS } from '../materials/colour';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import { editEnemies } from '../materials/enemy-table';
+import { BALL_CANNON_LEVEL } from '../stress-tests/ball-cannon';
 import { BOX_TOWER_LEVEL } from '../stress-tests/box-tower';
+import { PEBBLES_LEVEL } from '../stress-tests/pebble-drop';
 import type { StressTest } from '../stress-tests/stress-test';
 import { dragAlong } from '../stroke/pointer-paths';
 import { Campaign, type CampaignStore } from './campaign';
 import type { Game } from './game';
 import { SANDBOX_LEVEL, type Level } from './level';
 import { Session } from './session';
+import { fromLineLength } from './ink-table';
 import { games } from './test-support';
 
 const createGame = games();
@@ -384,5 +389,110 @@ describe('A Session in the Campaign', () => {
       game.eraseAlong(brush, 12);
       expect(game.world.lines).toEqual([]);
     });
+  });
+});
+
+describe('Free play after a Campaign Level', () => {
+  /** A Session over a new Game, Ink costs on, with the real Campaign, every Level unlocked. */
+  function freePlaySession(options: { waves?: boolean } = {}) {
+    const game = createGame(true, options);
+    const store = new FakeStore();
+    store.write(JSON.stringify({ unlocked: CAMPAIGN_LEVELS.length }));
+    return { game, session: new Session(game, new Campaign(CAMPAIGN_LEVELS, store)) };
+  }
+
+  /** Every Tank's maximum, px². */
+  const maximums = (game: Game) => COLOURS.map((colour) => game.tanks[colour].maximum);
+  /** Free play's maximums, from F2's Ink table, px². */
+  const freePlayMaximums = (game: Game) =>
+    COLOURS.map((colour) => fromLineLength(game.ink.tanks[colour]));
+
+  const FREE_PLAY: readonly Level[] = [
+    SANDBOX_LEVEL,
+    ...GALLERY,
+    PEBBLES_LEVEL,
+    BOX_TOWER_LEVEL,
+    BALL_CANNON_LEVEL,
+  ];
+
+  it('has every Colour, at Free play maximums, in the Sandbox, every Gallery demo and every stress test', () => {
+    const { game, session } = freePlaySession();
+
+    for (const level of FREE_PLAY) {
+      session.playCampaign(0);
+      expect(COLOURS.filter((colour) => game.has(colour))).not.toEqual(COLOURS);
+
+      session.play(level);
+
+      expect(
+        COLOURS.filter((colour) => game.has(colour)),
+        level.name,
+      ).toEqual(COLOURS);
+      expect(maximums(game), level.name).toEqual(freePlayMaximums(game));
+    }
+  });
+
+  it('leaves the Waves switch as Free play had it; a Level with its own Waves still plays with them', () => {
+    for (const before of [false, true]) {
+      const { game, session } = freePlaySession({ waves: before });
+
+      session.playCampaign(0);
+      expect(game.waves).toBe(true);
+      session.play(SANDBOX_LEVEL);
+      expect(game.waves).toBe(before);
+
+      session.play(THREE_WAVES_DEMO);
+      expect(game.waves).toBe(true);
+      session.play(GALLERY[0]!);
+      expect(game.waves).toBe(before);
+    }
+  });
+
+  it('keeps Free play edits to the Tanks and the Waves switch across Clear, other Levels and a Campaign Level', () => {
+    const { game, session } = freePlaySession();
+    session.play(SANDBOX_LEVEL);
+    game.editInk((ink) => (ink.tanks.blue = 1234)); // as the F2 tuning panel does
+    game.waves = true;
+
+    session.clear();
+    session.play(GALLERY[0]!);
+    session.playCampaign(1);
+    session.play(SANDBOX_LEVEL);
+
+    expect(game.ink.tanks.blue).toBe(1234);
+    expect(game.tanks.blue.maximum).toBe(fromLineLength(1234));
+    expect(game.waves).toBe(true);
+  });
+
+  it("edits a Campaign Level's own Tanks for this play only: they survive R, and are gone after Clear", () => {
+    const { game, session } = freePlaySession();
+    const freePlay = structuredClone(game.ink);
+    session.playCampaign(0);
+    const own = CAMPAIGN_LEVELS[0]!.tanks!;
+
+    game.editInk((ink) => (ink.tanks.grey = 77));
+    expect(game.inkInForce.tanks.grey).toBe(77);
+    expect(game.tanks.grey.maximum).toBe(fromLineLength(77));
+    game.togglePause(); // a Wave starts: R's checkpoint
+    game.reset();
+    expect(game.tanks.grey.maximum).toBe(fromLineLength(77));
+
+    session.clear();
+
+    expect(game.inkInForce.tanks).toEqual(own);
+    expect(game.ink).toEqual(freePlay);
+  });
+
+  it("unticking Waves in a Level with its own Waves lasts until Clear, and leaves Free play's switch", () => {
+    const { game, session } = freePlaySession({ waves: true });
+    session.playCampaign(0);
+
+    game.waves = false;
+    session.clear();
+    expect(game.waves).toBe(true);
+
+    game.waves = false;
+    session.play(SANDBOX_LEVEL);
+    expect(game.waves).toBe(true);
   });
 });
