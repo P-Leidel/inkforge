@@ -18,7 +18,14 @@ import {
   type StrokeId,
   type StrokeOutcome,
 } from '../sandbox/sandbox-world';
-import { DefenceLoop, isBar, type Bar, type BuildAction } from './defence-loop';
+import {
+  DefenceLoop,
+  FIRST_INTERMISSION,
+  isBar,
+  type Bar,
+  type BuildAction,
+  type LoopPosition,
+} from './defence-loop';
 import { checkArenaSize, type Level } from './level';
 import { createInkTable, type InkTable, type ReadonlyInkTable } from './ink-table';
 import { InkTanks, type TankReadings, type TanksState } from './ink-tanks';
@@ -138,12 +145,17 @@ type Charge =
       readonly pieces: Map<number, number>;
     };
 
-/** Everything R brings back of the Game: the Tanks, what was paid and the undo history. */
-interface Snapshot {
+/**
+ * Everything R brings back of the Game: the Tanks, what was paid, the undo
+ * history and where the Defence loop was. The Sandbox world keeps its own
+ * snapshot, taken as physics starts, with this.
+ */
+interface Checkpoint {
   readonly tanks: TanksState;
   readonly strokes: ReadonlyMap<StrokeId, Charge>;
   readonly fills: ReadonlyMap<StrokeId, Paid>;
   readonly history: readonly Action[];
+  readonly loop: LoopPosition;
 }
 
 export interface GameOptions {
@@ -163,11 +175,12 @@ export interface GameOptions {
 /**
  * The Game: the rules layer over the Sandbox world (ADR 0009). It owns the
  * Ink Tanks, the Ink table and the Ink costs switch, what each Stroke, Piece
- * and Fill paid, the undo history, and the snapshot of all of these that R
- * goes back to. It issues the Sandbox world's commands, prices the Ink they
- * report and refuses what a Tank can't pay for, and reads the list of what
- * happened to learn what broke or was erased. It never measures Ink itself,
- * and leaves the Tank arithmetic to the Ink Tanks.
+ * and Fill paid, the undo history, and the checkpoint of all of these and
+ * of the Defence loop's position that R goes back to. It issues the Sandbox
+ * world's commands, prices the Ink they report and refuses what a Tank can't
+ * pay for, and reads the list of what happened to learn what broke or was
+ * erased. It never measures Ink itself, and leaves the Tank arithmetic to
+ * the Ink Tanks.
  *
  * Strokes and Fills made below it, by a demo or a stress test, join the
  * undo history at price 0 when it reads that they were added.
@@ -197,8 +210,11 @@ export class Game {
   private fills = new Map<StrokeId, Paid>();
   /** Strokes and Fills in the order they were made, for undo. */
   private undoHistory: Action[] = [];
-  /** Taken whenever physics starts: with Waves on, as a Wave starts; R returns to it. */
-  private snapshot: Snapshot | null = null;
+  /**
+   * Taken whenever physics starts, as the world takes its own snapshot: with
+   * Waves on, as a Wave starts. R returns to it.
+   */
+  private checkpoint: Checkpoint | null = null;
   private readonly reader: Reader;
   /** The Defence loop's hooks, with what happened in the step read in between. */
   private readonly hooks: StepHooks;
@@ -515,32 +531,43 @@ export class Game {
   /**
    * Space, as the Defence loop says: with Waves off, starts or pauses
    * physics; with Waves on, starts the next Wave from an Intermission, and
-   * during a Wave only pauses and runs. Every start takes a snapshot of the
-   * Tanks, what was paid and the undo history, next to the Sandbox world's:
+   * during a Wave only pauses and runs. Every start takes the checkpoint of
+   * the Tanks, what was paid, the undo history and the Defence loop's
+   * position, then starts the Sandbox world, which takes its own snapshot:
    * with Waves on, the Intermission right after the refill. Once the Ink
    * Core is destroyed, or the Level is cleared, it starts nothing until R or
    * Clear.
    */
   togglePause(): void {
     this.catchUp();
-    this.defence.space(() => (this.snapshot = this.takeSnapshot()));
+    switch (this.defence.space()) {
+      case 'start':
+        this.checkpoint = this.takeCheckpoint();
+        return this.world.togglePause();
+      case 'resume':
+        return this.world.resume();
+      case 'pause':
+        return this.world.pause();
+      case null:
+        return;
+    }
   }
 
   /**
    * R: takes the world back to the moment physics last started, and the
-   * Tanks, what was paid and the undo history with it. With Waves on, that
-   * retries the current Wave: the Intermission before it, right after the
-   * refill, with its Enemies all to come again. Does nothing before the
-   * first start.
+   * Tanks, what was paid, the undo history and the Defence loop with it.
+   * With Waves on, that retries the Wave started then: the Intermission
+   * before it, right after the refill, with its Enemies all to come again.
+   * Does nothing before the first start.
    */
   reset(): void {
-    const snapshot = this.snapshot;
-    if (!snapshot) return;
-    this.defence.reset();
+    const checkpoint = this.checkpoint;
+    if (!checkpoint) return;
     this.world.reset();
-    // Everything comes back as it was at the snapshot, which already knows it.
+    // Everything comes back as it was at the checkpoint, which already knows
+    // it: hearing the start-over would forget the checkpoint itself.
     this.reader.read();
-    this.restore(snapshot);
+    this.restore(checkpoint);
   }
 
   /**
@@ -548,34 +575,27 @@ export class Game {
    * Droplets, Patches and Blasts, puts the world on the Level's Arena (the
    * sandbox Arena if it has none), makes the Wave list a copy of its Waves
    * (one Wave, the current table, if it has none) and sets its Tank
-   * maximums, if it has them, fills every Tank and empties the undo history.
-   * R has nothing to go back to. Then the Level's build, if it has one,
+   * maximums, if it has them. The world starts over, so the Game forgets
+   * everything (see `hear`): every Tank filled, the undo history empty, R
+   * with nothing to go back to. Then the Level's build, if it has one,
    * builds on the Sandbox world below the Game, for free: a gallery demo or
    * a stress test. What it makes joins the undo history at price 0, and if
-   * it started physics, R goes back to how it left the world. With Waves on,
-   * the Game is then in the first Wave's Intermission, and a build that
-   * started physics is paused where it left it. Clear loads the Level again:
-   * back to Wave 1.
+   * it started physics, R goes back to how it left the world. The Defence
+   * loop then loads the Level's Waves: with Waves on, the Game is in the
+   * first Wave's Intermission, and a build that started physics is paused
+   * where it left it. Clear loads the Level again: back to Wave 1.
    */
   load(level: Level): void {
-    const { arena, waves, tanks } = level;
+    const { arena, waves, tanks, build } = level;
     if (arena) checkArenaSize(arena);
     if (tanks) this.table.tanks = { ...tanks };
-    this.defence.load(waves);
     this.world.clear(arena);
-    this.reader.read();
-    this.inkTanks.fill();
-    this.strokes.clear();
-    this.fills.clear();
-    this.undoHistory = [];
-    this.snapshot = null;
-    if (!level.build) return;
-    level.build(this.world);
+    build?.(this.world);
     this.catchUp();
     // A build starts physics as its last act, so the world's snapshot is of now.
-    if (!this.world.isRunning) return;
-    this.snapshot = this.takeSnapshot();
-    if (this.defence.waves) this.world.pause();
+    const started = this.world.isRunning;
+    this.defence.load(waves);
+    if (started) this.checkpoint = this.takeCheckpoint();
   }
 
   /**
@@ -691,7 +711,10 @@ export class Game {
    * Learns from what happened: a Stroke or a Fill made below the Game joins
    * the history at price 0, and one that broke, was erased or removed is
    * gone from it, the erased ones refunded. What undo took back, the Game
-   * already knows.
+   * already knows. When the world starts over, the Game forgets everything,
+   * the one place it does: every Tank filled, nothing paid, the undo history
+   * empty, no checkpoint, and the Defence loop in the first Wave's
+   * Intermission.
    */
   private hear(entry: Entry): void {
     switch (entry.kind) {
@@ -707,12 +730,15 @@ export class Game {
         if (entry.why !== 'undone') this.heardWent(entry.what, entry.why === 'erased');
         return;
       case 'start-over':
-        // Something below the Game started over: nothing it knew of is left, as after a clear.
-        this.defence.reset();
+        // The world was cleared (Clear, or below the Game) or reset below the
+        // Game: nothing the Game knew of is left, nor anything to go back to.
+        // R hears none of its own.
         this.inkTanks.fill();
         this.strokes.clear();
         this.fills.clear();
         this.undoHistory = [];
+        this.checkpoint = null;
+        this.defence.restore(FIRST_INTERMISSION);
         return;
       case 'dropped':
         return this.pickUp(entry.ink);
@@ -758,21 +784,24 @@ export class Game {
     }
   }
 
-  private takeSnapshot(): Snapshot {
+  private takeCheckpoint(): Checkpoint {
     return {
       tanks: this.inkTanks.snapshot(),
       strokes: copyCharges(this.strokes),
       fills: new Map(this.fills),
       history: [...this.undoHistory],
+      loop: this.defence.snapshot(),
     };
   }
 
-  private restore(snapshot: Snapshot): void {
-    // A maximum lowered since the snapshot still holds: edits survive R.
-    this.inkTanks.restore(snapshot.tanks);
-    this.strokes = copyCharges(snapshot.strokes);
-    this.fills = new Map(snapshot.fills);
-    this.undoHistory = [...snapshot.history];
+  private restore(checkpoint: Checkpoint): void {
+    // A maximum lowered since the checkpoint still holds: edits survive R, as
+    // F2 edits to the Wave tables do.
+    this.inkTanks.restore(checkpoint.tanks);
+    this.strokes = copyCharges(checkpoint.strokes);
+    this.fills = new Map(checkpoint.fills);
+    this.undoHistory = [...checkpoint.history];
+    this.defence.restore(checkpoint.loop);
   }
 }
 

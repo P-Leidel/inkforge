@@ -357,6 +357,35 @@ describe('R, with Waves on', () => {
     game.togglePause();
     expect(game.defence.reading.toCome).toBe(3);
   });
+
+  it('after a start with Waves off, goes back to that start, the Defence loop as the world', () => {
+    const game = createGame(true, { waves: true });
+    const none = { crawler: 0, runner: 0, heavy: 0 };
+    game.load({
+      waves: [
+        { counts: none, gap: 1 },
+        { counts: { ...none, crawler: 1 }, gap: 1 },
+      ],
+    });
+    game.togglePause();
+    playWave(game);
+    expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
+
+    game.defence.waves = false;
+    drawLine(game, 400, 300, 200);
+    game.togglePause();
+    drawLine(game, 300, 600, 300);
+    stepFor(game, 1);
+    game.defence.waves = true;
+    game.reset();
+
+    expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
+    expect(game.defence.reading.rewards!.summary.wave).toBe(1);
+    expect(game.world.lines).toHaveLength(1);
+    expect(game.history).toHaveLength(1);
+    game.togglePause();
+    expect(game.defence.reading).toMatchObject({ phase: 'wave', wave: 2, toCome: 1 });
+  });
 });
 
 describe('Demos, with Waves on', () => {
