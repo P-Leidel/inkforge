@@ -1,5 +1,5 @@
 import { COLOURS, type Colour } from '../materials/colour';
-import type { EnemyType } from '../materials/enemy-table';
+import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
 import { STEP_SECONDS, type StepHooks } from '../sandbox/sandbox-world';
 import { arrivals, createWaveTable, type ReadonlyWaveTable, type WaveTable } from './wave-table';
 
@@ -89,6 +89,12 @@ export interface DefenceReading {
   readonly coreDestroyed: boolean;
   /** The rewards of the Wave that last ended, in an Intermission or once cleared; null before the first. */
   readonly rewards: Rewards | null;
+  /**
+   * The Analysis: how many of each Enemy type the next Wave sends, as its
+   * table is now, in every Intermission, the first included; null outside
+   * one. Not the order they come in, nor the gaps.
+   */
+  readonly next: Readonly<Record<EnemyType, number>> | null;
 }
 
 /**
@@ -198,7 +204,18 @@ export class DefenceLoop {
       toCome: this.current?.toCome.length ?? 0,
       coreDestroyed: this.coreDestroyed,
       rewards: this.ended[this.index - (this.cleared ? 0 : 1)] ?? null,
+      next: this.phase === 'intermission' ? this.nextCounts() : null,
     };
+  }
+
+  /** How many of each Enemy type the current Wave's table sends, each count taken whole. */
+  private nextCounts(): Record<EnemyType, number> {
+    const counts = Object.fromEntries(ENEMY_TYPES.map((type) => [type, 0])) as Record<
+      EnemyType,
+      number
+    >;
+    for (const type of arrivals(this.table)) counts[type]++;
+    return counts;
   }
 
   /** The current Wave's table: its list and its gap. Edit it with `edit`. */
