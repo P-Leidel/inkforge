@@ -33,8 +33,8 @@ export function gaugeCentre(colour: Colour): Vec2 {
 /** What the gauges read: each Colour's Tank, and whether Ink costs anything. */
 export type Tanks = Pick<Game, 'inkCosts' | 'tanks'>;
 
-/** What the palette reads of the Game: the Tanks, and whether the Eraser is on hand. */
-export type PaletteGame = Tanks & Pick<Game, 'eraser'>;
+/** What the palette reads of the Game: the Tanks, and what is on hand (`allowed`). */
+export type PaletteGame = Tanks & Pick<Game, 'allowed'>;
 
 /** What one gauge draws. */
 export interface GaugeView {
@@ -152,14 +152,14 @@ export class PaletteBar {
   /**
    * Highlights the picked tool, and shows each Colour's Tank, with `cost`
    * greyed out at the top of its Colour's gauge, red if it is more than is
-   * left. The Eraser's swatch shows only while the Game has it on hand.
+   * left. The Eraser's swatch shows only while the Game's `allowed` has it on hand.
    */
   show(picked: Tool, game: PaletteGame, cost: CostEstimate | null = null): void {
     const gauges = gaugeViews(game, cost);
     this.showSwatches(
       picked,
       gauges.map((gauge) => gauge.inLevel),
-      game.eraser,
+      game.allowed.eraser,
     );
     this.showGauges(gauges);
   }

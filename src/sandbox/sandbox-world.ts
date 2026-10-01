@@ -572,15 +572,17 @@ export class SandboxWorld {
    * sets off a Blast. What was attached to what went goes as when it
    * breaks: a green Object stuck to it falls free. Works paused and running.
    * Each thing erased goes as `erased` in the list of what happened.
+   * Returns how many things it erased.
    */
-  eraseAlong(path: readonly Vec2[], radius: number): void {
-    if (path.length === 0) return;
+  eraseAlong(path: readonly Vec2[], radius: number): number {
+    if (path.length === 0) return 0;
     const touched = this.query.touchedBy({ path, radius });
     const rank = (thing: Thing) => ERASE_ORDER[thing.thing];
     // What went with a host erased before it is already gone, and stays so.
     for (const thing of touched.sort((p, q) => rank(p) - rank(q))) {
       this.removeThing(thing, 'erased');
     }
+    return touched.length;
   }
 
   /**

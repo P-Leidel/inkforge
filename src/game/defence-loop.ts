@@ -1,6 +1,7 @@
 import { COLOURS, type Colour } from '../materials/colour';
 import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
 import { STEP_SECONDS, type StepHooks } from '../sandbox/sandbox-world';
+import type { Refusal } from './refusal';
 import { arrivals, createWaveTable, type ReadonlyWaveTable, type WaveTable } from './wave-table';
 
 /** What the Defence loop needs of the Sandbox world. The Sandbox world is one. */
@@ -34,19 +35,11 @@ export type Phase = 'intermission' | 'wave' | 'cleared' | 'lost';
 /** What the player may ask to do to the Arena: draw a Stroke, fill, erase or undo. */
 export type BuildAction = 'draw' | 'fill' | 'erase' | 'undo';
 
-/** Why the player may not do something now, whatever it would cost. */
-export type Bar =
-  /** The Ink Core is destroyed: only R or Clear go on, Waves on or off. */
-  | 'lost'
-  /** With Waves on, it is not a Wave: an Intermission, or the Level cleared. */
-  | 'not-now'
-  /** During a Wave, a Stroke reaches closer to an Enemy than about the Enemy's width. */
-  | 'near-enemy';
-
-/** Whether `reason` is a Bar rather than another reason something is refused. */
-export function isBar(reason: string | null): reason is Bar {
-  return reason === 'lost' || reason === 'not-now' || reason === 'near-enemy';
-}
+/**
+ * Why the player may not do something now, whatever it would cost: the
+ * Refusals the Defence loop decides.
+ */
+export type Bar = Extract<Refusal, 'lost' | 'not-now' | 'near-enemy'>;
 
 /**
  * What Space asks of physics: start it (the Game takes its checkpoint just

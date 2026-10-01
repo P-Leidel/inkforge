@@ -1,14 +1,16 @@
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type {
-  Bar,
-  ColourRefusal,
+  Allowed,
   CostEstimate,
+  EraseOutcome,
   GameFillOutcome,
   GameStrokeOutcome,
   Look,
   Prospect,
+  UndoOutcome,
 } from '../game/game';
+import { REFUSALS } from '../game/refusal';
 import { isFillClick } from '../stroke/fill-click';
 import type { RejectionReason } from '../stroke/stroke-pipeline';
 
@@ -23,23 +25,6 @@ export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
   'too-small': 'Too small',
   'self-crossing': 'Shape crosses itself',
   overlaps: 'Overlaps Terrain or an Object',
-};
-
-/** What a flash says about a Stroke or a Fill its Colour's Ink Tank can't pay for. */
-export const notEnough = (colour: Colour) => `Not enough ${colour}`;
-
-/** What a flash says about a Stroke or a Fill in a Colour the Level doesn't have. */
-export const NOT_IN_LEVEL = 'Not in this Level';
-
-/** What a flash says about a Stroke or a Fill refused for its Colour. */
-const colourRefusal = (reason: ColourRefusal, colour: Colour) =>
-  reason === 'not-in-level' ? NOT_IN_LEVEL : notEnough(colour);
-
-/** What a flash says about a barred Stroke or Fill, by why it was barred. */
-export const BAR_MESSAGES: Record<Bar, string> = {
-  lost: 'Ink Core destroyed: R or Clear',
-  'not-now': 'Not now',
-  'near-enemy': 'Too close to an Enemy',
 };
 
 /**
@@ -59,13 +44,16 @@ export interface DrawingCommands {
   /** The Sandbox world, as far as drawing input reads it: whether it changed. */
   readonly world: { readonly changes: number };
   releaseAt(point: Vec2): void;
-  eraseAlong(path: readonly Vec2[], radius: number): void;
-  undo(): void;
-  /** Whether the Eraser is on hand: put away in the Campaign. */
-  readonly eraser: boolean;
+  eraseAlong(path: readonly Vec2[], radius: number): EraseOutcome;
+  undo(): UndoOutcome;
+  /** What the player may do now: drawing input reads whether the Eraser is on hand here. */
+  readonly allowed: Pick<Allowed, 'eraser'>;
 }
 
-/** A refusal to show: `path` flashes red, with `message` at the pointer. */
+/**
+ * A refusal to show: `path` flashes red, with `message` at the pointer.
+ * A refused Eraser or undo has no path to flash: it is empty.
+ */
 export interface Flash {
   readonly path: readonly Vec2[];
   readonly message: string;
@@ -104,18 +92,23 @@ export type DrawingPreview =
 /**
  * Drawing input: turns a press, a drag and a release into commands, and
  * says what the preview and the flash show. It owns the picked tool, a
- * Colour or the Eraser (only while it is on hand), and remembers the Stroke
- * being drawn, the Eraser's path and its last look at what is pending. The scene forwards pointer and tool events
- * to it and draws what it is told.
+ * Colour or the Eraser (only while it is on hand, as the Game's `allowed`
+ * says), and remembers the Stroke being drawn, the Eraser's path and its
+ * last look at what is pending. The scene forwards pointer and tool events
+ * to it, and draws and flashes what it is told.
  */
 export class DrawingInput {
   private picked: Tool = 'grey';
   /** Where the pointer is over the canvas, or null while it is off it. */
   private pointer: Vec2 | null = null;
+  /** Where the pointer last was over the canvas: where a refused undo flashes. */
+  private lastPointer: Vec2 | null = null;
   /** Pointer samples of the Stroke being drawn, or null. */
   private stroke: Vec2[] | null = null;
   /** The Eraser's path since it last erased, while its button is held, or null. */
   private erasing: Vec2[] | null = null;
+  /** Whether this press of the Eraser has flashed its refusal: it flashes once a press. */
+  private erasingFlashed = false;
   /** The last look at the Stroke being drawn or the Fill under the pointer, or null. */
   private look: Look | null = null;
   /** What `look` was taken at: see `pendingLook`. */
@@ -135,7 +128,7 @@ export class DrawingInput {
    * picked.
    */
   pick(tool: Tool): void {
-    if (tool === 'eraser' && !this.commands.eraser) return;
+    if (tool === 'eraser' && !this.commands.allowed.eraser) return;
     this.picked = tool;
     if (tool === 'eraser') this.stroke = null;
     else this.erasing = null;
@@ -144,25 +137,27 @@ export class DrawingInput {
   /**
    * A button goes down at `point`. The left button starts a Stroke, or with
    * the Eraser, erases there and starts its path. The right button Releases
-   * the Frozen Object under it.
+   * the Frozen Object under it. Returns what to flash if erasing was
+   * refused: once a press.
    */
-  press(point: Vec2, button: 'left' | 'right'): void {
-    this.pointer = point;
+  press(point: Vec2, button: 'left' | 'right'): Flash | null {
+    this.pointer = this.lastPointer = point;
     if (button === 'right') {
       this.commands.releaseAt(point);
-      return;
+      return null;
     }
-    if (this.picked === 'eraser') {
-      this.erasing = [point];
-      this.erase();
-    } else {
+    if (this.picked !== 'eraser') {
       this.stroke = [point];
+      return null;
     }
+    this.erasing = [point];
+    this.erasingFlashed = false;
+    return this.erase();
   }
 
   /** The pointer moved to `point`: a held Stroke or Eraser follows it. */
   move(point: Vec2): void {
-    this.pointer = point;
+    this.pointer = this.lastPointer = point;
     this.stroke?.push(point);
     this.erasing?.push(point);
   }
@@ -176,12 +171,13 @@ export class DrawingInput {
    * The button went up. The Eraser erases the rest of its path. A click
    * fills the Object under it, anything longer is a Stroke. Returns what to
    * flash if the Fill or the Stroke was refused: already filled, rejected by
-   * the Stroke pipeline, barred (outside a Wave, or near an Enemy), in a
-   * Colour the Level doesn't have, or more than its Ink Tank holds.
+   * the Stroke pipeline, or refused (see `Refusal`). A held Eraser refused
+   * for the first time this press flashes that instead.
    */
   release(): Flash | null {
-    this.erase();
+    const erased = this.erase();
     this.erasing = null;
+    if (erased) return erased;
     const stroke = this.stroke;
     this.stroke = null;
     if (!stroke || this.picked === 'eraser') return null;
@@ -193,11 +189,8 @@ export class DrawingInput {
         case 'already-filled':
           message = 'Already filled';
           break;
-        case 'barred':
-          message = BAR_MESSAGES[outcome.reason];
-          break;
         case 'refused':
-          message = colourRefusal(outcome.reason, outcome.colour);
+          message = REFUSALS[outcome.reason].message(outcome.colour);
           break;
         case 'filled':
         case 'missed':
@@ -208,33 +201,36 @@ export class DrawingInput {
     }
     const outcome = this.commands.submitStroke(stroke, this.picked);
     if (outcome.kind === 'refused') {
-      return {
-        path: outcome.path,
-        message: colourRefusal(outcome.reason, outcome.colour),
-        pointer,
-      };
-    }
-    if (outcome.kind === 'barred') {
-      return { path: outcome.path, message: BAR_MESSAGES[outcome.reason], pointer };
+      const message = REFUSALS[outcome.reason].message(outcome.colour);
+      return { path: outcome.path, message, pointer };
     }
     if (outcome.kind !== 'rejected') return null;
     return { path: outcome.path, message: REJECTION_MESSAGES[outcome.reason], pointer };
   }
 
-  /** Takes back the most recent Stroke or Fill. */
-  undo(): void {
-    this.commands.undo();
+  /**
+   * Takes back the most recent Stroke or Fill. Returns what to flash, where
+   * the pointer last was, if undo was refused: once the Ink Core is
+   * destroyed, or as the rules switches bar it.
+   */
+  undo(): Flash | null {
+    const outcome = this.commands.undo();
+    const pointer = this.lastPointer;
+    if (outcome.kind !== 'refused' || !pointer) return null;
+    return { path: [], message: REFUSALS[outcome.reason].message(), pointer };
   }
 
   /**
-   * Once a frame, before physics steps: with the Eraser picked but put away
-   * (a Campaign Level was loaded), the pick falls back to grey; otherwise a
-   * held Eraser erases along its path since it last erased, and carries on
-   * from its end. Held still, it keeps erasing what moves into the brush.
+   * Once a frame, before physics steps: with the Eraser picked but not on
+   * hand (a Campaign Level was loaded), the pick falls back to grey;
+   * otherwise a held Eraser erases along its path since it last erased, and
+   * carries on from its end. Held still, it keeps erasing what moves into
+   * the brush. Returns what to flash if erasing was refused for the first
+   * time this press.
    */
-  tick(): void {
-    if (this.picked === 'eraser' && !this.commands.eraser) this.pick('grey');
-    this.erase();
+  tick(): Flash | null {
+    if (this.picked === 'eraser' && !this.commands.allowed.eraser) this.pick('grey');
+    return this.erase();
   }
 
   /**
@@ -257,7 +253,7 @@ export class DrawingInput {
       colour,
       samples,
       closes: prospect?.kind === 'object',
-      refused: refusal !== null && refusal !== 'not-enough',
+      refused: refusal !== null && REFUSALS[refusal].whateverItCosts,
       pointer,
       cost: prospect?.cost ?? null,
     };
@@ -295,10 +291,19 @@ export class DrawingInput {
     return this.look;
   }
 
-  private erase(): void {
+  /**
+   * Erases along the held Eraser's path since it last erased, and carries on
+   * from its end. Returns what to flash if it was refused, only the first
+   * time this press.
+   */
+  private erase(): Flash | null {
     const path = this.erasing;
-    if (!path) return;
-    this.commands.eraseAlong(path, ERASER_RADIUS);
-    this.erasing = [path[path.length - 1]!];
+    if (!path) return null;
+    const outcome = this.commands.eraseAlong(path, ERASER_RADIUS);
+    const pointer = path[path.length - 1]!;
+    this.erasing = [pointer];
+    if (outcome.kind !== 'refused' || this.erasingFlashed) return null;
+    this.erasingFlashed = true;
+    return { path: [], message: REFUSALS[outcome.reason].message(), pointer };
   }
 }
