@@ -219,8 +219,29 @@ describe('A Session in the Campaign', () => {
     expect(session.reading).toEqual({
       name: 'First',
       status: null,
-      campaign: { index: 0, levels: 3, hasNext: true },
+      campaign: { index: 0, levels: 3, hasNext: true, hints: [] },
     });
+  });
+
+  it('gives the hints of what is new in the next Wave in its Intermission, and none during a Wave', () => {
+    const game = createGame(true);
+    const levels: readonly Level[] = [
+      {
+        name: 'Hinted',
+        waves: [EMPTY_WAVE, { counts: { crawler: 1, runner: 0, heavy: 0 }, gap: 1 }],
+        hints: { crawler: 'New: Crawlers' },
+      },
+    ];
+    const session = new Session(game, new Campaign(levels, new FakeStore()));
+    session.playCampaign(0);
+    expect(session.reading.campaign?.hints).toEqual([]);
+
+    playWave(game, session);
+
+    expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
+    expect(session.reading.campaign?.hints).toEqual(['New: Crawlers']);
+    game.togglePause();
+    expect(session.reading.campaign?.hints).toEqual([]);
   });
 
   it("can't play a locked Level", () => {
@@ -250,7 +271,7 @@ describe('A Session in the Campaign', () => {
     expect(session.playing).toBe(LEVELS[1]);
     expect(game.world.lines).toHaveLength(1);
     expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1, rewards: null });
-    expect(session.reading.campaign).toEqual({ index: 1, levels: 3, hasNext: true });
+    expect(session.reading.campaign).toEqual({ index: 1, levels: 3, hasNext: true, hints: [] });
   });
 
   it('Next Level does nothing until the Level is cleared, nor outside the Campaign', () => {

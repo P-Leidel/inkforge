@@ -1,4 +1,5 @@
 import type { StressTest } from '../stress-tests/stress-test';
+import { hintLines } from './analysis';
 import type { Campaign } from './campaign';
 import type { Game } from './game';
 import { SANDBOX_LEVEL, type Level } from './level';
@@ -11,6 +12,11 @@ export interface CampaignPlace {
   readonly levels: number;
   /** Whether a Level comes after it: after the last, the Campaign is cleared. */
   readonly hasNext: boolean;
+  /**
+   * In an Intermission, the hint for each Colour and Enemy type new to the
+   * Campaign in the next Wave, one line each; none outside an Intermission.
+   */
+  readonly hints: readonly string[];
 }
 
 /** What the scene shows of what is being played. */
@@ -116,6 +122,12 @@ export class Session {
   private get place(): CampaignPlace | null {
     const index = this.campaignIndex;
     if (index === null || !this.campaign) return null;
-    return { index, levels: this.campaign.levels.length, hasNext: this.campaign.hasNext(index) };
+    const { phase, wave } = this.game.defence.reading;
+    return {
+      index,
+      levels: this.campaign.levels.length,
+      hasNext: this.campaign.hasNext(index),
+      hints: phase === 'intermission' ? hintLines(this.campaign.levels, index, wave - 1) : [],
+    };
   }
 }

@@ -181,6 +181,35 @@ describe('Space', () => {
 });
 
 describe('An Intermission', () => {
+  it('reads the next Wave: each Enemy type it sends and how many, the first included', () => {
+    const { defence, world } = loop({
+      on: true,
+      waves: [
+        { crawler: 3, gap: 0 },
+        { crawler: 2.7, runner: 1, heavy: -1 },
+      ],
+    });
+    expect(defence.reading.next).toEqual({ crawler: 3, runner: 0, heavy: 0 });
+
+    space(defence, world);
+    expect(defence.reading.next).toBeNull();
+    step(defence, world, 3);
+    killAll(defence, world);
+
+    expect(defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
+    expect(defence.reading.next).toEqual({ crawler: 2, runner: 1, heavy: 0 });
+  });
+
+  it('reads no next Wave with Waves off, nor once the Level is cleared', () => {
+    expect(loop().defence.reading.next).toBeNull();
+
+    const { defence, world } = loop({ on: true, waves: [{}] });
+    space(defence, world);
+    step(defence, world);
+    expect(defence.reading.phase).toBe('cleared');
+    expect(defence.reading.next).toBeNull();
+  });
+
   it('comes before the first Wave: nothing can be built, and Space starts the Wave', () => {
     const { defence, world } = loop({ on: true, wave: { crawler: 2 } });
     expect(defence.reading).toMatchObject({

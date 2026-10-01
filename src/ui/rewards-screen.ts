@@ -1,18 +1,28 @@
 import type Phaser from 'phaser';
-import type { DefenceReading } from '../game/defence-loop';
+import type { DefenceReading, WaveSummary } from '../game/defence-loop';
 import { inLineLength } from '../game/ink-table';
 import type { CampaignPlace } from '../game/session';
 import { COLOURS } from '../materials/colour';
+import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
 import { FONT_FAMILY, PALETTE } from '../rendering/palette';
 import { textButton } from './text-button';
 
+/** What the panel calls each Enemy type: one of it, and more. */
+const ENEMY_NAMES: Readonly<Record<EnemyType, readonly [string, string]>> = {
+  crawler: ['Crawler', 'Crawlers'],
+  runner: ['Runner', 'Runners'],
+  heavy: ['Heavy', 'Heavies'],
+};
+
 /**
- * What the rewards screen says, line by line: the summary of the Wave that
- * ended, in an Intermission after it or once the Level is cleared, and in
- * the Campaign (`campaign`, where in it), that the Level is lost. Null while
- * there is nothing to show: with Waves off, during a Wave, before the first
- * Wave, and once lost outside the Campaign, where the HUD says what to do.
- * A choice of rewards would be listed below the summary.
+ * What the rewards screen says, line by line. In an Intermission: the
+ * summary of the Wave that ended, if one has, then the Analysis, each Enemy
+ * type the next Wave sends and how many, and in the Campaign (`campaign`,
+ * where in it) a hint for each Colour and Enemy type new in it. Once the
+ * Level is cleared, the last Wave's summary; in the Campaign, once it is
+ * lost, that it is. Null while there is nothing to show: with Waves off,
+ * during a Wave, and once lost outside the Campaign, where the HUD says what
+ * to do. A choice of rewards would be listed below the summary.
  */
 export function rewardsLines(
   reading: DefenceReading,
@@ -22,23 +32,46 @@ export function rewardsLines(
   if (phase === 'lost' && campaign) {
     return [`WAVE ${wave} OF ${waves} LOST`, '', 'The Ink Core is destroyed'];
   }
-  if (!rewards || (phase !== 'intermission' && phase !== 'cleared')) return null;
-  const { summary } = rewards;
+  if (phase === 'intermission') {
+    return [
+      ...(rewards ? [...summaryLines(rewards.summary, waves), 'Tanks refilled', ''] : []),
+      ...analysisLines(reading),
+      ...(campaign?.hints ?? []),
+      '',
+      `Space: start Wave ${wave}`,
+    ];
+  }
+  if (!rewards || phase !== 'cleared') return null;
+  return [
+    'LEVEL CLEARED',
+    ...summaryLines(rewards.summary, waves).slice(1),
+    '',
+    !campaign
+      ? 'Clear: play the Level again'
+      : campaign.hasNext
+        ? `Level ${campaign.index + 2} unlocked`
+        : 'Campaign cleared',
+  ];
+}
+
+/** A Wave's summary: its title, a blank line, its kills and Ink Core HP, and the Ink picked up. */
+function summaryLines(summary: WaveSummary, waves: number): string[] {
   const ink = COLOURS.map((colour) => `${colour} ${Math.round(inLineLength(summary.ink[colour]))}`);
   return [
-    phase === 'cleared' ? 'LEVEL CLEARED' : `WAVE ${summary.wave} OF ${waves} SURVIVED`,
+    `WAVE ${summary.wave} OF ${waves} SURVIVED`,
     '',
     `Kills ${summary.kills}    Ink Core HP ${Math.round(summary.coreHp)}`,
     `Ink picked up    ${ink.join('   ')}`,
-    '',
-    phase === 'intermission'
-      ? `Tanks refilled    Space: start Wave ${wave}`
-      : !campaign
-        ? 'Clear: play the Level again'
-        : campaign.hasNext
-          ? `Level ${campaign.index + 2} unlocked`
-          : 'Campaign cleared',
   ];
+}
+
+/** The Analysis: which Wave comes next, and each Enemy type it sends with how many. */
+function analysisLines({ wave, waves, next }: DefenceReading): string[] {
+  const sent = ENEMY_TYPES.filter((type) => (next?.[type] ?? 0) > 0).map((type) => {
+    const count = next![type];
+    return `${count} ${ENEMY_NAMES[type][count === 1 ? 0 : 1]}`;
+  });
+  return [`Next: Wave ${wave} of ${waves}    ${sent.length > 0 ? sent.join('   ') : 'no Enemies'}`];
 }
 
 /** What a button on the rewards screen does, once a Campaign Level is cleared or lost. */
@@ -81,9 +114,9 @@ const BUTTON_ROW = 70;
 
 /**
  * The rewards screen: a panel in the middle of the Arena during an
- * Intermission, with the summary of the Wave that ended, and in the
- * Campaign, once the Level is cleared or lost, the buttons of what to do
- * next. Everything behind it stays as the Wave left it. A button's click
+ * Intermission, with the summary of the Wave that ended and the Analysis of
+ * the next, and in the Campaign, once the Level is cleared or lost, the
+ * buttons of what to do next. Everything behind it stays as the Wave left it. A button's click
  * goes to `onAction`; what it does is the scene's to forward.
  */
 export class RewardsScreen {
@@ -140,7 +173,7 @@ export class RewardsScreen {
     const { x, y } = this.panel;
     const row = actions.length > 0 ? BUTTON_ROW : 0;
     const height = Math.max(260, this.text.height + 80 + row);
-    this.panel.setSize(this.panel.width, height);
+    this.panel.setSize(Math.max(760, this.text.width + 80), height);
     this.text.setY(y - row / 2);
     const buttons = actions.map((action) => this.buttons.get(action)!);
     const total =

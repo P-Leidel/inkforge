@@ -18,19 +18,39 @@ const reading = (over: Partial<DefenceReading> = {}): DefenceReading => ({
   toCome: 0,
   coreDestroyed: false,
   rewards: { summary },
+  next: { crawler: 4, runner: 2, heavy: 1 },
   ...over,
 });
 
 describe('The rewards screen', () => {
-  it("sums up the Wave that ended in the Intermission after it, and says what's next", () => {
+  it('sums up the Wave that ended in the Intermission after it, then the next Wave', () => {
     expect(rewardsLines(reading())).toEqual([
       'WAVE 1 OF 3 SURVIVED',
       '',
       'Kills 4    Ink Core HP 8',
       'Ink picked up    grey 120   blue 40   green 0   black 0   red 0',
+      'Tanks refilled',
       '',
-      'Tanks refilled    Space: start Wave 2',
+      'Next: Wave 2 of 3    4 Crawlers   2 Runners   1 Heavy',
+      '',
+      'Space: start Wave 2',
     ]);
+  });
+
+  it('shows the next Wave alone before the first, leaving out what it does not send', () => {
+    const first = reading({ wave: 1, rewards: null, next: { crawler: 1, runner: 0, heavy: 3 } });
+
+    expect(rewardsLines(first)).toEqual([
+      'Next: Wave 1 of 3    1 Crawler   3 Heavies',
+      '',
+      'Space: start Wave 1',
+    ]);
+  });
+
+  it('says a Wave that sends nothing sends no Enemies', () => {
+    const empty = reading({ wave: 1, rewards: null, next: { crawler: 0, runner: 0, heavy: 0 } });
+
+    expect(rewardsLines(empty)![0]).toBe('Next: Wave 1 of 3    no Enemies');
   });
 
   it('says the Level is cleared after the last Wave', () => {
@@ -42,26 +62,45 @@ describe('The rewards screen', () => {
     expect(lines!.at(-1)).toBe('Clear: play the Level again');
   });
 
-  it('shows nothing before the first Wave, during a Wave or with Waves off', () => {
-    expect(rewardsLines(reading({ wave: 1, rewards: null }))).toBeNull();
-    expect(rewardsLines(reading({ phase: 'wave' }))).toBeNull();
-    expect(rewardsLines(reading({ phase: null }))).toBeNull();
+  it('shows nothing during a Wave or with Waves off', () => {
+    expect(rewardsLines(reading({ phase: 'wave', next: null }))).toBeNull();
+    expect(rewardsLines(reading({ phase: null, next: null }))).toBeNull();
   });
 
   it('shows nothing once lost outside the Campaign: the HUD says R or Clear', () => {
-    expect(rewardsLines(reading({ phase: 'lost', coreDestroyed: true }))).toBeNull();
+    expect(rewardsLines(reading({ phase: 'lost', coreDestroyed: true, next: null }))).toBeNull();
   });
 });
 
 describe('The rewards screen in the Campaign', () => {
-  const second = { index: 1, levels: 3, hasNext: true };
-  const last = { index: 2, levels: 3, hasNext: false };
+  const second = { index: 1, levels: 3, hasNext: true, hints: [] };
+  const last = { index: 2, levels: 3, hasNext: false, hints: [] };
   const cleared = reading({
     phase: 'cleared',
     wave: 3,
     rewards: { summary: { ...summary, wave: 3 } },
+    next: null,
   });
-  const lost = reading({ phase: 'lost', coreDestroyed: true });
+  const lost = reading({ phase: 'lost', coreDestroyed: true, next: null });
+
+  it('gives a line for each Colour and Enemy type new in the next Wave, below it', () => {
+    const hinted = { ...second, hints: ['New: blue bounces', 'New: Heavies'] };
+
+    expect(rewardsLines(reading({ wave: 1, rewards: null }), hinted)).toEqual([
+      'Next: Wave 1 of 3    4 Crawlers   2 Runners   1 Heavy',
+      'New: blue bounces',
+      'New: Heavies',
+      '',
+      'Space: start Wave 1',
+    ]);
+    expect(rewardsLines(reading(), hinted)!.slice(-5)).toEqual([
+      'Next: Wave 2 of 3    4 Crawlers   2 Runners   1 Heavy',
+      'New: blue bounces',
+      'New: Heavies',
+      '',
+      'Space: start Wave 2',
+    ]);
+  });
 
   it('offers Next Level and the Level list once a Level is cleared', () => {
     expect(rewardsLines(cleared, second)!.at(-1)).toBe('Level 3 unlocked');
