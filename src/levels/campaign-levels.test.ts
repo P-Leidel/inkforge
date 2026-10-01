@@ -18,8 +18,7 @@ describe('The Campaign Levels', () => {
 
       const reading = game.defence.reading;
       expect(reading).toMatchObject({ phase: 'intermission', wave: 1 });
-      expect(reading.waves).toBeGreaterThanOrEqual(2);
-      expect(reading.waves).toBeLessThanOrEqual(5);
+      expect(reading.waves).toBe(level.waves!.length);
     },
   );
 });
