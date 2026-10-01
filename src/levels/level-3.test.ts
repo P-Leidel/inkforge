@@ -3,13 +3,7 @@ import { checkArenaSize } from '../game/level';
 import { games } from '../game/test-support';
 import { COLOURS } from '../materials/colour';
 import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
-import {
-  LEVEL_3,
-  LEVEL_3_GROUND_Y,
-  LEVEL_3_HINTS,
-  LEVEL_3_OVERHANG,
-  LEVEL_3_VALLEY,
-} from './level-3';
+import { LEVEL_3, LEVEL_3_GROUND_Y, LEVEL_3_OVERHANG, LEVEL_3_VALLEY } from './level-3';
 
 const createGame = games();
 
@@ -71,7 +65,7 @@ describe('Level 3', () => {
   });
 
   it('has a hint for red, the Colour new here', () => {
-    expect(Object.keys(LEVEL_3_HINTS)).toEqual(['red']);
+    expect(Object.keys(LEVEL_3.hints!)).toEqual(['red']);
   });
 
   it.each(ENEMY_TYPES)(

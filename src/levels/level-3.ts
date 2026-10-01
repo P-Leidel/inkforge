@@ -1,8 +1,6 @@
 import { DEFAULT_INK_TABLE } from '../game/ink-table';
 import type { Level } from '../game/level';
 import type { Polygon } from '../geometry/polygon';
-import type { Colour } from '../materials/colour';
-import type { EnemyType } from '../materials/enemy-table';
 import { ARENA_HEIGHT, ARENA_WIDTH, type Arena } from '../sandbox/arena';
 
 /*
@@ -107,12 +105,8 @@ export const LEVEL_3: Level = {
     { counts: { crawler: 4, runner: 3, heavy: 3 }, gap: 1.5 },
     { counts: { crawler: 5, runner: 4, heavy: 3 }, gap: 1.25 },
   ],
-};
-
-/**
- * Level 3's first-appearance hints, for the Analysis (#133) to show: red is
- * the one Colour new to the Campaign here, and no Enemy type is.
- */
-export const LEVEL_3_HINTS: Partial<Record<Colour | EnemyType, string>> = {
-  red: 'New: red bursts when it breaks, blasting everything near it',
+  // Red is the one Colour new to the Campaign here, and no Enemy type is.
+  hints: {
+    red: 'New: red bursts when it breaks, blasting everything near it',
+  },
 };
