@@ -29,25 +29,31 @@ npm run dev        # dev server at http://localhost:5173
 
 CI runs lint, format check, typecheck, tests and build on every push and pull request. Every push to `main` is deployed to GitHub Pages.
 
-## Playing the sandbox
+## Playing
 
-| Action                                                   | Input                         |
-| -------------------------------------------------------- | ----------------------------- |
-| Pick a Colour (grey, blue, green, black, red)            | Keys 1–5 or click the palette |
-| Draw a Line (open Stroke)                                | Hold the left button and drag |
-| Draw an Object (end near the start)                      | Drag back to the green marker |
-| Fill an Object with the picked Colour                    | Click inside it (no drag)     |
-| Run / pause physics; with Waves on, start the Wave       | Space                         |
-| Reset to when physics last started                       | R                             |
-| Release a Frozen Object (while running)                  | Right-click it                |
-| Undo the last Stroke or Fill still there (see below)     | Ctrl+Z                        |
-| Erase what the brush passes over (for testing)           | E or the palette, then drag   |
-| Stats; press again for colliders, durability, HP, Blasts | F1                            |
-| Copy the stats, with browser and GPU                     | F3                            |
-| Send in a Crawler from the Spawn, paused or running      | Shift+1                       |
-| Send in a Runner from the Spawn, paused or running       | Shift+2                       |
-| Send in a Heavy from the Spawn, paused or running        | Shift+3                       |
-| Tuning panel (Ink costs, Ink, Waves, the Wave, tables)   | F2                            |
+The game opens on the **title screen**: **Campaign**, **Sandbox** and **Gallery**. The toolbar's **Title** button goes back to it from anywhere; while it is open, nothing plays behind it.
+
+| Action                                                   | Input                                                       |
+| -------------------------------------------------------- | ----------------------------------------------------------- |
+| Pick a Colour (grey, blue, green, black, red)            | Keys 1–5 or click the palette                               |
+| Draw a Line (open Stroke)                                | Hold the left button and drag                               |
+| Draw an Object (end near the start)                      | Drag back to the green marker                               |
+| Fill an Object with the picked Colour                    | Click inside it (no drag)                                   |
+| Run / pause physics; with Waves on, start the Wave       | Space                                                       |
+| Reset to when physics last started                       | R                                                           |
+| Release a Frozen Object (while running)                  | Right-click it                                              |
+| Undo the last Stroke or Fill still there (see below)     | Ctrl+Z                                                      |
+| Erase what the brush passes over (for testing)           | E or the palette, then drag                                 |
+| Stats; press again for colliders, durability, HP, Blasts | F1                                                          |
+| Copy the stats, with browser and GPU                     | F3                                                          |
+| Send in a Crawler from the Spawn, paused or running      | Shift+1                                                     |
+| Send in a Runner from the Spawn, paused or running       | Shift+2                                                     |
+| Send in a Heavy from the Spawn, paused or running        | Shift+3                                                     |
+| Tuning panel (Ink costs, Ink, Waves, the Wave, tables)   | F2                                                          |
+| Open the Campaign's Level list, the Sandbox or a demo    | Title screen                                                |
+| Back to the title screen                                 | **Title** on the toolbar                                    |
+| Next Level, once a Campaign Level is cleared             | **Next Level** on the panel                                 |
+| Retry the lost Wave / restart a lost Level               | **Retry Wave** (R) / **Restart Level** (Clear) on the panel |
 
 **Enemies** walk in from the **Spawn**, beyond the edge of the screen on the side the Arena names for it (the left in the sandbox Arena): the ground carries on out of view as a lane about 240 px long, closed by a wall at its far end, and a small arrow at that edge shows where they come in. Shift+1 sends in a **Crawler**, a grey-brown box that stands upright and never turns. It walks toward the **Ink Core**, the glowing block on the plateau at the top right, pushed by a force toward its walking speed that is never more than its push, one times its own weight ([ADR 0010](docs/adr/0010-enemies-walk-by-capped-force.md)). It only pushes while it stands on something no steeper than 45°, so it climbs the slope and rides up onto a Line lying on the ground, but not a steeper ramp, where it stops and presses. Crawlers and Runners climb each other: one pressing another Enemy whose top, with any Enemies standing on it, is at most 1.2 of its own heights above its feet gets an upward force, capped like its push ([ADR 0011](docs/adr/0011-enemies-climb-by-capped-force.md)), and presses a higher step instead. Heavies never climb, but can be climbed. They climb a wall of the Terrain, an Object or a Line the same way, however steep, when its top is within that step ([ADR 0013](docs/adr/0013-enemies-climb-low-walls.md)), so a Crawler standing on another gets over a wall two Crawlers tall. Against a wall three Crawlers tall, the first three build a staircase that the rest climb over, and a Runner hops over a slower Enemy in its way. Enemies standing on one another make a Stack, which presses harder: each wears what it presses half again as fast for every other Enemy in it. Glue drags them like any moving body, and Blasts push them. One that touches the Ink Core takes 1 of its 10 HP and disappears; the bar above the Ink Core shows what is left. Only Enemies damage it. An Enemy that falls below the bottom of the screen dies. One thrown back over the Spawn's edge walks in again, but anything else that goes wholly out of view over it is removed, like a Droplet leaving the Arena: no Debris, no Fill comes out, red doesn't go off and nothing is refunded. Nothing can be drawn beyond the Spawn's edge: a Line that runs past it is cut there, and an Object reaching past it is refused. R brings back the Enemies as they were and the Ink Core's HP, and Clear removes the Enemies and makes the Ink Core whole. The numbers live in the enemy table ([`src/materials/enemy-table.ts`](src/materials/enemy-table.ts)), in F2's **Enemies** section.
 
@@ -107,7 +113,9 @@ F2 opens a panel with an **Ink** section, a **Wave** section, every number of th
 
 A price edit leaves what was already charged at its price, so undo still refunds what was paid. Lowering a Tank maximum empties the Tank down to it at once, and no refund or R fills it beyond it; raising one leaves the Tank as it is, and Clear fills it.
 
-The toolbar's **Clear** loads the current Level again (the sandbox, a stress test or a demo), and **Sandbox** goes back to the empty sandbox. The rest of the toolbar clears the Arena and runs the engine stress tests: **Ball cannon** (3000 px/s balls at a 4 px black Line), **Box tower** (10 drawn boxes) and **Pebbles** (100 drawn pebbles). Each shows its measurements under the toolbar.
+The **Campaign** is three Levels played in order. Its **Level list** shows all three; Level 1 is always unlocked, and each other once the one before is cleared. Locked Levels show but can't be opened. A Campaign Level is played like any Level with Waves. Once its last Wave is cleared, the next Level is unlocked and the panel offers **Next Level**, which loads it at its first Wave, and **Level list**; after Level 3 it says "Campaign cleared". If the Ink Core is destroyed, the panel offers **Retry Wave** (as R), **Restart Level** (as Clear, from Wave 1) and **Level list**; the Campaign stays as it was. Which Levels are unlocked is saved in the browser's `localStorage` (key `inkforge.campaign.v1`) and nothing else; an unreadable record unlocks only Level 1. For now the three Levels are stand-ins, the sandbox Arena with two or three short Waves each, until the real ones land ([milestone 5 spec](docs/specs/m5-defence-loop.md)). F1 and F2 work there as everywhere; Ink costs stay off until F2 turns them on. The title screen's **Sandbox** opens the empty sandbox with Waves off, and its **Gallery** lists the same demos as the toolbar's.
+
+The toolbar's **Clear** loads the current Level again (the sandbox, a stress test or a demo), and **Sandbox** goes back to the empty sandbox. The **Stress tests ▾** menu clears the Arena and runs one of the engine stress tests: **Ball cannon** (3000 px/s balls at a 4 px black Line), **Box tower** (10 drawn boxes) and **Pebbles** (100 drawn pebbles). Each shows its measurements under the toolbar. A click beside an open menu only closes it.
 
 The **Gallery ▾** button at the toolbar's right end drops down a list of ready-made demos of the Colours; picking one clears the Arena and plays it, and clicking anywhere else closes the list. **Bounce** drops the same ball onto a Line of each Colour: blue bounces it back up, and red goes off under it; **Slide** puts the same box on a ramp of each Colour; **Knock** throws the same ball at a hollow, a grey-filled and a black-filled box; **Drop** drops a box of each Colour from high up: red explodes, well away from the rest; **Third bounce** bounces a blue ball until its third bounce breaks it; **Boulder** drops the same boulder onto a grey and a black Line: it smashes through grey and cracks black; **Rubble** breaks a grey-filled and a black-filled box side by side on a short black Line: the pebbles and stones spill onto a grey Line below, and the stones crack it; **Glue** rolls a hollow, a grey-filled and a black-filled ball across green floors, and a hollow one across grey: on green the hollow ball stops first and the black-filled one last; **Stick** throws green Objects: a box glues itself under a Line and hangs there, a ball glues itself to a wall, and a box knocks a Frozen box loose and tumbles down stuck to it; **Spill** breaks a blue-filled and a green-filled box on anvils above a Line and a Frozen box: their Droplets coat everything they land on, and a ball thrown up after them bounces high off the blue Patches and stops dead on the green ones; **Chain** drops a bomb at the end of a row of Frozen red bombs that curls up into the air: they go off one by one, straight through a black Line, and knock two Frozen boxes loose, while a bomb hanging out of reach stays; **Shrapnel** drops a grey-filled red box onto an anvil: its Blast throws the pebbles, which knock loose two Frozen posts the Blast itself can't reach; **Fuse** drops a bomb on the far end of a red Line winding down across the Arena: it burns Piece by Piece, round every bend, to a Frozen bomb whose Blast knocks two Frozen boxes loose; **Mines** drops a box on each of two red strips: the one set down gently leaves its strip alone, and the grey-filled one dropped from high sets its strip off and is blown apart, pebbles and all; and **Demolition** is the worst case for performance: a big bomb dropped at the end of a row of four more sets off a chain that tears through three grey-filled boxes and a black-filled one, a blue- and a green-filled Object and a wall of grey, blue, green and black Lines, leaving about 60 Rubble, 30 Droplets and five Blasts in well under a second; **Staircase** walks six Crawlers at a Terrain wall three of them tall: three build a staircase at it and the rest climb over. **Three Waves** is a Level of three Waves, each bigger than the last, and turns Waves on: two grey Lines and a box dropped onto one to start with.
 
@@ -133,17 +141,18 @@ Performance is judged on one baseline machine: a desktop with an NVIDIA GeForce 
 │   ├── stroke/          Stroke pipeline: raw pointer samples → Line, Object or rejection
 │   ├── physics/         Physics module; the only code that talks to the engine (ADR 0001)
 │   ├── sandbox/         Headless Sandbox world: a module per kind of Arena contents, the Contact ledger, the Material rules, pause, Reset
-│   ├── game/            Headless Game over the Sandbox world: the Ink table, Ink Tanks, prices, undo and refunds (ADR 0009); the Session, what is being played
+│   ├── game/            Headless Game over the Sandbox world: the Ink table, Ink Tanks, prices, undo and refunds (ADR 0009); the Session, what is being played; the Campaign, which Levels are unlocked
+│   ├── levels/          The Campaign's Levels (plain data)
 │   ├── stress-tests/    Scripted engine stress tests (ball cannon, box tower, pebbles)
 │   ├── gallery/         Colour gallery demos, built through the Sandbox world
 │   ├── input/           Drawing input: a press, a drag and a release → Game commands, previews and flashes
 │   ├── scenes/          Phaser scenes: forward events to Drawing input, draw what it and the world show
 │   ├── rendering/       Phaser drawing of the Arena: Strokes, Fills, Rubble, Patches, Blasts, Debris, the Stroke preview and the rejection flash
-│   ├── ui/              Controls: toolbar, Gallery menu, palette with the Ink gauges, HUD, F2 tuning panel
+│   ├── ui/              Controls: title screen and Level list, toolbar, Gallery menu, palette with the Ink gauges, HUD, F2 tuning panel
 │   └── debug/           F1 stats and debug view, frame times, F3 readings
 ├── scripts/             Developer scripts: the engine verdict and the Phaser Box2D patch
 ├── index.html
 └── CONTEXT.md           Domain glossary
 ```
 
-`geometry/`, `materials/`, `stroke/`, `physics/`, `sandbox/`, `game/`, `input/` and `gallery/` have no Phaser dependency and run headless under Vitest. Tests live next to the code they cover as `*.test.ts`.
+`geometry/`, `materials/`, `stroke/`, `physics/`, `sandbox/`, `game/`, `levels/`, `input/` and `gallery/` have no Phaser dependency and run headless under Vitest. Tests live next to the code they cover as `*.test.ts`.

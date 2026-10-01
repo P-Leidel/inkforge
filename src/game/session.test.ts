@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { THREE_WAVES_DEMO } from '../gallery/gallery';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
+import { editEnemies } from '../materials/enemy-table';
 import { BOX_TOWER_LEVEL } from '../stress-tests/box-tower';
 import type { StressTest } from '../stress-tests/stress-test';
 import { dragAlong } from '../stroke/pointer-paths';
+import { Campaign, type CampaignStore } from './campaign';
 import type { Game } from './game';
 import { SANDBOX_LEVEL, type Level } from './level';
 import { Session } from './session';
@@ -46,7 +48,7 @@ describe('A Session', () => {
     const session = new Session(createGame(true));
 
     expect(session.playing).toBe(SANDBOX_LEVEL);
-    expect(session.reading).toEqual({ name: 'Sandbox', status: null });
+    expect(session.reading).toEqual({ name: 'Sandbox', status: null, campaign: null });
   });
 
   it('play loads a Level and remembers it', () => {
@@ -57,7 +59,7 @@ describe('A Session', () => {
 
     expect(session.playing).toBe(LINE_LEVEL);
     expect(game.world.lines).toHaveLength(1);
-    expect(session.reading).toEqual({ name: 'One Line', status: null });
+    expect(session.reading).toEqual({ name: 'One Line', status: null, campaign: null });
   });
 
   it('clear loads the same Level again', () => {
@@ -163,5 +165,168 @@ describe('A Session', () => {
 
     expect(session.stressTest).not.toBeNull();
     expect(session.stressTest).not.toBe(first);
+  });
+});
+
+/** A store in memory. */
+class FakeStore implements CampaignStore {
+  record: string | null = null;
+
+  read(): string | null {
+    return this.record;
+  }
+
+  write(record: string): void {
+    this.record = record;
+  }
+}
+
+/** A Wave that sends in nothing, so it ends on its first step. */
+const EMPTY_WAVE = { counts: { crawler: 0, runner: 0, heavy: 0 }, gap: 1 };
+
+/** Three Campaign Levels of two empty Waves each, the second building a Line. */
+const LEVELS: readonly Level[] = [
+  { name: 'First', waves: [EMPTY_WAVE, EMPTY_WAVE] },
+  { ...LINE_LEVEL, name: 'Second', waves: [EMPTY_WAVE, EMPTY_WAVE] },
+  { name: 'Third', waves: [EMPTY_WAVE, EMPTY_WAVE] },
+];
+
+describe('A Session in the Campaign', () => {
+  /** A Session over a new Game, Ink costs on, with a Campaign of `LEVELS` over `store`. */
+  function campaignSession(store: CampaignStore = new FakeStore()) {
+    const game = createGame(true);
+    const campaign = new Campaign(LEVELS, store);
+    return { game, campaign, session: new Session(game, campaign) };
+  }
+
+  /** Starts the Wave the Session's Game is in the Intermission of, and plays it out. */
+  function playWave(game: Game, session: Session): void {
+    expect(game.defence.reading.phase).toBe('intermission');
+    game.togglePause();
+    for (let k = 0; k < 600 && game.defence.reading.phase === 'wave'; k++) {
+      session.advance(STEP_SECONDS);
+    }
+    expect(game.defence.reading.phase).not.toBe('wave');
+  }
+
+  it('plays a Campaign Level at its first Wave, and says where it is', () => {
+    const { game, session } = campaignSession();
+
+    expect(session.playCampaign(0)).toBe(true);
+
+    expect(session.playing).toBe(LEVELS[0]);
+    expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1, waves: 2 });
+    expect(session.reading).toEqual({
+      name: 'First',
+      status: null,
+      campaign: { index: 0, levels: 3, hasNext: true },
+    });
+  });
+
+  it("can't play a locked Level", () => {
+    const { session } = campaignSession();
+
+    expect(session.playCampaign(1)).toBe(false);
+
+    expect(session.playing).toBe(SANDBOX_LEVEL);
+    expect(session.reading.campaign).toBeNull();
+  });
+
+  it('clearing the last Wave unlocks the next Level and saves it; Next Level loads it at its first Wave', () => {
+    const store = new FakeStore();
+    const { game, campaign, session } = campaignSession(store);
+    session.playCampaign(0);
+
+    playWave(game, session);
+    expect(campaign.isUnlocked(1)).toBe(false);
+    playWave(game, session);
+
+    expect(game.defence.reading.phase).toBe('cleared');
+    expect(campaign.isUnlocked(1)).toBe(true);
+    expect(new Campaign(LEVELS, store).isUnlocked(1)).toBe(true);
+
+    expect(session.playNext()).toBe(true);
+
+    expect(session.playing).toBe(LEVELS[1]);
+    expect(game.world.lines).toHaveLength(1);
+    expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1, rewards: null });
+    expect(session.reading.campaign).toEqual({ index: 1, levels: 3, hasNext: true });
+  });
+
+  it('Next Level does nothing until the Level is cleared, nor outside the Campaign', () => {
+    const { session } = campaignSession();
+    session.playCampaign(0);
+
+    expect(session.playNext()).toBe(false);
+    expect(session.playing).toBe(LEVELS[0]);
+
+    session.play(LINE_LEVEL);
+    expect(session.reading.campaign).toBeNull();
+    expect(session.playNext()).toBe(false);
+  });
+
+  it('after the last Level, nothing comes next', () => {
+    const store = new FakeStore();
+    store.record = '{"unlocked":3}';
+    const { game, session } = campaignSession(store);
+    session.playCampaign(2);
+    expect(session.reading.campaign!.hasNext).toBe(false);
+
+    playWave(game, session);
+    playWave(game, session);
+
+    expect(game.defence.reading.phase).toBe('cleared');
+    expect(session.playNext()).toBe(false);
+    expect(session.playing).toBe(LEVELS[2]);
+  });
+
+  describe('a lost Level', () => {
+    /** The first Campaign Level, but with a Runner that destroys the Ink Core in its second Wave. */
+    function lostSession() {
+      const store = new FakeStore();
+      const deadly: Level = {
+        name: 'Deadly',
+        waves: [EMPTY_WAVE, { counts: { crawler: 0, runner: 1, heavy: 0 }, gap: 1 }],
+      };
+      const game = createGame(true);
+      editEnemies(game.world.enemyTable, (table) => (table.types.runner.coreDamage = 1000));
+      const campaign = new Campaign([deadly, ...LEVELS.slice(1)], store);
+      const session = new Session(game, campaign);
+      session.playCampaign(0);
+      playWave(game, session);
+      game.togglePause();
+      for (let k = 0; k < 6000 && game.defence.reading.phase === 'wave'; k++) {
+        session.advance(STEP_SECONDS);
+      }
+      expect(game.defence.reading.phase).toBe('lost');
+      return { game, campaign, session, store };
+    }
+
+    it('leaves the Campaign as it was', () => {
+      const { campaign, session, store } = lostSession();
+
+      expect(campaign.unlocked).toBe(1);
+      expect(store.record).toBeNull();
+      expect(session.playNext()).toBe(false);
+    });
+
+    it("Retry Wave goes back to R's checkpoint: the Intermission before the lost Wave", () => {
+      const { game, session } = lostSession();
+
+      game.reset();
+
+      expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
+      expect(session.reading.campaign!.index).toBe(0);
+    });
+
+    it('Restart Level loads the Level again from Wave 1', () => {
+      const { game, session } = lostSession();
+
+      session.clear();
+
+      expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1, rewards: null });
+      expect(game.world.inkCore.hp).toBeGreaterThan(0);
+      expect(session.reading.campaign!.index).toBe(0);
+    });
   });
 });
