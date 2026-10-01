@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { COLOURS, type Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
-import { DefenceLoop, type LoopWorld, type Refill } from './defence-loop';
+import {
+  DefenceLoop,
+  FIRST_INTERMISSION,
+  type LoopPosition,
+  type LoopWorld,
+  type Refill,
+  type SpaceVerb,
+} from './defence-loop';
 import { createWaveTable, type ReadonlyWaveTable } from './wave-table';
 
 /**
@@ -14,19 +21,9 @@ class FakeWorld implements LoopWorld {
   enemyCount = 0;
   laneClear = true;
   readonly spawned: EnemyType[] = [];
-  /** Every start, pause, resume and freeze, in order. */
+  /** Every pause and freeze the loop asked for, in order. */
   readonly calls: string[] = [];
   inkCore = { hp: 10 };
-
-  togglePause(): void {
-    this.isRunning = !this.isRunning;
-    this.calls.push(this.isRunning ? 'start' : 'pause');
-  }
-
-  resume(): void {
-    this.isRunning = true;
-    this.calls.push('resume');
-  }
 
   pause(): void {
     this.isRunning = false;
@@ -75,12 +72,28 @@ function loop({
   const tanks = new FakeTanks();
   const defence = new DefenceLoop({ world, tanks, table: table(wave), waves: on });
   if (waves) defence.load(waves.map(table));
+  // Only what the loop asks for after setting up.
+  world.calls.length = 0;
   return { defence, world, tanks };
 }
 
-/** Space, with a start hook that notes when it ran. */
-function space(defence: DefenceLoop, world: FakeWorld): void {
-  defence.space(() => world.calls.push('snapshot'));
+/** The loop's position as Space last started physics: what the Game's checkpoint holds of it. */
+const checkpoints = new WeakMap<DefenceLoop, LoopPosition>();
+
+/**
+ * Space, carried out on the fake world as the Game does, taking the loop's
+ * position on a start. Returns what the loop said.
+ */
+function space(defence: DefenceLoop, world: FakeWorld): SpaceVerb | null {
+  const verb = defence.space();
+  if (verb === 'start') checkpoints.set(defence, defence.snapshot());
+  if (verb) world.isRunning = verb !== 'pause';
+  return verb;
+}
+
+/** R, as the Game does it to the loop: back to the position of the last start. */
+function retry(defence: DefenceLoop): void {
+  defence.restore(checkpoints.get(defence)!);
 }
 
 /** Runs the loop's hooks around `steps` steps of the fake world, while it runs. */
@@ -104,17 +117,59 @@ const ink = (grey: number) =>
     number
   >;
 
-describe('Space, with Waves off', () => {
-  it('starts physics, taking the snapshot just before, and pauses it', () => {
+describe('Space', () => {
+  it('with Waves off, starts and pauses physics, and starts it again: no phases', () => {
     const { defence, world } = loop();
 
-    space(defence, world);
-    expect(world.calls).toEqual(['snapshot', 'start']);
+    expect(space(defence, world)).toBe('start');
     expect(defence.reading.phase).toBeNull();
     expect(defence.bar('draw')).toBeNull();
+    expect(space(defence, world)).toBe('pause');
+    expect(space(defence, world)).toBe('start');
+    expect(world.calls).toEqual([]);
+  });
 
+  it('with Waves on, starts a Wave from an Intermission, then pauses and resumes it', () => {
+    const { defence, world } = loop({ on: true, wave: { crawler: 2 } });
+
+    expect(space(defence, world)).toBe('start');
+    expect(defence.reading).toMatchObject({ phase: 'wave', toCome: 2 });
+    expect(space(defence, world)).toBe('pause');
+    expect(space(defence, world)).toBe('resume');
+    expect(defence.reading).toMatchObject({ phase: 'wave', wave: 1 });
+    expect(world.calls).toEqual([]);
+  });
+
+  it('once the Level is cleared, says nothing with Waves on, and starts physics with them off', () => {
+    const { defence, world } = loop({ on: true });
     space(defence, world);
-    expect(world.calls).toEqual(['snapshot', 'start', 'pause']);
+    step(defence, world);
+    expect(defence.reading.phase).toBe('cleared');
+
+    expect(space(defence, world)).toBeNull();
+    defence.waves = false;
+    expect(space(defence, world)).toBe('start');
+  });
+
+  it('once the Ink Core is destroyed, says nothing, Waves on or off, even within a paused Wave', () => {
+    for (const on of [false, true]) {
+      const { defence, world } = loop({ on, wave: { crawler: 2 } });
+      space(defence, world);
+      world.inkCore.hp = 0;
+      step(defence, world);
+      expect(world.isRunning).toBe(false);
+
+      expect(space(defence, world)).toBeNull();
+    }
+  });
+
+  it('while physics runs, pauses it, whatever the phase', () => {
+    const { defence, world } = loop({ on: true });
+    world.isRunning = true;
+
+    expect(defence.reading.phase).toBe('intermission');
+    expect(space(defence, world)).toBe('pause');
+    expect(defence.reading.phase).toBe('intermission');
   });
 });
 
@@ -129,11 +184,10 @@ describe('An Intermission', () => {
     });
     expect(defence.bar('draw')).toBe('not-now');
 
-    space(defence, world);
+    expect(space(defence, world)).toBe('start');
 
     expect(defence.reading.phase).toBe('wave');
     expect(defence.bar('draw')).toBeNull();
-    expect(world.calls).toEqual(['snapshot', 'start']);
   });
 });
 
@@ -142,13 +196,11 @@ describe('A Wave', () => {
     const { defence, world } = loop({ on: true, wave: { crawler: 2 } });
     space(defence, world);
 
-    space(defence, world);
+    expect(space(defence, world)).toBe('pause');
     expect(world.isRunning).toBe(false);
     expect(defence.reading.phase).toBe('wave');
     expect(defence.bar('draw')).toBeNull();
-    space(defence, world);
-
-    expect(world.calls).toEqual(['snapshot', 'start', 'pause', 'resume']);
+    expect(space(defence, world)).toBe('resume');
   });
 });
 
@@ -204,7 +256,7 @@ describe('The end of a Wave', () => {
 
     expect(defence.reading).toMatchObject({ phase: 'intermission', wave: 2, waves: 2 });
     expect(world.isRunning).toBe(false);
-    expect(world.calls).toEqual(['snapshot', 'start', 'pause', 'freeze']);
+    expect(world.calls).toEqual(['pause', 'freeze']);
     expect(tanks.fills).toBe(1);
     expect(defence.bar('draw')).toBe('not-now');
   });
@@ -254,9 +306,7 @@ describe('The end of a Wave', () => {
     expect(defence.reading.rewards?.summary.wave).toBe(3);
     expect(tanks.fills).toBe(3);
     expect(defence.bar('draw')).toBe('not-now');
-    world.calls.length = 0;
-    space(defence, world);
-    expect(world.calls).toEqual([]);
+    expect(space(defence, world)).toBeNull();
   });
 });
 
@@ -332,12 +382,11 @@ describe('The Ink Core destroyed', () => {
     const { defence, world } = loop({ on: true, wave: { crawler: 1 } });
     world.inkCore.hp = 0;
 
-    space(defence, world);
-    expect(world.calls).toEqual([]);
+    expect(space(defence, world)).toBeNull();
     expect(defence.reading.phase).toBe('lost');
 
     world.inkCore.hp = 10;
-    space(defence, world);
+    expect(space(defence, world)).toBe('start');
     expect(defence.reading.phase).toBe('wave');
   });
 });
@@ -385,7 +434,7 @@ describe('What the player may do now', () => {
       expect(defence.bar('draw', { nearEnemy: true })).toBe('lost');
 
       world.inkCore.hp = 10;
-      defence.reset();
+      retry(defence);
       expect(defence.bar('draw')).toBe(on ? 'not-now' : null);
     }
   });
@@ -418,7 +467,7 @@ describe('The Waves switch', () => {
   });
 });
 
-describe('Reset, for R', () => {
+describe('The position, for R', () => {
   it('goes back to the Intermission before the Wave under way, which comes whole again', () => {
     const { defence, world } = loop({ on: true, waves: [{}, { crawler: 2 }, {}] });
     space(defence, world);
@@ -426,7 +475,7 @@ describe('Reset, for R', () => {
     space(defence, world);
     step(defence, world);
 
-    defence.reset();
+    retry(defence);
 
     expect(defence.reading).toMatchObject({ phase: 'intermission', wave: 2, toCome: 0 });
     expect(defence.reading.rewards?.summary.wave).toBe(1);
@@ -441,7 +490,7 @@ describe('Reset, for R', () => {
     step(defence, world);
     expect(defence.reading.wave).toBe(2);
 
-    defence.reset();
+    retry(defence);
     expect(defence.reading).toMatchObject({ phase: 'intermission', wave: 1, rewards: null });
 
     space(defence, world);
@@ -449,8 +498,62 @@ describe('Reset, for R', () => {
     space(defence, world);
     step(defence, world);
     expect(defence.reading.phase).toBe('cleared');
-    defence.reset();
+    retry(defence);
     expect(defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
+  });
+
+  it('is taken at every start, Waves on or off', () => {
+    const { defence, world } = loop({ on: true, waves: [{}, { crawler: 1 }] });
+    space(defence, world);
+    step(defence, world);
+    defence.waves = false;
+    space(defence, world);
+    defence.waves = true;
+
+    retry(defence);
+
+    expect(defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
+    expect(defence.reading.rewards?.summary.wave).toBe(1);
+  });
+
+  it('keeps the Wave tables as they are: F2 edits survive it', () => {
+    const { defence, world } = loop({ on: true, wave: { crawler: 2 } });
+    space(defence, world);
+    defence.edit((table) => (table.counts.runner = 1));
+
+    retry(defence);
+    world.isRunning = false;
+    space(defence, world);
+
+    expect(defence.reading.toCome).toBe(3);
+  });
+
+  it("is a copy: what ends after it is taken isn't in it", () => {
+    const { defence, world } = loop({ on: true, waves: [{}, {}] });
+    const position = defence.snapshot();
+    space(defence, world);
+    step(defence, world);
+
+    defence.restore(position);
+
+    expect(defence.reading).toMatchObject({ phase: 'intermission', wave: 1, rewards: null });
+  });
+
+  it('first, takes the loop back to Wave 1 with nothing ended, as everything starts over', () => {
+    const { defence, world } = loop({ on: true, waves: [{}, {}, { crawler: 1 }] });
+    space(defence, world);
+    step(defence, world);
+    space(defence, world);
+    step(defence, world);
+
+    defence.restore(FIRST_INTERMISSION);
+
+    expect(defence.reading).toMatchObject({
+      phase: 'intermission',
+      wave: 1,
+      waves: 3,
+      rewards: null,
+    });
   });
 });
 
@@ -470,5 +573,17 @@ describe('Loading a Level, for Clear', () => {
       waves: 3,
       rewards: null,
     });
+  });
+
+  it('pauses physics a build left running with Waves on, and leaves it running with Waves off', () => {
+    for (const on of [false, true]) {
+      const { defence, world } = loop({ on });
+      world.isRunning = true;
+
+      defence.load();
+
+      expect(world.isRunning).toBe(!on);
+      expect(world.calls).toEqual(on ? ['pause'] : []);
+    }
   });
 });

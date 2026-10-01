@@ -9,10 +9,7 @@ export interface LoopWorld {
   /** How many Enemies are in the Arena. */
   readonly enemyCount: number;
   readonly inkCore: { readonly hp: number };
-  /** Starts physics, taking the world's own snapshot, or pauses it. */
-  togglePause(): void;
-  /** Runs physics on from where it was paused, without a snapshot. */
-  resume(): void;
+  /** Pauses physics, if running: as a Wave ends, once the Ink Core is destroyed, and on switching Waves on. */
   pause(): void;
   /** Whether an Enemy of `type` sent in now would stand at the lane's far end with nothing in its way. */
   spawnClear(type: EnemyType): boolean;
@@ -51,6 +48,12 @@ export function isBar(reason: string | null): reason is Bar {
   return reason === 'lost' || reason === 'not-now' || reason === 'near-enemy';
 }
 
+/**
+ * What Space asks of physics: start it (the Game takes its checkpoint just
+ * before), run it on from a pause within a Wave, or pause it.
+ */
+export type SpaceVerb = 'start' | 'resume' | 'pause';
+
 /** What a Wave came to: the rewards screen's summary. */
 export interface WaveSummary {
   /** Which of the Level's Waves it was, from 1. */
@@ -88,6 +91,21 @@ export interface DefenceReading {
   readonly rewards: Rewards | null;
 }
 
+/**
+ * Where the Defence loop is, for R to go back to: which Wave comes next and
+ * the rewards of those that ended. What it is in the middle of, and the Wave
+ * tables, are not part of it.
+ */
+export interface LoopPosition {
+  /** Which of the Level's Waves comes next, from 0. */
+  readonly index: number;
+  /** The rewards of each Wave that ended, by its index. */
+  readonly ended: readonly Rewards[];
+}
+
+/** The first Wave's Intermission, with nothing ended: where a Level starts. */
+export const FIRST_INTERMISSION: LoopPosition = { index: 0, ended: [] };
+
 export interface DefenceLoopOptions {
   readonly world: LoopWorld;
   readonly tanks: Refill;
@@ -121,7 +139,8 @@ interface Wave {
  *
  * It lives in the Game (ADR 0009) and reaches the Sandbox world through
  * `LoopWorld`, so it knows nothing of Box2D. The Game runs its hooks around
- * every step and asks it whether drawing is allowed now.
+ * every step, asks it whether drawing is allowed now, and carries out what
+ * it says Space does. The Game's checkpoint holds its position, for R.
  */
 export class DefenceLoop {
   private readonly world: LoopWorld;
@@ -131,8 +150,6 @@ export class DefenceLoop {
   private on: boolean;
   /** Which of `tables` is under way, or comes next; the last once cleared. */
   private index = 0;
-  /** Which of `tables` R retries: the one whose start the Game's snapshot is of. */
-  private retryIndex = 0;
   /** The Wave under way, paused or running, or the one lost; null in an Intermission or once cleared. */
   private current: Wave | null = null;
   private cleared = false;
@@ -195,18 +212,34 @@ export class DefenceLoop {
   }
 
   /**
-   * Loading a Level: the list becomes a copy of `waves`, or without them,
-   * one Wave, the current Wave's table as it is. Back to the first Wave's
-   * Intermission, with nothing ended.
+   * Loading a Level, once it is built: the list becomes a copy of `waves`,
+   * or without them, one Wave, the current Wave's table as it is. Back to
+   * the first Wave's Intermission, with nothing ended; with Waves on, physics
+   * pauses where the build left it, as the Waves switch does.
    */
   load(waves?: readonly ReadonlyWaveTable[]): void {
     this.tables =
       waves && waves.length > 0
         ? waves.map((table) => createWaveTable(table))
         : [createWaveTable(this.table)];
-    this.index = 0;
-    this.retryIndex = 0;
-    this.ended = [];
+    this.restore(FIRST_INTERMISSION);
+    if (this.on) this.world.pause();
+  }
+
+  /** Where the loop is now, to `restore` later: the Game's checkpoint holds it. */
+  snapshot(): LoopPosition {
+    return { index: this.index, ended: [...this.ended] };
+  }
+
+  /**
+   * Goes back to `position`: R, or `FIRST_INTERMISSION` when everything
+   * starts over. The loop is in the Intermission before the Wave it names,
+   * with nothing under way and not cleared. The Wave tables stay as they
+   * are: F2 edits survive R. Physics is left as it is.
+   */
+  restore(position: LoopPosition): void {
+    this.index = position.index;
+    this.ended = [...position.ended];
     this.current = null;
     this.cleared = false;
   }
@@ -312,36 +345,24 @@ export class DefenceLoop {
   }
 
   /**
-   * R, or the world starting over below the Game: back to the Intermission
-   * before the Wave whose start the Game's snapshot is of, with that Wave
-   * and those after it not yet played. The Game brings the Tanks back
-   * itself.
+   * Space: what physics should do now, which the Game carries out. A running
+   * world pauses. Once the Ink Core is destroyed, or with Waves on once the
+   * Level is cleared, nothing (null) until R or Clear. A paused Wave resumes.
+   * Otherwise physics starts, and with Waves on the next Wave starts with it,
+   * its Enemies as its table is now.
    */
-  reset(): void {
-    this.current = null;
-    this.cleared = false;
-    this.index = this.retryIndex;
-    this.ended.length = this.index;
-  }
-
-  /**
-   * Space. `beforeStart` runs just before physics starts, so the Game can
-   * take its snapshot: with Waves on, the Intermission as it is, right
-   * after the refill.
-   */
-  space(beforeStart: () => void): void {
-    if (this.world.isRunning) return this.world.pause();
-    if (this.coreDestroyed || (this.on && this.cleared)) return;
-    if (this.current) return this.world.resume();
-    beforeStart();
-    this.world.togglePause();
-    if (!this.on) return;
-    this.retryIndex = this.index;
-    this.current = {
-      toCome: arrivals(this.table),
-      untilNext: 0,
-      kills: 0,
-      ink: Object.fromEntries(COLOURS.map((colour) => [colour, 0])) as Record<Colour, number>,
-    };
+  space(): SpaceVerb | null {
+    if (this.world.isRunning) return 'pause';
+    if (this.coreDestroyed || (this.on && this.cleared)) return null;
+    if (this.current) return 'resume';
+    if (this.on) {
+      this.current = {
+        toCome: arrivals(this.table),
+        untilNext: 0,
+        kills: 0,
+        ink: Object.fromEntries(COLOURS.map((colour) => [colour, 0])) as Record<Colour, number>,
+      };
+    }
+    return 'start';
   }
 }
