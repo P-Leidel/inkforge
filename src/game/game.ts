@@ -35,9 +35,13 @@ import { createWaveTable, type WaveTable } from './wave-table';
 /** What a Stroke the Game was asked for became. */
 export type GameStrokeOutcome =
   | Exclude<StrokeOutcome, { readonly kind: 'declined' }>
-  /** It cost more than its Tank holds, so nothing was made: `path` is what it would have been. */
+  /**
+   * It was refused for its Colour, so nothing was made: the Level doesn't
+   * have it, or it cost more than its Tank holds. `path` is what it would have been.
+   */
   | {
       readonly kind: 'refused';
+      readonly reason: ColourRefusal;
       readonly colour: Colour;
       /** Its price, px². */
       readonly price: number;
@@ -53,9 +57,13 @@ export type GameStrokeOutcome =
 /** What a Fill click the Game was asked for did. */
 export type GameFillOutcome =
   | Exclude<FillOutcome, { readonly kind: 'declined' }>
-  /** It cost more than its Tank holds, so the Object stays hollow; `outline` is where it is now. */
+  /**
+   * It was refused for its Colour, so the Object stays hollow: the Level
+   * doesn't have it, or it cost more than its Tank holds. `outline` is where it is now.
+   */
   | {
       readonly kind: 'refused';
+      readonly reason: ColourRefusal;
       readonly id: StrokeId;
       readonly colour: Colour;
       /** Its price, px². */
@@ -106,10 +114,14 @@ export type Look =
 /** Why a Stroke or a Fill would be refused. */
 export type Refusal =
   /** A closing Stroke's Object would overlap the Terrain or an Object. */
-  | 'overlaps'
-  | Bar
-  /** It costs more than its Colour's Tank holds. */
-  | 'not-enough';
+  'overlaps' | Bar | ColourRefusal;
+
+/**
+ * Why a Stroke or a Fill would be refused for its Colour: the Level doesn't
+ * have it (its Tank maximum is 0), checked before the price; or it costs more
+ * than its Colour's Tank holds.
+ */
+export type ColourRefusal = 'not-in-level' | 'not-enough';
 
 /** What a Stroke or a Fill would do if it were made now, without making it. */
 export interface Prospect {
@@ -283,6 +295,11 @@ export class Game {
     this.inkTanks.fitMaximums();
   }
 
+  /** Whether this Level has `colour`: a Tank maximum of 0 means it doesn't, Ink costs on or off. */
+  has(colour: Colour): boolean {
+    return this.table.tanks[colour] > 0;
+  }
+
   /** Each Tank as the player reads it: what it holds and its maximum, worked out now. */
   get tanks(): TankReadings {
     return this.inkTanks.reading();
@@ -338,7 +355,13 @@ export class Game {
         const { made, path } = outcome;
         const reason = refusal(made);
         if (isBar(reason)) return { kind: 'barred', reason, path };
-        return { kind: 'refused', colour: made.colour, price: this.priceOf(made), path };
+        return {
+          kind: 'refused',
+          reason: reason === 'not-in-level' ? reason : 'not-enough',
+          colour: made.colour,
+          price: this.priceOf(made),
+          path,
+        };
       }
       case 'line':
       case 'object':
@@ -371,7 +394,14 @@ export class Game {
         const { id, outline, ink } = outcome;
         const reason = refusal(ink);
         if (isBar(reason)) return { kind: 'barred', reason, id, outline };
-        return { kind: 'refused', id, colour, price: this.fillPrice(ink), outline };
+        return {
+          kind: 'refused',
+          reason: reason === 'not-in-level' ? reason : 'not-enough',
+          id,
+          colour,
+          price: this.fillPrice(ink),
+          outline,
+        };
       }
       case 'filled': {
         const price = this.fillPrice(outcome.ink);
@@ -442,8 +472,8 @@ export class Game {
   /**
    * Why `action` would be refused now, the first reason of those it runs
    * into: whatever the Defence loop bars it for (`nearEnemy` says whether a
-   * Stroke comes too near an Enemy); an overlap; then a price `colour`'s
-   * Tank can't pay. Null if it wouldn't be.
+   * Stroke comes too near an Enemy); an overlap; a Colour the Level doesn't
+   * have; then a price `colour`'s Tank can't pay. Null if it wouldn't be.
    */
   private refusal(
     action: BuildAction,
@@ -455,6 +485,7 @@ export class Game {
     const bar = this.defence.bar(action, { nearEnemy });
     if (bar) return bar;
     if (overlaps) return 'overlaps';
+    if (!this.has(colour)) return 'not-in-level';
     return this.affords(colour, price) ? null : 'not-enough';
   }
 

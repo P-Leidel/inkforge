@@ -43,6 +43,8 @@ export interface GaugeView {
   readonly over: boolean;
   /** The whole units that can be spent, under it; ∞ while Ink costs nothing. */
   readonly amount: string;
+  /** Whether the Level has this Colour: a Tank maximum of 0 means it doesn't, and its swatch is greyed out. */
+  readonly inLevel: boolean;
 }
 
 /**
@@ -55,13 +57,15 @@ export function gaugeViews(tanks: Tanks, cost: CostEstimate | null): GaugeView[]
     maximum > 0 ? Math.round((ink / maximum) * WIDTH * 2) / (WIDTH * 2) : 0;
   const readings = tanks.tanks;
   return COLOURS.map((colour) => {
-    if (!tanks.inkCosts) return { filled: 1, pending: 0, over: false, amount: '∞' };
     const { spendable, maximum, units } = readings[colour];
+    const inLevel = maximum > 0;
+    if (!inLevel) return { filled: 0, pending: 0, over: false, amount: '', inLevel };
+    if (!tanks.inkCosts) return { filled: 1, pending: 0, over: false, amount: '∞', inLevel };
     const filled = halfPixels(spendable, maximum);
     const priced = cost?.colour === colour ? cost : null;
     const pending = priced ? Math.min(filled, halfPixels(priced.price, maximum)) : 0;
     const over = priced?.over ?? false;
-    return { filled, pending, over, amount: String(units) };
+    return { filled, pending, over, amount: String(units), inLevel };
   });
 }
 
@@ -79,7 +83,8 @@ export class PaletteBar {
   private readonly gauges: BakedDrawing;
   /** The Ink left, under each gauge. */
   private readonly amounts: Phaser.GameObjects.Text[];
-  private shown: Tool | null = null;
+  /** What the swatches show, so they are baked again only when that changes. */
+  private shown = '';
   /** What the gauges show, so they are baked again only when that changes. */
   private shownGauges = '';
 
@@ -138,13 +143,19 @@ export class PaletteBar {
    * greyed out at the top of its Colour's gauge, red if it is more than is left.
    */
   show(picked: Tool, tanks: Tanks, cost: CostEstimate | null = null): void {
-    this.showSwatches(picked);
-    this.showGauges(tanks, cost);
+    const gauges = gaugeViews(tanks, cost);
+    this.showSwatches(
+      picked,
+      gauges.map((gauge) => gauge.inLevel),
+    );
+    this.showGauges(gauges);
   }
 
-  private showSwatches(picked: Tool): void {
-    if (picked === this.shown) return;
-    this.shown = picked;
+  /** The swatches, each Colour the Level doesn't have greyed out: it can still be picked. */
+  private showSwatches(picked: Tool, inLevel: readonly boolean[]): void {
+    const key = `${picked} ${inLevel.join()}`;
+    if (key === this.shown) return;
+    this.shown = key;
     const g = bakingGraphics(this.scene);
     TOOLS.forEach((tool, k) => {
       const x = LEFT + k * (WIDTH + GAP);
@@ -172,14 +183,18 @@ export class PaletteBar {
         false,
         LINE_THICKNESS,
       );
+      if (!inLevel[k]) {
+        // Inside the highlight's border, which stays.
+        g.fillStyle(selected ? 0x3b4250 : 0x2c313b, 0.75);
+        g.fillRoundedRect(x + 2, TOP + 2, WIDTH - 4, HEIGHT - 4, 6);
+      }
     });
     this.drawing.bake(g);
     g.destroy();
   }
 
   /** Each gauge filled as its Tank is, to the nearest half pixel, and the whole units left. */
-  private showGauges(tanks: Tanks, cost: CostEstimate | null): void {
-    const gauges = gaugeViews(tanks, cost);
+  private showGauges(gauges: readonly GaugeView[]): void {
     const key = gauges
       .map(({ filled, pending, over, amount }) => `${filled}:${pending}:${over}:${amount}`)
       .join(' ');
