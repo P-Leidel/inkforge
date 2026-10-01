@@ -183,6 +183,8 @@ export interface RubbleView extends Poses {
   readonly mass: number;
   /** Linear velocity, px/s. */
   readonly velocity: Vec2;
+  /** Seconds left before it despawns: `rubbleLifetime` less its age. */
+  readonly remaining: number;
 }
 
 /** A piece of Rubble set loose from a broken Object's Fill. */
@@ -202,15 +204,23 @@ interface RubbleRecord {
   readonly colour: Colour;
   readonly radius: number;
   readonly mass: number;
+  /** Simulated seconds since its Object broke. */
+  age: number;
   readonly body: BodyId;
 }
 
 type SavedRubble = Omit<RubbleRecord, 'body'> & { readonly motion: Motion };
 
+/** A little slack, so that a lifetime of whole steps ends on its last step despite rounding. */
+const LIFETIME_SLACK = 1e-9;
+
 /**
  * The Rubble in the Arena, oldest first, and the cap on it. Rubble ids, like
  * Stroke ids, are never reused, not even after R or Clear. Rubble the cap
- * removes goes as `capped`; the renderer fades it out where it was. Each
+ * removes goes as `capped`; the renderer fades it out where it was. A
+ * piece despawns quietly, as `expired`, `rubbleLifetime` seconds after its
+ * Object broke, counting the step it broke in; the renderer fades it out
+ * before. Its age is saved with it, and grows only as physics steps. Each
  * piece is a Party of its own to the Contact ledger, with no target: it
  * deals damage by the normal rule, as its own hitter, and never takes any.
  */
@@ -229,20 +239,22 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
 
   /** Rubble, oldest first. */
   get views(): readonly RubbleView[] {
-    return this.rubble.map(({ id, colour, radius, mass, body }) => ({
+    const { rubbleLifetime } = this.materials;
+    return this.rubble.map(({ id, colour, radius, mass, age, body }) => ({
       id,
       colour,
       radius,
       mass,
       ...this.poses.of(body),
       velocity: this.physics.getVelocity(body),
+      remaining: Math.max(0, rubbleLifetime - age),
     }));
   }
 
   /** Sets Rubble loose, in order, then applies the cap. */
   add(loose: readonly LooseRubble[]): void {
     for (const { motion, ...rubble } of loose)
-      this.addBody({ id: this.nextId++, party: this.bodies.newId(), ...rubble }, motion);
+      this.addBody({ id: this.nextId++, party: this.bodies.newId(), ...rubble, age: 0 }, motion);
     this.cap();
   }
 
@@ -298,5 +310,13 @@ export class Rubble implements Kind<'rubble', readonly SavedRubble[], readonly R
     this.rubble = [];
   }
 
-  step(): void {}
+  /** Ages every piece by `seconds`, then despawns, oldest first, those whose lifetime is up. */
+  step(seconds: number): void {
+    const lifetime = this.materials.rubbleLifetime;
+    for (const rubble of this.rubble) rubble.age += seconds;
+    const expired = this.rubble.filter(({ age }) => age >= lifetime - LIFETIME_SLACK);
+    if (expired.length === 0) return;
+    this.rubble = this.rubble.filter(({ age }) => age < lifetime - LIFETIME_SLACK);
+    for (const { body } of expired) this.bodies.removeBody(body, 'expired');
+  }
 }

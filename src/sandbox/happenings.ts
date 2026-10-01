@@ -46,6 +46,8 @@ export type Why =
   | 'erased'
   /** The Rubble or Patch cap took the oldest. */
   | 'capped'
+  /** Rubble's lifetime ran out: it despawned, having faded out. */
+  | 'expired'
   /** A Droplet landed, and left a Patch. */
   | 'landed'
   /**
