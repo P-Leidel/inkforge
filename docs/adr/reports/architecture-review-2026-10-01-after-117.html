@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inkforge Architecture Review 7</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f1f2f4;
+    --surface: #ffffff;
+    --ink: #15171c;
+    --muted: #5b616e;
+    --rule: #d7dae0;
+    --strong: #1d7f36;
+    --strong-bg: #e1f3e5;
+    --explore: #8c5f0e;
+    --explore-bg: #fbefd6;
+    --spec: #4e5563;
+    --spec-bg: #e6e8ec;
+    --tag-bg: #eceef2;
+    --note-bg: #eef0f4;
+    --leak: #b8322a;
+    --leak-bg: #fbe6e3;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d2027;
+      --surface: #252933;
+      --ink: #e8e2d0;
+      --muted: #9aa0ad;
+      --rule: #3a404d;
+      --strong: #62d98b;
+      --strong-bg: #1d3a28;
+      --explore: #f0c05a;
+      --explore-bg: #3b321d;
+      --spec: #c0c5cf;
+      --spec-bg: #333845;
+      --tag-bg: #2f3440;
+      --note-bg: #2c313c;
+      --leak: #f07a6e;
+      --leak-bg: #3d2524;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d2027;
+    --surface: #252933;
+    --ink: #e8e2d0;
+    --muted: #9aa0ad;
+    --rule: #3a404d;
+    --strong: #62d98b;
+    --strong-bg: #1d3a28;
+    --explore: #f0c05a;
+    --explore-bg: #3b321d;
+    --spec: #c0c5cf;
+    --spec-bg: #333845;
+    --tag-bg: #2f3440;
+    --note-bg: #2c313c;
+    --leak: #f07a6e;
+    --leak-bg: #3d2524;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+  h1 { font-size: 1.9rem; line-height: 1.15; }
+  h2 { font-size: 1.45rem; line-height: 1.2; }
+  p { margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  code { font-size: .9em; }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+  .label { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+
+  .page { max-width: 72rem; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  .head { display: flex; flex-direction: column; gap: 16px; }
+  .titlerow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .scope { font-size: 14px; color: var(--muted); max-width: 52rem; }
+  .legend { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .swatch { display: inline-block; width: 24px; height: 16px; }
+  .swatch-seam { display: inline-block; width: 32px; border-top: 1.5px dashed var(--muted); }
+
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .points { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 60rem; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 8px; }
+  .tile { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: 0 6px; font-size: 13px; line-height: 1.35; }
+  .tile .n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--muted); }
+  .tile .st { grid-column: 2; font-size: 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tile.done { background: var(--note-bg); border-color: transparent; }
+  .tile.done .st { color: var(--muted); }
+  .tile.keep .st { color: var(--strong); }
+  .tile.park .st { color: var(--explore); }
+
+  .candidates { display: flex; flex-direction: column; gap: 36px; }
+  .cand { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 16px; }
+  .cand-head { display: flex; flex-direction: column; gap: 8px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+  .b-strong { background: var(--strong-bg); color: var(--strong); }
+  .b-explore { background: var(--explore-bg); color: var(--explore); }
+  .b-tag { background: var(--tag-bg); color: var(--muted); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .files { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+  .files .note { opacity: .75; }
+
+  .ba { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .prose3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .prose3 > div { display: flex; flex-direction: column; gap: 4px; }
+  .wins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wins li::before { content: "▪"; color: var(--strong); margin-right: 8px; }
+  .callout { background: var(--explore-bg); border-left: 3px solid var(--explore); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+  .evidence { background: var(--note-bg); border-left: 3px solid var(--muted); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+
+  .also ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 64rem; }
+
+  .top { background: var(--surface); border: 3px solid var(--strong); border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .top .label { color: var(--strong); }
+  .top p { max-width: 52rem; }
+
+  @media (min-width: 640px) {
+    .page { padding-inline: 24px; padding-block: 56px 80px; }
+    h1 { font-size: 2.3rem; }
+    h2 { font-size: 1.6rem; }
+    .cand { padding: 28px; }
+    .panel { padding: 20px; }
+    .top { padding: 32px; }
+  }
+  @media (min-width: 768px) { .prose3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .ba { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Diagram sheets are drafting paper in both themes, so the hand-drawn diagrams read the same. */
+  .sheet { background: #fbfbfa; color: #16181d; border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-x: auto; min-width: 0; }
+  /* Mermaid sheets follow the viewer's theme, as the Mermaid rendering does. */
+  .sheet.themed { background: var(--surface); color: var(--ink); }
+  .sheet.themed .s-muted { color: var(--muted); }
+  .s-muted { color: #6a707c; }
+  .s-label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tiny { font-size: 11px; }
+  .small { font-size: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 3px 8px; font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .pad { padding: 8px 10px; }
+  .pad-lg { padding: 14px 16px; }
+  .mod { border: 1.5px solid #5b616e; background: #ffffff; border-radius: 4px; }
+  .plan { border: 1.5px dashed #7a808c; background: #ffffff; border-radius: 4px; color: #4a505b; }
+  .leakbox { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; border-radius: 4px; }
+  .okbox { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; border-radius: 4px; }
+  /* A deep module is drawn like the game's black ink: a heavy dark core in a pale rim. */
+  .deep { background: #050506; color: #eef0f3; border: 3px solid #8a909e; border-radius: 5px; }
+  .deep .faded { color: #8f96a3; }
+  .deep .chip { border: 1px solid #3c414c; color: #d6d9df; border-radius: 3px; }
+  .deep .chip.if { border-color: #eef0f3; color: #ffffff; font-weight: 600; }
+  .mod .chip, .plan .chip { border: 1px solid #c9cdd4; border-radius: 3px; background: #ffffff; color: #2c3038; }
+  .chip.red { border: 1px solid #e3a39c; background: #fde8e5; color: #8f1f16; border-radius: 3px; }
+  .chip.dash { border: 1px dashed #7a808c; background: #ffffff; color: #4a505b; border-radius: 3px; }
+  .seam { border-top: 1.5px dashed #7a808c; }
+  .arrow { text-align: center; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: #6a707c; }
+  .stack { display: flex; flex-direction: column; gap: 12px; min-width: 330px; }
+  .row { display: grid; gap: 8px; }
+  .row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .frame { border: 1.5px dashed #7a808c; border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .frame.solid { border-style: solid; border-color: #5b616e; background: #ffffff; }
+  .strong-t { font-weight: 600; font-size: 12.5px; }
+  .newtag { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; background: #d23a2e; color: #ffffff; border-radius: 2px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
+  .newtag.grey { background: #6a707c; }
+
+  /* Questions and bands */
+  .qrows { display: flex; flex-direction: column; gap: 6px; min-width: 330px; }
+  .qrow { padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .qrow b { font-size: 12.5px; font-weight: 600; }
+  .qrow span { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .band { border-left: 4px solid #7a808c; background: #ffffff; padding: 6px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; color: #2c3038; }
+  .band .t { color: #6a707c; white-space: nowrap; }
+  .band.leak { border-left-color: #d23a2e; background: #fde8e5; color: #8f1f16; }
+  .band.leak .t { color: #8f1f16; }
+  .band.planned { border-left-style: dashed; background: #f6f7f8; color: #4a505b; }
+  .band.thick { border-left: 6px solid #050506; background: #050506; color: #eef0f3; padding: 14px 12px; }
+  .band.thick .t { color: #8f96a3; }
+
+  /* C3: what a thing's numbers come from */
+  .things { display: grid; grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; min-width: 360px; align-items: baseline; }
+  .things .h { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: #6a707c; font-weight: 600; }
+  .things .k { color: #16181d; font-weight: 600; }
+  .things .v { color: #2c3038; }
+  .things .bad { color: #8f1f16; }
+  .things .q { color: #6a707c; font-style: italic; }
+
+  /* C6: a kind across the World renderer */
+  .grid9 { display: grid; grid-template-columns: minmax(5.6rem, auto) repeat(9, 2.35rem) 2.4rem; gap: 5px 2px; align-items: center; min-width: 470px; }
+  .colhead { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; line-height: 1.15; color: #4a505b; }
+  .rowhead { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; color: #2c3038; line-height: 1.25; }
+  .cell { width: 13px; height: 13px; border-radius: 999px; justify-self: center; display: inline-block; }
+  .c-on { background: #16181d; }
+  .c-off { border: 1.5px solid #d7dae0; }
+  .c-plan { border: 1.5px dashed #d23a2e; }
+  .tot { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; font-weight: 600; color: #8f1f16; font-variant-numeric: tabular-nums; }
+  .key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: #6a707c; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .key span { display: flex; align-items: center; gap: 6px; }
+  .kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .kinds .chip { text-align: center; }
+
+  pre.mermaid { background: transparent; margin: 0; font-size: 13px; }
+  pre.mermaid .label { text-transform: none; letter-spacing: normal; font-size: inherit; font-weight: inherit; color: inherit; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
+</head>
+<body>
+<style>
+  .split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  @media (min-width: 768px) { .split { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .when { font-size: 13px; color: var(--muted); }
+  .states { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; }
+  .st { padding: 4px 8px; border: 1.5px solid #5b616e; border-radius: 3px; background: #ffffff; color: #2c3038; }
+  .st.red { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; }
+  .st.new { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; }
+  .st.plan { border: 1.5px dashed #7a808c; color: #4a505b; }
+  .mass { display: flex; align-items: flex-end; gap: 18px; min-width: 330px; }
+  .mass .col { display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; color: #4a505b; }
+  .mass .bars { display: flex; align-items: flex-end; gap: 3px; }
+  .mass .bi { width: 26px; background: #d7dae0; border: 1px solid #9aa0ad; }
+  .mass .bm { width: 26px; background: #5b616e; }
+  .mass .bi.red { background: #fde8e5; border-color: #d23a2e; }
+</style>
+
+<main class="page">
+
+  <header class="head">
+    <div class="titlerow">
+      <h1>Inkforge architecture review</h1>
+      <span class="mono meta">P-Leidel/inkforge · 589df8b (#120, closes #117) · 2026-10-01</span>
+    </div>
+    <p class="scope">Scope: <code>src/</code> after #117 replaced the Build Phase with building during Waves and Intermissions (ADR 0012). Weighted toward what that change and the work since milestone 4 touched: <code>src/game/</code>, the scene, the HUD and rewards screen, the drawing input, the Material rules and the Enemies. Each candidate is judged against milestone 5 (sequences of Waves, three handmade Levels, the Campaign, a pick-one-of-three reward in the Intermission, per-Level Tanks) and milestone 6's Siege Walker. All 894 tests in 64 files pass on 589df8b.</p>
+    <div class="legend">
+      <span class="label">Legend</span>
+      <span class="item"><span class="swatch mod"></span>module</span>
+      <span class="item"><span class="swatch plan"></span>milestone 5 or later</span>
+      <span class="item"><span class="swatch-seam"></span>seam</span>
+      <span class="item"><svg width="30" height="10" aria-hidden="true"><line x1="0" y1="5" x2="22" y2="5" stroke="#d23a2e" stroke-width="2" stroke-dasharray="4 3"/><path d="M22 1 L29 5 L22 9 Z" fill="#d23a2e"/></svg>leakage</span>
+      <span class="item"><span class="swatch deep"></span>deep module, drawn like black ink</span>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="queue-h">
+    <span id="queue-h" class="label">The queue from the review after milestone 4, today</span>
+    <div class="tiles">
+      <div class="tile done"><span class="n">C1</span><span>Give the Wave its own module</span><span class="st">done · defence-loop.ts (#110)</span></div>
+      <div class="tile done"><span class="n">C2</span><span>Load an Arena one way, through the Game</span><span class="st">done · level.ts, Game.load</span></div>
+      <div class="tile park"><span class="n">C3</span><span>Put the Enemy's rules in one module</span><span class="st">open · grew with climbing</span></div>
+      <div class="tile park"><span class="n">C4</span><span>Hand the scene one reading</span><span class="st">open · Core Zone drawing gone</span></div>
+      <div class="tile done"><span class="n">also</span><span>A Pit keeps what isn't an Enemy</span><span class="st">done · 8990bc0</span></div>
+      <div class="tile done"><span class="n">also</span><span>Dead isDead in enemies.ts</span><span class="st">done · 98a5c7c</span></div>
+      <div class="tile done"><span class="n">#117</span><span>Build during Waves, Intermissions between</span><span class="st">done in #120</span></div>
+    </div>
+    <ul class="points">
+      <li>C1 paid off at once. #117 swapped the whole phase model and it landed in <code>DefenceLoop</code>, which is tested against a fake world (<code>defence-loop.test.ts:12–56</code>). C2 meant the gallery tests load Levels through <code>Game.load</code>, the path the player runs.</li>
+      <li>The friction is now <b>around</b> the Defence loop. A lost Wave isn't a phase. R's retry point is split across three snapshots. What is being played, and what Clear reloads, lives in a Phaser closure. Milestone 5 widens all three.</li>
+    </ul>
+  </section>
+
+  <section id="candidates" class="candidates" aria-label="Candidates">
+
+    <!-- C1 -->
+    <article id="c1" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 1 · refactor before the milestone 5 spec</span>
+        <h2>Make a lost Wave a phase the Defence loop answers for</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">fixes a glossary contradiction</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/defence-loop.ts <span class="note">(Phase 35 · coreDestroyed beside phase 68–69 · building, underWay 197–208 · stopIfOver 258–259 leaves the Wave current)</span></li>
+        <li>src/game/game.ts <span class="note">(refusal 418–428: asks building, then underWay · eraseAlong 475 · undo 489)</span></li>
+        <li>src/ui/hud.ts <span class="note">(107–133: joins world.isRunning, reading.coreDestroyed and phase)</span></li>
+        <li>src/ui/tuning-panel.ts <span class="note">(135–136: flips defence.waves, which pauses the world, past the Game)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the loss is a flag beside the phase, and "may I build?" doesn't read it</span>
+          <div class="stack">
+            <div class="states"><span class="st">intermission</span>→<span class="st">wave</span>→<span class="st">intermission</span>→ … →<span class="st">cleared</span></div>
+            <div class="states"><span class="st">wave</span>— Ink Core HP 0 →<span class="st red">wave (still) + coreDestroyed</span></div>
+            <div class="frame solid">
+              <span class="strong-t">Defence loop</span>
+              <div class="chips"><span class="chip dash">phase</span><span class="chip red">coreDestroyed</span><span class="chip dash">building = !on || current</span><span class="chip dash">underWay</span></div>
+            </div>
+            <div class="row row-3">
+              <div class="qrow leakbox"><b>Game</b><span>building, then underWay, per refusal</span></div>
+              <div class="qrow leakbox"><b>HUD</b><span>isRunning + coreDestroyed + phase</span></div>
+              <div class="qrow leakbox"><b>F2</b><span>flips Waves past the Game</span></div>
+            </div>
+            <div class="qrow plan"><b>Milestone 5<span class="newtag grey">next</span></b><span>Campaign: on loss, retry or quit · nothing to switch on today</span></div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one phase, one question about what the player may do</span>
+          <div class="stack">
+            <div class="states"><span class="st">intermission</span>→<span class="st">wave</span>→<span class="st new">lost</span><span class="tiny s-muted">or</span><span class="st">intermission</span>→ … →<span class="st">cleared</span></div>
+            <div class="row row-3">
+              <div class="mod pad tiny"><b>Game</b><br>asks once, then prices</div>
+              <div class="mod pad tiny"><b>HUD</b><br>draws the phase</div>
+              <div class="mod pad tiny"><b>F2</b><br>Waves switch through the Game</div>
+            </div>
+            <div class="arrow">↓ may I draw · fill · erase · undo · release · Space? ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Defence loop</span>
+                <div class="chips"><span class="chip if">phase incl. lost</span><span class="chip if">what may be done now</span><span class="chip if">reading</span></div>
+                <div class="chips faded tiny"><span class="chip">loss ends building</span><span class="chip">near-Enemy only in a Wave</span><span class="chip">provisional: undo, draw while paused</span><span class="chip">M5: a lost Level for the Campaign</span></div>
+              </div>
+            </div>
+            <div class="arrow">tested with the existing FakeWorld</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>When the Ink Core is destroyed the Wave stays current, so <code>building</code> stays true. After a loss a Stroke is still accepted and charged, and Fills, the Eraser and undo still work. CONTEXT.md says only R or Clear go on. No test covers it. "What may the player do now" is worked out by the Game from two booleans, and the HUD works out the status from three sources.</p></div>
+        <div><span class="label">Solution</span><p>The Defence loop gets a lost phase. It answers one question, what the player may do now, and the Game and drawing input ask only that. The HUD draws the phase from the reading. The Waves switch goes through the Game, which then stops handing out <code>defence</code> for writing.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>locality: permissions in one module</li>
+          <li>bug fixed: no building after a loss</li>
+          <li>Campaign gets a lost outcome</li>
+          <li>provisional rules: one place to flip</li>
+          <li>HUD reads one phase</li>
+        </ul></div>
+      </div>
+      <div class="evidence">Confirmed with a scratch run: after the Ink Core's HP reaches 0 during a Wave, <code>game.submitStroke</code> returns <code>line</code> and charges the Tank. The cause is <code>defence-loop.ts:258</code>: <code>if (this.coreDestroyed) return this.world.pause();</code> leaves <code>current</code> set.</div>
+    </article>
+
+    <!-- C2 -->
+    <article id="c2" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 2 · refactor before the milestone 5 spec</span>
+        <h2>Give R one checkpoint</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">pairs with C1</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/game.ts <span class="note">(snapshot 149–155, 209 · togglePause 526–529 passes a callback · reset 538–546 · load 562–585: decides a phase at 580 · hooks wrapped 220–227 so catchUp runs before stopIfOver · start-over branch 711–718)</span></li>
+        <li>src/game/defence-loop.ts <span class="note">(retryIndex 117, 293–298, 312 · space 305–312: beforeStart must run before togglePause, then retryIndex is set · LoopWorld's three pause verbs 12–16)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(own snapshot 227, 660–669: taken inside togglePause)</span></li>
+        <li>src/game/ink-tanks.ts <span class="note">(snapshot / restore 78–85: the shape to copy)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet themed">
+          <span class="s-label s-muted">Before: Space takes three snapshots in an order written only in comments</span>
+          <pre class="mermaid">
+sequenceDiagram
+  participant G as Game
+  participant L as Defence loop
+  participant W as Sandbox world
+  G->>L: space(beforeStart)
+  L->>G: beforeStart()
+  Note over G: Game snapshot: Tanks, paid, undo
+  L->>W: togglePause()
+  Note over W: world snapshot
+  Note over L: retryIndex = index
+  G->>L: R: reset()
+  G->>W: reset()
+  Note over G: read() swallows start-over, restore()
+          </pre>
+        </div>
+        <div class="sheet themed">
+          <span class="s-label s-muted">After: one checkpoint, taken and restored in one place</span>
+          <pre class="mermaid">
+sequenceDiagram
+  participant G as Game
+  participant L as Defence loop
+  participant W as Sandbox world
+  G->>L: space()
+  L-->>G: start
+  Note over G: checkpoint = world + paid + undo + Tanks + loop position
+  G->>W: start
+  G->>G: R: restore(checkpoint)
+          </pre>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The retry point is spread over the Game's snapshot, the loop's <code>retryIndex</code> and the world's snapshot. A callback order in <code>space</code> keeps them in step. <code>Game.load</code> pauses the world itself when Waves are on. The forget-everything list is written twice, and the <code>start-over</code> copy is reached only by tests, because <code>load</code> and <code>reset</code> swallow that entry.</p></div>
+        <div><span class="label">Solution</span><p>The Defence loop snapshots and restores its own position, as the Ink Tanks do. <code>space</code> says start, resume or pause, and the Game carries it out. The Game takes one checkpoint in one place and restores it in one place. <code>retryIndex</code>, the second forget list and the phase decision in <code>load</code> go.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>locality: R in one module</li>
+          <li>ordering rule becomes code</li>
+          <li>delete a test-only branch</li>
+          <li>M5 pick and Tanks roll back free</li>
+        </ul></div>
+      </div>
+      <div class="evidence">Milestone 5 adds state that R has to bring back: a reward picked in the Intermission and per-Level Tank maximums. With three snapshots, each addition touches all three modules.</div>
+    </article>
+
+    <!-- C3 -->
+    <article id="c3" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 3 · decide in the milestone 5 spec</span>
+        <h2>Give what is being played a headless home</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">the scene becomes a thin adapter</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/scenes/sandbox-scene.ts <span class="note">(reload closure 53–54 is Clear · startStressTest 115–126 writes this.stressTest from inside a Level · loadDemo 133–140: refreshes F2 when a demo has Tanks · 214–219 polls the Wave table each frame for F2)</span></li>
+        <li>src/game/game.ts <span class="note">(565: a Level's Tanks are written into the F2 Ink table)</span> · src/game/level.ts <span class="note">(without Tanks the maximums "stay as they are", pinned by level.test.ts:113, 128)</span></li>
+        <li>src/ui/tuning-panel.ts <span class="note">(135–136: Waves on or off is a global F2 switch)</span> · src/gallery/gallery.ts <span class="note">(540–545: Three Waves says turn Waves on in F2)</span></li>
+        <li>src/ui/rewards-screen.ts <span class="note">(158–159)</span> · src/ui/hud.ts <span class="note">(27: "LEVEL CLEARED")</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet themed">
+          <span class="s-label s-muted">Before: what is being played is a Phaser closure</span>
+          <pre class="mermaid">
+flowchart TB
+  Scene["Sandbox scene<br/>reload closure = Clear<br/>stressTest field"]
+  F2["F2 panel<br/>Waves switch (global)"]
+  Game["Game.load(level)"]
+  Ink["Ink table (F2)"]
+  Loop["Defence loop<br/>cleared"]
+  Scene -->|"Clear, Sandbox, demo"| Game
+  Scene -.->|"polls table every frame"| F2
+  Scene -.->|"refresh if demo.tanks"| F2
+  Game -.->|"Level's Tanks overwrite"| Ink
+  F2 -.->|"waves = on"| Loop
+  Loop -->|"cleared: then what?"| Scene
+  classDef leak stroke:#d23a2e,stroke-width:2px,stroke-dasharray:4 3;
+  class Scene,F2 leak
+          </pre>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one module knows the Level, or the Campaign and where in it</span>
+          <div class="stack">
+            <div class="row row-3">
+              <div class="mod pad tiny"><b>Sandbox scene</b><br>buttons forward</div>
+              <div class="mod pad tiny"><b>F2</b><br>refreshes on one change signal</div>
+              <div class="mod pad tiny"><b>Rewards screen, HUD</b><br>read what comes next</div>
+            </div>
+            <div class="arrow">↓ play a Level · the Campaign · Clear · next · Sandbox ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">What is being played</span>
+                <div class="chips"><span class="chip if">play</span><span class="chip if">clear</span><span class="chip if">next</span><span class="chip if">reading</span></div>
+                <div class="chips faded tiny"><span class="chip">the current Level</span><span class="chip">Waves on for this Level</span><span class="chip">its Tanks, or the defaults</span><span class="chip">M5: Campaign position</span><span class="chip">M5: cleared → next Level</span><span class="chip">M5: lost → retry or quit</span></div>
+              </div>
+            </div>
+            <div class="arrow">drives the Game · tested headless with game.test's real world</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Clear, and the current Level, exist only as a closure in the Phaser scene, so they can't be tested headless (<code>waves.test.ts:245</code> rebuilds Clear by hand). A Level can't say it is played in Waves. A Level's Tanks carry over into the next Level that has none. F2 is kept in step two different ways.</p></div>
+        <div><span class="label">Solution</span><p>A module in <code>src/game/</code> holds what is being played: one Level, or the Campaign and where in it. It does clear, next and back to the sandbox, decides Waves on or off and the Tanks per Level, and sends one change signal. The scene's buttons forward to it.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>Clear tested without Phaser</li>
+          <li>leverage: Campaign is data again</li>
+          <li>no Tanks carry over by accident</li>
+          <li>F2 sync: two mechanisms → one</li>
+        </ul></div>
+      </div>
+      <div class="callout">Its shape is milestone 5's Campaign, so settle it while grilling the M5 spec, not as a refactor before it. Its name should come from CONTEXT.md (Campaign, Level) or join it.</div>
+    </article>
+
+    <!-- C4 -->
+    <article id="c4" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 4 · decide in the milestone 5 spec</span>
+        <h2>Shape the Intermission for a pick</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">ports &amp; adapters for reward effects</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/defence-loop.ts <span class="note">(Refill has only fill() 24–28 · Rewards 49–56 · reading.rewards indexing 157 · endWave refills at once 272–285)</span></li>
+        <li>src/ui/rewards-screen.ts <span class="note">(147–162, 195: draws, takes no input)</span></li>
+        <li>src/ui/hud.ts <span class="note">(23, 27)</span> · src/ui/rewards-screen.ts <span class="note">(153, 160): the same Space and LEVEL CLEARED text, written twice</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the Intermission is one instant</span>
+          <div class="stack">
+            <div class="states"><span class="st">wave ends</span>→<span class="st red">summary + fill() + freeze, all at once</span>→<span class="st">Space</span></div>
+            <div class="qrow plan"><b>Milestone 5<span class="newtag grey">next</span></b><span>"the refill would then wait for the pick" (comment, 50–52) · no input path from the screen to the loop · a reward's effect has no port</span></div>
+            <div class="qrow leakbox"><b>Open rule</b><span>R in an Intermission retries the Wave just won (defence-loop.test.ts:374), so a pick would be undone too. Intended?</span></div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the Intermission has steps, and rewards act through a port</span>
+          <div class="stack">
+            <div class="states"><span class="st">summary</span>→<span class="st new">offer 3</span>→<span class="st new">picked</span>→<span class="st">ready: Space</span></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Defence loop · Intermission</span>
+                <div class="chips"><span class="chip if">reading: offer</span><span class="chip if">pick(k)</span></div>
+                <div class="chips faded tiny"><span class="chip">Space only when ready</span><span class="chip">refill after the pick</span></div>
+              </div>
+            </div>
+            <div class="seam"></div>
+            <div class="row row-2">
+              <div class="mod pad tiny"><b>Rewards adapter</b><br>Tanks, maximums, upgrades</div>
+              <div class="mod pad tiny"><b>Fake adapter</b><br>records what was applied</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>ADR 0012 says the summary is built so a pick-one-of-three can slot in. Today the Intermission can't wait for anything, and <code>Refill</code> is the only thing the loop can do to the game's economy.</p></div>
+        <div><span class="label">Solution</span><p>The Intermission becomes a few steps inside the loop, with Space allowed only at the last. A reward's effect goes through a port that takes over from <code>Refill</code>. The rewards screen reads an offer and sends a pick.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>Two adapters justify the seam</li>
+          <li>pick tested without Phaser</li>
+          <li>hint text: one owner</li>
+        </ul></div>
+      </div>
+      <div class="callout">Worth exploring, not Strong: what a reward is hasn't been decided. Bring the R-undoes-a-pick question to the M5 grilling.</div>
+    </article>
+
+    <!-- C5 -->
+    <article id="c5" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 5</span>
+        <h2>Let the Arena query measure how near a Stroke comes to an Enemy</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/game.ts <span class="note">(geometry imports 1–3 · nearEnemy 434–437 · strokeNear 781–794 · barred vs refused worked out at 314 and 347)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(211: "every question about place" goes to the Arena query)</span> · src/sandbox/arena-query.ts</li>
+        <li>src/input/drawing-input.ts <span class="note">(241: barred vs refused a third time · 258: a Stroke's look is cached on its samples only)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the Game measures place; the preview can go stale</span>
+          <div class="stack">
+            <div class="band leak"><span>Game · nearEnemy + strokeNear: geometry above the Sandbox world</span><span class="t">game.ts</span></div>
+            <div class="band"><span>Arena query · onLines, overlaps, what a Stroke meets</span><span class="t">arena-query.ts</span></div>
+            <div class="band leak"><span>Drawing input · look keyed on samples; Enemies walk, look doesn't</span><span class="t">drawing-input.ts:258</span></div>
+            <div class="band leak"><span>barred vs refused: decided 3 times</span><span class="t">game 314, 347 · input 241</span></div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the query measures; the Game keeps the rule</span>
+          <div class="stack">
+            <div class="band"><span>Game · refuse near an Enemy during a Wave (rule only)</span><span class="t">game.ts</span></div>
+            <div class="band thick"><span>Arena query · onLines, overlaps, nearEnemy</span><span class="t">one place</span></div>
+            <div class="band"><span>Drawing input · look re-taken when the world changes while Enemies are about</span><span class="t">input</span></div>
+            <div class="band"><span>Outcome says barred or refused once</span><span class="t">game</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>"Too close to an Enemy" is spread over the Game, the Defence loop and the drawing input. The Game does geometry that the Sandbox world says belongs to the Arena query. A pointer held still while an Enemy walks under it shows a preview that the submit then contradicts.</p></div>
+        <div><span class="label">Solution</span><p>The Arena query reports a Stroke's nearness to Enemies, as it reports <code>onLines</code>. The Game keeps only the rule. The look is taken again when the world changes during a Wave, as the Fill look already is.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>locality: place questions in one module</li>
+          <li>preview agrees with submit</li>
+          <li>barred vs refused: 3 → 1</li>
+        </ul></div>
+      </div>
+    </article>
+
+    <!-- C6 -->
+    <article id="c6" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 6 · carried over · before the milestone 6 spec</span>
+        <h2>Put the Enemy's rules in one module behind the Material rules</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">becomes Strong before the Siege Walker</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/material-rules.ts <span class="note">(848 lines, was 768 · RulesArena 218–288: 28 members, 9 only for Enemies · walk 345 · climbs 364 · stepTop 386 · stands 409 · press 464 · reachInkCore 495 · kill 511 · drop 531 · isDead 538 · hurt 547 · enemyImpulse 618)</span></li>
+        <li>src/sandbox/enemies.ts <span class="note">(stalled threshold 43, 269; the stalled set is in material-rules.ts:318 · Spawn stand position twice 199–202, 216–219)</span></li>
+        <li>src/sandbox/rules-test-support.ts <span class="note">(361 lines of fakes, was 352)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: interface mass vs implementation mass</span>
+          <div class="mass">
+            <div class="col"><div class="bars"><div class="bi red" style="height:112px"></div><div class="bm" style="height:170px"></div></div>Material rules<br>port 28 · 848 lines</div>
+            <div class="col"><div class="bars"><div class="bi" style="height:40px"></div><div class="bm" style="height:64px"></div></div>Enemies kind<br>records + stalled</div>
+            <div class="col"><div class="bars"><div class="bi red" style="height:72px"></div><div class="bm" style="height:72px"></div></div>rules fakes<br>361 lines</div>
+          </div>
+          <span class="tiny s-muted">Climbing (660b311) landed inside the Material rules: 345–417. An Enemy's life still runs across six modules.</span>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the Material rules call one Enemy module in their order</span>
+          <div class="stack">
+            <div class="mod pad tiny"><b>Material rules</b> · step() keeps the one order from #75 · port loses its Enemy half (28 → ~19)</div>
+            <div class="arrow">↓ walk · afterStep(contacts) ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Enemy rules</span>
+                <div class="chips"><span class="chip if">walk</span><span class="chip if">afterStep</span></div>
+                <div class="chips faded tiny"><span class="chip">stalled</span><span class="chip">climb</span><span class="chip">press</span><span class="chip">hurt</span><span class="chip">reach the Ink Core</span><span class="chip">deaths, Drops</span><span class="chip">M6: Siege Walker legs</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The Enemy half of the Material rules grew by another concept, climbing. "Stalled" is still split: the threshold is in the Enemies kind and the set is in the Material rules. Every rules test pays for the full fake.</p></div>
+        <div><span class="label">Solution</span><p>Unchanged from the last review. One Enemy rules module owns walking, climbing, stalled, Pressing, hurting, reaching the Ink Core, deaths and Drops, behind a small port of its own.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>locality: an Enemy's life, one module</li>
+          <li>Siege Walker lands in one place</li>
+          <li>smaller fakes per test</li>
+        </ul></div>
+      </div>
+    </article>
+
+    <!-- C7 -->
+    <article id="c7" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 7 · carried over</span>
+        <h2>Hand the scene one reading to draw and tune</h2>
+        <div class="badges"><span class="badge b-spec" style="background:var(--spec-bg);color:var(--spec)"><span class="dot"></span>Speculative</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/scenes/sandbox-scene.ts <span class="note">(67: this.world = gameLayer.world · 69: F2 gets world.materials and world.enemyTable past the Game · 70: the renderer takes the world)</span></li>
+        <li>src/rendering/kinds/enemies-drawing.ts <span class="note">(90–103)</span> · ink-core-drawing.ts <span class="note">(55–64): HP bar maths twice, each with its own LOW_HP (23, 19)</span></li>
+      </ul>
+      <div class="ba">
+        <div class="sheet themed">
+          <span class="s-label s-muted">Before: four readers reach in</span>
+          <pre class="mermaid">
+flowchart LR
+  Game --> HUD
+  Game -.->|defence| F2
+  Game -.->|world| Scene
+  Scene -.->|world.materials, enemyTable| F2
+  Scene -.->|world| Renderer
+  Game -.->|defence.reading| Rewards
+          </pre>
+        </div>
+        <div class="sheet themed">
+          <span class="s-label s-muted">After: one reading, one set of tables</span>
+          <pre class="mermaid">
+flowchart LR
+  Game -->|reading| HUD
+  Game -->|reading| Rewards
+  Game -->|reading| Renderer
+  Game -->|tables| F2
+          </pre>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The Core Zone drawing is gone, but the Defence loop has gained readers: the HUD, the rewards screen and F2's polling. F2 still edits world tables past the Game.</p></div>
+        <div><span class="label">Solution</span><p>Fold it into C1 and C3 as they land: each narrows what the Game hands out. Make the HP bar one shared drawing whenever either file is next touched.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>one HP bar</li>
+          <li>no writes past the Game</li>
+        </ul></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="panel also" aria-labelledby="also-h">
+    <span id="also-h" class="label">Also noticed, not candidates</span>
+    <ul>
+      <li><b>The GDD still describes the retired loop.</b> <code>docs/gdd.md</code> 36–39, 128–131, 148 ("Undo (Build Phase only)") and the roadmap at 177 ("Analysis → Build Phase → Wave → Aftermath") need bringing in line with ADR 0012 before the M5 spec cites them.</li>
+      <li><b>"Aftermath" is used but not defined.</b> The code uses it (<code>defence-loop.ts:20, 268</code>, <code>sandbox-world.ts:693</code>, <code>strokes.ts:239</code>) and so does ADR 0012, but CONTEXT.md doesn't. Either add it or say "the Intermission's refill and re-Freeze".</li>
+      <li><b>HUD hints are out of date.</b> <code>hud.ts:13</code> says "R: start over", but with Waves on R retries the Wave.</li>
+      <li><b>Unmarked provisional rules.</b> Drawing while a Wave is paused lives in <code>building</code> (<code>defence-loop.ts:197–203</code>) without the PROVISIONAL tag that <code>game.ts:27–31</code> gives it. The Eraser refunds during a Wave (<code>game.ts:475</code>), although CONTEXT.md calls it a testing tool.</li>
+      <li><b>Two roundings for Ink on screen.</b> <code>rewards-screen.ts:151</code> rounds, <code>ink-tanks.ts:92</code> floors with an epsilon. Colours <code>0x16171b</code> and <code>0x4f5666</code> in <code>rewards-screen.ts:178–179</code> are not in PALETTE.</li>
+      <li><b>Two ways to seed the first Wave.</b> <code>GameOptions.wave</code> (<code>game.ts:162</code>) and <code>DefenceLoopOptions.table</code> (<code>defence-loop.ts:77</code>) both say "until a Level brings its own". <code>DefenceLoop.list</code> (167) is read only by tests.</li>
+      <li><b>Stale comment.</b> <code>sandbox-world.ts:423</code> says the Spawn is "beyond the left edge", but the Arena now decides which edge.</li>
+      <li><b>Per-Colour records built by hand in five places</b> (<code>defence-loop.ts:317</code>, <code>game.ts:663</code>, <code>ink-tanks.ts:89, 103, 110</code>). A <code>perColour(fn)</code> helper would do.</li>
+      <li><b>Game tests run real Box2D.</b> <code>game.test.ts</code> builds 50 Games, because the Game takes the concrete <code>SandboxWorld</code>. That's fine for now: the Defence loop, where the phase rules live, already has its fake.</li>
+    </ul>
+  </section>
+
+  <section class="top" aria-labelledby="top-h">
+    <span id="top-h" class="label">Top recommendation</span>
+    <h2><a href="#c1">Make a lost Wave a phase the Defence loop answers for</a>, then <a href="#c2">give R one checkpoint</a></h2>
+    <p>C1 fixes a real contradiction with CONTEXT.md (building after a loss), it's small, and it gives milestone 5's Campaign the lost outcome it has to act on. C2 is the same area and makes R carry the state that milestone 5 adds. Do both before writing the spec. Then spec milestone 5 around C3 and C4, which decide what is being played and what the Intermission offers, and fix the GDD's retired terms on the way in.</p>
+  </section>
+
+</main>
+</body>
+</html>
