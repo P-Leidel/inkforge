@@ -60,13 +60,15 @@ describe('Loading a Level', () => {
 
   it('sets its Waves, starting at the first, and its Tank maximums, and fills the Tanks', () => {
     const game = createGame(true);
+    const freePlay = structuredClone(game.ink);
 
     game.load(LEVEL);
 
     expect(game.defence.list).toEqual(LEVEL.waves);
     expect(game.defence.table).toEqual(FIRST_WAVE);
     expect(game.defence.reading).toMatchObject({ wave: 1, waves: 2 });
-    expect(game.ink.tanks).toEqual(LEVEL.tanks);
+    expect(game.inkInForce.tanks).toEqual(LEVEL.tanks);
+    expect(game.ink).toEqual(freePlay);
     expect(maximums(game)).toEqual(COLOURS.map((c) => fromLineLength(LEVEL.tanks![c])));
     expect(spendable(game)).toEqual(maximums(game));
   });
@@ -107,26 +109,45 @@ describe('Loading a Level', () => {
     expect(game.world.arena).toBe(ARENA);
     expect(game.world.inkCore.bounds).toEqual(ARENA.core);
     expect(game.defence.table).toEqual(FIRST_WAVE);
-    expect(game.ink.tanks).toEqual(LEVEL.tanks);
+    expect(game.inkInForce.tanks).toEqual(LEVEL.tanks);
     expect(game.world.lines).toHaveLength(1);
   });
 
-  it('the sandbox Level after it brings the sandbox Arena back, and keeps the current Wave and the Tanks as they are', () => {
+  it("the sandbox Level after it brings the sandbox Arena back, and Free play's Wave, Tanks and Waves switch, whatever it was edited to", () => {
     const game = createGame(true);
+    const freePlay = structuredClone(game.ink);
     game.load(LEVEL);
-    game.editInk((ink) => (ink.tanks.red = 150)); // as the F2 tuning panel does
+    // As the F2 tuning panel does: this play's Tanks, Wave and Waves switch.
+    game.editInk((ink) => (ink.tanks.red = 150));
+    game.defence.edit((wave) => (wave.gap = 9));
+    game.waves = true;
 
     game.load(SANDBOX_LEVEL);
 
     expect(game.world.arena).toBe(SANDBOX_ARENA);
     expect(game.world.inkCore.bounds).toEqual(SANDBOX_ARENA.core);
     expect(game.world.lines).toEqual([]);
-    expect(game.defence.list).toEqual([FIRST_WAVE]);
-    expect(game.ink.tanks).toEqual({ ...LEVEL.tanks, red: 150 });
+    expect(game.defence.list).toEqual([DEFAULT_WAVE_TABLE]);
+    expect(game.ink).toEqual(freePlay);
+    expect(game.inkInForce.tanks).toEqual(freePlay.tanks);
+    expect(game.waves).toBe(false);
     expect(spendable(game)).toEqual(maximums(game));
   });
 
-  it('a Level without Waves or Tanks has one Wave, the current table, and leaves the Ink table as it is', () => {
+  it("F2's edits in a Level without Tanks or Waves are Free play's, and outlast the next load", () => {
+    const game = createGame(true);
+    game.load(SANDBOX_LEVEL);
+    game.editInk((ink) => (ink.tanks.red = 150));
+    game.defence.edit((wave) => (wave.gap = 9));
+
+    game.load(LEVEL);
+    game.load(PIT_DEMO);
+
+    expect(game.ink.tanks.red).toBe(150);
+    expect(game.defence.table.gap).toBe(9);
+  });
+
+  it("a Level without Waves or Tanks has one Wave, Free play's table, and leaves the Ink table as it is", () => {
     const game = createGame(true);
     const ink = structuredClone(game.ink);
 

@@ -61,6 +61,8 @@ export interface DrawingCommands {
   releaseAt(point: Vec2): void;
   eraseAlong(path: readonly Vec2[], radius: number): void;
   undo(): void;
+  /** Whether the Eraser is on hand: put away in the Campaign. */
+  readonly eraser: boolean;
 }
 
 /** A refusal to show: `path` flashes red, with `message` at the pointer. */
@@ -101,9 +103,9 @@ export type DrawingPreview =
 
 /**
  * Drawing input: turns a press, a drag and a release into commands, and
- * says what the preview and the flash show. It remembers the picked tool, a
- * Colour or the Eraser, the Stroke being drawn, the Eraser's path and its
- * last look at what is pending. The scene forwards pointer and tool events
+ * says what the preview and the flash show. It owns the picked tool, a
+ * Colour or the Eraser (only while it is on hand), and remembers the Stroke
+ * being drawn, the Eraser's path and its last look at what is pending. The scene forwards pointer and tool events
  * to it and draws what it is told.
  */
 export class DrawingInput {
@@ -127,11 +129,13 @@ export class DrawingInput {
   }
 
   /**
-   * Picks a Colour to draw in, or the Eraser. A Stroke being drawn carries on
-   * in a new Colour, and is dropped when the Eraser is picked; a held Eraser
-   * stops when a Colour is picked.
+   * Picks a Colour to draw in, or the Eraser, if it is on hand: put away, it
+   * can't be picked. A Stroke being drawn carries on in a new Colour, and is
+   * dropped when the Eraser is picked; a held Eraser stops when a Colour is
+   * picked.
    */
   pick(tool: Tool): void {
+    if (tool === 'eraser' && !this.commands.eraser) return;
     this.picked = tool;
     if (tool === 'eraser') this.stroke = null;
     else this.erasing = null;
@@ -223,11 +227,13 @@ export class DrawingInput {
   }
 
   /**
-   * Once a frame, before physics steps: a held Eraser erases along its path
-   * since it last erased, and carries on from its end. Held still, it keeps
-   * erasing what moves into the brush.
+   * Once a frame, before physics steps: with the Eraser picked but put away
+   * (a Campaign Level was loaded), the pick falls back to grey; otherwise a
+   * held Eraser erases along its path since it last erased, and carries on
+   * from its end. Held still, it keeps erasing what moves into the brush.
    */
   tick(): void {
+    if (this.picked === 'eraser' && !this.commands.eraser) this.pick('grey');
     this.erase();
   }
 

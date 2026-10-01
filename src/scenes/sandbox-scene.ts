@@ -122,8 +122,7 @@ export class SandboxScene extends Phaser.Scene {
   private showTitle(): void {
     this.open('INKFORGE', [
       { label: 'Campaign', onPick: () => this.showLevelList() },
-      // As a new page opened it: the sandbox, Waves off.
-      { label: 'Sandbox', onPick: () => this.playSandbox() },
+      { label: 'Sandbox', onPick: () => this.play(SANDBOX_LEVEL) },
       { label: 'Gallery', onPick: () => this.showGallery() },
     ]);
   }
@@ -170,11 +169,6 @@ export class SandboxScene extends Phaser.Scene {
     }
   }
 
-  private playSandbox(): void {
-    this.gameLayer.waves = false;
-    this.play(SANDBOX_LEVEL);
-  }
-
   /** Loads the Campaign's Level at `index`, if it is unlocked. */
   private playCampaign(index: number): void {
     if (!this.session.playCampaign(index)) return;
@@ -196,13 +190,9 @@ export class SandboxScene extends Phaser.Scene {
     this.started();
   }
 
-  /**
-   * A Level was loaded: closes any menu screen, names it for F1, and times it
-   * from now. With the Eraser put away (the Campaign), the pick goes back to grey.
-   */
+  /** A Level was loaded: closes any menu screen, names it for F1, and times it from now. */
   private started(): void {
     this.screen.hide();
-    if (!this.gameLayer.eraser && this.drawing.tool === 'eraser') this.drawing.pick('grey');
     this.overlay.setSceneName(this.session.reading.name);
     this.frames.sinceStart.restart();
   }
@@ -224,12 +214,7 @@ export class SandboxScene extends Phaser.Scene {
       }
       const colour = COLOUR_KEYS.get(event.key);
       if (colour) this.drawing.pick(colour);
-      else if (
-        event.key.toLowerCase() === 'e' &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        this.gameLayer.eraser
-      ) {
+      else if (event.key.toLowerCase() === 'e' && !event.ctrlKey && !event.metaKey) {
         this.drawing.pick('eraser');
       }
     });

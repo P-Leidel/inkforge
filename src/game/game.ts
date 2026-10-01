@@ -217,12 +217,25 @@ export interface GameOptions {
  *
  * The Eraser is a sandbox tool: the Game erases nothing while it is put
  * away (`eraser`), as it is in the Campaign.
+ *
+ * A Level is loaded whole: what it leaves out, its Tank maximums or its
+ * Waves, comes from Free play (F2's Ink table and Waves switch), never from
+ * the last Level. Its own apply on top only while it is played.
  */
 export class Game {
   readonly world: SandboxWorld;
   /** The phases: read it and edit its Wave table; the Waves switch and Space go through the Game. */
   readonly defence: DefenceLoop;
+  /** F2's Ink table: Free play's prices and Tank maximums, kept across every load. */
   private readonly table: InkTable;
+  /** This play's copy of the Level's own Tank maximums; null if it has none. */
+  private levelTanks: Record<Colour, number> | null = null;
+  /** The Ink table in force: F2's prices, and the Level's Tanks if it has them, else F2's. */
+  private readonly inForce: InkTable;
+  /** F2's Waves switch: Free play's, kept across every load. */
+  private freePlayWaves: boolean;
+  /** This play's Waves switch, for a Level with its own Waves; null if it has none. */
+  private levelWaves: boolean | null = null;
   private readonly inkTanks: InkTanks;
   private costs: boolean;
   private eraserOnHand = true;
@@ -243,9 +256,31 @@ export class Game {
 
   constructor(options: GameOptions) {
     this.world = options.world ?? new SandboxWorld(options.worldOptions);
-    this.table = options.ink ?? createInkTable();
+    const table = (this.table = options.ink ?? createInkTable());
+    const levelTanks = () => this.levelTanks;
+    this.inForce = {
+      get linePrice() {
+        return table.linePrice;
+      },
+      set linePrice(price) {
+        table.linePrice = price;
+      },
+      get fillPrice() {
+        return table.fillPrice;
+      },
+      set fillPrice(price) {
+        table.fillPrice = price;
+      },
+      get tanks() {
+        return levelTanks() ?? table.tanks;
+      },
+      set tanks(tanks) {
+        Object.assign(levelTanks() ?? table.tanks, tanks);
+      },
+    };
     this.costs = options.inkCosts;
-    this.inkTanks = new InkTanks(this.table);
+    this.freePlayWaves = options.waves ?? false;
+    this.inkTanks = new InkTanks(this.inForce);
     this.reader = this.world.happenings.reader();
     this.hooks = {
       before: () => this.defence.hooks.before?.(),
@@ -295,37 +330,57 @@ export class Game {
   }
 
   /**
-   * The Waves switch, as the Defence loop has it: off, no Wave or
-   * Intermission; turning it on pauses physics in an Intermission. Loading
-   * a Level with its own Waves turns it on.
+   * The Waves switch in force, as the Defence loop has it: off, no Wave or
+   * Intermission; turning it on pauses physics in an Intermission. A Level
+   * with its own Waves is played with Waves on, and switching them here only
+   * lasts this play, until Clear or the next load; a Level without them
+   * plays as Free play's switch says, and switching them here is Free
+   * play's, kept across every load.
    */
   get waves(): boolean {
     return this.defence.waves;
   }
 
   set waves(on: boolean) {
+    if (this.levelWaves === null) this.freePlayWaves = on;
+    else this.levelWaves = on;
     this.defence.waves = on;
   }
 
-  /** The Ink table: the prices and the Tank maximums. Edit it with `editInk`. */
+  /**
+   * Free play's Ink table, F2's: the prices and the Tank maximums of every
+   * Level without Tanks of its own. A Level's own Tanks never touch it.
+   */
   get ink(): ReadonlyInkTable {
     return this.table;
   }
 
   /**
-   * Edits the Ink table, as the F2 tuning panel does. A new price applies to
-   * the next Stroke or Fill: what was already charged keeps its price, so
-   * undo refunds what was paid. Lowering a maximum empties the Tank down to
-   * it at once; raising one leaves the Tank as it is.
+   * The Ink table in force: Free play's prices, and the Level's own Tank
+   * maximums if it has them (this play's copy), else Free play's. The
+   * Tanks read it; F2 shows and edits it with `editInk`.
+   */
+  get inkInForce(): ReadonlyInkTable {
+    return this.inForce;
+  }
+
+  /**
+   * Edits the Ink table in force, as the F2 tuning panel does: the prices
+   * are Free play's; the maximums are this play's copy of the Level's own
+   * Tanks if it has them, lost on Clear or the next load, else Free play's.
+   * A new price applies to the next Stroke or Fill: what was already
+   * charged keeps its price, so undo refunds what was paid. Lowering a
+   * maximum empties the Tank down to it at once; raising one leaves the
+   * Tank as it is.
    */
   editInk(edit: (table: InkTable) => void): void {
-    edit(this.table);
+    edit(this.inForce);
     this.inkTanks.fitMaximums();
   }
 
-  /** Whether this Level has `colour`: a Tank maximum of 0 means it doesn't, Ink costs on or off. */
+  /** Whether this Level has `colour`: a Tank maximum of 0 in force means it doesn't, Ink costs on or off. */
   has(colour: Colour): boolean {
-    return this.table.tanks[colour] > 0;
+    return this.inForce.tanks[colour] > 0;
   }
 
   /** Each Tank as the player reads it: what it holds and its maximum, worked out now. */
@@ -651,14 +706,15 @@ export class Game {
    * Loads `level` (CONTEXT.md): removes every Stroke and Fill, the Rubble,
    * Droplets, Patches and Blasts, puts the world on the Level's Arena (the
    * sandbox Arena if it has none), makes the Wave list a copy of its Waves
-   * (one Wave, the current table, if it has none) and sets its Tank
-   * maximums, if it has them. The world starts over, so the Game forgets
+   * (one Wave, Free play's table, if it has none) and puts this play's copy
+   * of its Tank maximums in force (Free play's, F2's, if it has none). The world starts over, so the Game forgets
    * everything (see `hear`): every Tank filled, the undo history empty, R
    * with nothing to go back to. Then the Level's build, if it has one,
    * builds on the Sandbox world below the Game, for free: a gallery demo or
    * a stress test. What it makes joins the undo history at price 0, and if
    * it started physics, R goes back to how it left the world. A Level with
-   * its own Waves turns the Waves switch on; one without leaves it as it is.
+   * its own Waves is played with Waves on; one without, as Free play's
+   * Waves switch says. Nothing of the last Level carries over.
    * The Defence loop then loads the Level's Waves: with Waves on, the Game
    * is in the first Wave's Intermission, and a build that started physics is
    * paused where it left it. Clear loads the Level again: back to Wave 1.
@@ -667,13 +723,14 @@ export class Game {
   load(level: Level): StressTest | undefined {
     const { arena, waves, tanks, build } = level;
     if (arena) checkArenaSize(arena);
-    if (tanks) this.table.tanks = { ...tanks };
+    this.levelTanks = tanks ? { ...tanks } : null;
+    this.levelWaves = waves && waves.length > 0 ? true : null;
     this.world.clear(arena);
     const stressTest = build?.(this.world) ?? undefined;
     this.catchUp();
     // A build starts physics as its last act, so the world's snapshot is of now.
     const started = this.world.isRunning;
-    if (waves && waves.length > 0) this.defence.waves = true;
+    this.defence.waves = this.levelWaves ?? this.freePlayWaves;
     this.defence.load(waves);
     if (started) this.checkpoint = this.takeCheckpoint();
     return stressTest;

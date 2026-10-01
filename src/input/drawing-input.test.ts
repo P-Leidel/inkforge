@@ -39,6 +39,9 @@ function drawingOver(game: Game) {
       game.eraseAlong(path, radius);
     },
     undo: () => game.undo(),
+    get eraser() {
+      return game.eraser;
+    },
   };
   return {
     input: new DrawingInput(commands),
@@ -726,6 +729,29 @@ describe('Drawing input', () => {
 
       expect(asked.erased).toEqual([[onPiece(0)]]);
       expect(world.lines).toHaveLength(1);
+    });
+
+    it('falls back to grey once a frame after it is put away while picked', () => {
+      const game = createGame(false);
+      const { input } = drawingOver(game);
+      input.pick('eraser');
+
+      game.eraser = false; // a Campaign Level was loaded
+      expect(input.tool).toBe('eraser');
+      input.tick();
+
+      expect(input.tool).toBe('grey');
+    });
+
+    it('cannot be picked while it is put away', () => {
+      const game = createGame(false);
+      const { input } = drawingOver(game);
+      input.pick('blue');
+      game.eraser = false;
+
+      input.pick('eraser');
+
+      expect(input.tool).toBe('blue');
     });
   });
 

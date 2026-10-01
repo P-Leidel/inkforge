@@ -33,13 +33,13 @@ describe('Level 2', () => {
 
     game.load(LEVEL_2);
 
-    expect(COLOURS.filter((colour) => game.ink.tanks[colour] > 0)).toEqual([
+    expect(COLOURS.filter((colour) => game.inkInForce.tanks[colour] > 0)).toEqual([
       'grey',
       'blue',
       'green',
       'black',
     ]);
-    expect(game.ink.tanks.red).toBe(0);
+    expect(game.inkInForce.tanks.red).toBe(0);
     expect(LEVEL_2.build).toBeUndefined();
     expect(game.world.lines).toEqual([]);
     expect(game.world.objects).toEqual([]);

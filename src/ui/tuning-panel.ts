@@ -59,8 +59,11 @@ const RULE_SWITCHES: readonly { readonly rule: keyof Rules; readonly label: stri
 
 /**
  * The F2 tuning panel. Its Ink section holds the **Ink costs** switch and
- * the Game's Ink table: the prices and the Tank maximums. Its Wave section
- * holds the **Waves** switch and the current Wave's table: a count per
+ * the Game's Ink table in force: the prices and the Tank maximums, which in
+ * a Level with its own Tanks are this play's copy of them (lost on Clear or
+ * the next load; Copy as JSON copies them), and otherwise Free play's. Its
+ * Wave section holds the **Waves** switch in force (in a Level with its own
+ * Waves, this play's) and the current Wave's table: a count per
  * Enemy type and the gap between arrivals; `draw` shows another Wave's once
  * the Level moves on to it. Its Rules section holds the provisional rules
  * switches, all on by default. Below them is every number of the material
@@ -69,8 +72,8 @@ const RULE_SWITCHES: readonly { readonly rule: keyof Rules; readonly label: stri
  * defaults in the code, and the rules under `rules`; Defaults restores the
  * tables and turns every rule back on. It lists whatever the tables hold,
  * so values added later appear without changes here. Edits go straight into
- * the tables the Game and the Sandbox world read, so they survive R and
- * Clear.
+ * the tables the Game and the Sandbox world read, so they survive R, and
+ * Free play's survive Clear and every load.
  *
  * A plain HTML overlay (styles in index.html). Keys typed into it don't reach
  * the game; clicking the game gives the keys back.
@@ -100,7 +103,7 @@ export class TuningPanel {
     /** Where the Ink costs switch and the Ink table's edits go. */
     private readonly game: Pick<
       Game,
-      'inkCosts' | 'waves' | 'ink' | 'editInk' | 'defence' | 'rules'
+      'inkCosts' | 'waves' | 'inkInForce' | 'editInk' | 'defence' | 'rules'
     >,
   ) {
     this.materials = {
@@ -113,9 +116,11 @@ export class TuningPanel {
       defaults: DEFAULT_ENEMY_TABLE,
       edit: (write) => editEnemies(enemyTable, write),
     };
-    // Through the Game, which empties a Tank down to a lowered maximum at once.
+    // The Ink table in force: in a Level with its own Tanks, this play's copy
+    // of them. Through the Game, which empties a Tank down to a lowered
+    // maximum at once.
     this.ink = {
-      table: game.ink,
+      table: game.inkInForce,
       defaults: DEFAULT_INK_TABLE,
       edit: (write) => game.editInk(write),
     };
@@ -238,7 +243,7 @@ export class TuningPanel {
       if (box.checked !== read()) box.checked = read();
     }
     const wave = this.game.defence.table;
-    const tanks = this.game.ink.tanks;
+    const tanks = this.game.inkInForce.tanks;
     if (this.shown?.wave === wave && this.shown.tanks === tanks) return;
     this.shown = { wave, tanks };
     this.refresh();
@@ -327,7 +332,7 @@ export class TuningPanel {
   private async copy(): Promise<void> {
     const json = tablesAsJson({
       materials: this.table,
-      ink: this.game.ink,
+      ink: this.game.inkInForce,
       wave: this.game.defence.table,
       enemies: this.enemyTable,
       rules: this.game.rules,

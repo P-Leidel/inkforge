@@ -363,14 +363,23 @@ describe("The Level's Waves", () => {
     expect(world.spawned).toEqual(['crawler', 'runner', 'heavy', 'heavy']);
   });
 
-  it('without a list of their own, are one Wave: the current table as it is', () => {
-    const { defence } = loop({ on: true, waves: [{ crawler: 1 }, {}] });
-    const current = defence.table;
+  it("without a list of their own, are one Wave: Free play's table, never the last Level's", () => {
+    const { defence } = loop({ on: true, wave: { runner: 2 }, waves: [{ crawler: 1 }, {}] });
+    defence.edit((wave) => (wave.gap = 9)); // as F2 does, in the Level
 
     defence.load();
 
-    expect(defence.list).toEqual([table({ crawler: 1 })]);
-    expect(defence.table).not.toBe(current);
+    expect(defence.list).toEqual([table({ runner: 2 })]);
+  });
+
+  it("without a list of their own, keep F2's edits to Free play's table across loads", () => {
+    const { defence } = loop({ wave: { runner: 2 } });
+    defence.edit((wave) => (wave.gap = 9));
+
+    defence.load([table({ crawler: 1 })]);
+    defence.load();
+
+    expect(defence.table).toEqual({ ...table({ runner: 2 }), gap: 9 });
   });
 });
 
