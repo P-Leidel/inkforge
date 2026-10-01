@@ -2,6 +2,7 @@ import type { Vec2 } from '../geometry/vec2';
 import { GRAVITY, type SandboxWorld, type StrokeId } from '../sandbox/sandbox-world';
 import { dragAlong, dragPolygon } from '../stroke/pointer-paths';
 import { SettleWatch, speedOf } from './settling';
+import type { Level } from '../game/level';
 import type { StressTest } from './stress-test';
 
 const COLUMNS = 10;
@@ -87,3 +88,9 @@ export class PebbleDrop implements StressTest {
     );
   }
 }
+
+/** The pebble drop as a Level: the sandbox, with the pebbles let go. */
+export const PEBBLES_LEVEL = {
+  name: 'Pebbles',
+  build: (world) => new PebbleDrop(world),
+} as const satisfies Level;

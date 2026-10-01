@@ -2,6 +2,7 @@ import { segmentsIntersect } from '../geometry/segment';
 import type { Vec2 } from '../geometry/vec2';
 import type { SandboxWorld, StrokeId } from '../sandbox/sandbox-world';
 import { dragAlong, dragCircle } from '../stroke/pointer-paths';
+import type { Level } from '../game/level';
 import type { StressTest } from './stress-test';
 
 const LINE_X = 960;
@@ -110,3 +111,9 @@ export class BallCannon implements StressTest {
     return `Ball cannon: ${this.fired} fired, ${this.reachedLine} hit the Line, ${this.tunnelled} passed through`;
   }
 }
+
+/** The ball cannon as a Level: the sandbox, with the cannon firing. */
+export const BALL_CANNON_LEVEL = {
+  name: 'Ball cannon',
+  build: (world) => new BallCannon(world),
+} as const satisfies Level;

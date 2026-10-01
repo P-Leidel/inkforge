@@ -24,16 +24,23 @@ import {
   STAIRCASE_WALL_X,
   STICK_DEMO,
   THIRD_BOUNCE_DEMO,
+  THREE_WAVES_DEMO,
   type Demo,
 } from './gallery';
 
 const createWorld = sandboxWorlds();
 const createGame = games();
 
-/** A new Game with `demo` loaded, as the scene loads it; its Sandbox world. */
+/**
+ * A new Game with `demo` loaded, as the scene loads it, then with Waves off
+ * and physics running on from where the demo left it; its Sandbox world.
+ */
 function loaded(demo: Demo): SandboxWorld {
   const game = createGame(true);
   game.load(demo); // throws if any of its Strokes is refused
+  // A demo with its own Waves turns them on, which pauses it.
+  game.waves = false;
+  game.world.resume();
   return game.world;
 }
 
@@ -100,6 +107,16 @@ describe('Colour gallery', () => {
       expect(arenaContents(world)).toEqual(started);
     });
   }
+
+  it('Three Waves: loads with Waves on, paused in the first Intermission', () => {
+    const game = createGame(true);
+
+    game.load(THREE_WAVES_DEMO);
+
+    expect(game.waves).toBe(true);
+    expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1, waves: 3 });
+    expect(game.isRunning).toBe(false);
+  });
 
   it('Bounce: puts a Line of each Colour side by side', () => {
     const world = createWorld();

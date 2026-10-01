@@ -26,6 +26,7 @@ import {
   type BuildAction,
   type LoopPosition,
 } from './defence-loop';
+import type { StressTest } from '../stress-tests/stress-test';
 import { checkArenaSize, type Level } from './level';
 import { createInkTable, type InkTable, type ReadonlyInkTable } from './ink-table';
 import { InkTanks, type TankReadings, type TanksState } from './ink-tanks';
@@ -199,7 +200,7 @@ export interface GameOptions {
  */
 export class Game {
   readonly world: SandboxWorld;
-  /** The phases: read it, flip its Waves switch and edit its Wave table; Space goes through the Game. */
+  /** The phases: read it and edit its Wave table; the Waves switch and Space go through the Game. */
   readonly defence: DefenceLoop;
   private readonly table: InkTable;
   private readonly inkTanks: InkTanks;
@@ -248,6 +249,19 @@ export class Game {
 
   set inkCosts(on: boolean) {
     this.costs = on;
+  }
+
+  /**
+   * The Waves switch, as the Defence loop has it: off, no Wave or
+   * Intermission; turning it on pauses physics in an Intermission. Loading
+   * a Level with its own Waves turns it on.
+   */
+  get waves(): boolean {
+    return this.defence.waves;
+  }
+
+  set waves(on: boolean) {
+    this.defence.waves = on;
   }
 
   /** The Ink table: the prices and the Tank maximums. Edit it with `editInk`. */
@@ -580,22 +594,26 @@ export class Game {
    * with nothing to go back to. Then the Level's build, if it has one,
    * builds on the Sandbox world below the Game, for free: a gallery demo or
    * a stress test. What it makes joins the undo history at price 0, and if
-   * it started physics, R goes back to how it left the world. The Defence
-   * loop then loads the Level's Waves: with Waves on, the Game is in the
-   * first Wave's Intermission, and a build that started physics is paused
-   * where it left it. Clear loads the Level again: back to Wave 1.
+   * it started physics, R goes back to how it left the world. A Level with
+   * its own Waves turns the Waves switch on; one without leaves it as it is.
+   * The Defence loop then loads the Level's Waves: with Waves on, the Game
+   * is in the first Wave's Intermission, and a build that started physics is
+   * paused where it left it. Clear loads the Level again: back to Wave 1.
+   * Returns what the build returned: a stress test's `StressTest`.
    */
-  load(level: Level): void {
+  load(level: Level): StressTest | undefined {
     const { arena, waves, tanks, build } = level;
     if (arena) checkArenaSize(arena);
     if (tanks) this.table.tanks = { ...tanks };
     this.world.clear(arena);
-    build?.(this.world);
+    const stressTest = build?.(this.world) ?? undefined;
     this.catchUp();
     // A build starts physics as its last act, so the world's snapshot is of now.
     const started = this.world.isRunning;
+    if (waves && waves.length > 0) this.defence.waves = true;
     this.defence.load(waves);
     if (started) this.checkpoint = this.takeCheckpoint();
+    return stressTest;
   }
 
   /**

@@ -10,8 +10,9 @@ import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-p
  * without building it first. Each demo is a Level that `Game.load` sets up
  * on a cleared Arena: its build uses the Sandbox world's commands, then
  * starts physics and lets its Objects go, so that R and Space replay it.
+ * Every demo has its Level's name, which the Gallery lists.
  */
-export type Demo = Level & { readonly name: string; build(world: SandboxWorld): void };
+export type Demo = Level & Required<Pick<Level, 'name'>> & { build(world: SandboxWorld): void };
 
 /** Horizontal centre of the k-th of five side-by-side stations. */
 const station = (k: number) => 250 + 300 * k;
@@ -537,10 +538,10 @@ export const STAIRCASE_DEMO: Demo = {
 };
 
 /**
- * A Level of three Waves, each bigger than the last, to play with Waves on
- * (F2): two grey Lines on the way to the Ink Core to start with, a grey box
+ * A Level of three Waves, each bigger than the last: loading it turns Waves
+ * on. Two grey Lines on the way to the Ink Core to start with, a grey box
  * dropped onto the first, and the Arena kept from Wave to Wave. With Waves
- * off, only the box drops.
+ * turned off in F2, only the box drops.
  */
 export const THREE_WAVES_DEMO: Demo = {
   name: 'Three Waves',
