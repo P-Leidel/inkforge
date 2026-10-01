@@ -1,4 +1,5 @@
 import type { Colour } from '../materials/colour';
+import type { EnemyType } from '../materials/enemy-table';
 import { ARENA_HEIGHT, ARENA_WIDTH, type Arena } from '../sandbox/arena';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import type { StressTest } from '../stress-tests/stress-test';
@@ -27,6 +28,11 @@ export interface Level {
   readonly waves?: readonly ReadonlyWaveTable[];
   /** Each Ink Tank's maximum, in Line length: loading it sets them in the Ink table, and fills the Tanks. */
   readonly tanks?: Readonly<Record<Colour, number>>;
+  /**
+   * A Campaign Level's hints: one line for each Colour and Enemy type it is
+   * the first to bring, shown when it first appears.
+   */
+  readonly hints?: Readonly<Partial<Record<Colour | EnemyType, string>>>;
   /**
    * What is already built there, for free (ADR 0009): it runs on the Sandbox
    * world below the Game, and what it makes joins the undo history at price
