@@ -111,7 +111,7 @@ describe('Space, with Waves off', () => {
     space(defence, world);
     expect(world.calls).toEqual(['snapshot', 'start']);
     expect(defence.reading.phase).toBeNull();
-    expect(defence.building).toBe(true);
+    expect(defence.bar('draw')).toBeNull();
 
     space(defence, world);
     expect(world.calls).toEqual(['snapshot', 'start', 'pause']);
@@ -127,12 +127,12 @@ describe('An Intermission', () => {
       waves: 1,
       rewards: null,
     });
-    expect(defence.building).toBe(false);
+    expect(defence.bar('draw')).toBe('not-now');
 
     space(defence, world);
 
     expect(defence.reading.phase).toBe('wave');
-    expect(defence.building).toBe(true);
+    expect(defence.bar('draw')).toBeNull();
     expect(world.calls).toEqual(['snapshot', 'start']);
   });
 });
@@ -145,7 +145,7 @@ describe('A Wave', () => {
     space(defence, world);
     expect(world.isRunning).toBe(false);
     expect(defence.reading.phase).toBe('wave');
-    expect(defence.building).toBe(true);
+    expect(defence.bar('draw')).toBeNull();
     space(defence, world);
 
     expect(world.calls).toEqual(['snapshot', 'start', 'pause', 'resume']);
@@ -206,7 +206,7 @@ describe('The end of a Wave', () => {
     expect(world.isRunning).toBe(false);
     expect(world.calls).toEqual(['snapshot', 'start', 'pause', 'freeze']);
     expect(tanks.fills).toBe(1);
-    expect(defence.building).toBe(false);
+    expect(defence.bar('draw')).toBe('not-now');
   });
 
   it("gives the rewards: the Wave's summary of kills, Ink Core HP and Ink picked up", () => {
@@ -253,7 +253,7 @@ describe('The end of a Wave', () => {
     expect(defence.reading).toMatchObject({ phase: 'cleared', wave: 3, waves: 3 });
     expect(defence.reading.rewards?.summary.wave).toBe(3);
     expect(tanks.fills).toBe(3);
-    expect(defence.building).toBe(false);
+    expect(defence.bar('draw')).toBe('not-now');
     world.calls.length = 0;
     space(defence, world);
     expect(world.calls).toEqual([]);
@@ -288,21 +288,27 @@ describe("The Level's Waves", () => {
 });
 
 describe('The Ink Core destroyed', () => {
-  it('stops physics during a Wave, which stays where it was lost: no refill', () => {
-    const { defence, world, tanks } = loop({ on: true, wave: { crawler: 3 } });
+  it('stops physics during a Wave, which is lost where it was: no refill', () => {
+    const { defence, world, tanks } = loop({ on: true, waves: [{}, { crawler: 3 }] });
+    space(defence, world);
+    step(defence, world);
     space(defence, world);
     step(defence, world);
 
     world.inkCore.hp = 0;
     step(defence, world);
 
-    expect(defence.reading.coreDestroyed).toBe(true);
-    expect(defence.reading.phase).toBe('wave');
+    expect(defence.reading).toMatchObject({
+      phase: 'lost',
+      wave: 2,
+      toCome: 2,
+      coreDestroyed: true,
+    });
     expect(world.isRunning).toBe(false);
-    expect(tanks.fills).toBe(0);
+    expect(tanks.fills).toBe(1);
   });
 
-  it('stops physics with Waves off too', () => {
+  it('stops physics with Waves off too, with no phase', () => {
     const { defence, world } = loop();
     space(defence, world);
 
@@ -310,7 +316,16 @@ describe('The Ink Core destroyed', () => {
     step(defence, world);
 
     expect(world.isRunning).toBe(false);
-    expect(defence.reading.coreDestroyed).toBe(true);
+    expect(defence.reading).toMatchObject({ phase: null, coreDestroyed: true });
+  });
+
+  it('is the phase once Waves are switched on after it', () => {
+    const { defence, world } = loop();
+    world.inkCore.hp = 0;
+
+    defence.waves = true;
+
+    expect(defence.reading.phase).toBe('lost');
   });
 
   it('lets Space start or resume nothing until the Ink Core is whole again', () => {
@@ -319,11 +334,60 @@ describe('The Ink Core destroyed', () => {
 
     space(defence, world);
     expect(world.calls).toEqual([]);
-    expect(defence.reading.phase).toBe('intermission');
+    expect(defence.reading.phase).toBe('lost');
 
     world.inkCore.hp = 10;
     space(defence, world);
     expect(defence.reading.phase).toBe('wave');
+  });
+});
+
+describe('What the player may do now', () => {
+  const ACTIONS = ['draw', 'fill', 'erase', 'undo'] as const;
+
+  it('with Waves off, is anything, near an Enemy or not', () => {
+    const { defence } = loop();
+
+    for (const action of ACTIONS) expect(defence.bar(action)).toBeNull();
+    expect(defence.bar('draw', { nearEnemy: true })).toBeNull();
+  });
+
+  it('with Waves on, is nothing outside a Wave: in an Intermission or once the Level is cleared', () => {
+    const { defence, world } = loop({ on: true });
+    for (const action of ACTIONS) expect(defence.bar(action)).toBe('not-now');
+
+    space(defence, world);
+    step(defence, world);
+    expect(defence.reading.phase).toBe('cleared');
+    for (const action of ACTIONS) expect(defence.bar(action)).toBe('not-now');
+  });
+
+  it('during a Wave, running or paused, is anything but drawing near an Enemy', () => {
+    const { defence, world } = loop({ on: true, wave: { crawler: 2 } });
+    space(defence, world);
+
+    for (const paused of [false, true]) {
+      if (paused) space(defence, world);
+      expect(world.isRunning).toBe(!paused);
+      for (const action of ACTIONS) expect(defence.bar(action)).toBeNull();
+      expect(defence.bar('draw', { nearEnemy: true })).toBe('near-enemy');
+    }
+  });
+
+  it('once the Ink Core is destroyed, is nothing, Waves on or off, until R', () => {
+    for (const on of [false, true]) {
+      const { defence, world } = loop({ on, wave: { crawler: 2 } });
+      space(defence, world);
+      world.inkCore.hp = 0;
+      step(defence, world);
+
+      for (const action of ACTIONS) expect(defence.bar(action)).toBe('lost');
+      expect(defence.bar('draw', { nearEnemy: true })).toBe('lost');
+
+      world.inkCore.hp = 10;
+      defence.reset();
+      expect(defence.bar('draw')).toBe(on ? 'not-now' : null);
+    }
   });
 });
 

@@ -29,10 +29,27 @@ export interface Refill {
 
 /**
  * Where the Defence loop is, with Waves on: an Intermission, paused, before
- * a Wave; a Wave, paused or running; or the Level cleared, after its last
- * Wave.
+ * a Wave; a Wave, paused or running; the Level cleared, after its last Wave;
+ * or lost, once the Ink Core is destroyed, until R or Clear.
  */
-export type Phase = 'intermission' | 'wave' | 'cleared';
+export type Phase = 'intermission' | 'wave' | 'cleared' | 'lost';
+
+/** What the player may ask to do to the Arena: draw a Stroke, fill, erase or undo. */
+export type BuildAction = 'draw' | 'fill' | 'erase' | 'undo';
+
+/** Why the player may not do something now, whatever it would cost. */
+export type Bar =
+  /** The Ink Core is destroyed: only R or Clear go on, Waves on or off. */
+  | 'lost'
+  /** With Waves on, it is not a Wave: an Intermission, or the Level cleared. */
+  | 'not-now'
+  /** During a Wave, a Stroke reaches closer to an Enemy than about the Enemy's width. */
+  | 'near-enemy';
+
+/** Whether `reason` is a Bar rather than another reason something is refused. */
+export function isBar(reason: string | null): reason is Bar {
+  return reason === 'lost' || reason === 'not-now' || reason === 'near-enemy';
+}
 
 /** What a Wave came to: the rewards screen's summary. */
 export interface WaveSummary {
@@ -57,7 +74,7 @@ export interface Rewards {
 
 /** The Defence loop as the HUD and the rewards screen read it. */
 export interface DefenceReading {
-  /** The Intermission, a Wave or the Level cleared, with Waves on; null with Waves off. */
+  /** The Intermission, a Wave, the Level cleared or lost, with Waves on; null with Waves off. */
   readonly phase: Phase | null;
   /** The Wave under way, or the next to come in an Intermission, from 1; the last once cleared. */
   readonly wave: number;
@@ -65,7 +82,7 @@ export interface DefenceReading {
   readonly waves: number;
   /** How many of the Wave's Enemies are still to come: 0 outside a Wave. */
   readonly toCome: number;
-  /** Whether the Ink Core's HP has run out: physics stops, and only R or Clear go on. */
+  /** Whether the Ink Core's HP has run out, Waves on or off: physics stops, and only R or Clear go on. */
   readonly coreDestroyed: boolean;
   /** The rewards of the Wave that last ended, in an Intermission or once cleared; null before the first. */
   readonly rewards: Rewards | null;
@@ -116,7 +133,7 @@ export class DefenceLoop {
   private index = 0;
   /** Which of `tables` R retries: the one whose start the Game's snapshot is of. */
   private retryIndex = 0;
-  /** The Wave under way, paused or running; null in an Intermission or once cleared. */
+  /** The Wave under way, paused or running, or the one lost; null in an Intermission or once cleared. */
   private current: Wave | null = null;
   private cleared = false;
   /** The rewards of each Wave that ended, by its index. */
@@ -195,16 +212,24 @@ export class DefenceLoop {
   }
 
   /**
-   * Whether the player may draw, fill, erase or undo now: always with Waves
-   * off, and with Waves on, only during a Wave, paused or running.
+   * Why the player may not `action` now, or null if they may. Once the Ink
+   * Core is destroyed, nothing, Waves on or off. With Waves on, nothing
+   * outside a Wave, and during one, no Stroke whose samples come near an
+   * Enemy (`nearEnemy`). With Waves off, anything.
    */
-  get building(): boolean {
-    return !this.on || this.current !== null;
-  }
-
-  /** Whether a Wave is under way, paused or running, with Waves on. */
-  get underWay(): boolean {
-    return this.on && this.current !== null;
+  bar(
+    action: BuildAction,
+    { nearEnemy = false }: { readonly nearEnemy?: boolean } = {},
+  ): Bar | null {
+    if (this.coreDestroyed) return 'lost';
+    if (!this.on) return null;
+    if (this.current === null) return 'not-now';
+    // PROVISIONAL, for manual testing (ADR 0012): during a Wave, undo (with
+    // its full refund) and every action while the Wave is paused stay
+    // allowed. Either may go once playing shows whether Ink scarcity holds
+    // without them: undo by barring it here, pausing by asking the world.
+    if (action === 'draw' && nearEnemy) return 'near-enemy';
+    return null;
   }
 
   private get coreDestroyed(): boolean {
@@ -213,6 +238,7 @@ export class DefenceLoop {
 
   private get phase(): Phase | null {
     if (!this.on) return null;
+    if (this.coreDestroyed) return 'lost';
     if (this.current) return 'wave';
     return this.cleared ? 'cleared' : 'intermission';
   }
@@ -252,8 +278,9 @@ export class DefenceLoop {
 
   /**
    * After a step: once the Ink Core is destroyed, physics stops, Waves on or
-   * off, and a Wave under way stays where it was lost. A Wave also ends when
-   * none is left to come and none is alive, and the Intermission begins.
+   * off, and a Wave under way is lost where it was, with its tally. A Wave
+   * also ends when none is left to come and none is alive, and the
+   * Intermission begins.
    */
   private stopIfOver(): void {
     if (this.coreDestroyed) return this.world.pause();

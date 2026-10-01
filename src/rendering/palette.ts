@@ -44,6 +44,7 @@ export const PALETTE = {
   intermission: '#6fe3ff',
   wave: '#ff9a5a',
   cleared: '#62d98b',
+  lost: '#ff5a5a',
   /** The number still to come, beside the Spawn arrow. */
   spawnCount: '#f0c05a',
 } as const;

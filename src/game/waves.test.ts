@@ -176,7 +176,7 @@ describe('The end of a Wave', () => {
     stepFor(game, 60, () => over(game));
 
     expect(game.defence.reading.coreDestroyed).toBe(true);
-    expect(game.defence.reading.phase).toBe('wave');
+    expect(game.defence.reading.phase).toBe('lost');
     expect(game.isRunning).toBe(false);
     expect(game.tanks).toEqual(tanks);
     // Space starts nothing until R.

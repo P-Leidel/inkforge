@@ -35,7 +35,7 @@ The paused phase between two Waves, and before the first. The player can't draw.
 _Avoid_: Build Phase, break, shop
 
 **Defence loop**:
-The cycle of phases the player goes through: an Intermission, then a Wave, then the next Intermission, through the Level's Waves; after the last, the Level is cleared. It says which phase is under way, and it stops everything once the Ink Core is destroyed.
+The cycle of phases the player goes through: an Intermission, then a Wave, then the next Intermission, through the Level's Waves; after the last, the Level is cleared. It says which phase is under way. Once the Ink Core is destroyed it stops there, and a Wave under way is lost: physics stays stopped, nothing can be drawn, filled, erased or undone, and only R or Clear go on.
 _Avoid_: Game loop, phase machine, round
 
 **Level**:
