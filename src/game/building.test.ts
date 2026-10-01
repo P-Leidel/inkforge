@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
+import { createEnemyTable } from '../materials/enemy-table';
 import { SANDBOX_ARENA } from '../sandbox/arena';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
 import type { Game } from './game';
@@ -155,4 +156,66 @@ describe('With Waves off', () => {
     game.togglePause();
     expect(game.submitStroke(across(760, GROUND - 160, 80), 'grey').kind).toBe('line');
   });
+});
+
+describe('Once the Ink Core is destroyed', () => {
+  /**
+   * A Game with Ink costs on whose Ink Core has 1 HP: a Line and a box are
+   * drawn first, then physics starts (a Wave, with Waves on) and a Crawler
+   * on the plateau walks into the Ink Core.
+   */
+  function lostGame(waves: boolean): Game {
+    const enemies = createEnemyTable();
+    enemies.coreHp = 1;
+    const game = createGame(true, { waves, worldOptions: { seed: 1, enemies } });
+    game.defence.waves = false;
+    expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
+    expect(game.submitStroke(dragBox(300, 300, 60, 60), 'grey').kind).toBe('object');
+    game.defence.waves = waves;
+    game.togglePause();
+    const { minX, maxY } = game.world.arena.core;
+    game.world.spawn('crawler', { x: minX - 60, y: maxY - 20 });
+    for (let k = 0; k < 600 && game.isRunning; k++) game.step();
+    expect(game.defence.reading.coreDestroyed).toBe(true);
+    return game;
+  }
+
+  for (const waves of [true, false]) {
+    describe(waves ? 'with Waves on' : 'with Waves off', () => {
+      it('bars every Stroke and Fill, and charges nothing', () => {
+        const game = lostGame(waves);
+        const tanks = game.tanks;
+        const stroke = across(300, 150, 100);
+
+        expect(game.submitStroke(stroke, 'grey')).toMatchObject({ kind: 'barred', reason: 'lost' });
+        expect(game.fillAt({ x: 330, y: 330 }, 'blue')).toMatchObject({
+          kind: 'barred',
+          reason: 'lost',
+        });
+        expect(game.prospect(game.lookAtStroke(stroke)!, 'grey').refusal).toBe('lost');
+        expect(game.world.lines).toHaveLength(1);
+        expect(game.tanks).toEqual(tanks);
+      });
+
+      it('leaves undo and the Eraser doing nothing, until R', () => {
+        const game = lostGame(waves);
+
+        game.undo();
+        game.eraseAlong(
+          [
+            { x: 590, y: 200 },
+            { x: 810, y: 200 },
+          ],
+          12,
+        );
+        expect(game.world.lines).toHaveLength(1);
+        expect(game.world.objects).toHaveLength(1);
+
+        game.reset();
+        if (waves) game.togglePause();
+        game.undo();
+        expect(game.world.objects).toHaveLength(0);
+      });
+    });
+  }
 });

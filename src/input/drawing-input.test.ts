@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
 import type { Game } from '../game/game';
 import { inLineLength } from '../game/ink-table';
+import { createEnemyTable } from '../materials/enemy-table';
 import { games } from '../game/test-support';
 import { SANDBOX_ARENA } from '../sandbox/arena';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
@@ -317,6 +318,25 @@ describe('Drawing input', () => {
       const flash = click(input, inBox);
       expect(flash).toMatchObject({ message: 'Draw during a Wave', pointer: inBox });
       expect(flash!.path[flash!.path.length - 1]).toEqual(flash!.path[0]);
+      expect(game.world.lines).toEqual([]);
+      expect(game.world.objects[0]!.fill).toBeNull();
+    });
+
+    it('flash "Ink Core destroyed: R or Clear" once it is, for a Stroke or a Fill', () => {
+      const enemies = createEnemyTable();
+      enemies.coreHp = 1;
+      const game = createGame(false, { worldOptions: { seed: 1, enemies } });
+      const { input } = drawingOver(game);
+      box(game.world, input);
+      const { minX, maxY } = game.world.arena.core;
+      game.world.spawn('crawler', { x: minX - 60, y: maxY - 20 });
+      game.togglePause();
+      for (let k = 0; k < 600 && game.isRunning; k++) game.step();
+      expect(game.defence.reading.coreDestroyed).toBe(true);
+
+      const message = 'Ink Core destroyed: R or Clear';
+      expect(drag(input, far)).toMatchObject({ message });
+      expect(click(input, inBox)).toMatchObject({ message, pointer: inBox });
       expect(game.world.lines).toEqual([]);
       expect(game.world.objects[0]!.fill).toBeNull();
     });

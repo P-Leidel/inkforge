@@ -18,17 +18,11 @@ import {
   type StrokeId,
   type StrokeOutcome,
 } from '../sandbox/sandbox-world';
-import { DefenceLoop } from './defence-loop';
+import { DefenceLoop, isBar, type Bar, type BuildAction } from './defence-loop';
 import { checkArenaSize, type Level } from './level';
 import { createInkTable, type InkTable, type ReadonlyInkTable } from './ink-table';
 import { InkTanks, type TankReadings, type TanksState } from './ink-tanks';
 import { createWaveTable, type WaveTable } from './wave-table';
-
-/*
- * PROVISIONAL, for manual testing (ADR 0012): undo, with a full refund, and
- * drawing while a Wave is paused both stay allowed during a Wave. Either may
- * go once playing shows whether Ink scarcity holds without them.
- */
 
 /** What a Stroke the Game was asked for became. */
 export type GameStrokeOutcome =
@@ -42,9 +36,9 @@ export type GameStrokeOutcome =
       readonly path: readonly Vec2[];
     }
   /**
-   * It was barred, so nothing was made: drawn in an Intermission or once the
-   * Level is cleared, or during a Wave, too near an Enemy. `path` is what it
-   * would have been.
+   * It was barred, so nothing was made: drawn once the Ink Core is
+   * destroyed, in an Intermission or once the Level is cleared, or during a
+   * Wave, too near an Enemy. `path` is what it would have been.
    */
   | { readonly kind: 'barred'; readonly reason: Bar; readonly path: readonly Vec2[] };
 
@@ -60,7 +54,10 @@ export type GameFillOutcome =
       readonly price: number;
       readonly outline: Polygon;
     }
-  /** The click was in an Intermission or once the Level is cleared, so the Object stays hollow. */
+  /**
+   * The click was barred (`reason`): once the Ink Core is destroyed, or with
+   * Waves on, outside a Wave. The Object stays hollow.
+   */
   | {
       readonly kind: 'barred';
       readonly reason: Bar;
@@ -68,12 +65,7 @@ export type GameFillOutcome =
       readonly outline: Polygon;
     };
 
-/** Why a Stroke or a Fill is barred, whatever it would cost. */
-export type Bar =
-  /** With Waves on, it is not a Wave: an Intermission, or the Level cleared. */
-  | 'not-now'
-  /** During a Wave, a Stroke reaches closer to an Enemy than about the Enemy's width. */
-  | 'near-enemy';
+export type { Bar };
 
 /** What something would cost before it is made, and whether its Tank can pay for it. */
 export interface CostEstimate {
@@ -294,16 +286,17 @@ export class Game {
    * an Object, a rejection or nothing, and charges its price to `colour`'s
    * Tank: `linePrice` × its Ink, a Line's Piece by Piece. The parts of a Line
    * lying on another Line are free, found once, as it is made; an Object
-   * pays for all of its Outline. With Waves on, a Stroke outside a Wave is
-   * barred, and so during one is a Stroke whose raw samples come too near an
-   * Enemy; so is one that costs more than the Tank holds.
+   * pays for all of its Outline. It is barred whenever the Defence loop bars
+   * drawing: once the Ink Core is destroyed, with Waves on outside a Wave,
+   * and during one when its raw samples come too near an Enemy. One that
+   * costs more than the Tank holds is refused.
    */
   submitStroke(samples: readonly Vec2[], colour: Colour): GameStrokeOutcome {
     this.catchUp();
     // The Stroke pipeline keeps a Stroke within its samples.
     const nearEnemy = this.nearEnemy(samples);
     const refusal = (made: MadeStroke) =>
-      this.refusal(false, nearEnemy, made.colour, this.priceOf(made));
+      this.refusal('draw', false, nearEnemy, made.colour, this.priceOf(made));
     const outcome = this.world.submitStroke(samples, colour, {
       accept: (made) => refusal(made) === null,
     });
@@ -311,8 +304,7 @@ export class Game {
       case 'declined': {
         const { made, path } = outcome;
         const reason = refusal(made);
-        if (reason === 'not-now' || reason === 'near-enemy')
-          return { kind: 'barred', reason, path };
+        if (isBar(reason)) return { kind: 'barred', reason, path };
         return { kind: 'refused', colour: made.colour, price: this.priceOf(made), path };
       }
       case 'line':
@@ -330,13 +322,14 @@ export class Game {
 
   /**
    * Fills the Object under `point` with `colour`, and charges `fillPrice` ×
-   * its Ink to `colour`'s Tank. With Waves on, a click outside a Wave is
-   * barred; a Fill that costs more than the Tank holds is refused. Either
+   * its Ink to `colour`'s Tank. It is barred whenever the Defence loop bars
+   * filling; a Fill that costs more than the Tank holds is refused. Either
    * way, the Object stays hollow.
    */
   fillAt(point: Vec2, colour: Colour): GameFillOutcome {
     this.catchUp();
-    const refusal = (ink: number) => this.refusal(false, false, colour, this.fillPrice(ink));
+    const refusal = (ink: number) =>
+      this.refusal('fill', false, false, colour, this.fillPrice(ink));
     const outcome = this.world.fillAt(point, colour, {
       accept: (fill) => refusal(fill.ink) === null,
     });
@@ -344,9 +337,7 @@ export class Game {
       case 'declined': {
         const { id, outline, ink } = outcome;
         const reason = refusal(ink);
-        if (reason === 'not-now' || reason === 'near-enemy') {
-          return { kind: 'barred', reason, id, outline };
-        }
+        if (isBar(reason)) return { kind: 'barred', reason, id, outline };
         return { kind: 'refused', id, colour, price: this.fillPrice(ink), outline };
       }
       case 'filled': {
@@ -393,10 +384,10 @@ export class Game {
   /**
    * What `look` would do in `colour`, priced now: an Object pays for all of
    * its Outline, a Line for the part not lying on another Line, a Fill for
-   * its Ink. It is barred first outside a Wave, then an overlap refuses it,
-   * then coming too near an Enemy during a Wave, then a price its Tank can't
-   * pay. The phase, the Tanks, the Ink table and the Ink costs switch are
-   * read as they are now, whenever the look was taken.
+   * its Ink. It is barred first, as the Defence loop says, then an overlap
+   * refuses it, then a price its Tank can't pay. The phase, the Tanks, the
+   * Ink table and the Ink costs switch are read as they are now, whenever
+   * the look was taken.
    */
   prospect(look: Look, colour: Colour): Prospect {
     const price = this.lookPrice(look);
@@ -404,26 +395,33 @@ export class Game {
     const overlaps = look.kind === 'object' && look.overlaps;
     return {
       kind: look.kind,
-      refusal: this.refusal(overlaps, look.nearEnemy, colour, price),
+      refusal: this.refusal(
+        look.kind === 'fill' ? 'fill' : 'draw',
+        overlaps,
+        look.nearEnemy,
+        colour,
+        price,
+      ),
       cost,
     };
   }
 
   /**
-   * Why something would be refused now, the first reason of those it runs
-   * into: with Waves on, not being in a Wave; an overlap; during a Wave,
-   * coming too near an Enemy (`nearEnemy` says whether it does); then a
-   * price `colour`'s Tank can't pay. Null if it wouldn't be.
+   * Why `action` would be refused now, the first reason of those it runs
+   * into: whatever the Defence loop bars it for (`nearEnemy` says whether a
+   * Stroke comes too near an Enemy); an overlap; then a price `colour`'s
+   * Tank can't pay. Null if it wouldn't be.
    */
   private refusal(
+    action: BuildAction,
     overlaps: boolean,
     nearEnemy: boolean,
     colour: Colour,
     price: number,
   ): Refusal | null {
-    if (!this.defence.building) return 'not-now';
+    const bar = this.defence.bar(action, { nearEnemy });
+    if (bar) return bar;
     if (overlaps) return 'overlaps';
-    if (this.defence.underWay && nearEnemy) return 'near-enemy';
     return this.affords(colour, price) ? null : 'not-enough';
   }
 
@@ -469,11 +467,11 @@ export class Game {
   /**
    * The Eraser: removes what its brush passes over, and refunds what was
    * paid for it: an Object's Outline and Fill, a Piece's price. Rubble,
-   * Droplets and Patches are a broken Fill's, and that Ink is spent. With
-   * Waves on, it erases only during a Wave.
+   * Droplets and Patches are a broken Fill's, and that Ink is spent. It
+   * erases nothing while the Defence loop bars erasing.
    */
   eraseAlong(path: readonly Vec2[], radius: number): void {
-    if (!this.defence.building) return;
+    if (this.defence.bar('erase')) return;
     this.catchUp();
     this.world.eraseAlong(path, radius);
     this.catchUp();
@@ -483,11 +481,11 @@ export class Game {
    * Takes back the most recent Stroke or Fill that still exists, and refunds
    * exactly what was paid for it: a Fill's price, an Object's Outline's, or
    * a Line's standing Pieces'. Broken Objects, and Lines whose every Piece
-   * broke, are gone from the history, so undo skips them. With Waves on, it
-   * works only during a Wave, paused or running: PROVISIONAL (see above).
+   * broke, are gone from the history, so undo skips them. It does nothing
+   * while the Defence loop bars undo (see its PROVISIONAL note).
    */
   undo(): void {
-    if (!this.defence.building) return;
+    if (this.defence.bar('undo')) return;
     this.catchUp();
     for (let action = this.undoHistory.pop(); action; action = this.undoHistory.pop()) {
       if (this.takeBack(action)) break;

@@ -29,6 +29,7 @@ export const notEnough = (colour: Colour) => `Not enough ${colour}`;
 
 /** What a flash says about a barred Stroke or Fill, by why it was barred. */
 export const BAR_MESSAGES: Record<Bar, string> = {
+  lost: 'Ink Core destroyed: R or Clear',
   'not-now': 'Draw during a Wave',
   'near-enemy': 'Too close to an Enemy',
 };

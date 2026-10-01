@@ -10,7 +10,7 @@ const HELP_TEXT =
 const STATUS = {
   running: { text: '▶ RUNNING', color: PALETTE.running },
   paused: { text: '❚❚ PAUSED', color: PALETTE.paused },
-  destroyed: { text: 'Ink Core destroyed    R: start over', color: PALETTE.destroyed },
+  destroyed: { text: 'Ink Core destroyed    R or Clear', color: PALETTE.destroyed },
 } as const;
 
 /** What the phase label says, with Waves on; nothing with Waves off. */
@@ -25,6 +25,8 @@ export function phaseLabel({ phase, wave, waves }: DefenceReading): string {
       return `WAVE ${wave} of ${waves}`;
     case 'cleared':
       return 'LEVEL CLEARED';
+    case 'lost':
+      return `WAVE ${wave} of ${waves} LOST`;
   }
 }
 
