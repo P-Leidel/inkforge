@@ -1,6 +1,6 @@
-# INKFORGE: Game Design Document v0.6
+# INKFORGE: Game Design Document v0.7
 
-English rewrite of the v0.2 concept, updated with the design decisions made since (v0.6: milestone 4's enemy rules). Terms in **bold** are defined in [`CONTEXT.md`](../CONTEXT.md); the reasoning behind the larger decisions is in [`docs/adr/`](adr/).
+English rewrite of the v0.2 concept, updated with the design decisions made since (v0.6: milestone 4's enemy rules; v0.7: the Defence loop of [ADR 0012](adr/0012-continuous-building-between-intermissions.md) and milestone 5's Campaign). Terms in **bold** are defined in [`CONTEXT.md`](../CONTEXT.md); the reasoning behind the larger decisions is in [`docs/adr/`](adr/).
 
 ## 1. Vision
 
@@ -33,11 +33,13 @@ Tagline: *Draw it. Build it. Break physics. Survive the wave.*
 
 ## 5. Core loop
 
-1. **Analysis.** The next wave's enemy types and counts are shown in advance.
-2. **Build Phase.** Untimed. Physics is paused. Draw anywhere, undo freely (full refund).
-3. **Wave.** Physics runs, no undo. The player can Release Frozen Objects and draw inside the **Core Zone** with **Wave Ink**.
-4. **Aftermath.** Everything stays as it ended, damage included. Resting Objects are Frozen again.
-5. Repeat until the final boss.
+([ADR 0012](adr/0012-continuous-building-between-intermissions.md))
+
+1. **Intermission.** Physics is paused. The **Analysis** shows the next Wave's enemy types and counts. After a Wave, its rewards are shown (in the Campaign, a summary) and the **Aftermath** follows: every Ink Tank refills to its maximum and every Object at rest is Frozen again; everything else stays as the Wave left it, damage included.
+2. **Wave.** Physics runs and enemies walk in. The player builds as they come: draws anywhere but close to an Enemy, paid from the Ink Tanks, and Releases Frozen Objects. Drops go straight into the Tanks.
+3. Repeat through the Level's Waves; then the next Level, until the final boss. If the Ink Core is destroyed, the Wave is lost: retry it, or restart the Level.
+
+Whether the player may also build in the Intermission, undo during a Wave, and build while a Wave is paused is decided by the milestone 5 playtest.
 
 ## 6. Drawing
 
@@ -125,16 +127,16 @@ Enemies are upright physics bodies pushed along by a capped force ([ADR 0010](ad
 
 - Each Colour has an **Ink Tank** with a maximum. Red and black are the rarest Colours.
 - **Overlap charging:** only the parts of a Line that lie on another Line are free. Where a Line crosses an Object, or an Object is drawn over a Line, it costs full price, since the Object is about to be pushed away.
-- **Build Phase:** draw anywhere at the normal cost. Undo refunds fully. Erasing a Stroke from an earlier Wave gives no ink back.
-- **Wave:** Build Phase leftovers become **Locked Ink**. They stay in the Tank but can't be spent. The player can only spend **Wave Ink** (dropped by kills in this Wave), and only inside the **Core Zone**, a visible circle about a quarter of the screen wide ([ADR 0005](adr/0005-wave-drawing-uses-wave-ink.md)).
+- **Wave:** draw anywhere at the normal cost, except closer than about one Enemy's width to an Enemy ([ADR 0012](adr/0012-continuous-building-between-intermissions.md)). Undo refunds fully. There is no erasing in the game; the Eraser is a sandbox tool.
+- **Intermission:** every Tank refills to its maximum (the Aftermath).
 - **Drops:** enemies drop random amounts of every Colour, weighted by enemy type, on every death except reaching the Ink Core, Pit kills included. Drops are picked up automatically on death. Drops that don't fit in the Tank are lost, so saving ink leaves less room for drops.
-- Leftover Wave Ink stays in the Tank.
+- A Level's Tank maximums say which Colours it has: a Colour at 0 is greyed out on the palette and refused with "Not in this Level".
 
 ## 11. Modes
 
 ([ADR 0006](adr/0006-campaign-before-roguelite.md))
 
-- **Campaign:** a fixed sequence of handmade Levels, each an arena with its waves. Ink Tanks reset to the Level's amount every Wave, so each Wave is a clean puzzle. No upgrades.
+- **Campaign:** a fixed sequence of handmade Levels, each an arena with its waves, unlocked one after another. Ink Tanks reset to the Level's amount every Wave, so each Wave is a clean puzzle. No upgrades, and no pick of rewards. Which Levels are unlocked is saved in the browser.
 - **Roguelite Mode:** unlocked by beating the Campaign's final boss. Ink carries over between Waves, and the player picks 1 of 3 upgrades after each Wave. Tank size starts fixed; an upgrade can raise it. A recycling upgrade could give ink back for erased Strokes. Meta-progression unlocks options, not permanent power.
 
 ## 12. Controls
@@ -145,7 +147,7 @@ Enemies are upright physics bodies pushed along by a capped force ([ADR 0010](ad
 | Draw | Hold left mouse button and drag |
 | Fill | Click inside a closed Object (no drag) with a Colour selected |
 | Release a Frozen Object (Wave only) | Right-click it |
-| Undo (Build Phase only) | Ctrl+Z |
+| Undo | Ctrl+Z |
 
 ## 13. MVP scope
 
@@ -173,8 +175,8 @@ Arenas assembled by a seed from handmade modules, not random geometry.
 1. **Physics sandbox** ([spec](specs/m1-physics-sandbox.md)). Stroke-to-physics pipeline (pointer input → sampling → smoothing → simplification → geometry validation → collider → body), Lines and Objects, Frozen state. Includes the engine stress test: fast balls vs thin Lines, stacked boxes, 100 pebbles.
 2. **Colours** ([spec](specs/m2-colours.md)). All five, Outline and Fill, Spills, Blasts, breaking.
 3. **Ink costs** ([spec](specs/m3-ink-costs.md)). Tanks, costs, overlap charging, refunds.
-4. **Enemies and Ink Core** ([spec](specs/m4-enemies-and-ink-core.md)). Crawler, Runner and Heavy, Pressing, damage, a minimal Build Phase and Wave, the Core Zone, Locked and Wave Ink, Drops.
-5. **Defence loop.** Analysis → Build Phase → Wave → Aftermath, sequences of Waves, three arenas.
+4. **Enemies and Ink Core** ([spec](specs/m4-enemies-and-ink-core.md)). Crawler, Runner and Heavy, Pressing, damage, Drops, and Waves with Intermissions between them ([ADR 0012](adr/0012-continuous-building-between-intermissions.md), which replaced the spec's Build Phase, Core Zone, Locked and Wave Ink).
+5. **Defence loop** ([spec](specs/m5-defence-loop.md)). The Analysis, the Campaign of three handmade Levels that teach the Colours in turn, saving progress.
 6. **Boss and content.** Siege Walker, tuning, then Roguelite Mode and procedural arenas after the go/no-go test.
 
 ## 16. Main risk

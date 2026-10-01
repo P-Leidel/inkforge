@@ -15,7 +15,7 @@ The structure the player defends. Only an Enemy reaching it damages it; the run 
 _Avoid_: Base, tower, heart
 
 **Spawn**:
-Where Enemies appear: beyond the Arena's edge, out of view and out of reach of drawing, so they walk in over the edge. The player can build right up to it, but never on it.
+Where Enemies appear: beyond one edge of the Arena, which the Arena names, out of view and out of reach of drawing, so they walk in over the edge. The player can build right up to it, but never on it.
 _Avoid_: Spawn point, gate, portal
 
 **Pit**:
@@ -31,8 +31,16 @@ The phase in which physics runs, enemies walk toward the Ink Core, and the playe
 _Avoid_: Round, combat phase
 
 **Intermission**:
-The paused phase between two Waves, and before the first. The player can't draw (provisionally, while testing, they can). When a Wave ends, it shows that Wave's rewards (for now a summary: kills, the Ink Core's HP, the Ink picked up), every Ink Tank refills to its maximum and every Object at rest is Frozen again; the Arena otherwise stays as the Wave left it, damage included. Space starts the next Wave.
+The paused phase between two Waves, and before the first. The player can't draw (provisionally, while testing, they can). When a Wave ends, it shows that Wave's rewards (for now a summary: kills, the Ink Core's HP, the Ink picked up), every Ink Tank refills to its maximum and every Object at rest is Frozen again; the Arena otherwise stays as the Wave left it, damage included. Before each Wave it shows the Analysis. Space starts the next Wave.
 _Avoid_: Build Phase, break, shop
+
+**Analysis**:
+What the Intermission shows of the next Wave: each Enemy type it sends and how many, and in the Campaign, a line for each Colour or Enemy type appearing for the first time. Not the order or the gaps.
+_Avoid_: Preview, scouting
+
+**Aftermath**:
+What happens to the Arena when a Wave ends: every Ink Tank refills to its maximum and every Object at rest is Frozen again. Nothing else changes.
+_Avoid_: Cleanup, reset
 
 **Defence loop**:
 The cycle of phases the player goes through: an Intermission, then a Wave, then the next Intermission, through the Level's Waves; after the last, the Level is cleared. It says which phase is under way. Once the Ink Core is destroyed it stops there, and a Wave under way is lost: physics stays stopped, nothing can be drawn, filled, erased or undone, and only R or Clear go on.
@@ -43,7 +51,7 @@ Everything an Arena starts with: the Arena itself (its Terrain, Spawn and Ink Co
 _Avoid_: Stage, map, arena description, scenario
 
 **Campaign**:
-The first mode: a fixed sequence of handmade Levels. Ink Tanks reset to a set amount every Wave.
+The first mode: a fixed sequence of handmade Levels, each unlocked by clearing the one before. Ink Tanks reset to the Level's maximums every Wave; a Colour whose maximum is 0 is not in the Level.
 
 **Roguelite Mode**:
 The mode unlocked by beating the Campaign's final boss. Ink carries over between Waves, and the player picks upgrades.

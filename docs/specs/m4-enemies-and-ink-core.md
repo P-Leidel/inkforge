@@ -1,6 +1,6 @@
 # Spec: Milestone 4, Enemies and Ink Core
 
-**Planned.** Roadmap step 4 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 3 spec](m3-ink-costs.md).
+**Done** (closed 2026-10-01). Its Build Phase, Core Zone, Locked Ink and Wave Ink were replaced during the milestone by [ADR 0012](../adr/0012-continuous-building-between-intermissions.md). Roadmap step 4 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 3 spec](m3-ink-costs.md).
 
 ## Problem Statement
 
