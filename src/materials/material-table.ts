@@ -159,6 +159,8 @@ export interface MaterialTable {
   wakeSpeed: number;
   /** Most Rubble at once; a release that would go over it fades out the oldest. */
   rubbleCap: number;
+  /** Seconds a piece of Rubble lasts after its Object broke; it fades out over the last 0.5 s. */
+  rubbleLifetime: number;
   /** A released piece is kicked up to this far (radians) either side of straight outward. */
   kickSpread: number;
   /** Fewest Droplets in a Spill. */
@@ -348,6 +350,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   minBounceSpeed: 50,
   wakeSpeed: 82.5,
   rubbleCap: 150,
+  rubbleLifetime: 5,
   kickSpread: 0.35,
   dropletsMin: 10,
   dropletsMax: 15,

@@ -102,7 +102,7 @@ The fragments a broken Piece or Object bursts into, and the pop of an Enemy that
 _Avoid_: Rubble (which is physical)
 
 **Rubble**:
-The pebbles (grey) or stones (black) a Fill releases when its Object breaks. Real bodies that roll, pile up and hit things, but never break.
+The pebbles (grey) or stones (black) a Fill releases when its Object breaks. Real bodies that roll, pile up and hit things, but never break, and vanish a few seconds after they are released.
 _Avoid_: Shrapnel, Debris
 
 **Spill**:
