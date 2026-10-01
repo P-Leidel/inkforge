@@ -5,16 +5,21 @@ import type { Vec2 } from '../geometry/vec2';
 export const ARENA_WIDTH = 1920;
 export const ARENA_HEIGHT = 1080;
 
+/** Which edge of the screen an Arena's Spawn is beyond. */
+export type SpawnSide = 'left' | 'right';
+
 /**
  * One fixed, non-scrolling screen with its Terrain, the Spawn and the Ink
- * Core. The screen's left edge is the Spawn edge: beyond it, out of view,
- * Terrain carries on as the lane Enemies walk in along.
+ * Core. The screen's edge on the Spawn's side is the Spawn edge: beyond it,
+ * out of view, Terrain carries on as the lane Enemies walk in along.
  */
 export interface Arena {
   readonly width: number;
   readonly height: number;
-  /** Terrain as convex polygons in Arena pixels, the lane beyond the left edge included. */
+  /** Terrain as convex polygons in Arena pixels, the lane beyond the Spawn edge included. */
   readonly terrain: readonly Polygon[];
+  /** Which edge the Spawn is beyond: the Spawn edge. */
+  readonly spawnSide: SpawnSide;
   /**
    * The Spawn: where the lane's floor meets the Terrain wall at its far end,
    * out of view. A new Enemy stands there, its back to the wall.
@@ -26,7 +31,7 @@ export interface Arena {
 
 const GROUND_Y = 880;
 const WALL_WIDTH = 40;
-/** How far the lane runs beyond the left edge, out of view. */
+/** How far the lane runs beyond the Spawn edge, out of view. */
 const LANE_LENGTH = 240;
 const SLOPE_LEFT = 1400;
 /** Where the slope meets the plateau. The slope rises 1 in 2, as in milestone 1. */
@@ -84,6 +89,7 @@ export const SANDBOX_ARENA: Arena = {
   width: ARENA_WIDTH,
   height: ARENA_HEIGHT,
   terrain: sandboxTerrain([GROUND]),
+  spawnSide: 'left',
   spawn: { x: -LANE_LENGTH, y: GROUND_Y },
   core: {
     minX: RIGHT_WALL - CORE_SIZE,
@@ -92,3 +98,11 @@ export const SANDBOX_ARENA: Arena = {
     maxY: PLATEAU_Y,
   },
 };
+
+/** Where on the x axis an Arena's Spawn edge is: 0 or its width. */
+export const spawnEdgeX = ({ spawnSide, width }: Pick<Arena, 'spawnSide' | 'width'>): number =>
+  spawnSide === 'left' ? 0 : width;
+
+/** Which way along x is in from the Spawn edge: +1 from the left, -1 from the right. */
+export const inward = ({ spawnSide }: Pick<Arena, 'spawnSide'>): number =>
+  spawnSide === 'left' ? 1 : -1;

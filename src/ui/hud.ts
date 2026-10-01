@@ -2,6 +2,7 @@ import type Phaser from 'phaser';
 import type { DefenceReading } from '../game/defence-loop';
 import type { Game } from '../game/game';
 import { FONT_FAMILY, PALETTE } from '../rendering/palette';
+import { inward, spawnEdgeX } from '../sandbox/arena';
 
 const HELP_TEXT =
   '1–5: Colour    E: eraser    Drag: draw    Click: fill    Right-click: release    Space: run / pause    R: reset    Ctrl+Z: undo    F1: stats / debug    F2: tuning';
@@ -30,7 +31,7 @@ export function phaseLabel({ phase, wave, waves }: DefenceReading): string {
   }
 }
 
-/** How far above the ground the Spawn arrow is (see the World renderer), and right of the edge. */
+/** How far above the ground the Spawn arrow is (see the World renderer), and in from the Spawn edge. */
 const SPAWN_COUNT_RISE = 60;
 const SPAWN_COUNT_X = 32;
 
@@ -70,14 +71,14 @@ export class Hud {
       .setOrigin(0.5, 0)
       .setDepth(50);
     this.toCome = scene.add
-      .text(SPAWN_COUNT_X, game.world.arena.spawn.y - SPAWN_COUNT_RISE, '', {
+      .text(0, 0, '', {
         fontFamily: FONT_FAMILY,
         fontSize: '22px',
         fontStyle: 'bold',
         color: PALETTE.spawnCount,
       })
-      .setOrigin(0, 0.5)
       .setDepth(50);
+    this.placeToCome();
     // Control hints along the top edge, above the palette, status and toolbar.
     scene.add
       .text(scene.scale.width / 2, 8, HELP_TEXT, {
@@ -116,6 +117,18 @@ export class Hud {
     this.status.setColor(STATUS[shown].color);
   }
 
+  /** Puts the count to come beside the Spawn arrow, on the Arena's side of it. */
+  private placeToCome(): void {
+    const arena = this.game.world.arena;
+    const left = arena.spawnSide === 'left';
+    this.toCome
+      .setPosition(
+        spawnEdgeX(arena) + inward(arena) * SPAWN_COUNT_X,
+        arena.spawn.y - SPAWN_COUNT_RISE,
+      )
+      .setOrigin(left ? 0 : 1, 0.5);
+  }
+
   /** The phase label, and the count beside the Spawn arrow during a Wave. */
   private drawPhase(): void {
     const reading = this.game.defence.reading;
@@ -127,7 +140,7 @@ export class Hud {
       if (phase) this.phase.setColor(PALETTE[phase]);
     }
     // A Level may have brought its own Spawn.
-    this.toCome.setY(this.game.world.arena.spawn.y - SPAWN_COUNT_RISE);
+    this.placeToCome();
     const toCome = phase === 'wave' ? left : null;
     if (toCome === this.shownToCome) return;
     this.shownToCome = toCome;

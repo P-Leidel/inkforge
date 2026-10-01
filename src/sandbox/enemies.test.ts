@@ -17,6 +17,7 @@ import {
   drawObject,
   entriesOf,
   hear,
+  mirrored,
   objectById,
   runFor,
   sandboxWorlds,
@@ -1026,6 +1027,59 @@ describe('The Ink Core destroyed', () => {
     stepUntil(world, 10, () => world.inkCore.hp === 0);
 
     expect(world.time).toBe(time);
+  });
+});
+
+describe('From a Spawn on the right', () => {
+  /** The sandbox Arena mirrored: the Spawn beyond the right edge, the Ink Core on the left. */
+  const MIRRORED = mirrored(SANDBOX_ARENA);
+  const WIDTH = MIRRORED.width;
+
+  it('sends a Crawler in beyond the right edge, which walks in from the right and reaches the Ink Core', () => {
+    const world = createWorld({ arena: MIRRORED });
+    const heard = hear(world);
+    const id = world.spawn('crawler');
+    expect(onlyEnemy(world).transform.x - CRAWLER.width / 2).toBeGreaterThan(WIDTH); // out of view
+    let slowest = 0;
+
+    const reached = stepUntil(world, 45, () => {
+      const crawler = world.enemies[0];
+      if (!crawler) return true;
+      slowest = Math.min(slowest, crawler.velocity.x);
+      return false;
+    });
+
+    expect(reached).toBe(true);
+    expect(slowest).toBeCloseTo(-CRAWLER.walkingSpeed, 0);
+    expect(world.inkCore).toMatchObject({ hp: 9, fullHp: 10 });
+    expect(wentOf(heard())).toEqual([`enemy ${id} reached`]);
+  });
+
+  it('removes an Object pushed wholly out over the right edge', () => {
+    const world = createWorld({ arena: MIRRORED });
+    const heard = hear(world);
+    const box = drawObject(world, dragBox(WIDTH - 80, GROUND_Y - 41, 40, 40));
+    runFor(world, 0.1);
+
+    world.release(box, { x: 800, y: 0 });
+    runFor(world, 1);
+
+    expect(world.objects).toEqual([]);
+    expect(wentOf(heard())).toEqual([`object ${box} left`]);
+  });
+
+  it('cuts a Stroke that runs past the right edge there, and refuses an Object past it', () => {
+    const world = createWorld({ arena: MIRRORED });
+
+    drawLine(world, [
+      { x: WIDTH - 300, y: 500 },
+      { x: WIDTH + 150, y: 500 },
+    ]);
+    const outcome = world.submitStroke(dragBox(WIDTH - 30, 400, 60, 60), 'grey');
+
+    const xs = world.lines[0]!.segments.flatMap(({ a, b }) => [a.x, b.x]);
+    expect(Math.max(...xs)).toBeCloseTo(WIDTH, 6);
+    expect(outcome.kind).toBe('rejected');
   });
 });
 

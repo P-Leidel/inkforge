@@ -17,6 +17,7 @@ import { applyTransform, transformPoints, type Transform } from '../geometry/tra
 import type { Vec2 } from '../geometry/vec2';
 import type { BodyId, NearBody, PhysicsWorld } from '../physics';
 import { COLLIDER_TOLERANCE } from '../stroke/stroke-rules';
+import { spawnEdgeX, type Arena } from './arena';
 import type { ArenaBodies, Figure, Form } from './arena-bodies';
 import { brushTouchesCapsules, brushTouchesCircle, brushTouchesPolygon, type Brush } from './brush';
 import type { Thing } from './happenings';
@@ -39,8 +40,9 @@ export type { Capsule } from '../geometry/overlap';
  * It is the one answer to what a new Stroke meets: what cuts a new Line,
  * what blocks a new Object, and what a squeezed Object must end clear of.
  * Whatever kind of body Arena bodies holds takes part as its form says.
- * Beyond the Spawn edge, the screen's left edge, is out of reach of
- * drawing: a new Line is cut there, and a new Object may not reach past it.
+ * Beyond the Spawn edge, the screen's edge on the Arena's Spawn side, is out
+ * of reach of drawing: a new Line is cut there, and a new Object may not
+ * reach past it.
  */
 
 /** What the query asks of the physics module. */
@@ -51,6 +53,9 @@ export type FoundObject = Extract<Thing, { readonly thing: 'object' }>;
 
 type ObjectForm = Extract<Form, { readonly kind: 'object' }>;
 type EnemyForm = Extract<Form, { readonly kind: 'enemy' }>;
+
+/** What the query reads of the Arena: where its Spawn edge is. */
+export type SpawnEdge = Pick<Arena, 'spawnSide' | 'width'>;
 
 /**
  * How far (px) outside the engine's shapes what the query tests may reach:
@@ -78,19 +83,27 @@ const ends = ({ a, b }: Segment): Vec2[] => [a, b];
 /** Far enough (px) to stand for "without end" around the Arena. */
 const FAR = 1e5;
 
-/** The Spawn edge: the screen's left edge, beyond which the lane runs out of view. */
-const SPAWN_EDGE = 0;
+/** Everything beyond the Spawn edge, out of view, as a region of the Arena. */
+function beyondSpawnEdge(arena: SpawnEdge): Bounds {
+  const edge = spawnEdgeX(arena);
+  return arena.spawnSide === 'left'
+    ? { minX: -FAR, minY: -FAR, maxX: edge, maxY: FAR }
+    : { minX: edge, minY: -FAR, maxX: FAR, maxY: FAR };
+}
 
 /**
  * Everything beyond the Spawn edge, out of view: out of reach of drawing,
  * so it cuts a new Line like the Terrain and blocks a new Object.
  */
-const BEYOND_SPAWN_EDGE: Polygon = [
-  { x: -FAR, y: -FAR },
-  { x: SPAWN_EDGE, y: -FAR },
-  { x: SPAWN_EDGE, y: FAR },
-  { x: -FAR, y: FAR },
-];
+function beyondSpawnEdgePolygon(arena: SpawnEdge): Polygon {
+  const { minX, minY, maxX, maxY } = beyondSpawnEdge(arena);
+  return [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ];
+}
 
 /** A path's segments in runs of consecutive ones, each within `RUN_SPAN` px across. */
 function runs(path: readonly Segment[]): Segment[][] {
@@ -123,6 +136,8 @@ export class ArenaQuery {
   constructor(
     private readonly physics: QueryPhysics,
     private readonly bodies: Pick<ArenaBodies<unknown>, 'figures'>,
+    /** The Arena as it is now, for its Spawn edge. */
+    private readonly arena: () => SpawnEdge,
   ) {}
 
   /** Every body and Patch that may reach within `margin` px of `bounds`, oldest first. */
@@ -193,12 +208,17 @@ export class ArenaQuery {
 
   /**
    * Out over the Spawn edge: everything, but the Terrain, the Ink Core and
-   * the Patches on things, that lies wholly beyond the screen's left edge,
-   * out of view. Oldest first.
+   * the Patches on things, that lies wholly beyond the Spawn edge, out of
+   * view. Oldest first.
    */
   beyondSpawnEdge(): Thing[] {
-    const region = { minX: -FAR, minY: -FAR, maxX: SPAWN_EDGE, maxY: FAR };
-    return this.wholly(region, ({ maxX }) => maxX < SPAWN_EDGE);
+    const arena = this.arena();
+    const edge = spawnEdgeX(arena);
+    const beyond =
+      arena.spawnSide === 'left'
+        ? ({ maxX }: Bounds) => maxX < edge
+        : ({ minX }: Bounds) => minX > edge;
+    return this.wholly(beyondSpawnEdge(arena), beyond);
   }
 
   /**
@@ -244,7 +264,7 @@ export class ArenaQuery {
           return [];
       }
     });
-    return [...near, BEYOND_SPAWN_EDGE];
+    return [...near, beyondSpawnEdgePolygon(this.arena())];
   }
 
   /**
@@ -255,7 +275,7 @@ export class ArenaQuery {
    * is squeezed off it), nor are Droplets or Patches.
    */
   overlapsSolid(part: Polygon): boolean {
-    if (convexPolygonsOverlap(part, BEYOND_SPAWN_EDGE)) return true;
+    if (convexPolygonsOverlap(part, beyondSpawnEdgePolygon(this.arena()))) return true;
     return this.near(polygonBounds(part), 0).some(({ what, body, form }) => {
       switch (form.kind) {
         case 'terrain':
