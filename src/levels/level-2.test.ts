@@ -4,7 +4,7 @@ import { games } from '../game/test-support';
 import { COLOURS } from '../materials/colour';
 import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
-import { LEVEL_2, LEVEL_2_HINTS } from './level-2';
+import { LEVEL_2 } from './level-2';
 
 const createGame = games();
 
@@ -55,7 +55,7 @@ describe('Level 2', () => {
   });
 
   it('has a hint for blue, green and the Heavy', () => {
-    expect(Object.keys(LEVEL_2_HINTS).sort()).toEqual(['blue', 'green', 'heavy']);
+    expect(Object.keys(LEVEL_2.hints!).sort()).toEqual(['blue', 'green', 'heavy']);
   });
 
   it.each(ENEMY_TYPES)(

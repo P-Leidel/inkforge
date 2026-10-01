@@ -1,7 +1,6 @@
+import { DEFAULT_INK_TABLE } from '../game/ink-table';
 import type { Level } from '../game/level';
 import type { Polygon } from '../geometry/polygon';
-import type { Colour } from '../materials/colour';
-import type { EnemyType } from '../materials/enemy-table';
 import { ARENA_HEIGHT, ARENA_WIDTH, type Arena } from '../sandbox/arena';
 
 /*
@@ -64,6 +63,8 @@ export const LEVEL_2_ARENA: Arena = {
   },
 };
 
+const { grey, blue, green, black } = DEFAULT_INK_TABLE.tanks;
+
 /**
  * The Campaign's Level 2: blue and green join grey and black, and Heavies
  * join the Crawlers and Runners in the last two Waves. Starting values, to
@@ -73,18 +74,16 @@ export const LEVEL_2: Level = {
   name: 'Level 2',
   arena: LEVEL_2_ARENA,
   // Today's maximums; no red until Level 3.
-  tanks: { grey: 4000, blue: 3000, green: 3000, black: 1500, red: 0 },
+  tanks: { grey, blue, green, black, red: 0 },
   waves: [
     { counts: { crawler: 5, runner: 0, heavy: 0 }, gap: 2 },
     { counts: { crawler: 4, runner: 2, heavy: 0 }, gap: 1.5 },
     { counts: { crawler: 5, runner: 2, heavy: 1 }, gap: 1.5 },
     { counts: { crawler: 4, runner: 2, heavy: 2 }, gap: 1.5 },
   ],
-};
-
-/** The first-appearance hints for what Level 2 brings in. */
-export const LEVEL_2_HINTS: Readonly<Partial<Record<Colour | EnemyType, string>>> = {
-  blue: 'New: blue bounces whatever hits it, harder the faster it comes',
-  green: 'New: green is glue; whatever moves on it slows right down',
-  heavy: 'New: Heavies never climb, but they wear through what they cross',
+  hints: {
+    blue: 'New: blue bounces whatever hits it, harder the faster it comes',
+    green: 'New: green is glue; whatever moves on it slows right down',
+    heavy: 'New: Heavies never climb, but they wear through what they cross',
+  },
 };
