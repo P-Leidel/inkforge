@@ -10,7 +10,7 @@ Milestone 4 also left four rules marked provisional (ADR 0012) that only real Le
 
 ## Solution
 
-A **Campaign** of three handmade Levels, opened from a new title screen beside the Sandbox and the Gallery. Each Level adds Colours and Enemy types to the last: Level 1 has grey and black against Crawlers and Runners, Level 2 adds blue, green and Heavies, Level 3 adds red, a Pit and every type mixed. A Colour a Level doesn't have is greyed out on the palette. Clearing a Level unlocks the next; which Levels are unlocked is saved in the browser.
+A **Campaign** of three handmade Levels, opened from a new title screen beside the Sandbox and the Gallery. Each Level adds Colours and Enemy types to the last: Level 1 has grey and black against Crawlers and Runners, Level 2 adds blue, green and Heavies, Level 3 adds red and every type mixed. A Colour a Level doesn't have is greyed out on the palette. Clearing a Level unlocks the next; which Levels are unlocked is saved in the browser.
 
 The **Analysis** arrives in the Intermission: before every Wave, the Intermission panel shows the next Wave's Enemy types and counts, and one line when a Colour or Enemy type appears for the first time.
 
@@ -98,11 +98,12 @@ Each is a plain `Level` (Arena, Waves, Tanks) in `src/levels/`. The Arena sketch
 |---|---|---|---|---|
 | **1** | grey, black | Crawlers, then Runners | Flat ground from the Spawn, rising in two terraces to the Ink Core. Room for walls and for dropping things. | 3: 4, 6, 6 |
 | **2** | adds blue, green | adds Heavies | A valley in the middle between a ledge on each side, so the path crosses a gap: bridges, bounces, and Heavies wearing through what they cross. | 4: 5, 6, 8, 8 |
-| **3** | adds red | all three, mixed | A Pit in the middle, an overhang above the lane to hang Objects from, and the Ink Core on a low plateau. | 5: 6, 8, 10, 10, 12 |
+| **3** | adds red | all three, mixed | A valley with a floor in the middle (no Pit), an overhang above the lane to hang Objects from, and the Ink Core on a low plateau. | 5: 6, 8, 10, 10, 12 |
 
 - **Tanks:** today's Tank maximums for the Colours a Level has, 0 for the rest.
 - Each Level's Waves mix types as its slice decides, within the counts above: Level 1 brings Runners in its later Waves, Level 2 brings Heavies in its later Waves, Level 3 mixes all three throughout.
 - Nothing is built in advance in any of them.
+- **No Pit in Level 3, for now.** A Pit on the only lane kills every undefended Enemy by itself, so Level 3's middle is a valley with a floor whose sides every Enemy type walks out of. Pits wait for an Arena that offers a way round them.
 
 ### Campaign flow
 
@@ -166,7 +167,7 @@ Vertical slices, one GitHub issue each, linking to this spec. Each slice extends
   - A Stroke or a Fill in a Colour the Level doesn't have is refused with "Not in this Level", with Ink costs on or off.
   - Each provisional switch, turned off, bars what it names; the Eraser is barred in the Campaign.
   - The Defence loop's reading gives the next Wave's counts in every Intermission, the first included.
-- **Seam 4: the Levels.** Each loads and is one screen, has the Colours and Enemy types its row in the table gives it, and a Crawler sent in with no defence either reaches the Ink Core or, in Level 3, dies in the Pit: no Level traps an Enemy against Terrain.
+- **Seam 4: the Levels.** Each loads and is one screen, has the Colours and Enemy types its row in the table gives it, and a Crawler sent in with no defence reaches the Ink Core: no Level traps an Enemy against Terrain.
 - **Unchanged:** the gallery replay tests, the render budget test and `npm run verdict` pass as they are.
 - **Browser only.** The title screen and the Level list, the feel of each Level, the playtest and the frame rate.
 
