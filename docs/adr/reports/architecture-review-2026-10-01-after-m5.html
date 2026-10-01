@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inkforge Architecture Review 8</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f1f2f4;
+    --surface: #ffffff;
+    --ink: #15171c;
+    --muted: #5b616e;
+    --rule: #d7dae0;
+    --strong: #1d7f36;
+    --strong-bg: #e1f3e5;
+    --explore: #8c5f0e;
+    --explore-bg: #fbefd6;
+    --spec: #4e5563;
+    --spec-bg: #e6e8ec;
+    --tag-bg: #eceef2;
+    --note-bg: #eef0f4;
+    --leak: #b8322a;
+    --leak-bg: #fbe6e3;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d2027;
+      --surface: #252933;
+      --ink: #e8e2d0;
+      --muted: #9aa0ad;
+      --rule: #3a404d;
+      --strong: #62d98b;
+      --strong-bg: #1d3a28;
+      --explore: #f0c05a;
+      --explore-bg: #3b321d;
+      --spec: #c0c5cf;
+      --spec-bg: #333845;
+      --tag-bg: #2f3440;
+      --note-bg: #2c313c;
+      --leak: #f07a6e;
+      --leak-bg: #3d2524;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d2027;
+    --surface: #252933;
+    --ink: #e8e2d0;
+    --muted: #9aa0ad;
+    --rule: #3a404d;
+    --strong: #62d98b;
+    --strong-bg: #1d3a28;
+    --explore: #f0c05a;
+    --explore-bg: #3b321d;
+    --spec: #c0c5cf;
+    --spec-bg: #333845;
+    --tag-bg: #2f3440;
+    --note-bg: #2c313c;
+    --leak: #f07a6e;
+    --leak-bg: #3d2524;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+  h1 { font-size: 1.9rem; line-height: 1.15; }
+  h2 { font-size: 1.45rem; line-height: 1.2; }
+  p { margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  code { font-size: .9em; }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+  .label { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+
+  .page { max-width: 72rem; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  .head { display: flex; flex-direction: column; gap: 16px; }
+  .titlerow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .scope { font-size: 14px; color: var(--muted); max-width: 52rem; }
+  .legend { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .swatch { display: inline-block; width: 24px; height: 16px; }
+  .swatch-seam { display: inline-block; width: 32px; border-top: 1.5px dashed var(--muted); }
+
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .points { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 60rem; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 8px; }
+  .tile { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: 0 6px; font-size: 13px; line-height: 1.35; }
+  .tile .n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--muted); }
+  .tile .st { grid-column: 2; font-size: 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tile.done { background: var(--note-bg); border-color: transparent; }
+  .tile.done .st { color: var(--muted); }
+  .tile.keep .st { color: var(--strong); }
+  .tile.park .st { color: var(--explore); }
+
+  .candidates { display: flex; flex-direction: column; gap: 36px; }
+  .cand { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 16px; }
+  .cand-head { display: flex; flex-direction: column; gap: 8px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+  .b-strong { background: var(--strong-bg); color: var(--strong); }
+  .b-explore { background: var(--explore-bg); color: var(--explore); }
+  .b-tag { background: var(--tag-bg); color: var(--muted); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .files { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+  .files .note { opacity: .75; }
+
+  .ba { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .prose3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .prose3 > div { display: flex; flex-direction: column; gap: 4px; }
+  .wins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wins li::before { content: "▪"; color: var(--strong); margin-right: 8px; }
+  .callout { background: var(--explore-bg); border-left: 3px solid var(--explore); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+  .evidence { background: var(--note-bg); border-left: 3px solid var(--muted); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+
+  .also ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 64rem; }
+
+  .top { background: var(--surface); border: 3px solid var(--strong); border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .top .label { color: var(--strong); }
+  .top p { max-width: 52rem; }
+
+  @media (min-width: 640px) {
+    .page { padding-inline: 24px; padding-block: 56px 80px; }
+    h1 { font-size: 2.3rem; }
+    h2 { font-size: 1.6rem; }
+    .cand { padding: 28px; }
+    .panel { padding: 20px; }
+    .top { padding: 32px; }
+  }
+  @media (min-width: 768px) { .prose3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .ba { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Diagram sheets are drafting paper in both themes, so the hand-drawn diagrams read the same. */
+  .sheet { background: #fbfbfa; color: #16181d; border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-x: auto; min-width: 0; }
+  /* Mermaid sheets follow the viewer's theme, as the Mermaid rendering does. */
+  .sheet.themed { background: var(--surface); color: var(--ink); }
+  .sheet.themed .s-muted { color: var(--muted); }
+  .s-muted { color: #6a707c; }
+  .s-label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tiny { font-size: 11px; }
+  .small { font-size: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 3px 8px; font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .pad { padding: 8px 10px; }
+  .pad-lg { padding: 14px 16px; }
+  .mod { border: 1.5px solid #5b616e; background: #ffffff; border-radius: 4px; }
+  .plan { border: 1.5px dashed #7a808c; background: #ffffff; border-radius: 4px; color: #4a505b; }
+  .leakbox { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; border-radius: 4px; }
+  .okbox { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; border-radius: 4px; }
+  /* A deep module is drawn like the game's black ink: a heavy dark core in a pale rim. */
+  .deep { background: #050506; color: #eef0f3; border: 3px solid #8a909e; border-radius: 5px; }
+  .deep .faded { color: #8f96a3; }
+  .deep .chip { border: 1px solid #3c414c; color: #d6d9df; border-radius: 3px; }
+  .deep .chip.if { border-color: #eef0f3; color: #ffffff; font-weight: 600; }
+  .mod .chip, .plan .chip { border: 1px solid #c9cdd4; border-radius: 3px; background: #ffffff; color: #2c3038; }
+  .chip.red { border: 1px solid #e3a39c; background: #fde8e5; color: #8f1f16; border-radius: 3px; }
+  .chip.dash { border: 1px dashed #7a808c; background: #ffffff; color: #4a505b; border-radius: 3px; }
+  .seam { border-top: 1.5px dashed #7a808c; }
+  .arrow { text-align: center; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: #6a707c; }
+  .stack { display: flex; flex-direction: column; gap: 12px; min-width: 330px; }
+  .row { display: grid; gap: 8px; }
+  .row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .frame { border: 1.5px dashed #7a808c; border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .frame.solid { border-style: solid; border-color: #5b616e; background: #ffffff; }
+  .strong-t { font-weight: 600; font-size: 12.5px; }
+  .newtag { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; background: #d23a2e; color: #ffffff; border-radius: 2px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
+  .newtag.grey { background: #6a707c; }
+
+  /* Questions and bands */
+  .qrows { display: flex; flex-direction: column; gap: 6px; min-width: 330px; }
+  .qrow { padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .qrow b { font-size: 12.5px; font-weight: 600; }
+  .qrow span { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .band { border-left: 4px solid #7a808c; background: #ffffff; padding: 6px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; color: #2c3038; }
+  .band .t { color: #6a707c; white-space: nowrap; }
+  .band.leak { border-left-color: #d23a2e; background: #fde8e5; color: #8f1f16; }
+  .band.leak .t { color: #8f1f16; }
+  .band.planned { border-left-style: dashed; background: #f6f7f8; color: #4a505b; }
+  .band.thick { border-left: 6px solid #050506; background: #050506; color: #eef0f3; padding: 14px 12px; }
+  .band.thick .t { color: #8f96a3; }
+
+  /* C3: what a thing's numbers come from */
+  .things { display: grid; grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; min-width: 360px; align-items: baseline; }
+  .things .h { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: #6a707c; font-weight: 600; }
+  .things .k { color: #16181d; font-weight: 600; }
+  .things .v { color: #2c3038; }
+  .things .bad { color: #8f1f16; }
+  .things .q { color: #6a707c; font-style: italic; }
+
+  /* C6: a kind across the World renderer */
+  .grid9 { display: grid; grid-template-columns: minmax(5.6rem, auto) repeat(9, 2.35rem) 2.4rem; gap: 5px 2px; align-items: center; min-width: 470px; }
+  .colhead { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; line-height: 1.15; color: #4a505b; }
+  .rowhead { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; color: #2c3038; line-height: 1.25; }
+  .cell { width: 13px; height: 13px; border-radius: 999px; justify-self: center; display: inline-block; }
+  .c-on { background: #16181d; }
+  .c-off { border: 1.5px solid #d7dae0; }
+  .c-plan { border: 1.5px dashed #d23a2e; }
+  .tot { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; font-weight: 600; color: #8f1f16; font-variant-numeric: tabular-nums; }
+  .key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: #6a707c; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .key span { display: flex; align-items: center; gap: 6px; }
+  .kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .kinds .chip { text-align: center; }
+
+  pre.mermaid { background: transparent; margin: 0; font-size: 13px; }
+  pre.mermaid .label { text-transform: none; letter-spacing: normal; font-size: inherit; font-weight: inherit; color: inherit; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
+</head>
+<body>
+<style>
+  .split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  @media (min-width: 768px) { .split { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .when { font-size: 13px; color: var(--muted); }
+  .states { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; }
+  .states .st { padding: 4px 8px; border: 1.5px solid #5b616e; border-radius: 3px; background: #ffffff; color: #2c3038; }
+  .states .st.red { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; }
+  .states .st.new { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; }
+  .states .st.plan { border: 1.5px dashed #7a808c; color: #4a505b; }
+  .mass { display: flex; align-items: flex-end; gap: 18px; min-width: 330px; }
+  .mass .col { display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; color: #4a505b; }
+  .mass .bars { display: flex; align-items: flex-end; gap: 3px; }
+  .mass .bi { width: 26px; background: #d7dae0; border: 1px solid #9aa0ad; }
+  .mass .bm { width: 26px; background: #5b616e; }
+  .mass .bi.red { background: #fde8e5; border-color: #d23a2e; }
+</style>
+
+<main class="page">
+
+  <header class="head">
+    <div class="titlerow">
+      <h1>Inkforge architecture review</h1>
+      <span class="mono meta">P-Leidel/inkforge · 4d052a1 (#148) · 2026-10-01</span>
+    </div>
+    <p class="scope">Scope: <code>src/</code> after milestone 5's slices 1–8 (Spawn side, Campaign flow, Colours a Level doesn't have, Analysis, Rules switches, Levels 1–3). Weighted toward what they touched: <code>src/game/</code> (Session, Campaign, Analysis, Game, Defence loop), the scene, the rewards screen, the palette, F2 and the drawing input. Each candidate is judged against milestone 6: the Siege Walker and its boss arena. All 1037 tests in 72 files pass on 4d052a1.</p>
+    <div class="legend">
+      <span class="label">Legend</span>
+      <span class="item"><span class="swatch mod"></span>module</span>
+      <span class="item"><span class="swatch plan"></span>milestone 6 or later</span>
+      <span class="item"><span class="swatch-seam"></span>seam</span>
+      <span class="item"><svg width="30" height="10" aria-hidden="true"><line x1="0" y1="5" x2="22" y2="5" stroke="#d23a2e" stroke-width="2" stroke-dasharray="4 3"/><path d="M22 1 L29 5 L22 9 Z" fill="#d23a2e"/></svg>leakage</span>
+      <span class="item"><span class="swatch deep"></span>deep module, drawn like black ink</span>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="queue-h">
+    <span id="queue-h" class="label">The queue from the review after #117, today</span>
+    <div class="tiles">
+      <div class="tile done"><span class="n">C1</span><span>Make a lost Wave a phase</span><span class="st">done · #122</span></div>
+      <div class="tile done"><span class="n">C2</span><span>Give R one checkpoint</span><span class="st">done · #125</span></div>
+      <div class="tile done"><span class="n">C3</span><span>A headless home for what is being played</span><span class="st">done · session.ts (#126)</span></div>
+      <div class="tile done"><span class="n">C4</span><span>Shape the Intermission for a pick</span><span class="st">answered by the M5 spec: no pick</span></div>
+      <div class="tile park"><span class="n">C5</span><span>Nearness to Enemies in the Arena query</span><span class="st">open · now 4 sites, 3 files</span></div>
+      <div class="tile park"><span class="n">C6</span><span>The Enemy's rules in one module</span><span class="st">open · 848 → 933 lines</span></div>
+      <div class="tile park"><span class="n">C7</span><span>Hand the scene one reading</span><span class="st">open · new HUD leak</span></div>
+      <div class="tile done"><span class="n">also</span><span>GDD and Aftermath in line with ADR 0012</span><span class="st">done with the M5 spec</span></div>
+    </div>
+    <ul class="points">
+      <li>C1–C3 paid off. Milestone 5's Campaign flow went into the Session and a headless <code>Campaign</code> with a store port. The lost panel acts on the lost phase. R's one checkpoint needed nothing new. <code>session.test.ts</code> (388 lines) and <code>campaign.test.ts</code> test both without Phaser.</li>
+      <li>The friction is now in <b>what the Session doesn't own yet</b>. That covers what a Level leaves out, which tools are on hand, and what comes after a cleared or lost Level. Each is decided in three to five modules, and one of them is a confirmed bug.</li>
+    </ul>
+  </section>
+
+  <section id="candidates" class="candidates" aria-label="Candidates">
+
+    <!-- C1 -->
+    <article id="c1" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 1 · fix before the milestone 5 playtest</span>
+        <h2>Load a Level whole: nothing carries over from the last one</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">fixes a spec contradiction</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/level.ts <span class="note">(311–315: without Waves "the Waves switch stays as it is", without Tanks "the Tank maximums stay as they are")</span></li>
+        <li>src/game/game.ts <span class="note">(load 667–680: <code>if (tanks)</code> 670 writes into F2's Ink table · Waves only turned on, 676 · has 327–329)</span></li>
+        <li>src/game/session.ts <span class="note">(play 76–80 and playCampaign 87–94: each sets the Eraser)</span></li>
+        <li>src/scenes/sandbox-scene.ts <span class="note">(playSandbox 173–176 turns Waves off, but the toolbar's Sandbox 107 and the Gallery don't · started 205 re-picks grey)</span></li>
+        <li>src/game/analysis.ts <span class="note">(279: a Level's Colours from <code>level.tanks</code>)</span> · src/ui/palette-bar.ts <span class="note">(64: from the Tank's maximum)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: a Level says only what it changes</span>
+          <div class="stack">
+            <div class="states"><span class="st">Level 1 · grey, black · Waves on · no Eraser</span>→<span class="st red">Sandbox · grey, black · Waves on · Eraser</span></div>
+            <div class="things">
+              <span class="h">what it starts with</span><span class="h">set by</span><span class="h">left out</span>
+              <span class="k">Tank maximums</span><span class="v">Game.load → F2's Ink table</span><span class="bad">the last Level's</span>
+              <span class="k">Waves switch</span><span class="v">Game.load (on) · scene (off, one path)</span><span class="bad">the last Level's</span>
+              <span class="k">Eraser</span><span class="v">Session</span><span class="v">set every load</span>
+              <span class="k">Colours here</span><span class="v">Ink table · Level data</span><span class="q">two sources</span>
+            </div>
+            <div class="row row-3">
+              <div class="qrow leakbox"><b>Game.load</b><span>Tanks, Waves on</span></div>
+              <div class="qrow leakbox"><b>Session</b><span>Eraser</span></div>
+              <div class="qrow leakbox"><b>Scene</b><span>Waves off, re-pick grey</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: loading resolves everything a Level starts with</span>
+          <div class="stack">
+            <div class="row row-3">
+              <div class="mod pad tiny"><b>Scene</b><br>buttons forward</div>
+              <div class="mod pad tiny"><b>Palette</b><br>draws what is here</div>
+              <div class="mod pad tiny"><b>Analysis</b><br>reads what is here</div>
+            </div>
+            <div class="arrow">↓ play a Level · a Campaign Level · Clear ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Session · what is being played</span>
+                <div class="chips"><span class="chip if">play</span><span class="chip if">playCampaign</span><span class="chip if">clear</span><span class="chip if">reading</span></div>
+                <div class="chips faded tiny"><span class="chip">its Tanks, or the defaults</span><span class="chip">Waves: the Level's, or off</span><span class="chip">Eraser by mode</span><span class="chip">one set of Colours here</span><span class="chip">M6: the boss Level, same path</span></div>
+              </div>
+            </div>
+            <div class="arrow">tested with session.test's real Game</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>A Level that leaves something out keeps what the last Level left. After Campaign Level 1, the Sandbox and every Gallery demo have no blue, green or red ("Not in this Level"), and Waves stay on. The spec says the sandbox, the gallery and the stress tests have every Colour. What a Level starts with is set in three modules, and the Colours a Level has are read from two sources.</p></div>
+        <div><span class="label">Solution</span><p>Loading resolves a Level into everything it starts with: its own value, or the default, never the last Level's. The Session owns the mode (a Campaign Level or free play), and with it Waves, Tanks and the Eraser. The scene's two Sandbox paths become one Session call, and one fact says which Colours are here.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>bug fixed: no carry-over</li>
+          <li>locality: a Level's start, one module</li>
+          <li>scene loses its Waves and tool rules</li>
+          <li>Colours here: one source</li>
+          <li>M6's boss Level loads the same way</li>
+        </ul></div>
+      </div>
+      <div class="evidence">Confirmed with a scratch run through <code>Session</code>. After <code>playCampaign(0)</code> then <code>play(SANDBOX_LEVEL)</code>: <code>game.has('blue')</code> is <code>false</code> and <code>game.waves</code> is <code>true</code>. The Gallery's Bounce demo gives the same. No Session test covers going from a Campaign Level to free play.</div>
+      <div class="callout">For the grilling: should a free-play load keep F2's Waves switch, or turn Waves off unless the Level has Waves? Today F2's Ink table holds both the tuning defaults and the current Level's Tanks, so its <b>Defaults</b> button puts blue into Level 1.</div>
+    </article>
+
+    <!-- C2 -->
+    <article id="c2" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 2 · pairs with C1</span>
+        <h2>Ask the Game once what the player may do, tools included</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">absorbs half of C5</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/defence-loop.ts <span class="note">(bar 308–323 · isBar 47–49 repeats the Bar union as strings)</span></li>
+        <li>src/game/game.ts <span class="note">(eraser 289–295 · eraseAlong 567 ignores it silently · refusal 506–518 · the same refused mapping twice, 384–392 and 423–432)</span></li>
+        <li>src/input/drawing-input.ts <span class="note">(32–36 and 38–42 messages · 254: barred-or-refused decided again)</span></li>
+        <li>src/ui/palette-bar.ts <span class="note">(171–179: hides and disables the Eraser swatch)</span></li>
+        <li>src/scenes/sandbox-scene.ts <span class="note">(E key 231 · re-pick 205 · Shift spawning 220–223 · screen.isOpen checked at 219, 238, 246, 249, 290)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet themed">
+          <span class="s-label s-muted">Before: "may I use the Eraser?" is asked in five places, and the Game's answer is silent</span>
+          <pre class="mermaid">
+flowchart LR
+  S[Session] -->|eraser = false| G[Game.eraser]
+  K[Scene · E key] -.->|reads| G
+  P[Palette] -.->|reads| G
+  ST[Scene · started] -.->|re-picks grey| DI[Drawing input]
+  G -->|eraseAlong: nothing, no outcome| DI
+  DL[Defence loop · bar] --> G
+  DI -.->|refused = not 'not-enough'| DI
+  classDef leak stroke:#d23a2e,stroke-width:2px,stroke-dasharray:4 3;
+  class K,P,ST leak
+          </pre>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one reading of what may be done now</span>
+          <div class="stack">
+            <div class="row row-3">
+              <div class="mod pad tiny"><b>Drawing input</b><br>flashes the reason</div>
+              <div class="mod pad tiny"><b>Palette</b><br>draws the tools</div>
+              <div class="mod pad tiny"><b>Scene keys</b><br>forward</div>
+            </div>
+            <div class="arrow">↓ which tools · may I draw · fill · erase · undo · spawn? ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Game · what may be done</span>
+                <div class="chips"><span class="chip if">reading: tools on hand</span><span class="chip if">outcome per command</span><span class="chip if">one Refusal union</span></div>
+                <div class="chips faded tiny"><span class="chip">Defence loop's bars</span><span class="chip">Eraser by mode (C1)</span><span class="chip">Colours here (C1)</span><span class="chip">barred vs refused, once</span><span class="chip">erasing barred like drawing</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The bars live in the Defence loop. The Eraser is a separate flag that the Game ignores silently, and the scene and the palette check it again. Whether a reason is a bar or a refusal is decided in four places across three files. Adding "Not in this Level" touched six types. The scene's gates are reachable only through Phaser.</p></div>
+        <div><span class="label">Solution</span><p>The Game gives one reading of what the player may do now: which tools are on hand, and for each command the bar, if any. Erasing returns an outcome, as drawing and filling do. One Refusal union has one classifier. The drawing input, the palette and the keys read it.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>locality: permissions, one reading</li>
+          <li>Eraser: five places → one</li>
+          <li>a new refusal touches one union</li>
+          <li>gates tested headless</li>
+        </ul></div>
+      </div>
+      <div class="callout">The other half of review 7's C5, where the near-Enemy geometry lives, is <a href="#c5">C5</a> below. It can land on its own.</div>
+    </article>
+
+    <!-- C3 -->
+    <article id="c3" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 3 · carried over a third time · before the milestone 6 spec</span>
+        <h2>Put the Enemy's rules in one module behind the Material rules</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">was Worth exploring; the Siege Walker is next</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/material-rules.ts <span class="note">(933 lines · RulesArena 226–298: 29 members, 10 only for Enemies · walk 356 · climbs 378 · roomOver 407 · stepTop 426 · stackedOn 439 · stacks 457 · standing 475 · stands 491 · press 547 · reachInkCore 580 · kill 596 · drop 616 · isDead 623 · hurt 632 · enemyImpulse 703)</span></li>
+        <li>src/sandbox/enemies.ts <span class="note">(one BodyId per walker 88–122 · enemyOutline(width, height) 51 · spawnClear and spawn 197–215)</span></li>
+        <li>src/sandbox/arena-query.ts <span class="note">(blocksClimb 330)</span> · src/sandbox/sandbox-world.ts <span class="note">(320–326: closures wire them together)</span></li>
+        <li>src/sandbox/rules-test-support.ts <span class="note">(368 lines of fakes, was 361)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: Material rules, review after review</span>
+          <div class="mass">
+            <div class="col"><div class="bars"><div class="bi" style="height:56px"></div><div class="bm" style="height:154px"></div></div><span>after M4</span><span>port 28 · 768</span></div>
+            <div class="col"><div class="bars"><div class="bi" style="height:56px"></div><div class="bm" style="height:170px"></div></div><span>after #117</span><span>port 28 · 848</span></div>
+            <div class="col"><div class="bars"><div class="bi red" style="height:58px"></div><div class="bm" style="height:187px"></div></div><span>now</span><span>port 29 · 933</span></div>
+            <div class="col"><div class="bars"><div class="bi red" style="height:70px;border-style:dashed"></div><div class="bm" style="height:220px;opacity:.45"></div></div><span>+ Siege Walker</span><span>legs, many bodies</span></div>
+          </div>
+          <span class="tiny s-muted">Climbing low walls and Stack wear (468e018) landed inside a module about materials. An Enemy's life runs across four modules, and all of them assume one box-shaped body.</span>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the Material rules call one Enemy module in their order</span>
+          <div class="stack">
+            <div class="mod pad tiny"><b>Material rules</b> · step() keeps the one order from #75 · port loses its Enemy half (29 → ~19)</div>
+            <div class="arrow">↓ walk · afterStep(contacts) ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Enemy rules</span>
+                <div class="chips"><span class="chip if">walk</span><span class="chip if">afterStep</span></div>
+                <div class="chips faded tiny"><span class="chip">climb · Stacks</span><span class="chip">stalled</span><span class="chip">Pressing</span><span class="chip">hurt</span><span class="chip">reach the Ink Core</span><span class="chip">deaths, Drops</span></div>
+              </div>
+            </div>
+            <div class="row row-2">
+              <div class="mod pad tiny"><b>Walker body</b><br>one box: Crawler, Runner, Heavy</div>
+              <div class="plan pad tiny"><b>Walker body</b><span class="newtag grey">M6</span><br>many legs: Siege Walker</div>
+            </div>
+            <div class="arrow">two adapters: the seam is real</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Every Enemy feature since milestone 4 has landed in the Material rules: first climbing, then Stacks and Stack wear. Enemy behaviour is split across the Enemies kind, the Material rules and the Arena query, wired by closures. The Siege Walker breaks the one-body assumption in all three.</p></div>
+        <div><span class="label">Solution</span><p>One Enemy rules module owns walking, climbing, Stacks, stalled, Pressing, hurting, reaching the Ink Core, deaths and Drops, behind a small port of its own. A walker's body sits behind an internal seam. Today's box is one adapter and the Siege Walker's legs are the second.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>locality: an Enemy's life, one module</li>
+          <li>Siege Walker lands in one place</li>
+          <li>smaller fakes per rules test</li>
+        </ul></div>
+      </div>
+    </article>
+
+    <!-- C4 -->
+    <article id="c4" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 4</span>
+        <h2>Give the end of a Level one owner</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">fixes a hint mismatch</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/session.ts <span class="note">(advance 118–120 polls for cleared every frame · place 129–139: hints from the Level's own Waves, 137)</span></li>
+        <li>src/ui/rewards-screen.ts <span class="note">(panelActions 94–109 decides the buttons · 52: "Level n unlocked" from the index, not the name)</span></li>
+        <li>src/scenes/sandbox-scene.ts <span class="note">(onPanel 159–171: Retry Wave goes to gameLayer.reset, past the Session, 165 and 211–214)</span></li>
+        <li>src/game/analysis.ts <span class="note">(280: reads level.waves · 293–295: a hint falls back to the first Level that has one)</span> · src/game/defence-loop.ts <span class="note">(next 233, 238–245: the live table)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: Level 1 cleared, through five modules</span>
+          <div class="stack">
+            <div class="band">Defence loop · sets cleared<span class="t">defence-loop.ts:401</span></div>
+            <div class="band leak">Session · polls the phase every frame<span class="t">session.ts:118</span></div>
+            <div class="band">Campaign · unlocks, saves<span class="t">campaign.ts</span></div>
+            <div class="band leak">Rewards screen · decides the buttons<span class="t">rewards-screen.ts:94</span></div>
+            <div class="band leak">Scene · button → Game.reset or Session.clear<span class="t">Phaser only</span></div>
+            <div class="band leak">Hints: static Waves · Analysis: live table<span class="t">disagree after F2</span></div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the Session offers what comes next and does it</span>
+          <div class="stack">
+            <div class="band">Defence loop · cleared or lost<span class="t">unchanged</span></div>
+            <div class="band thick">Session · reading.offer: next · retry · restart · list → act(choice) · tells the Campaign once · hints from the tables the Analysis counts<span class="t">headless</span></div>
+            <div class="band">Rewards screen · draws the offer<span class="t">no rules</span></div>
+            <div class="band planned">M6: "Campaign cleared" after the boss · Roguelite's next run<span class="t">later</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>What follows a cleared or lost Level is split across five modules. The map from button to command exists only in the Phaser scene, and Retry Wave skips the Session. Hints are worked out from the Level's own Waves, but the Analysis counts the live table. So after an F2 edit adds Runners to Wave 1, the panel lists Runners with no hint.</p></div>
+        <div><span class="label">Solution</span><p>The Session's reading carries what may come next, and the Session carries out the choice. It tells the Campaign once, not every frame. Hints and the Analysis read the same tables. The rewards screen only draws.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>panel choices tested headless</li>
+          <li>hints agree with the Analysis</li>
+          <li>R and Clear: one route</li>
+          <li>M6's last Level: one place</li>
+        </ul></div>
+      </div>
+      <div class="callout">Worth exploring, not Strong: it is small today and works for the three Levels. It pays off when milestone 6 adds the boss Level and Roguelite Mode adds runs.</div>
+    </article>
+
+    <!-- C5 -->
+    <article id="c5" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 5 · carried over</span>
+        <h2>Let the Arena query measure how near a Stroke comes to an Enemy</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">pairs with C3 for the Siege Walker</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/game.ts <span class="note">(geometry imports 1–3 · nearEnemy 524–527 · strokeNear 893–902: one outline and one width per Enemy)</span></li>
+        <li>src/sandbox/arena-query.ts <span class="note">(gained blocksClimb 330, not this)</span> · src/input/drawing-input.ts <span class="note">(the look is keyed on the samples only)</span></li>
+      </ul>
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the Game measures place</span>
+          <div class="stack">
+            <div class="band leak">Game · nearEnemy + strokeNear: geometry above the Sandbox world<span class="t">game.ts</span></div>
+            <div class="band">Arena query · onLines, overlaps, blocksClimb<span class="t">arena-query.ts</span></div>
+            <div class="band planned">Siege Walker: many bodies, no one width<span class="t">M6</span></div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the query measures; the Game keeps the rule</span>
+          <div class="stack">
+            <div class="band">Game · refuse near an Enemy during a Wave (rule only)<span class="t">game.ts</span></div>
+            <div class="band thick">Arena query · onLines, overlaps, blocksClimb, nearEnemy · every body an Enemy has<span class="t">one place</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The Game does geometry that the Sandbox world says belongs to the Arena query. It assumes an Enemy is one outline with one width.</p></div>
+        <div><span class="label">Solution</span><p>Unchanged: the Arena query reports a Stroke's nearness to Enemies, as it reports onLines. Do it with C3, so a Siege Walker's legs count.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>locality: place questions, one module</li>
+          <li>Game drops its geometry imports</li>
+        </ul></div>
+      </div>
+    </article>
+
+    <!-- C6 -->
+    <article id="c6" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 6 · carried over</span>
+        <h2>Hand the scene one reading to draw and tune</h2>
+        <div class="badges"><span class="badge b-tag" style="background:var(--spec-bg);color:var(--spec)"><span class="dot"></span>Speculative</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/scenes/sandbox-scene.ts <span class="note">(75–77: F2 gets world.materials and world.enemyTable past the Game)</span></li>
+        <li>src/ui/hud.ts <span class="note">(121–129: reads game.world.arena and places by the Spawn arrow again; SPAWN_COUNT_RISE = 60 copies world-renderer.ts:43)</span></li>
+        <li>src/ui/tuning-panel.ts <span class="note">(240–242: notices a load by the Ink table's identity, which only works because Game.load replaces it)</span></li>
+        <li>src/rendering/kinds/enemies-drawing.ts <span class="note">(23, 92)</span> · ink-core-drawing.ts <span class="note">(19, 55): HP bar maths twice, LOW_HP twice</span></li>
+      </ul>
+      <div class="ba">
+        <div class="sheet themed">
+          <span class="s-label s-muted">Before: readers reach past the Game</span>
+          <pre class="mermaid">
+flowchart LR
+  Game -.->|world.arena| HUD
+  Scene -.->|world.materials, enemyTable| F2
+  Game -.->|ink.tanks identity| F2
+  Game -.->|world| Renderer
+  Renderer -.->|Spawn arrow rise 60| HUD
+          </pre>
+        </div>
+        <div class="sheet themed">
+          <span class="s-label s-muted">After: one reading, one change signal</span>
+          <pre class="mermaid">
+flowchart LR
+  Session -->|reading + changed| HUD
+  Session -->|reading + changed| F2
+  Game -->|tables| F2
+  Game -->|reading| Renderer
+          </pre>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The HUD now places itself by the Arena's Spawn, duplicating the renderer's arithmetic. F2 notices a load by object identity. A boss with an HP bar would be the third copy.</p></div>
+        <div><span class="label">Solution</span><p>Fold it into C1: the Session sends one change signal on every load. Make the HP bar and the Spawn marker one shared drawing when the Siege Walker needs them.</p></div>
+        <div><span class="label">Wins</span><ul class="wins">
+          <li>one HP bar for the boss</li>
+          <li>F2 refresh: no identity trick</li>
+        </ul></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="panel also" aria-labelledby="also-h">
+    <span id="also-h" class="label">Also noticed, not candidates</span>
+    <ul>
+      <li><b>A loss is said four ways.</b> <code>hud.ts:14</code> and <code>30</code>, <code>rewards-screen.ts:33</code> and <code>drawing-input.ts:40</code>. "WAVE x of y" is written in both <code>phaseLabel</code> and <code>summaryLines</code>.</li>
+      <li><b>Three fallbacks for a Level's name.</b> <code>session.ts:66</code> ("Level"), <code>menu-screen.ts:25</code> ("Level n"), and <code>rewards-screen.ts:52</code>, which ignores the name.</li>
+      <li><b>Campaign logic in a Phaser file.</b> <code>levelEntries</code> (<code>menu-screen.ts:22–28</code>) belongs beside the Campaign. <code>CampaignPlace.levels</code> and <code>hasNext</code> repeat the Campaign's own.</li>
+      <li><b>Sandbox tools still live in the Campaign.</b> These are Shift+1–3 spawning (<code>sandbox-scene.ts:220</code>), the toolbar's Gallery and Stress tests, and the HUD help's "E: eraser" (<code>hud.ts:8</code>). The spec moves only the Eraser out, so decide the rest with C2.</li>
+      <li><b>Thin parts of the Session.</b> <code>playing</code> and <code>stressTest</code> are read mostly by tests. C1 gives the Session the behaviour that earns its interface.</li>
+      <li><b>Colours outside PALETTE.</b> <code>0x16171b</code> and <code>0x4f5666</code> in <code>rewards-screen.ts:132–133</code>, still.</li>
+    </ul>
+  </section>
+
+  <section class="top" aria-labelledby="top-h">
+    <span id="top-h" class="label">Top recommendation</span>
+    <h2><a href="#c1">Load a Level whole</a>, then <a href="#c2">ask the Game once what the player may do</a></h2>
+    <p>C1 fixes a bug that the milestone 5 playtest would hit at once: play Level 1, open the Sandbox, and three Colours are gone. It also makes "what this Level has" a single fact, which C2 then reads instead of rebuilding it in the scene and the palette. Both are small and test headless through the Session. Then take <a href="#c3">C3</a> into the milestone 6 spec, with the Siege Walker's legs as the second body adapter, and do <a href="#c5">C5</a> alongside it.</p>
+  </section>
+
+</main>
+</body>
+</html>
