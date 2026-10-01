@@ -151,13 +151,17 @@ An upright physics body that walks toward the Ink Core over whatever it stands o
 _Avoid_: Mob, unit, creep, walker (in player-facing text)
 
 **Crawler**:
-The basic slow walker.
+The basic slow walker. It climbs other Enemies.
 
 **Runner**:
-A fast walker.
+A fast walker. It climbs other Enemies, and so hops over slower ones.
 
 **Heavy**:
-A slow, heavy walker that wears down Lines quickly.
+A slow, heavy walker that wears down Lines quickly. It never climbs, but other Enemies can climb it.
+
+**Climbing**:
+An Enemy pressing another Enemy, whose top (with any Enemies standing on it) is at most 1.2 of its own heights above its feet, gets an upward force, capped like its walking. A higher step it only presses. The Terrain and Lines are never climbed this way. Against a tall obstacle, climbing Enemies build a staircase of themselves.
+_Avoid_: Jumping, hopping, stacking (as a scripted move)
 
 **Pressing**:
 An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate; what it stands on wears at the floor wear times that. Wear goes by time in contact, not force, and never wakes a Frozen Object.

@@ -317,6 +317,7 @@ export class SandboxWorld {
         spreadBlasts: (seconds, act) => this.blastsKind.spread(seconds, act),
         walkers: () => this.enemiesKind.walkers(),
         walk: (enemy, seconds) => this.enemiesKind.walk(enemy, seconds),
+        climb: (enemy, seconds) => this.enemiesKind.climb(enemy, seconds),
         heading: (enemy) => this.enemiesKind.heading(enemy),
         walkerOf: (party) => this.enemiesKind.byParty(party.id),
         kill: (id) => this.kill(id),

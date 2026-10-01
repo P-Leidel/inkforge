@@ -100,6 +100,17 @@ export function isPressed(normal: Vec2, heading: number): boolean {
 }
 
 /**
+ * Whether what an Enemy walking along x toward `heading` (+1 or -1)
+ * touches is ahead of it, given the unit contact normal pointing from it
+ * towards the Enemy: the normal leans back against its heading at all. A
+ * wall it presses is ahead, and so is the top corner of an Enemy it is
+ * climbing; a floor straight below it is not.
+ */
+export function isAhead(normal: Vec2, heading: number): boolean {
+  return -heading * normal.x > 1e-9;
+}
+
+/**
  * Whether a hit pushes an Enemy down onto what it stands on, given the unit
  * hit normal pointing from the hitter towards the Enemy: from above, within
  * `STEEPEST_FLOOR` of straight down. Standing, it can't give way, so it is
@@ -248,6 +259,11 @@ export interface RulesArena<T, S, W> {
    * it will without getting past.
    */
   walk(walker: W, seconds: number): boolean;
+  /**
+   * Pushes an Enemy up through the next step of `seconds`, never harder
+   * than its type's climb: it climbs.
+   */
+  climb(walker: W, seconds: number): void;
   /** Which way along x an Enemy walks: +1 or -1, toward the Ink Core's side of it. */
   heading(walker: W): number;
   /** The Enemy whose Party this is, if any. */
@@ -323,13 +339,70 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
    * Before each physics step of `seconds`: every Enemy standing on
    * something it can walk on walks, oldest first. One in the air, or only
    * on what is too steep, doesn't push. Each says whether it is stalled,
-   * for pressing after the step.
+   * for pressing after the step. One that climbs (`climbs`) walks too,
+   * standing or not, and climbs as well.
    */
   walk(seconds: number): void {
     this.stalled.clear();
     for (const walker of this.arena.walkers()) {
-      if (this.stands(walker) && this.arena.walk(walker, seconds)) this.stalled.add(walker.id);
+      const climbs = this.climbs(walker);
+      if ((climbs || this.stands(walker)) && this.arena.walk(walker, seconds))
+        this.stalled.add(walker.id);
+      if (climbs) this.arena.climb(walker, seconds);
     }
+  }
+
+  /**
+   * Whether an Enemy climbs now: its type climbs, and another Enemy whose
+   * step is low enough touches it from ahead (`isAhead`), its side or the
+   * corner of its top. The step is the top of that Enemy, or of the highest
+   * Enemy standing on it, on another and so on: low enough when it is at
+   * most the climbing step (in its own heights) above its feet. Once it
+   * stands on top, the contact is below it, not ahead, and it walks on.
+   * Terrain, Lines and Objects are never climbed this way.
+   */
+  private climbs(walker: W): boolean {
+    if (this.numbers.enemy(walker.type).climb <= 0) return false;
+    const heading = this.arena.heading(walker);
+    for (const { party, pairs } of this.contacts.touching(walker.body)) {
+      const other = this.arena.walkerOf(party);
+      if (!other || other === walker) continue;
+      const ahead = pairs.some((pair) => {
+        const normal = this.contacts.normal(walker.body, pair);
+        return normal !== null && isAhead(normal, heading);
+      });
+      if (!ahead) continue;
+      const feet = this.physics.getTransform(walker.body).y + walker.height / 2;
+      const rise = feet - this.stepTop(other, walker);
+      if (rise <= this.numbers.climbStep * walker.height + 1e-9) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The top (y) of the step an Enemy makes for `climber`: its own top, or
+   * that of the highest Enemy standing on it, on another and so on.
+   */
+  private stepTop(step: W, climber: W): number {
+    const top = (walker: W) => this.physics.getTransform(walker.body).y - walker.height / 2;
+    const seen = new Set<W>([climber, step]);
+    const stack = [step];
+    let highest = top(step);
+    for (let below = stack.pop(); below; below = stack.pop()) {
+      for (const { party, pairs } of this.contacts.touching(below.body)) {
+        const above = this.arena.walkerOf(party);
+        if (!above || seen.has(above)) continue;
+        const standsOn = pairs.some((pair) => {
+          const normal = this.contacts.normal(above.body, pair);
+          return normal !== null && isFloor(normal);
+        });
+        if (!standsOn) continue;
+        seen.add(above);
+        stack.push(above);
+        highest = Math.min(highest, top(above));
+      }
+    }
+    return highest;
   }
 
   /** Whether an Enemy touches, now, a surface it stands on (`isFloor`). */

@@ -37,6 +37,12 @@ export interface EnemyMaterial {
   walkingSpeed: number;
   /** The most its walking force can be, in multiples of its own weight. */
   push: number;
+  /**
+   * The most its climbing force can be, in multiples of its own weight: the
+   * upward push it gets while it presses another Enemy low enough to climb
+   * (`climbStep`). Above one weight it rises; 0 never climbs.
+   */
+  climb: number;
   /** Durability per second it wears off what it presses. */
   pressing: number;
   /** Damage it takes before it dies. */
@@ -53,6 +59,12 @@ export interface EnemyTable {
   types: Record<EnemyType, EnemyMaterial>;
   /** What an Enemy stands on wears at this times its pressing rate. */
   floorWear: number;
+  /**
+   * The highest step an Enemy climbs, in its own heights: the top of the
+   * Enemy it presses (and of whatever Enemies stand on that one) at most
+   * this far above its feet. Above that, it just presses.
+   */
+  climbStep: number;
   /** The Ink Core's HP when it is whole. */
   coreHp: number;
 }
@@ -71,6 +83,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
       restitution: 0,
       walkingSpeed: 60,
       push: 1,
+      climb: 1.2,
       pressing: 300,
       hp: 3000,
       damageThreshold: 300,
@@ -92,6 +105,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
       restitution: 0,
       walkingSpeed: 180,
       push: 0.6,
+      climb: 1.2,
       pressing: 150,
       hp: 1500,
       damageThreshold: 200,
@@ -113,6 +127,8 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
       restitution: 0,
       walkingSpeed: 40,
       push: 3,
+      // Heavies never climb, though they can be climbed.
+      climb: 0,
       pressing: 1500,
       hp: 12000,
       damageThreshold: 1500,
@@ -127,6 +143,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
     },
   },
   floorWear: 1,
+  climbStep: 1.2,
   coreHp: 10,
 };
 

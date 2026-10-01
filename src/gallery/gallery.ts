@@ -502,6 +502,40 @@ export const PIT_DEMO: Demo = {
   },
 };
 
+/** Where the Staircase demo's wall stands (px), and how tall it is: two Crawlers. */
+export const STAIRCASE_WALL_X = 900;
+export const STAIRCASE_WALL_HEIGHT = 80;
+
+/**
+ * The sandbox Arena with a Terrain wall two Crawlers tall in its ground, and
+ * six Crawlers walking at it, one after another. Nothing is scripted: the
+ * first presses the wall, the second climbs onto it, and the third meets a
+ * step two high, too high to climb, so it waits and becomes a step itself.
+ * The rest climb the third, then the second, and get over the wall.
+ */
+export const STAIRCASE_DEMO: Demo = {
+  name: 'Staircase',
+  arena: {
+    ...SANDBOX_ARENA,
+    terrain: [
+      ...SANDBOX_ARENA.terrain,
+      [
+        { x: STAIRCASE_WALL_X, y: SANDBOX_ARENA.spawn.y - STAIRCASE_WALL_HEIGHT },
+        { x: STAIRCASE_WALL_X + 40, y: SANDBOX_ARENA.spawn.y - STAIRCASE_WALL_HEIGHT },
+        { x: STAIRCASE_WALL_X + 40, y: SANDBOX_ARENA.spawn.y },
+        { x: STAIRCASE_WALL_X, y: SANDBOX_ARENA.spawn.y },
+      ],
+    ],
+  },
+  build(world) {
+    const ground = SANDBOX_ARENA.spawn.y;
+    // 100 px apart: each arrives about 1.7 s after the one before.
+    for (let k = 0; k < 6; k++)
+      world.spawn('crawler', { x: STAIRCASE_WALL_X - 100 - 100 * k, y: ground - 22 });
+    letGo(world, []);
+  },
+};
+
 export const GALLERY: readonly Demo[] = [
   BOUNCE_DEMO,
   SLIDE_DEMO,
@@ -519,4 +553,5 @@ export const GALLERY: readonly Demo[] = [
   MINES_DEMO,
   DEMOLITION_DEMO,
   PIT_DEMO,
+  STAIRCASE_DEMO,
 ];

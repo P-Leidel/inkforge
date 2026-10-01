@@ -841,6 +841,7 @@ describe('Material rules: Enemies', () => {
     id,
     body: (100 + id) as BodyId,
     type: 'crawler',
+    height: 40,
     damage: 0,
   });
   const party = (id: number, body = id): Party<Breakable> => ({
@@ -870,6 +871,167 @@ describe('Material rules: Enemies', () => {
     rules.walk(STEP);
 
     expect(arena.handed('walk')).toEqual([onGround]);
+  });
+
+  describe('climbing', () => {
+    const GROUND = 0;
+    /** An Enemy of `type` and `height` standing with its feet at `feet` (y grows down). */
+    const enemy = (id: number, type: Walker['type'], height: number): Walker => ({
+      id,
+      body: (100 + id) as BodyId,
+      type,
+      height,
+      damage: 0,
+    });
+    const SIDE = { x: -1, y: 0 }; // from what is ahead of it, back towards the Enemy
+    const UP = { x: 0, y: -1 }; // from what it stands on, up towards it
+
+    /** Fake rules with `walkers` standing on the ground, each with its feet at its `feet`. */
+    function arenaOf(walkers: [Walker, number][], enemies = createEnemyTable()) {
+      const fake = fakeRules<Breakable>(createMaterialTable(), enemies);
+      for (const [walker, feet] of walkers) {
+        fake.physics.add(walker.body, {
+          transform: { x: 0, y: feet - walker.height / 2, angle: 0 },
+        });
+        fake.arena.enemyParties.set(walker.id, walker);
+      }
+      fake.arena.walking = walkers.map(([walker]) => walker);
+      return fake;
+    }
+    /** Makes `a` touch `b` (and `b` touch `a`), with the normal towards `a` as given. */
+    function touch(
+      contacts: ReturnType<typeof fakeRules<Breakable>>['contacts'],
+      a: Walker | number,
+      b: Walker | number,
+      normal: Vec2,
+    ) {
+      const bodyOf = (x: Walker | number) => (typeof x === 'number' ? x : x.body);
+      const partyOf = (x: Walker | number) =>
+        typeof x === 'number' ? party(x) : party(x.id, x.body);
+      const contact = pair(bodyOf(b), bodyOf(a));
+      contacts.normals.set(contact, normal);
+      const add = (body: number, other: Party<Breakable>) =>
+        contacts.touches.set(body as BodyId, [
+          ...(contacts.touches.get(body as BodyId) ?? []),
+          { party: other, pairs: [contact] },
+        ]);
+      add(bodyOf(a), partyOf(b));
+      add(bodyOf(b), partyOf(a));
+    }
+
+    it('lets a Crawler climb an Enemy whose top is within its step, and walk on as it does', () => {
+      const [climber, step] = [enemy(1, 'crawler', 40), enemy(2, 'crawler', 40)];
+      const { rules, contacts, arena } = arenaOf([
+        [climber, GROUND],
+        [step, GROUND],
+      ]);
+      touch(contacts, climber, step, SIDE);
+
+      rules.walk(STEP);
+
+      expect(arena.handed('climb')).toEqual([climber]);
+      expect(arena.handed('walk')).toEqual([climber]);
+    });
+
+    it('lets a climber in the air go on climbing and walking while the Enemy is ahead of it', () => {
+      const [climber, step] = [enemy(1, 'runner', 44), enemy(2, 'crawler', 40)];
+      const { rules, contacts, arena } = arenaOf([
+        [climber, GROUND - 30],
+        [step, GROUND],
+      ]);
+      // Its bevelled foot on the step's top corner: steep enough to stand on, but ahead of it.
+      touch(contacts, climber, step, { x: -0.6, y: -0.8 });
+
+      rules.walk(STEP);
+
+      expect(arena.handed('climb')).toEqual([climber]);
+      expect(arena.handed('walk')).toEqual([climber]);
+    });
+
+    it('refuses a step higher than its climbing step: it only presses it', () => {
+      // A Heavy is 64 px tall, more than 1.2 Crawler heights (48 px).
+      const [climber, heavy] = [enemy(1, 'crawler', 40), enemy(2, 'heavy', 64)];
+      const { rules, contacts, arena } = arenaOf([
+        [climber, GROUND],
+        [heavy, GROUND],
+      ]);
+      touch(contacts, climber, heavy, SIDE);
+      touch(contacts, climber, TERRAIN_PARTY, UP);
+
+      rules.walk(STEP);
+
+      expect(arena.handed('climb')).toEqual([]);
+      expect(arena.handed('walk')).toEqual([climber]);
+    });
+
+    it('counts the Enemies standing on the one it presses into the step', () => {
+      const [climber, low, high] = [
+        enemy(1, 'crawler', 40),
+        enemy(2, 'crawler', 40),
+        enemy(3, 'crawler', 40),
+      ];
+      const { rules, contacts, arena } = arenaOf([
+        [climber, GROUND],
+        [low, GROUND],
+        [high, GROUND - 40],
+      ]);
+      touch(contacts, climber, low, SIDE);
+      touch(contacts, high, low, UP); // one stands on the Enemy it presses: 80 px in all
+
+      rules.walk(STEP);
+
+      expect(arena.handed('climb')).toEqual([]);
+    });
+
+    it('lets a Heavy be climbed, with a step high enough, but never climb', () => {
+      const enemies = createEnemyTable();
+      enemies.climbStep = 2;
+      const [climber, heavy, crawler] = [
+        enemy(1, 'crawler', 40),
+        enemy(2, 'heavy', 64),
+        enemy(3, 'crawler', 40),
+      ];
+      const behind = enemy(4, 'heavy', 64);
+      const { rules, contacts, arena } = arenaOf(
+        [
+          [climber, GROUND],
+          [heavy, GROUND],
+          [crawler, GROUND],
+          [behind, GROUND],
+        ],
+        enemies,
+      );
+      touch(contacts, climber, heavy, SIDE);
+      touch(contacts, behind, crawler, SIDE);
+
+      rules.walk(STEP);
+
+      expect(arena.handed('climb')).toEqual([climber]);
+    });
+
+    it('never climbs the Terrain, a Line or an Object this way, however low', () => {
+      const { rules, contacts, arena } = arenaOf([[enemy(1, 'crawler', 40), GROUND]]);
+      const [climber] = arena.walking;
+      touch(contacts, climber!, TERRAIN_PARTY, SIDE);
+      touch(contacts, climber!, 60, SIDE); // a Piece or an Object: no Enemy
+
+      rules.walk(STEP);
+
+      expect(arena.handed('climb')).toEqual([]);
+    });
+
+    it('never climbs an Enemy behind it', () => {
+      const [climber, step] = [enemy(1, 'crawler', 40), enemy(2, 'crawler', 40)];
+      const { rules, contacts, arena } = arenaOf([
+        [climber, GROUND],
+        [step, GROUND],
+      ]);
+      touch(contacts, climber, step, { x: 1, y: 0 });
+
+      rules.walk(STEP);
+
+      expect(arena.handed('climb')).not.toContain(climber);
+    });
   });
 
   it('lets an Enemy touching the Ink Core deal it its core damage and disappear', () => {
@@ -921,6 +1083,7 @@ describe('Material rules: hurting Enemies', () => {
     id,
     body: (100 + id) as BodyId,
     type: 'crawler',
+    height: 40,
     damage: 0,
   });
   const partyOf = (id: number, body: number, target: Breakable | null = null) => ({
@@ -1059,6 +1222,7 @@ describe('Material rules: Drops', () => {
     id,
     body: (100 + id) as BodyId,
     type: 'crawler',
+    height: 40,
     damage,
   });
 
@@ -1122,7 +1286,7 @@ describe('Material rules: Drops', () => {
 describe('Material rules: pressing wear', () => {
   /** The Crawler's pressing rate, durability per second. */
   const PRESSING = 300;
-  const crawler: Walker = { id: 1, body: 101 as BodyId, type: 'crawler', damage: 0 };
+  const crawler: Walker = { id: 1, body: 101 as BodyId, type: 'crawler', height: 40, damage: 0 };
   const pieceOf = (colour: Colour = 'grey'): Breakable => ({
     kind: 'piece',
     colour,
@@ -1244,7 +1408,7 @@ describe('Material rules: pressing wear', () => {
 
   it('adds up the wear of every Enemy on one Piece', () => {
     const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
-    const other: Walker = { id: 2, body: 102 as BodyId, type: 'crawler', damage: 0 };
+    const other: Walker = { id: 2, body: 102 as BodyId, type: 'crawler', height: 40, damage: 0 };
     arena.walking = [crawler, other];
     const bridge = pieceOf();
     touch(contacts, [{ target: bridge, normal: FLOOR }]);

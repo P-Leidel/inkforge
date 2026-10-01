@@ -19,6 +19,9 @@ import {
   RUBBLE_DEMO,
   SHRAPNEL_DEMO,
   SLIDE_DEMO,
+  STAIRCASE_DEMO,
+  STAIRCASE_WALL_HEIGHT,
+  STAIRCASE_WALL_X,
   STICK_DEMO,
   THIRD_BOUNCE_DEMO,
   type Demo,
@@ -291,6 +294,31 @@ describe('Colour gallery', () => {
     expect(droplets).toBeGreaterThanOrEqual(20); // two Spills of 10 to 15
     expect(droplets).toBeLessThanOrEqual(30);
     expect(world.objects).toHaveLength(0); // every bomb, box and Spill went
+  });
+
+  it('Staircase: the first three Crawlers make a stair at the wall, and the rest climb it and get over', () => {
+    const world = loaded(STAIRCASE_DEMO);
+    const crossed = new Set<number>();
+    const heard = world.happenings.reader();
+
+    for (let step = 0; step < 25 * 60; step++) {
+      world.step();
+      for (const enemy of world.enemies)
+        if (enemy.transform.x > STAIRCASE_WALL_X + 40) crossed.add(enemy.id);
+    }
+    for (const entry of heard.read())
+      if (entry.kind === 'went' && entry.what.thing === 'enemy') crossed.add(entry.what.id);
+    heard.close();
+
+    const ground = world.arena.spawn.y;
+    const feet = (id: number) => {
+      const enemy = world.enemies.find((e) => e.id === id)!;
+      return ground - (enemy.transform.y + enemy.height / 2);
+    };
+    expect([...crossed].sort()).toEqual([4, 5, 6]);
+    expect(feet(1)).toBeLessThan(1); // against the wall
+    expect(feet(2)).toBeCloseTo(STAIRCASE_WALL_HEIGHT / 2, -0.5); // on the first
+    expect(feet(3)).toBeLessThan(1); // the step
   });
 
   describe('Pit', () => {
