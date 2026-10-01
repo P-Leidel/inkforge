@@ -5,7 +5,7 @@ import type { Colour } from '../materials/colour';
 import { fillMass } from '../materials/mass';
 import { createMaterialTable, DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
-import type { ObjectView, RubbleView, SandboxWorld } from './sandbox-world';
+import { STEP_SECONDS, type ObjectView, type RubbleView, type SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
@@ -159,7 +159,9 @@ describe('Fill release: Rubble', () => {
   });
 
   it('Rubble rolls and piles up, never breaks, and is not Frozen, filled or Released', () => {
-    const world = createWorld();
+    const materials = createMaterialTable();
+    materials.rubbleLifetime = 60; // long enough to come to rest
+    const world = createWorld({ materials });
     smash(world, [smashable(world, 500, 'black'), smashable(world, 700, 'grey')]);
     const released = world.rubble.map((r) => r.id);
 
@@ -335,5 +337,89 @@ describe('Rubble and the Sandbox controls', () => {
     expect(
       world.rubble.map(({ colour, mass, transform }) => ({ colour, mass, transform })),
     ).toEqual(first);
+  });
+});
+
+describe("Rubble's lifetime", () => {
+  /** Smashes a black-filled box and returns the world with its stones just released. */
+  function released(materials = createMaterialTable()): SandboxWorld {
+    const world = createWorld({ materials });
+    smash(world, [smashable(world, 500, 'black')]);
+    return world;
+  }
+
+  it('is 5 s by default', () => {
+    expect(DEFAULT_MATERIAL_TABLE.rubbleLifetime).toBe(5);
+  });
+
+  it('despawns every piece quietly exactly its lifetime after its Object broke', () => {
+    const world = released();
+    const stones = world.rubble.map((r) => r.id);
+    expect(stones.length).toBeGreaterThan(0);
+    // Its age counts the step its Object broke in.
+    for (const stone of world.rubble) expect(stone.remaining).toBeCloseTo(5 - STEP_SECONDS, 9);
+    const heard = hear(world);
+
+    const steps = Math.round(5 / STEP_SECONDS) - 1;
+    for (let k = 0; k < steps - 1; k++) world.step();
+    expect(world.rubble.map((r) => r.id)).toEqual(stones);
+    for (const stone of world.rubble) expect(stone.remaining).toBeCloseTo(STEP_SECONDS, 9);
+    expect(wentOf(heard())).toEqual([]);
+
+    world.step();
+    expect(world.rubble).toHaveLength(0);
+    // Quietly: no Debris, nothing else went.
+    expect(wentOf(heard())).toEqual(stones.map((id) => `rubble ${id} expired`));
+    expect(entriesOf(heard(), 'burst')).toEqual([]);
+  });
+
+  it('despawns at rest as well as moving, after a lifetime set in the table', () => {
+    const materials = createMaterialTable();
+    materials.rubbleLifetime = 1;
+    const world = released(materials);
+    runFor(world, 0.9);
+    expect(world.rubble.length).toBeGreaterThan(0);
+    runFor(world, 0.1);
+    expect(world.rubble).toHaveLength(0);
+  });
+
+  it('does not tick while paused', () => {
+    const world = released();
+    runFor(world, 1);
+    const before = world.rubble.map((r) => r.remaining);
+    world.pause();
+    world.step();
+    world.advance(10);
+    expect(world.rubble.map((r) => r.remaining)).toEqual(before);
+    world.resume();
+    runFor(world, 3.9);
+    expect(world.rubble.length).toBeGreaterThan(0);
+  });
+
+  it('is saved and restored with each piece: Reset replays its despawning exactly', () => {
+    const world = released();
+    runFor(world, 2);
+    world.togglePause();
+    world.togglePause(); // starts again: the snapshot holds the stones 2 s old
+    const atStart = world.rubble.map(({ id, remaining }) => ({ id, remaining }));
+    const heard = hear(world);
+    let steps = 0;
+    while (world.rubble.length > 0) {
+      world.step();
+      steps++;
+    }
+    const firstRun = wentOf(heard());
+
+    world.reset();
+    expect(world.rubble.map(({ id, remaining }) => ({ id, remaining }))).toEqual(atStart);
+    world.togglePause();
+    const again = hear(world);
+    for (let k = 0; k < steps - 1; k++) world.step();
+    expect(world.rubble.length).toBeGreaterThan(0);
+    world.step();
+    expect(world.rubble).toHaveLength(0);
+    expect(wentOf(again()).filter((went) => went.endsWith('expired'))).toEqual(
+      firstRun.filter((went) => went.endsWith('expired')),
+    );
   });
 });

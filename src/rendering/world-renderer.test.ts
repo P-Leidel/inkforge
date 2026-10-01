@@ -44,6 +44,7 @@ interface Recorded {
   visible: boolean;
   destroyed: boolean;
   position: Vec2 | null;
+  alpha: number;
 }
 
 /**
@@ -90,7 +91,13 @@ class RecordingScene {
   }
 
   private record(onList: boolean): Recorded {
-    const state: Recorded = { calls: 0, visible: true, destroyed: false, position: null };
+    const state: Recorded = {
+      calls: 0,
+      visible: true,
+      destroyed: false,
+      position: null,
+      alpha: 1,
+    };
     const own = state as unknown as Record<string | symbol, unknown>;
     const proxy: Recorded = new Proxy(state, {
       get: (target, name) => {
@@ -98,6 +105,7 @@ class RecordingScene {
         return (...args: unknown[]) => {
           if (name === 'clear') target.calls = 0;
           else if (name === 'setVisible') target.visible = Boolean(args[0]);
+          else if (name === 'setAlpha') target.alpha = Number(args[0]);
           else if (name === 'setPosition') {
             if (!target.position) this.placed.push(proxy);
             target.position = { x: Number(args[0]), y: Number(args[1]) };
@@ -449,6 +457,33 @@ describe('World renderer: by what happened', () => {
     runFor(world, 0.2); // 0.5 s after the cap
     renderer.draw();
     expect(recording.displayList.length).toBe(images - 1 + 3);
+    renderer.destroy();
+  });
+
+  it('fades Rubble out over the last 0.5 s of its lifetime, and frees it when it expires', () => {
+    const world = createWorld();
+    const { recording, renderer } = renderWorld(world);
+    const pot = drawObject(world, dragBox(900, 200, 60, 60));
+    world.fillAt({ x: 930, y: 230 }, 'black');
+    world.materials.colours.grey.outline.durability = 1;
+    renderer.draw();
+    world.togglePause();
+    world.release(pot);
+    while (world.rubble.length === 0) world.step();
+    const images = () => recording.displayList.slice(-world.rubble.length);
+    const alphas = () => images().map(({ alpha }) => alpha);
+    renderer.draw();
+    const stones = images();
+    expect(alphas().every((alpha) => alpha === 1)).toBe(true);
+
+    while (world.rubble[0]!.remaining > 0.25 + 1e-9) world.step();
+    renderer.draw();
+    for (const alpha of alphas()) expect(alpha).toBeCloseTo(0.5, 9);
+
+    while (world.rubble.length > 0) world.step();
+    renderer.draw();
+    expect(renderer.held().rubble).toEqual([]);
+    expect(stones.every(({ destroyed }) => destroyed)).toBe(true);
     renderer.destroy();
   });
 

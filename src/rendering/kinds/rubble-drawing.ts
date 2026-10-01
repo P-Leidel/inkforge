@@ -14,8 +14,13 @@ type Image = Phaser.GameObjects.Image;
 const RUBBLE_SIDES = 20;
 /** Width of the rim around a piece of Rubble. */
 const RUBBLE_RIM = 2;
-/** Seconds Rubble removed by the cap takes to fade out. */
+/** Seconds Rubble takes to fade out: as the cap removes it, or over the last of its lifetime. */
 const RUBBLE_FADE_SECONDS = 0.5;
+
+/** How opaque a piece of Rubble is with `remaining` seconds of its lifetime left. */
+export function rubbleAlpha(remaining: number): number {
+  return Math.min(1, Math.max(0, remaining / RUBBLE_FADE_SECONDS));
+}
 
 /** Rubble the cap removed, fading out where it was. */
 interface FadingRubble {
@@ -26,8 +31,9 @@ interface FadingRubble {
 
 /**
  * The Rubble: Images of looks baked once and shared by every piece of a
- * Colour and radius. Rubble the cap removed fades out where it was, which
- * is visual only and its own.
+ * Colour and radius. Each piece fades out over the last of its lifetime, and
+ * is gone when it expires. Rubble the cap removed fades out where it was,
+ * which is visual only and its own.
  */
 export class RubbleDrawing implements DrawnKind {
   /** Each piece of Rubble by its id. */
@@ -82,11 +88,18 @@ export class RubbleDrawing implements DrawnKind {
     this.fading = [];
   }
 
-  /** Rubble in the place it is, and what the cap removed fading out where it was. */
+  /**
+   * Rubble in the place it is, fading out as its lifetime runs out, and what
+   * the cap removed fading out where it was.
+   */
   draw(fraction: number, now: number): void {
     for (const piece of this.views()) {
       const { x, y, angle } = drawn(piece, fraction);
-      this.rubble.get(piece.id)?.setPosition(x, y).setRotation(angle);
+      this.rubble
+        .get(piece.id)
+        ?.setPosition(x, y)
+        .setRotation(angle)
+        .setAlpha(rubbleAlpha(piece.remaining));
     }
     if (this.fading.length === 0) return;
     this.fading = this.fading.filter(({ image, since }) => {
