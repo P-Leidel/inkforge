@@ -132,6 +132,11 @@ export class Numbers {
     return this.enemies.climbStep;
   }
 
+  /** What each other Enemy in a stack adds to an Enemy's pressing rate, as it is now. */
+  get stackWear(): number {
+    return this.enemies.stackWear;
+  }
+
   /** A thing's surface, from the tables as they are now. */
   surface(type: ThingType): SurfaceMaterial {
     return this.of(type).surface;

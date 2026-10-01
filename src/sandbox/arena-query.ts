@@ -301,6 +301,32 @@ export class ArenaQuery {
   }
 
   /**
+   * Room over a step: whether `room`, a convex polygon in world coordinates,
+   * is filled by more than `TOUCH_TOLERANCE` with what an Enemy climbs: the
+   * Terrain, the Ink Core, an Object's collider parts or a Line, each
+   * Piece's capsule as `capsulePolygon` encloses it. Enemies climb each
+   * other by their own rule, and Rubble, Droplets and Patches don't count.
+   */
+  blocksClimb(room: Polygon): boolean {
+    return this.near(polygonBounds(room), 0).some(({ body, form }) => {
+      switch (form.kind) {
+        case 'terrain':
+          return form.polygons.some((solid) => convexPolygonsOverlap(room, solid));
+        case 'object':
+          return this.parts(body, form).some((solid) => convexPolygonsOverlap(room, solid));
+        case 'capsules':
+          return form.segments.some((segment) =>
+            convexPolygonsOverlap(room, capsulePolygon(segment, form.radius)),
+          );
+        case 'enemy':
+        case 'circle':
+        case 'capsule':
+          return false;
+      }
+    });
+  }
+
+  /**
    * Squeeze: whether a convex part of the Object with body `squeezed`,
    * moved to where a Squeeze would leave it, in world coordinates, overlaps
    * by more than `TOUCH_TOLERANCE` what it must end clear of: the Terrain,

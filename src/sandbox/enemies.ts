@@ -89,7 +89,8 @@ export interface Walker {
   readonly id: number;
   readonly body: BodyId;
   readonly type: EnemyType;
-  /** Height (px) of its body, from the enemy table when it was sent in. */
+  /** Width and height (px) of its body, from the enemy table when it was sent in. */
+  readonly width: number;
   readonly height: number;
   /** Damage taken so far: it dies once this reaches its type's HP. */
   damage: number;
@@ -114,8 +115,7 @@ export interface EnemyView extends Poses {
 export interface EnemyRecord extends Walker {
   /** Its Party id, the same after a rebuild. */
   readonly party: PartyId;
-  /** Its width and weight, from the enemy table when it was sent in. */
-  readonly width: number;
+  /** Its weight, from the enemy table when it was sent in. */
   readonly mass: number;
 }
 

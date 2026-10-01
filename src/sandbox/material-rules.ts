@@ -76,6 +76,12 @@ export function fuseBurns(colour: Colour, table: MaterialTable): boolean {
   return impactDamage(strength, line.damageThreshold, table.damagePerImpulse) >= line.durability;
 }
 
+/**
+ * A wall an Enemy presses leans over it as an overhang when the contact
+ * normal points down more than this (its y): one it never climbs.
+ */
+const OVERHANG = 0.25;
+
 /** The steepest surface (radians from level) an Enemy stands on: anything steeper it presses. */
 export const STEEPEST_FLOOR = Math.PI / 4;
 
@@ -266,6 +272,11 @@ export interface RulesArena<T, S, W> {
   climb(walker: W, seconds: number): void;
   /** Which way along x an Enemy walks: +1 or -1, toward the Ink Core's side of it. */
   heading(walker: W): number;
+  /**
+   * Whether the Terrain, the Ink Core, an Object or a Line fills any of
+   * `room`, a convex polygon in world coordinates: no room to climb into.
+   */
+  blocksClimb(room: Polygon): boolean;
   /** The Enemy whose Party this is, if any. */
   walkerOf(party: Party<unknown>): W | undefined;
   /**
@@ -353,30 +364,59 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
   }
 
   /**
-   * Whether an Enemy climbs now: its type climbs, and another Enemy whose
-   * step is low enough touches it from ahead (`isAhead`), its side or the
-   * corner of its top. The step is the top of that Enemy, or of the highest
-   * Enemy standing on it, on another and so on: low enough when it is at
-   * most the climbing step (in its own heights) above its feet. Once it
-   * stands on top, the contact is below it, not ahead, and it walks on.
-   * Terrain, Lines and Objects are never climbed this way.
+   * Whether an Enemy climbs now: its type climbs, and a step low enough
+   * touches it from ahead. Another Enemy is such a step when it touches it
+   * from ahead (`isAhead`), its side or the corner of its top, and its step
+   * is low enough: the top of that Enemy, or of the highest Enemy standing
+   * on it, on another and so on, at most the climbing step (in its own
+   * heights) above its feet. The Terrain, an Object or a Line is one when
+   * the Enemy presses it as a wall (`isPressed`, not an overhang over it) and
+   * its top ahead is as low: there is room for the Enemy's body just ahead,
+   * standing the climbing step above its feet. Once it stands on top, the
+   * contact is below it, not ahead, and it walks on.
    */
   private climbs(walker: W): boolean {
     if (this.numbers.enemy(walker.type).climb <= 0) return false;
     const heading = this.arena.heading(walker);
+    const step = this.numbers.climbStep * walker.height;
+    const feet = () => this.physics.getTransform(walker.body).y + walker.height / 2;
     for (const { party, pairs } of this.contacts.touching(walker.body)) {
+      if (party.harmless) continue;
       const other = this.arena.walkerOf(party);
-      if (!other || other === walker) continue;
-      const ahead = pairs.some((pair) => {
-        const normal = this.contacts.normal(walker.body, pair);
-        return normal !== null && isAhead(normal, heading);
-      });
-      if (!ahead) continue;
-      const feet = this.physics.getTransform(walker.body).y + walker.height / 2;
-      const rise = feet - this.stepTop(other, walker);
-      if (rise <= this.numbers.climbStep * walker.height + 1e-9) return true;
+      if (other === walker) continue;
+      const touches = (test: (normal: Vec2) => boolean) =>
+        pairs.some((pair) => {
+          const normal = this.contacts.normal(walker.body, pair);
+          return normal !== null && test(normal);
+        });
+      if (other) {
+        if (!touches((normal) => isAhead(normal, heading))) continue;
+        if (feet() - this.stepTop(other, walker) <= step + 1e-9) return true;
+      } else if (!this.arena.isInkCore(party)) {
+        if (!touches((normal) => isPressed(normal, heading) && normal.y < OVERHANG)) continue;
+        if (!this.arena.blocksClimb(this.roomOver(walker, feet() - step))) return true;
+      }
     }
     return false;
+  }
+
+  /**
+   * The room an Enemy needs to stand just ahead of it with its feet at
+   * `top` (y): a box as wide and tall as its body, from its front onward.
+   */
+  private roomOver(walker: W, top: number): Polygon {
+    const { x } = this.physics.getTransform(walker.body);
+    const heading = this.arena.heading(walker);
+    const near = x + (heading * walker.width) / 2;
+    const far = near + heading * walker.width;
+    const [minX, maxX] = [Math.min(near, far), Math.max(near, far)];
+    const minY = top - walker.height;
+    return [
+      { x: minX, y: minY },
+      { x: maxX, y: minY },
+      { x: maxX, y: top },
+      { x: minX, y: top },
+    ];
   }
 
   /**
@@ -385,24 +425,66 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
    */
   private stepTop(step: W, climber: W): number {
     const top = (walker: W) => this.physics.getTransform(walker.body).y - walker.height / 2;
-    const seen = new Set<W>([climber, step]);
-    const stack = [step];
     let highest = top(step);
-    for (let below = stack.pop(); below; below = stack.pop()) {
-      for (const { party, pairs } of this.contacts.touching(below.body)) {
-        const above = this.arena.walkerOf(party);
-        if (!above || seen.has(above)) continue;
-        const standsOn = pairs.some((pair) => {
-          const normal = this.contacts.normal(above.body, pair);
-          return normal !== null && isFloor(normal);
-        });
-        if (!standsOn) continue;
-        seen.add(above);
-        stack.push(above);
-        highest = Math.min(highest, top(above));
-      }
+    for (const above of this.stackedOn(step, new Set([climber, step]))) {
+      highest = Math.min(highest, top(above));
     }
     return highest;
+  }
+
+  /**
+   * The Enemies standing on `base`, on one of those and so on, but not those
+   * in `seen`, to which it adds them.
+   */
+  private stackedOn(base: W, seen: Set<W>): W[] {
+    const found: W[] = [];
+    const stack = [base];
+    for (let below = stack.pop(); below; below = stack.pop()) {
+      for (const above of this.standing(below, 'on')) {
+        if (seen.has(above)) continue;
+        seen.add(above);
+        stack.push(above);
+        found.push(above);
+      }
+    }
+    return found;
+  }
+
+  /**
+   * Every Enemy's Stack: how many other Enemies it stands on, or stand on
+   * it, or on one of those and so on.
+   */
+  private stacks(): Map<W, number> {
+    const sizes = new Map<W, number>();
+    for (const walker of this.arena.walkers()) {
+      if (sizes.has(walker)) continue;
+      const stack = [walker];
+      for (const member of stack) {
+        for (const other of [...this.standing(member, 'on'), ...this.standing(member, 'under')])
+          if (!stack.includes(other)) stack.push(other);
+      }
+      for (const member of stack) sizes.set(member, stack.length - 1);
+    }
+    return sizes;
+  }
+
+  /**
+   * The Enemies standing now on `walker` (`on`), or that it stands on
+   * (`under`): those touching it where the one above stands (`isFloor`).
+   */
+  private standing(walker: W, where: 'on' | 'under'): W[] {
+    const found: W[] = [];
+    for (const { party, pairs } of this.contacts.touching(walker.body)) {
+      const other = this.arena.walkerOf(party);
+      if (!other || other === walker) continue;
+      const above = where === 'on' ? other : walker;
+      const stands = pairs.some((pair) => {
+        const normal = this.contacts.normal(above.body, pair);
+        return normal !== null && isFloor(normal);
+      });
+      if (stands) found.push(other);
+    }
+    return found;
   }
 
   /** Whether an Enemy touches, now, a surface it stands on (`isFloor`). */
@@ -453,8 +535,9 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
   /**
    * Pressing and floor wear over a step of `seconds`, Enemy by Enemy, oldest
    * first: every Piece or Object an Enemy presses loses durability at its
-   * type's pressing rate per second, and what it stands on at `floorWear`
-   * times that. A Piece is pressed when it is in the Enemy's way
+   * type's pressing rate per second, times 1 plus `stackWear` for each other
+   * Enemy in its stack, and what it stands on at `floorWear` times its
+   * pressing rate. A Piece is pressed when it is in the Enemy's way
    * (`isPressed`); an Object only when the Enemy is also stalled, since one
    * it can shove is pushed, not pressed. Wear depends on the time in
    * contact alone, and never wakes a Frozen Object. The Terrain, Rubble, the
@@ -463,9 +546,11 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
    */
   private press(seconds: number): T[] {
     const worn: T[] = [];
-    const { floorWear } = this.numbers;
+    const { floorWear, stackWear } = this.numbers;
+    const stacks = this.stacks();
     for (const walker of this.arena.walkers()) {
       const rate = this.numbers.enemy(walker.type).pressing * seconds;
+      const stacked = 1 + stackWear * (stacks.get(walker) ?? 0);
       const heading = this.arena.heading(walker);
       const stalled = this.stalled.has(walker.id);
       for (const { party, pairs } of this.contacts.touching(walker.body)) {
@@ -480,7 +565,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
           else if (isPressed(normal, heading)) pressed = true;
         }
         if (pressed && !this.numbers.of(target).fixed && !stalled) pressed = false;
-        const amount = pressed ? rate : floor ? floorWear * rate : 0;
+        const amount = pressed ? stacked * rate : floor ? floorWear * rate : 0;
         if (amount > 0 && this.damage(target, amount, 'wear') && !worn.includes(target))
           worn.push(target);
       }

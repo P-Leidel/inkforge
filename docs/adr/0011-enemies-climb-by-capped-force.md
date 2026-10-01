@@ -1,3 +1,5 @@
 # Enemies climb each other by a capped force, not a scripted hop
 
+Status: Accepted. Its last sentence is amended by [ADR 0013](0013-enemies-climb-low-walls.md): low walls are climbed too.
+
 A Crawler or Runner that presses another Enemy, whose top (with whatever Enemies stand on it) is within its climbing step of its feet, gets an upward force on top of its walking force, capped at its type's climb in multiples of its weight, the same way its push is capped ([ADR 0010](0010-enemies-walk-by-capped-force.md)). We rejected a scripted hop or a snap onto the other Enemy's top: they are simpler to tune, but they would set the climber's position or velocity and override everything else acting on it, so glue, Blasts and blows could not drag a climber back or knock a stack down, and they would need their own rules for half-finished climbs. With a capped force, a staircase at a wall, Runners hopping over slower Enemies, and stacks that topple come from the simulation. Only Enemies are climbed this way: the Terrain and Lines keep the 45° limit, so a drawn wall is never a ladder by itself.

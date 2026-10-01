@@ -320,6 +320,7 @@ export class SandboxWorld {
         walk: (enemy, seconds) => this.enemiesKind.walk(enemy, seconds),
         climb: (enemy, seconds) => this.enemiesKind.climb(enemy, seconds),
         heading: (enemy) => this.enemiesKind.heading(enemy),
+        blocksClimb: (room) => this.query.blocksClimb(room),
         walkerOf: (party) => this.enemiesKind.byParty(party.id),
         kill: (id) => this.kill(id),
         drop: ({ id, type, at }, ink) => say({ kind: 'dropped', id, type, at, ink }),

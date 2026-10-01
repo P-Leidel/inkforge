@@ -334,7 +334,7 @@ describe('Colour gallery', () => {
     };
     expect([...crossed].sort()).toEqual([4, 5, 6]);
     expect(feet(1)).toBeLessThan(1); // against the wall
-    expect(feet(2)).toBeCloseTo(STAIRCASE_WALL_HEIGHT / 2, -0.5); // on the first
+    expect(feet(2)).toBeCloseTo(STAIRCASE_WALL_HEIGHT / 3, -0.5); // on the first
     expect(feet(3)).toBeLessThan(1); // the step
   });
 

@@ -150,12 +150,16 @@ A fast walker. It climbs other Enemies, and so hops over slower ones.
 A slow, heavy walker that wears down Lines quickly. It never climbs, but other Enemies can climb it.
 
 **Climbing**:
-An Enemy pressing another Enemy, whose top (with any Enemies standing on it) is at most 1.2 of its own heights above its feet, gets an upward force, capped like its walking. A higher step it only presses. The Terrain and Lines are never climbed this way. Against a tall obstacle, climbing Enemies build a staircase of themselves.
+An Enemy pressing a step whose top is at most 1.2 of its own heights above its feet gets an upward force, capped like its walking. The step is another Enemy (its top, with any Enemies standing on it), or a wall of the Terrain, an Object or a Line, however steep, even upright. A higher step it only presses. Standing on other Enemies raises its feet, so against a tall wall, climbing Enemies build a staircase of themselves and get over it from the top.
 _Avoid_: Jumping, hopping, stacking (as a scripted move)
 
 **Pressing**:
-An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate; what it stands on wears at the floor wear times that. Wear goes by time in contact, not force, and never wakes a Frozen Object.
+An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate, half again for each other Enemy in its **Stack**; what it stands on wears at the floor wear times its rate. Wear goes by time in contact, not force, and never wakes a Frozen Object.
 _Avoid_: Attacking, wall (a Line is never called a wall)
+
+**Stack**:
+Enemies standing on one another: one, those standing on it, those it stands on, and so on. A Stack presses harder: each Enemy in it wears what it presses faster for every other one.
+_Avoid_: Pile, tower, pyramid
 
 **Siege Walker**:
 The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with physics rather than raw damage.
