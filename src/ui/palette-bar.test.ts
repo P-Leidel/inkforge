@@ -24,7 +24,7 @@ describe("The palette's gauges", () => {
 
     const grey = gaugeViews(read, null)[0]!;
 
-    expect(grey).toEqual({ filled: 0.75, pending: 0, over: false, amount: '3000' });
+    expect(grey).toEqual({ filled: 0.75, pending: 0, over: false, amount: '3000', inLevel: true });
   });
 
   it("don't change for less than half a pixel, so they aren't baked again", () => {
@@ -57,7 +57,19 @@ describe("The palette's gauges", () => {
     tanks.spend('grey', fromLineLength(1000));
 
     for (const gauge of gaugeViews(read, null)) {
-      expect(gauge).toEqual({ filled: 1, pending: 0, over: false, amount: '∞' });
+      expect(gauge).toEqual({ filled: 1, pending: 0, over: false, amount: '∞', inLevel: true });
+    }
+  });
+
+  it("mark a Colour the Level doesn't have, with Ink costs on and off", () => {
+    for (const inkCosts of [true, false]) {
+      const table = createInkTable();
+      table.tanks.blue = 0;
+      const tanks = new InkTanks(table);
+      const views = gaugeViews({ inkCosts, tanks: tanks.reading() }, null);
+
+      expect(views[1]).toEqual({ filled: 0, pending: 0, over: false, amount: '', inLevel: false });
+      expect(views.filter((view) => view.inLevel)).toHaveLength(4);
     }
   });
 });

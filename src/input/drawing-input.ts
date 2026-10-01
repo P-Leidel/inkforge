@@ -2,6 +2,7 @@ import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type {
   Bar,
+  ColourRefusal,
   CostEstimate,
   GameFillOutcome,
   GameStrokeOutcome,
@@ -26,6 +27,13 @@ export const REJECTION_MESSAGES: Record<RejectionReason, string> = {
 
 /** What a flash says about a Stroke or a Fill its Colour's Ink Tank can't pay for. */
 export const notEnough = (colour: Colour) => `Not enough ${colour}`;
+
+/** What a flash says about a Stroke or a Fill in a Colour the Level doesn't have. */
+export const NOT_IN_LEVEL = 'Not in this Level';
+
+/** What a flash says about a Stroke or a Fill refused for its Colour. */
+const colourRefusal = (reason: ColourRefusal, colour: Colour) =>
+  reason === 'not-in-level' ? NOT_IN_LEVEL : notEnough(colour);
 
 /** What a flash says about a barred Stroke or Fill, by why it was barred. */
 export const BAR_MESSAGES: Record<Bar, string> = {
@@ -79,7 +87,7 @@ export type DrawingPreview =
       /**
        * Whether it would be refused whatever it costs: as an Object
        * overlapping the Terrain or an Object, outside a Wave with Waves on,
-       * or during one, too near an Enemy.
+       * during one, too near an Enemy, or in a Colour the Level doesn't have.
        */
       readonly refused: boolean;
       readonly pointer: Vec2 | null;
@@ -164,8 +172,8 @@ export class DrawingInput {
    * The button went up. The Eraser erases the rest of its path. A click
    * fills the Object under it, anything longer is a Stroke. Returns what to
    * flash if the Fill or the Stroke was refused: already filled, rejected by
-   * the Stroke pipeline, barred (outside a Wave, or near an Enemy), or more
-   * than its Ink Tank holds.
+   * the Stroke pipeline, barred (outside a Wave, or near an Enemy), in a
+   * Colour the Level doesn't have, or more than its Ink Tank holds.
    */
   release(): Flash | null {
     this.erase();
@@ -185,7 +193,7 @@ export class DrawingInput {
           message = BAR_MESSAGES[outcome.reason];
           break;
         case 'refused':
-          message = notEnough(outcome.colour);
+          message = colourRefusal(outcome.reason, outcome.colour);
           break;
         case 'filled':
         case 'missed':
@@ -196,7 +204,11 @@ export class DrawingInput {
     }
     const outcome = this.commands.submitStroke(stroke, this.picked);
     if (outcome.kind === 'refused') {
-      return { path: outcome.path, message: notEnough(outcome.colour), pointer };
+      return {
+        path: outcome.path,
+        message: colourRefusal(outcome.reason, outcome.colour),
+        pointer,
+      };
     }
     if (outcome.kind === 'barred') {
       return { path: outcome.path, message: BAR_MESSAGES[outcome.reason], pointer };

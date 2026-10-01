@@ -193,6 +193,79 @@ describe('Not enough Ink, with Ink costs on', () => {
   });
 });
 
+describe("Colours a Level doesn't have", () => {
+  /** A Game whose Level has no blue. */
+  function withoutBlue(inkCosts: boolean): Game {
+    const game = createGame(inkCosts);
+    game.editInk((table) => (table.tanks.blue = 0));
+    return game;
+  }
+
+  for (const inkCosts of [true, false]) {
+    describe(`with Ink costs ${inkCosts ? 'on' : 'off'}`, () => {
+      it('refuses a blue Stroke as not in this Level, and makes nothing', () => {
+        const game = withoutBlue(inkCosts);
+
+        const line = game.submitStroke(
+          dragAlong([
+            { x: 200, y: 500 },
+            { x: 300, y: 500 },
+          ]),
+          'blue',
+        );
+        const box = game.submitStroke(dragBox(300, 600, 100, 100), 'blue');
+
+        expect(game.has('blue')).toBe(false);
+        expect(line).toMatchObject({ kind: 'refused', reason: 'not-in-level', colour: 'blue' });
+        expect(box).toMatchObject({ kind: 'refused', reason: 'not-in-level' });
+        expect(game.world.lines).toHaveLength(0);
+        expect(game.world.objects).toHaveLength(0);
+        expect(game.history).toHaveLength(0);
+      });
+
+      it('refuses a blue Fill as not in this Level, and the Object stays hollow', () => {
+        const game = withoutBlue(inkCosts);
+        const box = drawBox(game, 300, 500, 100, 'grey');
+
+        const outcome = game.fillAt({ x: 350, y: 550 }, 'blue');
+
+        expect(outcome).toMatchObject({ kind: 'refused', reason: 'not-in-level', id: box });
+        expect(game.world.objects[0]!.fill).toBeNull();
+      });
+
+      it('says so of a look in blue, and nothing of one in grey', () => {
+        const game = withoutBlue(inkCosts);
+        const look = game.lookAtStroke(
+          dragAlong([
+            { x: 200, y: 500 },
+            { x: 300, y: 500 },
+          ]),
+        )!;
+
+        expect(game.prospect(look, 'blue').refusal).toBe('not-in-level');
+        expect(game.prospect(look, 'grey').refusal).toBeNull();
+      });
+    });
+  }
+
+  it('says not in this Level before not enough', () => {
+    const game = withoutBlue(true);
+    const huge = game.submitStroke(
+      dragAlong([
+        { x: 100, y: 500 },
+        { x: 1500, y: 500 },
+      ]),
+      'blue',
+    );
+    expect(huge).toMatchObject({ kind: 'refused', reason: 'not-in-level' });
+  });
+
+  it('has every Colour in the sandbox', () => {
+    const game = createGame(true);
+    for (const colour of COLOURS) expect(game.has(colour)).toBe(true);
+  });
+});
+
 describe('What a Stroke or a Fill would do, with Ink costs on', () => {
   /** How far `estimate` is from `charged`, as a fraction of it. */
   const off = (estimate: number, charged: number) => Math.abs(estimate - charged) / charged;
