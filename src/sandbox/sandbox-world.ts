@@ -625,7 +625,8 @@ export class SandboxWorld {
    * Objects with their Fills, the Pieces of Lines, Rubble, Droplets and
    * Patches. Erasing is not breaking: nothing bursts, releases its Fill or
    * sets off a Blast. What was attached to what went goes as when it
-   * breaks: a green Object stuck to it falls free. Works paused and running.
+   * breaks: a green Object stuck to it falls free, and what an erased Piece
+   * held up falls. Works paused and running.
    * Each thing erased goes as `erased` in the list of what happened.
    * Returns how many things it erased.
    */
@@ -637,6 +638,8 @@ export class SandboxWorld {
     for (const thing of touched.sort((p, q) => rank(p) - rank(q))) {
       this.removeThing(thing, 'erased');
     }
+    // What the erased Pieces held up falls, once they have all gone.
+    this.strokes.collapse();
     return touched.length;
   }
 

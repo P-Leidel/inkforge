@@ -89,14 +89,14 @@ describe('Lines break Piece by Piece', () => {
     expect(world.bodyCount).toBe(FIXED_BODIES + pieces);
   });
 
-  it('breaks a grey Piece after hard hits, and the rest of the Line stays fixed', () => {
+  it('breaks a grey Piece after hard hits; the Grounded rest of the Line stays fixed, and what it held falls', () => {
     const world = createWorld();
     // A vertical grey wall, hit by heavy balls thrown at the same Piece.
     const wall = drawLine(world, [
       { x: 600, y: 300 },
       { x: 600, y: 780 },
     ]);
-    drawPost(world, { x: 600, y: 780 });
+    const post = drawPost(world, { x: 600, y: 780 });
     const target = pieceAt(lineById(world, wall), { x: 600, y: 564 });
     const throwBall = () => {
       const ball = drawObject(world, dragCircle({ x: 540, y: 560 }, 20));
@@ -122,15 +122,37 @@ describe('Lines break Piece by Piece', () => {
     expect(bodiesBesidesRubble()).toBeLessThan(bodies);
     expect(wentOf(heard())).toContain(`piece ${wall}.${target} broke`);
     expect(entriesOf(heard(), 'burst').length).toBeGreaterThanOrEqual(2); // the Piece and the ball
-    // Every other Piece is still there, exactly where it was drawn.
+    // Every Piece below it, on the post, is still there, exactly where it was drawn.
     expect(lineById(world, wall).pieces.map((p) => p.segments)).toEqual(
-      before.filter((p) => p.index !== target).map((p) => p.segments),
+      before.filter((p) => p.index > target).map((p) => p.segments),
+    );
+    // Those above it fell, as a Line of their own.
+    const above = world.lines.find((l) => l.id !== wall && l.id !== post)!;
+    expect(above.grounded).toBe(false);
+    expect(above.pieces.map((p) => p.index)).toEqual(
+      before.filter((p) => p.index < target).map((p) => p.index),
     );
   });
 
-  it('keeps both halves of a Line fixed when a Piece in the middle breaks', () => {
+  it('splits a Line when a Piece in the middle breaks: the Grounded side stays and the other falls', () => {
     const world = createWorld();
     const id = shelf(world);
+    const rock = boulder(world, 440, 250);
+    drop(world, rock, 1.5);
+
+    expect(pieceIndexes(world, id)).toEqual([0, 1, 2, 3]);
+    expect(lineById(world, id).grounded).toBe(true);
+    const right = world.lines.find((l) => l.pieces.some((p) => p.index > 5))!;
+    expect(right.id).toBeGreaterThan(id);
+    expect(right.grounded).toBe(false);
+    expect(right.pieces.map((p) => p.index)).toEqual([6, 7, 8, 9]);
+    expect(right.transform.y).toBeGreaterThan(100); // well below where it stood
+  });
+
+  it('keeps both halves of a Line fixed when a Piece in the middle breaks and each is still Grounded', () => {
+    const world = createWorld();
+    const id = shelf(world);
+    drawPost(world, { x: 680, y: 700 });
     const rock = boulder(world, 440, 250);
     drop(world, rock, 1.5);
 
@@ -216,6 +238,7 @@ describe('Taking back, Clear and Reset after a Piece has broken', () => {
   /** A grey shelf broken in the middle by a boulder that then falls away. */
   function brokenShelf(world: SandboxWorld) {
     const id = shelf(world);
+    drawPost(world, { x: 680, y: 700 }); // so both halves stay
     const rock = boulder(world, 440, 250);
     world.togglePause();
     world.release(rock);

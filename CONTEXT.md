@@ -72,7 +72,7 @@ One continuous drag of the pointer in one Colour. Becomes either a Line or an Ob
 _Avoid_: Drawing, path
 
 **Line**:
-A Stroke whose end does not return to its start. A Grounded Line stays fixed exactly where it was drawn until its Pieces break; one that isn't hangs Frozen where it was drawn, and once freed falls as one rigid body in its drawn shape. Once it has fallen it stays loose, like an Object, and never becomes Grounded again.
+A Stroke whose end does not return to its start. A Grounded Line stays fixed exactly where it was drawn until its Pieces break, and what a Collapse cuts off falls; one that isn't hangs Frozen where it was drawn, and once freed falls as one rigid body in its drawn shape. Once it has fallen it stays loose, like an Object, and never becomes Grounded again.
 _Avoid_: Wall, platform, segment chain
 
 **Grounded**:
@@ -112,6 +112,10 @@ _Avoid_: Delete, rubber
 **Piece**:
 One short section of a Line, about one enemy wide, that has its own durability and breaks off as a whole, also from a Line falling as one body.
 _Avoid_: Segment, chunk
+
+**Collapse**:
+What happens when a Piece of a Grounded Line breaks, is erased or is undone with its Line: grounding is checked again over connected runs of Pieces, and each run no longer connected to the Terrain, directly or through Grounded Lines, falls at once. Each Line's run is a rigid body of its own, a fallen Line; a Line cut in two keeps standing where it still reaches the ground.
+_Avoid_: Cave-in, structural failure
 
 **Debris**:
 The fragments a broken Piece or Object bursts into, and the pop of an Enemy that dies. Purely visual.

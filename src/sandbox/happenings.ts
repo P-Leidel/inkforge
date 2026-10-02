@@ -67,7 +67,12 @@ export type Why =
    * A Frozen Line that wasn't Grounded became Grounded: its Pieces come
    * back at once as fixed ones, where they hung.
    */
-  | 'grounded';
+  | 'grounded'
+  /**
+   * A Grounded Line's Pieces were cut off from the Terrain: they come back
+   * at once as a Line that falls, where they stood.
+   */
+  | 'cut-off';
 
 export type Happening =
   | { readonly kind: 'added'; readonly what: Thing }
@@ -82,6 +87,12 @@ export type Happening =
     }
   /** An Object was filled, or undo took its Fill back (`fill` null). */
   | { readonly kind: 'filled'; readonly id: number; readonly fill: Colour | null }
+  /**
+   * Some of Line `id`'s Pieces, cut off from the Terrain, fall as a Line of
+   * their own, `into`, keeping their places along the Line. It comes before
+   * they are `added` under `into`.
+   */
+  | { readonly kind: 'split'; readonly id: number; readonly into: number }
   /** The player Released a Frozen Object. */
   | { readonly kind: 'released'; readonly id: number }
   /** Debris bursts from a broken Outline or band, in world coordinates. */
