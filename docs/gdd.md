@@ -81,7 +81,7 @@ A freed Line falls as one rigid body with its drawn shape; its Pieces keep their
 
 ## 7. Colours
 
-| Colour | As a Line | As an Object (Outline) | Fill, released on break |
+| Colour | As a Line | As an Object (Outline) | Fill, released on break, or Belly, on an Enemy's death |
 |---|---|---|---|
 | **Grey** (pebble) | Cheap, flimsy wall or ramp; breaks after a few hits | Light pebble | Pebbles (Rubble) |
 | **Blue** (bouncy) | Trampoline: things bounce off it, harder the faster they hit | Bounces twice, then breaks | Bouncy Spill |
@@ -100,12 +100,14 @@ Details:
 - The **Blast** is a ring that spreads out from the red ink and weakens with distance. Wherever it is still strong enough when it arrives, it pushes things, damages enemies and the player's own Lines and Objects, wakes Frozen Objects and destroys other red, which chains. Walls don't block it. More red ink makes a bigger Blast; a red Outline with a red Fill makes one combined Blast.
 - **Spills** (blue and green Fills): 10–15 **Droplets** fly out; each sticks to the first enemy or surface it hits and leaves a **Patch**. Patch size matches the amount of ink that was in the Object. A Patch behaves like its Colour and wears down with use: a blue Patch with each bounce it gives, a green Patch as its glue slows things. A blue Patch on Terrain is a small trampoline; an enemy coated in blue bounces off whatever it hits. A green Patch is glue. Droplets deal no damage.
 - **Rubble** (grey and black Fills): a grey Fill releases up to 18 pebbles, a black Fill up to 8 heavier stones, more for a bigger Fill. Their total weight matches the Fill's. Rubble rolls, piles up and damages what it hits, but never breaks.
+- An Enemy's **Belly** comes out exactly as a Fill does, where the Enemy died (section 9).
 
 ## 8. Damage and breaking
 
 - One rule covers every hit: a hit above the receiver's threshold deals damage that grows with its strength, to both sides of the collision. Heavier and faster things hit harder; there is no Colour-versus-Colour table. Resting weight and sliding deal no damage, and neither does physics pushing apart a Line and an Object drawn over each other.
 - **Enemies** take damage from hits above an impact threshold, scaled by the mass and speed of what hit them, and from Blasts. A fall is a hit on what they land on, so long drops hurt. Falling below the bottom of the screen, as into a Pit, kills instantly.
-- An enemy that reaches the Ink Core deals its damage and disappears, dropping no ink.
+- An enemy that reaches the Ink Core deals its damage and disappears, dropping no ink and spilling nothing.
+- An enemy that dies in the Arena lets out its **Belly** (section 9); one that falls below the screen does not.
 - **Lines** are split into **Pieces** about one enemy wide. Each Piece has durability set by its Colour and cracks visibly as it loses durability.
 - Lines and Objects take damage from hard hits, Blasts, and enemies **Pressing** against them: anything an enemy can't shove or climb wears at a rate set by enemy type, slowly for Crawlers, fast for Heavies, Frozen Objects included. What an enemy stands on wears too. Green Lines also wear down as their glue slows things.
 - A Piece at zero durability breaks off as **Debris**; the rest of the Line stays as it was, fixed or as one falling body. Debris is purely visual and fades after a few seconds.
@@ -124,6 +126,16 @@ Enemies are upright physics bodies pushed along by a capped force ([ADR 0010](ad
 | Jumper | Jumps over low walls | Later |
 | Breaker | Attacks structures | Later |
 | **Siege Walker** (boss) | Multi-legged heavy enemy, beaten with physics (trip it, pit it, drop things on it, blow it up) rather than raw damage | Yes |
+
+### 9.1 Bellies
+
+Every Enemy is full of one Colour of ink, its **Belly**, shown as a window in its body in that Colour ([ADR 0015](adr/0015-enemy-bellies-reuse-fill-release.md)).
+
+- **Roll:** when it is sent in, at random, weighted by its type (Heavies lean towards black), among the Colours the Level has. A Level without red never has an Enemy that explodes. With Ink costs off, every Colour can come up.
+- **Release:** when it dies in the Arena (hits, falls, Blasts, wear and so on), its Belly comes out where it died exactly as a broken Object's Fill: grey pebbles, black stones, a blue or green Spill, or a red Blast. How much is set per type: a Runner a little, a Crawler more, a Heavy a lot. Falling below the screen spills nothing, and reaching the Ink Core is not a death.
+- **On top of the Drop:** the Drop into the Ink Tanks is unchanged.
+- **Chains:** a red Belly's Blast can kill nearby Enemies, whose Bellies come out in turn; the ring's travel time spaces the chain out.
+- The Campaign brings it in with the first Enemy: an Analysis line and a Tutorial card. The Analysis doesn't list the Bellies of a Wave, since they are rolled.
 
 ## 10. Ink economy
 
