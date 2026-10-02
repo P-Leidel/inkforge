@@ -16,7 +16,7 @@ import { Hud } from '../ui/hud';
 import { RewardsScreen, type PanelAction } from '../ui/rewards-screen';
 import type { Menu } from '../ui/menu';
 import { levelEntries, MenuScreen } from '../ui/menu-screen';
-import { gaugeCentre, PaletteBar } from '../ui/palette-bar';
+import { PaletteBar } from '../ui/palette-bar';
 import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../ui/toolbar';
 import { TuningPanel } from '../ui/tuning-panel';
@@ -82,12 +82,15 @@ export class SandboxScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Ink is unlimited until Ink costs is turned on in F2.
-    this.gameLayer = new Game({ inkCosts: false });
+    // Strokes cost Ink until F2 turns Ink costs off: then every Colour is on hand, unlimited.
+    this.gameLayer = new Game({ inkCosts: true });
     this.world = this.gameLayer.world;
     this.drawing = new DrawingInput(this.gameLayer);
     this.tuning = new TuningPanel(this.world.materials, this.world.enemyTable, this.gameLayer);
-    this.worldView = new WorldRenderer(this, this.world, gaugeCentre);
+    // The palette lays out only the Colours the Level has: ask it where each gauge is now.
+    this.worldView = new WorldRenderer(this, this.world, (colour) =>
+      this.palette.gaugeCentre(colour),
+    );
     this.preview = new StrokePreview(this);
     this.overlay = new DebugOverlay(this, this.gameLayer, this.frames, this.worldView);
     // Phaser renders after the scene's update: time it for the frame's record.

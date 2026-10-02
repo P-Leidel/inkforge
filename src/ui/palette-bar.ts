@@ -22,13 +22,8 @@ const TOOLS: readonly Tool[] = [...COLOURS, 'eraser'];
 /** A swatch's label: its key and its name. */
 const label = (tool: Tool, k: number) => (tool === 'eraser' ? 'E eraser' : `${k + 1} ${tool}`);
 
-/** The middle of `colour`'s gauge, on screen: where a Drop's dots of it fly to. */
-export function gaugeCentre(colour: Colour): Vec2 {
-  return {
-    x: LEFT + COLOURS.indexOf(colour) * (WIDTH + GAP) + WIDTH / 2,
-    y: GAUGE_TOP + GAUGE_HEIGHT / 2,
-  };
-}
+/** The left edge of the swatch in `slot`, from 0 at the left. */
+const slotX = (slot: number) => LEFT + slot * (WIDTH + GAP);
 
 /** What the gauges read: each Colour's Tank, and whether Ink costs anything. */
 export type Tanks = Pick<Game, 'inkCosts' | 'tanks'>;
@@ -46,7 +41,11 @@ export interface GaugeView {
   readonly over: boolean;
   /** The whole units that can be spent, under it; ∞ while Ink costs nothing. */
   readonly amount: string;
-  /** Whether the Level has this Colour: a Tank maximum of 0 means it doesn't, and its swatch is greyed out. */
+  /**
+   * Whether the Level has this Colour: with Ink costs on, a Tank maximum of
+   * 0 means it doesn't, and its swatch and gauge are hidden. With Ink costs
+   * off, every Colour is on hand.
+   */
   readonly inLevel: boolean;
 }
 
@@ -61,7 +60,7 @@ export function gaugeViews(tanks: Tanks, cost: CostEstimate | null): GaugeView[]
   const readings = tanks.tanks;
   return COLOURS.map((colour) => {
     const { spendable, maximum, units } = readings[colour];
-    const inLevel = maximum > 0;
+    const inLevel = maximum > 0 || !tanks.inkCosts;
     if (!inLevel) return { filled: 0, pending: 0, over: false, amount: '', inLevel };
     if (!tanks.inkCosts) return { filled: 1, pending: 0, over: false, amount: '∞', inLevel };
     const filled = halfPixels(spendable, maximum);
@@ -73,10 +72,10 @@ export function gaugeViews(tanks: Tanks, cost: CostEstimate | null): GaugeView[]
 }
 
 /**
- * The palette: one swatch per Colour in the top-left corner, each showing a
- * dab of ink in its texture, its key (1–5) and its name, and one for the
- * Eraser (E), showing its brush, unless the Eraser is put away (the
- * Campaign). Clicking a swatch picks its tool; the
+ * The palette: one swatch per Colour the Level has in the top-left corner,
+ * side by side in palette order, each showing a dab of ink in its texture,
+ * its key (1–5) and its name, and one for the Eraser (E), showing its
+ * brush, unless the Eraser is put away. Clicking a swatch picks its tool; the
  * picked one is highlighted. Under each Colour's swatch, a gauge shows its
  * Ink Tank, and the Ink left in Line length; ∞ while Ink costs nothing. The
  * swatches and the gauges are baked into textures, again only when the pick
@@ -91,9 +90,11 @@ export class PaletteBar {
   private shown = '';
   /** What the gauges show, so they are baked again only when that changes. */
   private shownGauges = '';
-  /** The Eraser's label and the zone that picks it, shut while it is put away. */
-  private eraserLabel: Phaser.GameObjects.Text | null = null;
-  private eraserZone: Phaser.GameObjects.Zone | null = null;
+  /** Each tool's label and the zone that picks it, in TOOLS order, moved to its slot or shut while it is hidden. */
+  private readonly labels: Phaser.GameObjects.Text[] = [];
+  private readonly zones: Phaser.GameObjects.Zone[] = [];
+  /** Each Colour's slot, from 0 at the left, in palette order; null while it is hidden. */
+  private slots: (number | null)[] = COLOURS.map((_, k) => k);
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -125,7 +126,7 @@ export class PaletteBar {
         .setDepth(61),
     );
     TOOLS.forEach((tool, k) => {
-      const x = LEFT + k * (WIDTH + GAP);
+      const x = slotX(k);
       const cx = x + WIDTH / 2;
       const text = scene.add
         .text(cx, TOP + HEIGHT - 6, label(tool, k), {
@@ -142,17 +143,25 @@ export class PaletteBar {
         .on('pointerdown', (pointer: Phaser.Input.Pointer) => {
           if (pointer.leftButtonDown()) onPick(tool);
         });
-      if (tool === 'eraser') {
-        this.eraserLabel = text;
-        this.eraserZone = zone;
-      }
+      this.labels.push(text);
+      this.zones.push(zone);
     });
+  }
+
+  /**
+   * The middle of `colour`'s gauge, on screen: where a Drop's dots of it fly
+   * to. A hidden Colour's is where it would be with every Colour shown.
+   */
+  gaugeCentre(colour: Colour): Vec2 {
+    const k = COLOURS.indexOf(colour);
+    return { x: slotX(this.slots[k] ?? k) + WIDTH / 2, y: GAUGE_TOP + GAUGE_HEIGHT / 2 };
   }
 
   /**
    * Highlights the picked tool, and shows each Colour's Tank, with `cost`
    * greyed out at the top of its Colour's gauge, red if it is more than is
-   * left. The Eraser's swatch shows only while the Game's `allowed` has it on hand.
+   * left. Only the Colours the Level has are shown, and the Eraser's swatch
+   * only while the Game's `allowed` has it on hand.
    */
   show(picked: Tool, game: PaletteGame, cost: CostEstimate | null = null): void {
     const gauges = gaugeViews(game, cost);
@@ -165,19 +174,28 @@ export class PaletteBar {
   }
 
   /**
-   * The swatches, each Colour the Level doesn't have greyed out: it can
-   * still be picked. The Eraser's, only if `eraser`.
+   * The swatches of the Colours the Level has, side by side, then the
+   * Eraser's, only if `eraser`; each label and zone moved to its slot, and
+   * a hidden tool's shut.
    */
   private showSwatches(picked: Tool, inLevel: readonly boolean[], eraser: boolean): void {
     const key = `${picked} ${inLevel.join()} ${eraser}`;
     if (key === this.shown) return;
     this.shown = key;
-    this.eraserLabel?.setVisible(eraser);
-    if (this.eraserZone?.input) this.eraserZone.input.enabled = eraser;
+    let next = 0;
+    this.slots = inLevel.map((has) => (has ? next++ : null));
+    const toolSlots = [...this.slots, eraser ? next : null];
     const g = bakingGraphics(this.scene);
     TOOLS.forEach((tool, k) => {
-      if (tool === 'eraser' && !eraser) return;
-      const x = LEFT + k * (WIDTH + GAP);
+      const slot = toolSlots[k] ?? null;
+      const label = this.labels[k]!;
+      const zone = this.zones[k]!;
+      label.setVisible(slot !== null);
+      if (zone.input) zone.input.enabled = slot !== null;
+      if (slot === null) return;
+      const x = slotX(slot);
+      label.setX(x + WIDTH / 2);
+      zone.setX(x);
       const selected = tool === picked;
       g.fillStyle(selected ? 0x3b4250 : 0x2c313b, 1);
       g.fillRoundedRect(x, TOP, WIDTH, HEIGHT, 8);
@@ -202,26 +220,30 @@ export class PaletteBar {
         false,
         LINE_THICKNESS,
       );
-      if (!inLevel[k]) {
-        // Inside the highlight's border, which stays.
-        g.fillStyle(selected ? 0x3b4250 : 0x2c313b, 0.75);
-        g.fillRoundedRect(x + 2, TOP + 2, WIDTH - 4, HEIGHT - 4, 6);
-      }
     });
     this.drawing.bake(g);
     g.destroy();
   }
 
-  /** Each gauge filled as its Tank is, to the nearest half pixel, and the whole units left. */
+  /**
+   * Each shown Colour's gauge, under its swatch, filled as its Tank is, to
+   * the nearest half pixel, and the whole units left.
+   */
   private showGauges(gauges: readonly GaugeView[]): void {
     const key = gauges
-      .map(({ filled, pending, over, amount }) => `${filled}:${pending}:${over}:${amount}`)
+      .map(({ filled, pending, over, amount }, k) => {
+        return `${this.slots[k]}:${filled}:${pending}:${over}:${amount}`;
+      })
       .join(' ');
     if (key === this.shownGauges) return;
     this.shownGauges = key;
     const g = bakingGraphics(this.scene);
     gauges.forEach(({ filled, pending, over, amount }, k) => {
-      const x = LEFT + k * (WIDTH + GAP);
+      const slot = this.slots[k];
+      const text = this.amounts[k]!;
+      text.setVisible(slot !== null);
+      if (slot === null || slot === undefined) return;
+      const x = slotX(slot);
       g.fillStyle(0x2c313b, 1);
       g.fillRoundedRect(x, GAUGE_TOP, WIDTH, GAUGE_HEIGHT, 3);
       if (filled > 0) {
@@ -239,7 +261,7 @@ export class PaletteBar {
       g.lineStyle(1, 0x4f5666, 1);
       g.strokeRoundedRect(x, GAUGE_TOP, WIDTH, GAUGE_HEIGHT, 3);
       // Text re-renders its texture on every change: touch it only on one.
-      const text = this.amounts[k]!;
+      if (text.x !== x + WIDTH / 2) text.setX(x + WIDTH / 2);
       if (text.text !== amount) text.setText(amount);
     });
     this.gauges.bake(g);

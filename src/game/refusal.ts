@@ -10,7 +10,7 @@ export type Refusal =
   | 'near-enemy'
   /** A closing Stroke's Object would overlap the Terrain or an Object. */
   | 'overlaps'
-  /** The Level doesn't have the Colour: its Tank maximum is 0. */
+  /** The Level doesn't have the Colour: its Tank maximum is 0, with Ink costs on. */
   | 'not-in-level'
   /** It costs more than its Colour's Tank holds. */
   | 'not-enough'

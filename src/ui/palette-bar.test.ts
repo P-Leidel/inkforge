@@ -61,15 +61,23 @@ describe("The palette's gauges", () => {
     }
   });
 
-  it("mark a Colour the Level doesn't have, with Ink costs on and off", () => {
-    for (const inkCosts of [true, false]) {
-      const table = createInkTable();
-      table.tanks.blue = 0;
-      const tanks = new InkTanks(table);
-      const views = gaugeViews({ inkCosts, tanks: tanks.reading() }, null);
+  it("mark a Colour the Level doesn't have, with Ink costs on", () => {
+    const table = createInkTable();
+    table.tanks.blue = 0;
+    const tanks = new InkTanks(table);
+    const views = gaugeViews({ inkCosts: true, tanks: tanks.reading() }, null);
 
-      expect(views[1]).toEqual({ filled: 0, pending: 0, over: false, amount: '', inLevel: false });
-      expect(views.filter((view) => view.inLevel)).toHaveLength(4);
-    }
+    expect(views[1]).toEqual({ filled: 0, pending: 0, over: false, amount: '', inLevel: false });
+    expect(views.filter((view) => view.inLevel)).toHaveLength(4);
+  });
+
+  it('have every Colour, unlimited, with Ink costs off', () => {
+    const table = createInkTable();
+    table.tanks.blue = 0;
+    const tanks = new InkTanks(table);
+    const views = gaugeViews({ inkCosts: false, tanks: tanks.reading() }, null);
+
+    expect(views[1]).toEqual({ filled: 1, pending: 0, over: false, amount: '∞', inLevel: true });
+    expect(views.every((view) => view.inLevel)).toBe(true);
   });
 });

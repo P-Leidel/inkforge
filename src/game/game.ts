@@ -180,7 +180,7 @@ interface Checkpoint {
 }
 
 export interface GameOptions {
-  /** Whether Strokes and Fills cost Ink. Off, Ink is unlimited. */
+  /** Whether Strokes and Fills cost Ink. Off, Ink is unlimited and every Colour on hand. */
   readonly inkCosts: boolean;
   /** Whether the Game has Waves and Intermissions; off by default. */
   readonly waves?: boolean;
@@ -405,9 +405,12 @@ export class Game {
     this.inkTanks.fitMaximums();
   }
 
-  /** Whether this Level has `colour`: a Tank maximum of 0 in force means it doesn't, Ink costs on or off. */
+  /**
+   * Whether this Level has `colour`: with Ink costs on, a Tank maximum of 0
+   * in force means it doesn't. With Ink costs off, every Colour is on hand.
+   */
   has(colour: Colour): boolean {
-    return this.inForce.tanks[colour] > 0;
+    return !this.costs || this.inForce.tanks[colour] > 0;
   }
 
   /** Each Tank as the player reads it: what it holds and its maximum, worked out now. */
