@@ -37,7 +37,7 @@ export class TutorialScreen {
   constructor(private readonly scene: Phaser.Scene) {
     const { width, height } = scene.scale;
     this.panel = scene.add
-      .rectangle(width / 2, height / 2, WIDTH, 0, 0x16171b, 0.97)
+      .rectangle(width / 2, height / 2, WIDTH, 0, 0x16171b, 1)
       .setStrokeStyle(2, 0x4f5666)
       .setDepth(DEPTH);
     this.title = scene.add

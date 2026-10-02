@@ -22,20 +22,26 @@ const refusing: CampaignStore = {
 };
 
 describe('The Tutorial', () => {
-  it('has three cards: the goal, killing, and pebble vs stone with grey and black swatches', () => {
+  it('has the goal, the controls, killing, and pebble vs stone with grey and black swatches', () => {
     expect(TUTORIAL_CARDS.map((card) => card.title)).toEqual([
       'Defend the Ink Core',
+      'Draw',
+      'Close it into an Object',
+      'Fill and Release',
       'Crush them',
       'Pebble or stone?',
     ]);
-    expect(TUTORIAL_CARDS[2]!.swatches.map((swatch) => swatch.colour)).toEqual(['grey', 'black']);
+    expect(TUTORIAL_CARDS.at(-1)!.swatches.map((swatch) => swatch.colour)).toEqual([
+      'grey',
+      'black',
+    ]);
   });
 
   it('opens at card 1 the first time Campaign Level 1 starts', () => {
     const tutorial = new Tutorial(memory());
 
     expect(tutorial.offer(0)).toBe(true);
-    expect(tutorial.shown).toMatchObject({ index: 0, count: 3 });
+    expect(tutorial.shown).toMatchObject({ index: 0, count: TUTORIAL_CARDS.length });
   });
 
   it('never opens by itself on a later Campaign Level or in Free play', () => {
@@ -52,10 +58,10 @@ describe('The Tutorial', () => {
     const tutorial = new Tutorial(store);
     tutorial.offer(0);
 
-    tutorial.next();
-    expect(tutorial.shown?.index).toBe(1);
-    tutorial.next();
-    expect(tutorial.shown?.index).toBe(2);
+    for (let index = 1; index < TUTORIAL_CARDS.length; index++) {
+      tutorial.next();
+      expect(tutorial.shown?.index).toBe(index);
+    }
     tutorial.next();
 
     expect(tutorial.isOpen).toBe(false);

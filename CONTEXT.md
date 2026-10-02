@@ -58,7 +58,7 @@ Playing any Level outside the Campaign: the Sandbox, a Gallery demo or a stress 
 _Avoid_: Sandbox mode (the Sandbox is a Level)
 
 **Tutorial**:
-The three cards shown the first time Campaign Level 1 starts: the goal, how to kill an Enemy, and grey (pebble) vs black (stone). Shown once, reopened with H.
+The cards shown the first time Campaign Level 1 starts: the goal, the controls (drawing a Line, closing an Object, Fill and Release), how to kill an Enemy, and grey (pebble) vs black (stone). Shown once, reopened with H.
 _Avoid_: Help screen, onboarding
 
 **Roguelite Mode**:
