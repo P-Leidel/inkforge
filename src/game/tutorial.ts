@@ -26,8 +26,10 @@ export const TUTORIAL_CARDS: readonly TutorialCard[] = [
     title: 'Draw',
     body:
       'Pick a Colour with 1–5 and drag to draw. A stroke whose end does not come back ' +
-      'to its start is a Line: it stays fixed exactly where you drew it, even in mid-air, ' +
-      'until Enemies wear it down. Lines are your walls and ramps. Ctrl+Z undoes.',
+      'to its start is a Line. A Line that touches the ground, or another Line that ' +
+      'does, stays fixed exactly where you drew it until Enemies wear it down. One drawn ' +
+      'in mid-air starts Frozen and falls when Released. Lines are your walls and ' +
+      'ramps. Ctrl+Z undoes.',
     swatches: [],
   },
   {
