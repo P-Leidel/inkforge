@@ -19,6 +19,7 @@ export function helpText({ eraser, spawning }: Pick<Allowed, 'eraser' | 'spawnin
     'Space: run / pause',
     'R: reset',
     'Ctrl+Z: undo',
+    'H: tutorial',
     spawning && `Shift+1–${ENEMY_TYPES.length}: Enemy`,
     'F1: stats / debug',
     'F2: tuning',
