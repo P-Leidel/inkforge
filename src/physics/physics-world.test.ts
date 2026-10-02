@@ -796,6 +796,74 @@ describe('Bodies within a radius', () => {
   });
 });
 
+describe('Moving bodies of capsules', () => {
+  /** A Frozen bar of two 100 px capsules about its origin, as a Line that isn't Grounded. */
+  const barDef = (position: { x: number; y: number }, mass = 2) => ({
+    shapes: {
+      kind: 'capsules' as const,
+      segments: [
+        { a: { x: -100, y: 0 }, b: { x: 0, y: 0 } },
+        { a: { x: 0, y: 0 }, b: { x: 100, y: 0 } },
+      ],
+      radius: 4,
+    },
+    surface: DEAD,
+    position,
+    motion: { mass, frozen: true, wakes: true },
+    reportsHits: true,
+  });
+
+  it('hang Frozen, then fall as one body when released, and land', () => {
+    const world = createWorld();
+    world.addBody(terrainDef([GROUND], DEAD));
+    const bar = world.addBody(barDef({ x: 500, y: 300 }));
+
+    for (let k = 0; k < 30; k++) world.step();
+    expect(world.getTransform(bar)).toEqual({ x: 500, y: 300, angle: 0 });
+    expect(world.getMass(bar)).toBeCloseTo(2, 9);
+
+    world.release(bar);
+    for (let k = 0; k < 120; k++) world.step();
+    const { y, angle } = world.getTransform(bar);
+    expect(y).toBeCloseTo(500 - 4, 0); // resting on the ground
+    expect(Math.abs(angle)).toBeLessThan(0.01);
+  });
+
+  it('lose own shapes for good, mass and all, keeping the rest', () => {
+    const world = createWorld();
+    const bar = world.addBody(barDef({ x: 500, y: 300 }));
+    const [left, right] = world.shapesOf(bar);
+
+    world.removeOwnShapes(bar, [left!]);
+
+    expect(world.shapesOf(bar)).toEqual([right]);
+    expect(world.getMass(bar)).toBeCloseTo(1, 9);
+    world.release(bar);
+    world.step();
+    expect(world.getMass(bar)).toBeCloseTo(1, 9);
+    // What is left is the right capsule: the near end of the bar is gone.
+    const near = world.shapesWithin({ x: 400, y: 300 }, 50);
+    expect(near).toEqual([]);
+    expect(() => world.removeOwnShapes(bar, [right!])).toThrow();
+  });
+
+  it('are measured shape by shape within a radius', () => {
+    const world = createWorld();
+    const bar = world.addBody(barDef({ x: 500, y: 300 }));
+    const [left, right] = world.shapesOf(bar);
+
+    const near = world.shapesWithin({ x: 420, y: 300 }, 100);
+
+    expect(near.map((n) => n.shape).sort()).toEqual([left, right].sort());
+    const byShape = new Map(near.map((n) => [n.shape, n]));
+    expect(byShape.get(left!)!.distance).toBe(0);
+    expect(byShape.get(right!)!.distance).toBeCloseTo(76, 6);
+    expect(world.bodiesWithin({ x: 420, y: 300 }, 100)).toEqual([
+      { body: bar, point: { x: 420, y: 300 }, distance: 0 },
+    ]);
+  });
+});
+
 describe('Shapes near a box', () => {
   const box = (minX: number, minY: number, maxX: number, maxY: number) => ({
     minX,

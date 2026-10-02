@@ -4,6 +4,7 @@ import type { Colour } from '../materials/colour';
 import { CLOSE_RADIUS, LINE_THICKNESS } from '../stroke/stroke-rules';
 import { drawInk } from './ink';
 import { PALETTE } from './palette';
+import { drawPin } from './pin';
 import { drawBrush } from '../ui/palette-bar';
 
 /** Where the pointer's Colour dab sits, relative to the pointer. */
@@ -12,7 +13,8 @@ const POINTER_OFFSET = { x: 16, y: 16 };
 /**
  * Draws the Stroke the player is drawing right now in the current Colour, and
  * the close marker at its start while releasing would close it into an
- * Object, as drawing input says. A Stroke that would be refused is drawn
+ * Object, as drawing input says. A Line that wouldn't be Grounded shows the
+ * Frozen look, a pin halfway along. A Stroke that would be refused is drawn
  * flat red with a red marker. Between Strokes, a dab of the current Colour
  * follows the pointer.
  */
@@ -29,6 +31,7 @@ export class StrokePreview {
     closes: boolean,
     refused: boolean,
     pointer: Vec2 | null,
+    pinned = false,
   ): void {
     const g = this.g;
     g.clear();
@@ -47,6 +50,7 @@ export class StrokePreview {
     } else {
       drawInk(g, colour, points, false, LINE_THICKNESS, 0.8);
     }
+    if (pinned && !closes && !refused) drawPin(g, points[Math.floor(points.length / 2)]!);
     if (closes) {
       const start = points[0]!;
       const marker = refused ? PALETTE.rejected : PALETTE.closeMarker;

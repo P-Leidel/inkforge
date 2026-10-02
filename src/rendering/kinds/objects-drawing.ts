@@ -5,6 +5,7 @@ import { BakedDrawing, bakeInto } from '../baked-textures';
 import { fillPolygon, strokePolyline } from '../draw';
 import { drawInk, fillInk, hash, INK_HUES, inkReach } from '../ink';
 import { PALETTE } from '../palette';
+import { drawPin, PIN_REACH } from '../pin';
 import { rectAround } from '../tiles';
 import { CRACK_WIDTH, crackStage } from './cracks';
 import { drawn, type DrawnKind } from './drawn-kind';
@@ -13,8 +14,6 @@ type Graphics = Phaser.GameObjects.Graphics;
 
 /** Width an Outline is drawn with, centred on the Object's edge. */
 const OUTLINE_WIDTH = 5;
-/** How far a Frozen Object's pin reaches from its centre, px. */
-const PIN_REACH = 10;
 
 /** An Object as drawn: its texture, once baked, and what it was last baked with. */
 interface DrawnObject {
@@ -103,15 +102,7 @@ function drawObject(g: Graphics, object: ObjectView): void {
   }
   drawInk(g, object.colour, object.outline, true, OUTLINE_WIDTH);
   drawCracks(g, object);
-  if (object.frozen) {
-    // A push pin at the centroid, in neutral white so it reads on every Colour.
-    g.lineStyle(3, PALETTE.frozenPinEdge, 1);
-    g.lineBetween(0, 0, 8, 8);
-    g.fillStyle(PALETTE.frozenPin, 1);
-    g.fillCircle(0, 0, 7);
-    g.lineStyle(2, PALETTE.frozenPinEdge, 1);
-    g.strokeCircle(0, 0, 7);
-  }
+  if (object.frozen) drawPin(g, { x: 0, y: 0 });
 }
 
 /**

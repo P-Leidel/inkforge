@@ -39,7 +39,7 @@ What the Intermission shows of the next Wave: each Enemy type it sends and how m
 _Avoid_: Preview, scouting
 
 **Aftermath**:
-What happens to the Arena when a Wave ends: every Ink Tank refills to its maximum and every Object at rest is Frozen again. Nothing else changes.
+What happens to the Arena when a Wave ends: every Ink Tank refills to its maximum and every Object, and every Line that isn't Grounded, at rest is Frozen again. Nothing else changes.
 _Avoid_: Cleanup, reset
 
 **Defence loop**:
@@ -72,8 +72,12 @@ One continuous drag of the pointer in one Colour. Becomes either a Line or an Ob
 _Avoid_: Drawing, path
 
 **Line**:
-A Stroke whose end does not return to its start. Stays fixed exactly where it was drawn, even in mid-air, until its Pieces break.
+A Stroke whose end does not return to its start. A Grounded Line stays fixed exactly where it was drawn until its Pieces break; one that isn't hangs Frozen where it was drawn, and once freed falls as one rigid body in its drawn shape. Once it has fallen it stays loose, like an Object, and never becomes Grounded again.
 _Avoid_: Wall, platform, segment chain
+
+**Grounded**:
+The state of a Line that touches the Terrain, or a Grounded Line, transitively, within a small tolerance (about half a Line's thickness), so one drawn to end at the ground counts. Objects, Rubble and Enemies never ground a Line. A Frozen Line a Grounded one is drawn to touch becomes Grounded where it hangs, unless it has fallen.
+_Avoid_: Anchored, supported, pinned
 
 **Object**:
 A Stroke that closes on itself. A movable body with exactly the drawn shape.
@@ -88,11 +92,11 @@ Ink added inside an Object's Outline. Its Colour decides the Object's weight or 
 _Avoid_: Core, content
 
 **Frozen**:
-The state of an Object that hangs where it was drawn, ignoring gravity, until a hard hit, a strong enough Blast or the player's Release frees it.
+The state of an Object, or of a Line that isn't Grounded, that hangs where it was drawn, ignoring gravity, until a hard hit, a strong enough Blast or the player's Release frees it.
 _Avoid_: Pinned, asleep, static
 
 **Release**:
-The player's action of unfreezing an Object during a Wave.
+The player's action of unfreezing a Frozen Object or Line during a Wave.
 _Avoid_: Activate, trigger, drop
 
 **Squeeze**:
@@ -106,7 +110,7 @@ _Avoid_: Delete, rubber
 ### Breaking
 
 **Piece**:
-One short section of a Line, about one enemy wide, that has its own durability and breaks off as a whole.
+One short section of a Line, about one enemy wide, that has its own durability and breaks off as a whole, also from a Line falling as one body.
 _Avoid_: Segment, chunk
 
 **Debris**:

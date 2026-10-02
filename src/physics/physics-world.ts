@@ -46,7 +46,10 @@ export interface Surface {
 export type BodyShapes =
   /** Convex polygons, together forming one rigid body. */
   | { readonly kind: 'polygons'; readonly polygons: readonly Polygon[] }
-  /** One capsule of `radius` around each segment, colliding from both sides. */
+  /**
+   * One capsule of `radius` around each segment, colliding from both sides:
+   * a fixed Line's Piece, or a moving Line that isn't Grounded.
+   */
   | { readonly kind: 'capsules'; readonly segments: readonly Segment[]; readonly radius: number }
   /**
    * A circle about the origin. On flat ground it rolls to a stop, as a
@@ -168,6 +171,11 @@ export interface NearBody {
   readonly distance: number;
 }
 
+/** One of a body's own shapes near a point, measured to its nearest point. */
+export interface NearShape extends NearBody {
+  readonly shape: ShapeId;
+}
+
 /** A shape, and the body it belongs to. */
 export interface BodyShape {
   readonly body: BodyId;
@@ -194,6 +202,15 @@ export interface PhysicsWorld {
    */
   addBody(def: BodyDef): BodyId;
   removeBody(id: BodyId): void;
+
+  /** A body's own shapes' ids, one per polygon, capsule or circle, in order. */
+  shapesOf(id: BodyId): readonly ShapeId[];
+  /**
+   * Removes some of a body's own shapes for good (a Piece breaking off a
+   * moving Line); at least one must stay. A moving body keeps its density,
+   * so its mass drops with them. Their contacts end with the next step.
+   */
+  removeOwnShapes(id: BodyId, shapes: readonly ShapeId[]): void;
 
   /**
    * Adds a capsule of `radius` around `segment`, given in the body's own
@@ -233,6 +250,12 @@ export interface PhysicsWorld {
    * shape's nearest point. In no particular order.
    */
   bodiesWithin(centre: Vec2, radius: number): NearBody[];
+  /**
+   * Every body's own shape (not one `addCapsule` added) within `radius` px
+   * of `centre`, measured to its nearest point: like `bodiesWithin`, but
+   * one entry per shape. In no particular order.
+   */
+  shapesWithin(centre: Vec2, radius: number): NearShape[];
   /**
    * Every shape, a body's own or one `addCapsule` added, whose box may
    * overlap `bounds` (px): the engine's broadphase. Its boxes are a little

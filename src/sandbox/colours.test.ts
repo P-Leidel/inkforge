@@ -6,6 +6,7 @@ import type { SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
+  drawPost,
   objectById,
   reboundHeight,
   runFor,
@@ -17,6 +18,7 @@ const createWorld = sandboxWorlds();
 describe('Colours: Lines', () => {
   function bounceOffLine(colour: Colour): number {
     const world = createWorld();
+    drawPost(world, { x: 300, y: 600 });
     drawLine(
       world,
       [

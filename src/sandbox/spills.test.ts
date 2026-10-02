@@ -11,6 +11,7 @@ import type { PatchView, SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
+  drawPost,
   entriesOf,
   FIXED_BODIES,
   hear,
@@ -116,6 +117,7 @@ describe('Spills', () => {
 
   it('land on a Line’s Piece, an Object and Rubble, and lie on their surfaces', () => {
     const world = spillWorld();
+    drawPost(world, { x: 150, y: 600 });
     drawLine(
       world,
       [
@@ -313,7 +315,8 @@ describe('Droplets', () => {
     grey.outline.damageThreshold = 0;
     blue.fill.kickSpeed = 1500;
     world.materials.dropletMass = 50;
-    const target = drawObject(world, dragBox(350, 600, 300, 40), 'grey');
+    // Beside a black anvil on a post, where the Droplets splash it.
+    const target = drawObject(world, dragBox(530, 600, 300, 40), 'grey');
     drawLine(
       world,
       [
@@ -322,6 +325,7 @@ describe('Droplets', () => {
       ],
       'black',
     );
+    drawPost(world, { x: 500, y: 560 }, 'black');
     spill(world, [spillBox(world, 500, 550, 'blue')], 1);
 
     const box = objectById(world, target);
@@ -333,7 +337,9 @@ describe('Droplets', () => {
   it('don’t pass through a thin Line, however fast they fly', () => {
     const world = spillWorld(true);
     world.materials.colours.blue.fill.kickSpeed = 3000;
-    // A thin cage of Lines around a shelf the box breaks on.
+    // A thin cage of Lines around a shelf the box breaks on, Grounded by a
+    // post under a corner, and the shelf by a post of its own.
+    drawPost(world, { x: 300, y: 700 }, 'black');
     const cage = [
       [
         { x: 300, y: 300 },
@@ -364,6 +370,7 @@ describe('Droplets', () => {
       ],
       'black',
     );
+    drawPost(world, { x: 500, y: 560 }, 'black');
     spill(world, [spillBox(world, 500, 550, 'blue')], 1);
 
     expect(world.droplets).toHaveLength(0);

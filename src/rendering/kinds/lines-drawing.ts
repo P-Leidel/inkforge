@@ -6,9 +6,10 @@ import { BakedDrawing, bakeInto } from '../baked-textures';
 import { strokePolyline } from '../draw';
 import { drawInk, hash, inkReach, segmentRuns } from '../ink';
 import { PALETTE } from '../palette';
+import { drawPin, PIN_REACH } from '../pin';
 import { tilesAlong } from '../tiles';
 import { CRACK_STAGES, CRACK_WIDTH, crackStage } from './cracks';
-import type { DrawnKind } from './drawn-kind';
+import { drawn, type DrawnKind } from './drawn-kind';
 
 type Graphics = Phaser.GameObjects.Graphics;
 
@@ -22,15 +23,19 @@ interface DrawnLine {
   readonly pieces: Set<number>;
   /** Each Piece's crack stage, in order along the Line, as last baked. */
   stages: readonly number[];
-  /** Whether a Piece came or went since it was last baked. */
+  /** Whether it was baked Frozen, with its pin. */
+  frozen: boolean;
+  /** Whether a Piece came or went, or it was Released, since it was last baked. */
   stale: boolean;
 }
 
 /**
  * The Lines, each baked in tiles of its own, so a long diagonal one doesn't
  * need a texture the size of the screen. A Line is made with its first
- * Piece, baked again when a Piece comes or goes or a Piece's crack stage
- * changes, and freed with its last Piece.
+ * Piece, baked again when a Piece comes or goes, a Piece's crack stage
+ * changes or it is Released or Frozen, and freed with its last Piece. A
+ * Line that isn't Grounded is baked in its own coordinates, and its tiles
+ * move and turn with it; a Frozen one is pinned halfway along.
  */
 export class LinesDrawing implements DrawnKind {
   /** Each Line by its id. */
@@ -49,13 +54,17 @@ export class LinesDrawing implements DrawnKind {
   follow(entry: Entry): void {
     if (entry.kind === 'added' && entry.what.thing === 'piece') this.add(entry.what);
     else if (entry.kind === 'went' && entry.what.thing === 'piece') this.free(entry.what);
+    else if (entry.kind === 'released') {
+      const line = this.lines.get(entry.id);
+      if (line) line.stale = true;
+    }
   }
 
   /** A Piece came: its Line is baked when next drawn. */
   private add({ id, index }: { id: StrokeId; index: number }): void {
     let line = this.lines.get(id);
     if (!line) {
-      line = { tiles: null, pieces: new Set(), stages: [], stale: true };
+      line = { tiles: null, pieces: new Set(), stages: [], frozen: false, stale: true };
       this.lines.set(id, line);
     }
     line.pieces.add(index);
@@ -78,22 +87,33 @@ export class LinesDrawing implements DrawnKind {
     this.lines.clear();
   }
 
-  /** Bakes each Line again when a Piece came or went, or a Piece's crack stage changed. */
-  draw(): void {
+  /**
+   * Bakes each Line again when a Piece came or went, a Piece's crack stage
+   * changed or it was Released or Frozen, and places a moving one.
+   */
+  draw(fraction: number): void {
     for (const line of this.views()) {
       const drawnLine = this.lines.get(line.id);
       if (!drawnLine) continue;
       const stages = line.pieces.map((piece) => crackStage(piece.wear));
-      if (!drawnLine.stale && sameStages(drawnLine.stages, stages)) continue;
-      // Around the whole Line as it first shows: it only loses Pieces from here on.
-      drawnLine.tiles ??= tilesAlong(
-        line.segments,
-        inkReach(line.colour, line.thickness),
-        LINE_TILE,
-      ).map((rect) => new BakedDrawing(this.scene, rect));
-      bakeInto(this.scene, drawnLine.tiles, (g) => drawLine(g, line));
-      drawnLine.stages = stages;
-      drawnLine.stale = false;
+      const stale =
+        drawnLine.stale ||
+        drawnLine.frozen !== line.frozen ||
+        !sameStages(drawnLine.stages, stages);
+      if (stale) {
+        // Around the whole Line as it first shows, and its pin: it only loses Pieces from here on.
+        const reach = Math.max(inkReach(line.colour, line.thickness), PIN_REACH);
+        drawnLine.tiles ??= tilesAlong(line.segments, reach, LINE_TILE).map(
+          (rect) => new BakedDrawing(this.scene, rect),
+        );
+        bakeInto(this.scene, drawnLine.tiles, (g) => drawLine(g, line));
+        drawnLine.stages = stages;
+        drawnLine.frozen = line.frozen;
+        drawnLine.stale = false;
+      }
+      if (line.grounded) continue;
+      const { x, y, angle } = drawn(line, fraction);
+      for (const tile of drawnLine.tiles ?? []) tile.image.setPosition(x, y).setRotation(angle);
     }
   }
 }
@@ -111,6 +131,7 @@ function drawLine(g: Graphics, line: LineView): void {
     drawInk(g, line.colour, run, false, line.thickness);
   }
   for (const piece of line.pieces) drawPieceCracks(g, line, piece);
+  if (line.frozen) drawPin(g, pointAlong(line.segments, 0.5).p);
 }
 
 /**

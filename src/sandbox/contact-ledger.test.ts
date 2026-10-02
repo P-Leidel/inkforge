@@ -76,6 +76,76 @@ describe('The Contact ledger', () => {
     return { ledger, slides };
   }
 
+  describe('a body of several Parties (a Line that isn’t Grounded)', () => {
+    /** Two Pieces on body 7: Party 1 is shapes 70 and 71, Party 2 shape 72. */
+    const pieces = () => {
+      const first = { ...party(1, 7), stroke: 9, shapes: [70, 71] as ShapeId[] };
+      const second = { ...party(2, 7), stroke: 9, shapes: [72] as ShapeId[] };
+      return { first, second };
+    };
+
+    it('names the Party of each shape in hits, new contacts and who touches whom', () => {
+      const { ledger } = setup();
+      const { first, second } = pieces();
+      const ball = party(3, 8);
+      for (const p of [first, second, ball]) ledger.register(p);
+
+      ledger.step(
+        report({
+          begins: [pair(first, ball, 71, 30), pair(second, ball, 72, 30)],
+          hits: [{ ...hit(second, ball, 400), shapeA: 72 as ShapeId, shapeB: 30 as ShapeId }],
+        }),
+      );
+
+      expect(hitsOf(ledger)).toEqual([['party 2', 'party 3', 400]]);
+      expect(newOf(ledger)).toEqual([
+        ['party 1', 'party 3', 71, 30],
+        ['party 2', 'party 3', 72, 30],
+      ]);
+      expect(touchingOf(ledger, ball)).toEqual(['party 1', 'party 2']);
+      expect([...ledger.touchingParty(second.id)].map((t) => t.party.target)).toEqual(['party 3']);
+      // The body's touching is each of its Parties' in turn.
+      expect([...ledger.touching(first.body)].map((t) => t.party.target)).toEqual([
+        'party 3',
+        'party 3',
+      ]);
+      expect(ledger.partiesOf(first.body)).toEqual([first, second]);
+      expect([...ledger.bodies()]).toEqual([8, 7]);
+    });
+
+    it('lets one Party go while its body stays, and the whole body with the rest', () => {
+      const { ledger } = setup();
+      const { first, second } = pieces();
+      const ball = party(3, 8);
+      for (const p of [first, second, ball]) ledger.register(p);
+      ledger.step(report({ begins: [pair(first, ball, 70, 30), pair(second, ball, 72, 30)] }));
+
+      ledger.unregisterParty(first.id);
+
+      expect(touchingOf(ledger, ball)).toEqual(['party 2']);
+      expect(ledger.party(first.id)).toBeUndefined();
+      expect(ledger.partyAt(first.body, 70 as ShapeId)).toBeUndefined();
+      expect(ledger.partyAt(first.body, 72 as ShapeId)).toBe(second);
+
+      ledger.unregister(second.body);
+
+      expect(touchingOf(ledger, ball)).toEqual([]);
+      expect(ledger.partiesOf(second.body)).toEqual([]);
+    });
+
+    it('takes contacts on a shape added on it as its host Party’s', () => {
+      const { ledger } = setup();
+      const { first, second } = pieces();
+      const ball = party(3, 8);
+      for (const p of [first, second, ball]) ledger.register(p);
+
+      ledger.hostShape(99 as ShapeId, second.id);
+      ledger.step(report({ begins: [pair(second, ball, 99, 30)] }));
+
+      expect(newOf(ledger)).toEqual([['party 2', 'party 3', 99, 30]]);
+    });
+  });
+
   it('hands out Party ids from 1 up, never again, also after a restore', () => {
     const { ledger } = setup();
 

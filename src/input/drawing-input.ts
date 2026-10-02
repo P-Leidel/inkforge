@@ -76,6 +76,8 @@ export type DrawingPreview =
       readonly samples: readonly Vec2[] | null;
       /** Whether the Stroke being drawn would close into an Object if let go now. */
       readonly closes: boolean;
+      /** Whether it would make a Line that isn't Grounded, which hangs Frozen. */
+      readonly pinned: boolean;
       /**
        * Whether it would be refused whatever it costs: as an Object
        * overlapping the Terrain or an Object, outside a Wave with Waves on,
@@ -241,8 +243,8 @@ export class DrawingInput {
   }
 
   /**
-   * What the preview shows now: the Stroke being drawn, whether it closes
-   * and is refused whatever it costs, and its pending cost; between Strokes, the pending cost
+   * What the preview shows now: the Stroke being drawn, whether it closes,
+   * hangs Frozen and is refused whatever it costs, and its pending cost; between Strokes, the pending cost
    * of the Fill under the pointer. The looks behind them are taken again
    * only as `pendingLook` says, and priced afresh each time, so an undo or an
    * F2 edit shows at once.
@@ -260,6 +262,7 @@ export class DrawingInput {
       colour,
       samples,
       closes: prospect?.kind === 'object',
+      pinned: prospect?.pinned ?? false,
       refused: refusal !== null && REFUSALS[refusal].whateverItCosts,
       pointer,
       cost: prospect?.cost ?? null,

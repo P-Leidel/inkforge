@@ -1,7 +1,7 @@
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
-import type { BodyId, NearBody } from '../physics';
+import type { BodyId, NearBody, ShapeId } from '../physics';
 import type { Kind } from './arena-contents';
 import type { ArenaQuery } from './arena-query';
 import { TERRAIN_PARTY, type Party, type PartyId } from './contact-ledger';
@@ -106,9 +106,9 @@ export class Blasts<T> implements Kind<'blasts', readonly SavedBlast[], readonly
   private nextId = 1;
 
   constructor(
-    private readonly query: Pick<ArenaQuery, 'bodiesWithin'>,
+    private readonly query: Pick<ArenaQuery, 'shapesWithin'>,
     private readonly materials: MaterialTable,
-    private readonly parties: { partyOf(body: BodyId): Party<T> | undefined },
+    private readonly parties: { partyAt(body: BodyId, shape: ShapeId): Party<T> | undefined },
   ) {}
 
   get views(): readonly BlastView[] {
@@ -157,12 +157,15 @@ export class Blasts<T> implements Kind<'blasts', readonly SavedBlast[], readonly
 
   /** What the ring reaches now that it hasn't acted on yet, by Party id; marks it acted on. */
   private reach(blast: BlastRecord): Reach<T>[] {
-    const reached: { party: Party<T>; near: NearBody }[] = [];
-    for (const near of this.query.bodiesWithin(blast.centre, blast.radius)) {
-      const party = this.parties.partyOf(near.body);
+    // Each Party measured to the nearest of its shapes: a body may be several.
+    const nearest = new Map<Party<T>, NearBody>();
+    for (const near of this.query.shapesWithin(blast.centre, blast.radius)) {
+      const party = this.parties.partyAt(near.body, near.shape);
       if (!party || party.id === TERRAIN_PARTY || blast.acted.has(party.id)) continue;
-      reached.push({ party, near });
+      const current = nearest.get(party);
+      if (!current || near.distance < current.distance) nearest.set(party, near);
     }
+    const reached = [...nearest].map(([party, near]) => ({ party, near }));
     reached.sort((p, q) => p.party.id - q.party.id);
     return reached.map(({ party, near }) => {
       blast.acted.add(party.id);

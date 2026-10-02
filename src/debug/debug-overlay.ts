@@ -129,7 +129,8 @@ export class DebugOverlay {
     // Each Piece's capsules as one outline (their union, with flat ends), not a path per capsule.
     for (const line of lines) {
       for (const { segments } of line.pieces) {
-        strokePolygon(g, bandPolygon(segments, line.thickness / 2));
+        const band = bandPolygon(segments, line.thickness / 2);
+        strokePolygon(g, line.grounded ? band : transformPoints(band, line.transform));
       }
     }
     for (const { transform: t, radius } of this.world.rubble) {

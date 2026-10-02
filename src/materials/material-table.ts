@@ -147,6 +147,12 @@ export interface MaterialTable {
    * length allows: about one enemy wide.
    */
   pieceLength: number;
+  /**
+   * A Line within this many px of the Terrain, or of a Grounded Line, touches
+   * it, and is Grounded: about half a Line's thickness, so a Line drawn to
+   * end at the ground counts.
+   */
+  groundTolerance: number;
   /** Damage per unit of impulse above the receiver's damage threshold. */
   damagePerImpulse: number;
   /** Contacts approaching slower than this (px/s) don't bounce, whatever their restitution. */
@@ -346,6 +352,7 @@ export const DEFAULT_MATERIAL_TABLE: MaterialTable = {
   },
   inkMass: 0.00075,
   pieceLength: 48,
+  groundTolerance: 4,
   damagePerImpulse: 1,
   minBounceSpeed: 50,
   wakeSpeed: 82.5,

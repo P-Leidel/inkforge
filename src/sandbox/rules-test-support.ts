@@ -124,6 +124,13 @@ export class FakeContacts<T> implements RulesContacts<T> {
     return this.touches.get(body) ?? [];
   }
 
+  /** What touches each Party now: what touches its body, if not set. */
+  readonly touchesParty = new Map<number, Touching<T>[]>();
+
+  touchingParty(id: number): Iterable<Touching<T>> {
+    return this.touchesParty.get(id) ?? [];
+  }
+
   normal(body: BodyId, pair: ContactPair): Vec2 | null {
     const normal = this.normals.get(pair);
     if (!normal) return null;
