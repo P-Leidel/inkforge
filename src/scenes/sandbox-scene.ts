@@ -67,6 +67,8 @@ export class SandboxScene extends Phaser.Scene {
   private tuning!: TuningPanel;
   /** The toolbar's menus, Gallery and Stress tests: a click beside an open one closes it. */
   private menus!: Menu[];
+  /** The toolbar's Gallery, Sandbox and Stress tests: shown in Free play only. */
+  private freePlayControls!: { setVisible(visible: boolean): unknown }[];
   /** The title screen, the Level list and the Gallery's list, over everything. */
   private screen!: MenuScreen;
   private campaign!: Campaign;
@@ -108,19 +110,22 @@ export class SandboxScene extends Phaser.Scene {
     this.hud = new Hud(this, this.gameLayer);
     this.rewards = new RewardsScreen(this, (action) => this.onPanel(action));
     this.palette = new PaletteBar(this, (tool) => this.drawing.pick(tool));
+    // Clear and Title at the right end, on hand everywhere; Free play's own
+    // buttons beside them, hidden in the Campaign.
     const toolbar = new Toolbar(this);
+    toolbar.addButton('Clear', () => this.clear());
+    toolbar.addButton('Title', () => this.showTitle());
     const gallery = toolbar.addMenu(
       'Gallery',
       GALLERY.map((demo) => ({ label: demo.name, onPick: () => this.play(demo) })),
     );
-    toolbar.addButton('Clear', () => this.clear());
-    toolbar.addButton(SANDBOX_LEVEL.name, () => this.play(SANDBOX_LEVEL));
+    const sandbox = toolbar.addButton(SANDBOX_LEVEL.name, () => this.play(SANDBOX_LEVEL));
     const stressTests = toolbar.addMenu(
       'Stress tests',
       STRESS_TESTS.map((level) => ({ label: level.name, onPick: () => this.play(level) })),
     );
     this.menus = [gallery, stressTests];
-    toolbar.addButton('Title', () => this.showTitle());
+    this.freePlayControls = [gallery, sandbox, stressTests];
     this.tutorial = new Tutorial(browserStore(TUTORIAL_KEY));
     this.tutorialScreen = new TutorialScreen(this);
     this.screen = new MenuScreen(this);
@@ -203,9 +208,14 @@ export class SandboxScene extends Phaser.Scene {
     this.started();
   }
 
-  /** A Level was loaded: closes any menu screen, names it for F1, and times it from now. */
+  /**
+   * A Level was loaded: closes any menu screen, shows Free play's toolbar
+   * buttons outside the Campaign only, names it for F1, and times it from now.
+   */
   private started(): void {
     this.screen.hide();
+    const freePlay = this.session.reading.campaign === null;
+    for (const control of this.freePlayControls) control.setVisible(freePlay);
     this.tutorial.hide();
     if (this.tutorial.offer(this.session.reading.campaign?.index ?? null)) this.drawing.leave();
     this.overlay.setSceneName(this.session.reading.name);

@@ -17,10 +17,10 @@ export class Toolbar {
     this.right = scene.scale.width - MARGIN;
   }
 
-  addButton(label: string, onClick: () => void): this {
+  addButton(label: string, onClick: () => void): Phaser.GameObjects.Text {
     const button = textButton(this.scene, this.right, this.top, label, onClick);
     this.right -= button.width + GAP;
-    return this;
+    return button;
   }
 
   /** A button that opens and closes a list of `items` dropping down beneath it. */
