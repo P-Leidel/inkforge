@@ -6,7 +6,7 @@ import { transformPoints } from '../geometry/transform';
 import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-paths';
 import { SANDBOX_ARENA, type Arena } from './arena';
 import { GRAVITY, SandboxWorld } from './sandbox-world';
-import { FIXED_BODIES } from './test-support';
+import { drawPost, FIXED_BODIES, worldSegments } from './test-support';
 
 const worlds: SandboxWorld[] = [];
 function createWorld(seed = 1): SandboxWorld {
@@ -234,26 +234,43 @@ describe('Sandbox world: Lines', () => {
     { x: 400, y: 300 },
     { x: 400, y: 700 },
   ]);
+  /** A ramp up from the ground: Grounded. */
+  const ramp = dragAlong([
+    { x: 200, y: 880 },
+    { x: 600, y: 700 },
+  ]);
 
-  it('turns an open Stroke into a fixed Line', () => {
+  it('turns an open Stroke touching the Terrain into a fixed, Grounded Line', () => {
     const world = createWorld();
 
-    const outcome = world.submitStroke(horizontal, 'grey');
+    const outcome = world.submitStroke(ramp, 'grey');
 
     expect(outcome.kind).toBe('line');
     expect(world.lines).toHaveLength(1);
+    expect(world.lines[0]!.grounded).toBe(true);
     expect(world.bodyCount).toBe(FIXED_BODIES + world.lines[0]!.pieces.length); // a body per Piece
   });
 
-  it('keeps a Line where it was drawn, even in mid-air, while physics runs', () => {
+  it('turns an open Stroke in mid-air into a Frozen Line of one body', () => {
     const world = createWorld();
+
     world.submitStroke(horizontal, 'grey');
-    const before = world.lines[0]!.segments;
+
+    expect(world.lines[0]).toMatchObject({ grounded: false, frozen: true });
+    expect(world.lines[0]!.pieces.length).toBeGreaterThan(1);
+    expect(world.bodyCount).toBe(FIXED_BODIES + 1);
+  });
+
+  it('keeps a Line where it was drawn while physics runs, Grounded or hanging Frozen', () => {
+    const world = createWorld();
+    world.submitStroke(ramp, 'grey');
+    world.submitStroke(horizontal, 'grey');
+    const before = world.lines.map(worldSegments);
 
     world.togglePause();
     for (let i = 0; i < 120; i++) world.step();
 
-    expect(world.lines[0]!.segments).toEqual(before);
+    expect(world.lines.map(worldSegments)).toEqual(before);
   });
 
   it('lets Lines cross each other', () => {
@@ -304,7 +321,7 @@ describe('Sandbox world: remove and clear', () => {
     world.remove(first.id);
 
     expect(world.lines).toHaveLength(1);
-    expect(world.lines[0]!.segments[0]!.a.y).toBeCloseTo(400);
+    expect(worldSegments(world.lines[0]!)[0]!.a.y).toBeCloseTo(400);
   });
 
   it('clear removes every Stroke but keeps the Terrain', () => {
@@ -388,8 +405,9 @@ describe('Sandbox world: Objects', () => {
     expect(objectById(world, id).frozen).toBe(true);
   });
 
-  it('lands a dropped Object on a Line, which stays put', () => {
+  it('lands a dropped Object on a Grounded Line, which stays put', () => {
     const world = createWorld();
+    drawPost(world, { x: 200, y: 500 });
     world.submitStroke(
       dragAlong([
         { x: 200, y: 500 },
@@ -397,7 +415,7 @@ describe('Sandbox world: Objects', () => {
       ]),
       'grey',
     );
-    const line = world.lines[0]!.segments;
+    const line = world.lines[1]!.segments;
     const id = drawObject(world, dragBox(380, 400, 40, 40));
     world.togglePause();
     world.releaseAt({ x: 400, y: 420 });
@@ -407,7 +425,7 @@ describe('Sandbox world: Objects', () => {
     const box = objectById(world, id);
     // The box's bottom rests on the Line's top surface (y = 500 - 4).
     expect(box.transform.y + 20).toBeCloseTo(496, 0);
-    expect(world.lines[0]!.segments).toEqual(line);
+    expect(world.lines[1]!.segments).toEqual(line);
   });
 
   it('collides as a solid shape: a ball rests on a drawn square outline, not inside it', () => {

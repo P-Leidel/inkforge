@@ -8,6 +8,7 @@ import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import { STEP_SECONDS, type ObjectView, type RubbleView, type SandboxWorld } from './sandbox-world';
 import {
   drawLine,
+  drawPost,
   drawObject,
   entriesOf,
   FIXED_BODIES,
@@ -26,11 +27,13 @@ interface Smashable {
   /** How far the box falls onto it. */
   readonly drop?: number;
   readonly size?: number;
+  /** Whether the anvil stands on a prop slanting away to the right rather than a post under it. */
+  readonly slanted?: boolean;
 }
 
 /**
  * A grey box filled with `fill` (or hollow), hanging over a short black Line,
- * an anvil, at x. Released, it falls onto the anvil and breaks, and its Fill
+ * an anvil on a black post, at x. Released, it falls onto the anvil and breaks, and its Fill
  * comes out on top of the anvil and spills over its sides. Neither red
  * explodes nor blue spills in it, so later Colour rules leave it alone.
  */
@@ -38,7 +41,7 @@ function smashable(
   world: SandboxWorld,
   x: number,
   fill: Colour | null,
-  { anvilY = 500, drop = 250, size = 60 }: Smashable = {},
+  { anvilY = 500, drop = 250, size = 60, slanted = false }: Smashable = {},
 ): number {
   drawLine(
     world,
@@ -48,6 +51,16 @@ function smashable(
     ],
     'black',
   );
+  if (slanted) {
+    drawLine(
+      world,
+      [
+        { x: x + 20, y: anvilY },
+        { x: x + 300, y: world.arena.height },
+      ],
+      'black',
+    );
+  } else drawPost(world, { x, y: anvilY }, 'black');
   const top = anvilY - 4 - drop - size;
   const box = drawObject(world, dragBox(x - size / 2, top, size, size), 'grey');
   if (fill) world.fillAt({ x, y: top + size / 2 }, fill);
@@ -206,7 +219,8 @@ describe('Fill release: Rubble', () => {
       const target = drawObject(world, dragBox(470, 760, 80, 80), 'black');
       world.fillAt({ x: 510, y: 800 }, 'black');
       if (dropped === 'pebbles') {
-        smash(world, [smashable(world, 510, 'grey')]);
+        // On a slanted prop, which stays clear of the target.
+        smash(world, [smashable(world, 510, 'grey', { slanted: true })]);
       } else {
         // An Object as heavy as the target, released from where the pebbles are.
         const twin = drawObject(world, dragBox(470, 400, 80, 80), 'black');

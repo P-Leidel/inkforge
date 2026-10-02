@@ -35,7 +35,7 @@ Tagline: *Draw it. Build it. Break physics. Survive the wave.*
 
 ([ADR 0012](adr/0012-continuous-building-between-intermissions.md))
 
-1. **Intermission.** Physics is paused. The **Analysis** shows the next Wave's enemy types and counts. After a Wave, its rewards are shown (in the Campaign, a summary) and the **Aftermath** follows: every Ink Tank refills to its maximum and every Object at rest is Frozen again; everything else stays as the Wave left it, damage included.
+1. **Intermission.** Physics is paused. The **Analysis** shows the next Wave's enemy types and counts. After a Wave, its rewards are shown (in the Campaign, a summary) and the **Aftermath** follows: every Ink Tank refills to its maximum and every Object, and every Line that isn't Grounded, at rest is Frozen again; everything else stays as the Wave left it, damage included.
 2. **Wave.** Physics runs and enemies walk in. The player builds as they come: draws anywhere but close to an Enemy, paid from the Ink Tanks, and Releases Frozen Objects. Drops go straight into the Tanks.
 3. Repeat through the Level's Waves; then the next Level, until the final boss. If the Ink Core is destroyed, the Wave is lost: retry it, or restart the Level.
 
@@ -47,7 +47,7 @@ Whether the player may also build in the Intermission, undo during a Wave, and b
 
 - A **Stroke** is one continuous drag in one Colour.
 - If its end returns near its start, it becomes an **Object**; a marker shows the snap while drawing. Otherwise it becomes a **Line**.
-- **Lines** stay fixed exactly where they were drawn, even in mid-air, until Pieces break off ([ADR 0002](adr/0002-lines-stay-fixed.md)).
+- A **Grounded** Line, one touching the Terrain or another Grounded Line (within about half a Line's thickness), stays fixed exactly where it was drawn until Pieces break off. A Line that isn't Grounded starts Frozen, like an Object, and falls as one rigid body in its drawn shape when it is freed (section 6.4, [ADR 0014](adr/0014-ungrounded-lines-start-frozen.md)). Objects, Rubble and enemies never ground a Line. While drawing, a Line that won't be Grounded shows the Frozen look.
 - **Objects** are movable bodies with exactly the drawn shape: circles roll, boxes stack, triangles tip over. Self-crossing closed strokes are rejected with a clear message.
 - Every Colour follows the same drawing rules; only the material differs.
 
@@ -71,11 +71,13 @@ Strokes never join: no welds, hinges or pivots ([ADR 0003](adr/0003-no-joints-in
 - An Object weighs what its Outline weighs plus what its Fill weighs, spread evenly over the shape. Outline cost scales with length, Fill cost with area, so an Object's weight roughly matches the ink spent on it.
 - **When an Object breaks, its Fill comes out** with an outward kick, so Spills spread and Rubble is flung (section 7).
 
-### 6.4 Frozen Objects
+### 6.4 Frozen Objects and Lines
 
-Every Object starts **Frozen**, including those drawn during a Wave. It hangs where it was drawn until something hits it or the player **Releases** it with a right-click ([ADR 0004](adr/0004-objects-start-frozen.md)). Frozen Objects have a visible pinned look.
+Every Object starts **Frozen**, including those drawn during a Wave, and so does every Line that isn't Grounded. It hangs where it was drawn until something hits it or the player **Releases** it with a right-click ([ADR 0004](adr/0004-objects-start-frozen.md), [ADR 0014](adr/0014-ungrounded-lines-start-frozen.md)). Frozen Objects and Lines have a visible pinned look.
 
-Only a hit from a moving body above a small impact threshold wakes a Frozen Object; resting contact doesn't, and two Frozen Objects touching never wake each other. The waking collision plays out normally. A **Blast** that is still strong enough when it arrives wakes a Frozen Object too, and its push plays out; a weaker one only damages it. Droplets never wake a Frozen Object. A Frozen Object can be damaged and break without ever moving.
+Only a hit from a moving body above a small impact threshold wakes a Frozen Object or Line; resting contact doesn't, and two Frozen things touching never wake each other. The waking collision plays out normally. A **Blast** that is still strong enough when it arrives wakes one too, and its push plays out; a weaker one only damages it. Droplets never wake a Frozen Object or Line. A Frozen Object or Line can be damaged and break without ever moving.
+
+A freed Line falls as one rigid body with its drawn shape; its Pieces keep their durability and can still break off. It weighs its ink by its Colour, so a black bar dropped on enemies hurts and a grey one barely does. Two ungrounded Lines that touch are separate bodies: Releasing one doesn't release the other, though it may knock it loose. A fallen Line stays loose like an Object, never Grounded again; enemies can shove it, and the Aftermath freezes it again when it is at rest.
 
 ## 7. Colours
 
@@ -108,7 +110,7 @@ Details:
 - An enemy that dies in the Arena lets out its **Belly** (section 9); one that falls below the screen does not.
 - **Lines** are split into **Pieces** about one enemy wide. Each Piece has durability set by its Colour and cracks visibly as it loses durability.
 - Lines and Objects take damage from hard hits, Blasts, and enemies **Pressing** against them: anything an enemy can't shove or climb wears at a rate set by enemy type, slowly for Crawlers, fast for Heavies, Frozen Objects included. What an enemy stands on wears too. Green Lines also wear down as their glue slows things.
-- A Piece at zero durability breaks off as **Debris**; the rest of the Line stays fixed. Debris is purely visual and fades after a few seconds.
+- A Piece at zero durability breaks off as **Debris**; the rest of the Line stays as it was, fixed or as one falling body. Debris is purely visual and fades after a few seconds.
 - **Objects** have durability too and break into Debris; their Fill comes out (section 6.3).
 - There is no repair mechanic. Damage carries over between Waves.
 
@@ -127,7 +129,7 @@ Enemies are upright physics bodies pushed along by a capped force ([ADR 0010](ad
 
 ### 9.1 Bellies
 
-Every Enemy is full of one Colour of ink, its **Belly**, shown as a window in its body in that Colour ([ADR 0014](adr/0014-enemy-bellies-reuse-fill-release.md)).
+Every Enemy is full of one Colour of ink, its **Belly**, shown as a window in its body in that Colour ([ADR 0015](adr/0015-enemy-bellies-reuse-fill-release.md)).
 
 - **Roll:** when it is sent in, at random, weighted by its type (Heavies lean towards black), among the Colours the Level has. A Level without red never has an Enemy that explodes. With Ink costs off, every Colour can come up.
 - **Release:** when it dies in the Arena (hits, falls, Blasts, wear and so on), its Belly comes out where it died exactly as a broken Object's Fill: grey pebbles, black stones, a blue or green Spill, or a red Blast. How much is set per type: a Runner a little, a Crawler more, a Heavy a lot. Falling below the screen spills nothing, and reaching the Ink Core is not a death.
@@ -158,7 +160,7 @@ Every Enemy is full of one Colour of ink, its **Belly**, shown as a window in it
 | Choose a Colour | Keys 1–5 or click the palette |
 | Draw | Hold left mouse button and drag |
 | Fill | Click inside a closed Object (no drag) with a Colour selected |
-| Release a Frozen Object (Wave only) | Right-click it |
+| Release a Frozen Object or Line (Wave only) | Right-click it |
 | Undo | Ctrl+Z |
 
 ## 13. MVP scope

@@ -1,19 +1,19 @@
 import { capsuleOverlapsPolygon } from '../geometry/overlap';
 import { bandPolygon, capsulePolygon, shortestWayOut } from '../geometry/separation';
-import { polygonCentroid, type Polygon } from '../geometry/polygon';
+import { polygonBounds, polygonCentroid, type Polygon } from '../geometry/polygon';
 import type { Segment } from '../geometry/segment';
-import { transformPoints } from '../geometry/transform';
+import { applyTransform, transformPoints, type Transform } from '../geometry/transform';
 import { sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { fillInk, lineInk, outlineInk } from '../materials/ink';
-import { fillMass, outlineMass } from '../materials/mass';
+import { fillMass, lineMass, outlineMass } from '../materials/mass';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import { pieceCentre } from '../stroke/pieces';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
 import type { ArenaBodies, ObjectBody } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
-import type { ArenaQuery, Capsule } from './arena-query';
+import type { ArenaQuery, Capsule, LineTouches } from './arena-query';
 import type { PartyId } from './contact-ledger';
 import type { Happening, Why } from './happenings';
 import type { Broken } from './material-rules';
@@ -35,13 +35,17 @@ const SQUEEZE_TOLERANCE = 1;
  * 1 px would hit a red Line hard enough to damage it.
  */
 const SQUEEZE_MARGIN = 0.5;
+/** How far (px) beyond a Line's edge a right-click still Releases it. */
+const RELEASE_REACH = 4;
+/** No pose: a Grounded Line's, whose own coordinates are the world's. */
+const AT_ORIGIN: Transform = { x: 0, y: 0, angle: 0 };
 
 export type StrokeId = number;
 
 export interface PieceView {
   /** Its place along the Line when it was drawn, counting broken Pieces. */
   readonly index: number;
-  /** Capsule centre lines. */
+  /** Capsule centre lines, in its Line's own coordinates. */
   readonly segments: readonly Segment[];
   /** Damage it can still take before it breaks. */
   readonly durability: number;
@@ -49,7 +53,12 @@ export interface PieceView {
   readonly wear: number;
 }
 
-export interface LineView {
+/**
+ * A Line. Its segments are in its own coordinates; place them with
+ * `transform`. A Grounded Line never moves, so its own coordinates are the
+ * world's; one that isn't Grounded moves as one body.
+ */
+export interface LineView extends Poses {
   readonly id: StrokeId;
   readonly colour: Colour;
   /** Capsule centre lines of the Pieces still there. */
@@ -57,6 +66,12 @@ export interface LineView {
   readonly thickness: number;
   /** The Pieces still there, in order along the Line. */
   readonly pieces: readonly PieceView[];
+  /** Whether it is Grounded: fixed where it was drawn. */
+  readonly grounded: boolean;
+  /** Whether it hangs Frozen: never for a Grounded one. */
+  readonly frozen: boolean;
+  /** Linear velocity, px/s: 0 for a Grounded one. */
+  readonly velocity: Vec2;
 }
 
 export interface ObjectView extends Poses {
@@ -102,6 +117,11 @@ export type MadeStroke =
        * Line's band.
        */
       readonly onLines: readonly number[];
+      /**
+       * Whether it is, or would be, Grounded: it touches the Terrain, or a
+       * Grounded Line, within the ground tolerance.
+       */
+      readonly grounded: boolean;
     }
   | {
       readonly kind: 'object';
@@ -156,26 +176,43 @@ export type RemovedFill =
 /** What the Stroke pipeline made of a Stroke that is added. */
 export type DrawnStroke = Extract<StrokeResult, { readonly kind: 'line' | 'object' }>;
 
-/** One Piece of a Line: its own fixed body, with its own damage. */
+/**
+ * One Piece of a Line, with its own damage: a Grounded Line's is its own
+ * fixed body; one that isn't Grounded is some of its Line's body.
+ */
 export interface Piece extends Breakable {
   readonly kind: 'piece';
   readonly lineId: StrokeId;
   readonly index: number;
+  /** In its Line's own coordinates: the world's, for a Grounded Line. */
   readonly segments: readonly Segment[];
   /** Its Party id, the same after a rebuild. */
   readonly party: PartyId;
   readonly body: BodyId;
+  /** True if its Line isn't Grounded. */
+  readonly loose: boolean;
 }
 
 interface LineStroke {
   readonly kind: 'line';
   readonly id: StrokeId;
-  /** Its Party id. It has no body, but each of its Pieces' Parties carries it as their Stroke. */
+  /**
+   * Its Party id. A Grounded Line has no body, but each of its Pieces'
+   * Parties carries it as their Stroke; one that isn't Grounded has one body,
+   * whose Parties its Pieces are.
+   */
   readonly party: PartyId;
   readonly colour: Colour;
   readonly thickness: number;
   /** The Pieces still there, in order; broken ones are gone. */
   pieces: Piece[];
+  /** Its one body if it isn't Grounded; null for a Grounded Line. */
+  body: BodyId | null;
+  /**
+   * Whether it has fallen: it isn't Grounded, and was Released, hit or
+   * blasted loose. It stays loose, and never becomes Grounded again.
+   */
+  fell: boolean;
 }
 
 export interface ObjectStroke extends Breakable {
@@ -204,6 +241,12 @@ type Stroke = LineStroke | ObjectStroke;
 /** What takes damage: an Object or a Piece. */
 export type StrokeTarget = ObjectStroke | Piece;
 
+/** The middle of a Line's segments: the middle of their bounds. */
+function middleOf(segments: readonly Segment[]): Vec2 {
+  const { minX, minY, maxX, maxY } = polygonBounds(segments.flatMap(({ a, b }) => [a, b]));
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+}
+
 /** A Line's capsules, one per segment of each Piece still there, in order. */
 function capsulesOf(line: LineStroke): Capsule[] {
   const radius = line.thickness / 2;
@@ -217,10 +260,20 @@ interface ObjectMotion extends Motion {
   readonly slide: Vec2 | null;
 }
 
+/** A Line's that isn't Grounded, when a snapshot is taken: its pose, motion and mass. */
+interface LineMotion extends Motion {
+  readonly frozen: boolean;
+  readonly mass: number;
+}
+
 type SavedPiece = Omit<Piece, 'body'>;
 
 type SavedStroke =
-  | (Omit<LineStroke, 'pieces'> & { readonly pieces: readonly SavedPiece[] })
+  | (Omit<LineStroke, 'pieces' | 'body'> & {
+      readonly pieces: readonly SavedPiece[];
+      /** Null for a Grounded Line. */
+      readonly motion: LineMotion | null;
+    })
   | (Omit<ObjectStroke, 'body'> & { readonly motion: ObjectMotion });
 
 /** The Strokes' part of a snapshot. */
@@ -233,25 +286,29 @@ const REST_SPEED = 5;
 /** The fastest an Object may turn and still be at rest, rad/s. */
 const REST_SPIN = 0.05;
 
+/** Whether a body moving so is at rest: slower than `REST_SPEED`, turning slower than `REST_SPIN`. */
+function resting({ velocity, angularVelocity }: Motion): boolean {
+  return Math.hypot(velocity.x, velocity.y) < REST_SPEED && Math.abs(angularVelocity) < REST_SPIN;
+}
+
 /**
- * `saved` with every Object at rest Frozen again, where it is: one moving
- * slower than `REST_SPEED` and turning slower than `REST_SPIN`, and not
- * sliding off a Line. The Aftermath of a Wave.
+ * `saved` with every Object, and every Line that isn't Grounded, at rest
+ * Frozen again, where it is: one moving slower than `REST_SPEED` and
+ * turning slower than `REST_SPIN`, and not sliding off a Line. The
+ * Aftermath of a Wave.
  */
 export function freezeResting(saved: SavedStrokes): SavedStrokes {
+  const still = { velocity: { x: 0, y: 0 }, angularVelocity: 0, frozen: true };
   return {
-    strokes: saved.strokes.map((stroke) => {
-      if (stroke.kind === 'line') return stroke;
+    strokes: saved.strokes.map((stroke): SavedStroke => {
+      if (stroke.kind === 'line') {
+        const { motion } = stroke;
+        if (!motion || motion.frozen || !resting(motion)) return stroke;
+        return { ...stroke, motion: { ...motion, ...still } };
+      }
       const { motion } = stroke;
-      const resting =
-        Math.hypot(motion.velocity.x, motion.velocity.y) < REST_SPEED &&
-        Math.abs(motion.angularVelocity) < REST_SPIN &&
-        motion.slide === null;
-      if (motion.frozen || !resting) return stroke;
-      return {
-        ...stroke,
-        motion: { ...motion, frozen: true, velocity: { x: 0, y: 0 }, angularVelocity: 0 },
-      };
+      if (motion.frozen || !resting(motion) || motion.slide !== null) return stroke;
+      return { ...stroke, motion: { ...motion, ...still } };
     }),
   };
 }
@@ -276,7 +333,12 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     private readonly bodies: ArenaBodies<StrokeTarget>,
     private readonly query: Pick<
       ArenaQuery,
-      'objectsAt' | 'objectsCrossing' | 'lyingOnLines' | 'blocksSqueezed'
+      | 'objectsAt'
+      | 'objectsCrossing'
+      | 'lyingOnLines'
+      | 'blocksSqueezed'
+      | 'touchingLine'
+      | 'touchedBy'
     >,
     private readonly poses: Pick<PreviousPoses, 'of'>,
     /** Appends to the list of what happened: a Fill and a Release. */
@@ -288,18 +350,27 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   }
 
   get lines(): readonly LineView[] {
-    return this.lineStrokes().map((line) => ({
-      id: line.id,
-      colour: line.colour,
-      thickness: line.thickness,
-      segments: line.pieces.flatMap((piece) => piece.segments),
-      pieces: line.pieces.map((piece) => ({
-        index: piece.index,
-        segments: piece.segments,
-        durability: this.numbers.durabilityLeft(piece),
-        wear: this.numbers.wear(piece),
-      })),
-    }));
+    return this.lineStrokes().map((line) => {
+      const { body } = line;
+      return {
+        id: line.id,
+        colour: line.colour,
+        thickness: line.thickness,
+        segments: line.pieces.flatMap((piece) => piece.segments),
+        pieces: line.pieces.map((piece) => ({
+          index: piece.index,
+          segments: piece.segments,
+          durability: this.numbers.durabilityLeft(piece),
+          wear: this.numbers.wear(piece),
+        })),
+        grounded: body === null,
+        ...(body === null
+          ? { transform: AT_ORIGIN, previousTransform: AT_ORIGIN }
+          : this.poses.of(body)),
+        frozen: body !== null && this.physics.isFrozen(body),
+        velocity: body === null ? { x: 0, y: 0 } : this.physics.getVelocity(body),
+      };
+    });
   }
 
   get objects(): readonly ObjectView[] {
@@ -338,13 +409,28 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       ink: lineInk(result.segments, thickness),
       pieces: result.pieces.map((piece) => lineInk(piece, thickness)),
       onLines: result.pieces.map((piece) => lineInk(this.query.lyingOnLines(piece), thickness)),
+      grounded: this.touches(result.segments, thickness).grounded,
     };
+  }
+
+  /** Whether a Line along `segments`, in world coordinates, would be Grounded. */
+  grounds(segments: readonly Segment[], thickness: number): boolean {
+    return this.touches(segments, thickness).grounded;
+  }
+
+  /** What a Line along `segments`, in world coordinates, would touch (`ArenaQuery.touchingLine`). */
+  private touches(segments: readonly Segment[], thickness: number): LineTouches {
+    const capsules = segments.map((segment) => ({ segment, radius: thickness / 2 }));
+    return this.query.touchingLine(capsules, this.materials.groundTolerance);
   }
 
   /**
    * Adds the Line or Object the Stroke pipeline made, in `colour`, and says
-   * how much Ink it took. While physics is `running`, it squeezes what it
-   * crosses off the Lines at once.
+   * how much Ink it took. A Line touching the Terrain, or a Grounded Line,
+   * is Grounded, and fixed; one that isn't hangs Frozen, as an Object does,
+   * and a Grounded one grounds the Frozen Lines it touches that haven't
+   * fallen. While physics is `running`, it squeezes what it crosses off the
+   * Lines at once.
    */
   add(result: DrawnStroke, colour: Colour, running: boolean): AddedStroke {
     const id = this.nextId++;
@@ -352,25 +438,34 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     const made = this.measure(result, colour);
     if (result.kind === 'line') {
       const { thickness } = result;
+      const touches = this.touches(result.segments, thickness);
       const party = this.bodies.newId();
-      const pieces = result.pieces.map((segments, index) =>
-        this.addPiece(
-          {
-            kind: 'piece',
-            lineId: id,
-            index,
-            colour,
-            segments,
-            party: this.bodies.newId(),
-            damage: 0,
-            impacts: 0,
-          },
-          thickness,
-          party,
-        ),
-      );
-      const line: LineStroke = { kind: 'line', id, party, colour, thickness, pieces };
+      // A Line that isn't Grounded turns about its middle, as an Object turns
+      // about its centroid: its Pieces are kept relative to it.
+      const origin = touches.grounded ? AT_ORIGIN : { ...middleOf(result.segments), angle: 0 };
+      const pieces: SavedPiece[] = result.pieces.map((segments, index) => ({
+        kind: 'piece',
+        lineId: id,
+        index,
+        colour,
+        segments: segments.map(({ a, b }) => ({ a: sub(a, origin), b: sub(b, origin) })),
+        party: this.bodies.newId(),
+        damage: 0,
+        impacts: 0,
+        loose: !touches.grounded,
+      }));
+      const saved = { kind: 'line', id, party, colour, thickness, fell: false } as const;
+      const line = touches.grounded
+        ? this.addGrounded(saved, pieces)
+        : this.addLoose(saved, pieces, {
+            transform: origin,
+            velocity: { x: 0, y: 0 },
+            angularVelocity: 0,
+            frozen: true,
+            mass: lineMass(result.segments, thickness, colour, this.materials),
+          });
       this.strokes.push(line);
+      if (touches.grounded) this.groundTouched(touches.loose);
       if (running) this.squeeze(this.crossedBy([line]));
       return { ...made, id };
     }
@@ -402,6 +497,96 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     return { ...made, id };
   }
 
+  /** Adds a Grounded Line: each of its Pieces a fixed body of its own. */
+  private addGrounded(
+    line: Omit<LineStroke, 'pieces' | 'body'>,
+    pieces: readonly SavedPiece[],
+  ): LineStroke {
+    return {
+      ...line,
+      body: null,
+      pieces: pieces.map((piece) => this.addPiece(piece, line.thickness, line.party)),
+    };
+  }
+
+  /**
+   * Adds a Line that isn't Grounded: one moving body, as `motion` has it,
+   * each of its Pieces some of its capsules and a Party of its own.
+   */
+  private addLoose(
+    line: Omit<LineStroke, 'pieces' | 'body'>,
+    saved: readonly SavedPiece[],
+    motion: LineMotion,
+  ): LineStroke {
+    const { colour, thickness, party, id } = line;
+    const type = { kind: 'piece', colour, loose: true } as const;
+    const { transform, velocity, angularVelocity, frozen, mass } = motion;
+    const pieces = this.bodies.addLooseLine(
+      {
+        position: { x: transform.x, y: transform.y },
+        angle: transform.angle,
+        thickness,
+        mass,
+        frozen,
+        velocity,
+        angularVelocity,
+      },
+      type,
+      party,
+      saved.map((piece) => ({
+        segments: piece.segments,
+        what: { thing: 'piece', id, index: piece.index },
+        who: (body, shapes) => ({
+          id: piece.party,
+          stroke: party,
+          body,
+          shapes,
+          target: { ...piece, body } as Piece,
+        }),
+      })),
+    );
+    return { ...line, body: pieces[0]!.body, pieces: pieces.map((p) => p.target) };
+  }
+
+  /**
+   * Grounds the Lines with these ids, if they are Frozen and haven't fallen,
+   * and the Frozen ones they touch in turn: a Grounded Line drawn to touch
+   * them holds them. Each becomes fixed where it hangs, its Pieces' damage
+   * and all; what was attached to it lets go, as if it went.
+   */
+  private groundTouched(ids: readonly StrokeId[]): void {
+    const queue = [...ids];
+    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+      const index = this.strokes.findIndex((s) => s.id === id);
+      const line = this.strokes[index];
+      if (line?.kind !== 'line' || line.body === null || this.hasFallen(line)) continue;
+      const { body, pieces, ...rest } = line;
+      const transform = this.physics.getTransform(body);
+      const saved = pieces.map(({ body: _body, segments, ...piece }) => ({
+        ...piece,
+        segments: segments.map(({ a, b }) => ({
+          a: applyTransform(a, transform),
+          b: applyTransform(b, transform),
+        })),
+        loose: false,
+      }));
+      this.bodies.removeBody(body, 'grounded');
+      const grounded = this.addGrounded(rest, saved);
+      this.strokes[index] = grounded;
+      const segments = saved.flatMap((piece) => piece.segments);
+      queue.push(...this.touches(segments, grounded.thickness).loose);
+    }
+  }
+
+  /**
+   * Whether a Line that isn't Grounded has fallen: it has moved since it was
+   * drawn, even if it is Frozen again now.
+   */
+  private hasFallen(line: LineStroke): boolean {
+    if (line.body !== null && !line.fell && !this.physics.isFrozen(line.body)) line.fell = true;
+    return line.fell;
+  }
+
   /** Adds a Piece's fixed body. Its Party's Stroke is its Line's, `line`. */
   private addPiece(saved: SavedPiece, thickness: number, line: PartyId): Piece {
     const { segments, colour, party, lineId, index } = saved;
@@ -428,9 +613,24 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     })).target;
   }
 
-  /** Every body a Stroke has: an Object's one, or one per Piece still there. */
+  /**
+   * Every body a Stroke has: an Object's one, a Grounded Line's one per Piece
+   * still there, or the one of a Line that isn't Grounded.
+   */
   private bodiesOf(stroke: Stroke): BodyId[] {
-    return stroke.kind === 'line' ? stroke.pieces.map((piece) => piece.body) : [stroke.body];
+    if (stroke.kind === 'object') return [stroke.body];
+    return stroke.body !== null ? [stroke.body] : stroke.pieces.map((piece) => piece.body);
+  }
+
+  /** A Line's capsules where it is now, in world coordinates. */
+  private worldCapsules(line: LineStroke): Capsule[] {
+    const capsules = capsulesOf(line);
+    if (line.body === null) return capsules;
+    const transform = this.physics.getTransform(line.body);
+    return capsules.map(({ segment: { a, b }, radius }) => ({
+      segment: { a: applyTransform(a, transform), b: applyTransform(b, transform) },
+      radius,
+    }));
   }
 
   /** Every Piece still there, Line by Line in drawing order: what may glue. */
@@ -475,7 +675,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   /** The Objects one of `lines` crosses more deeply than it touches, in drawing order. */
   private crossedBy(lines: readonly LineStroke[]): ObjectStroke[] {
     const touching = lines
-      .flatMap(capsulesOf)
+      .flatMap((line) => this.worldCapsules(line))
       .map(({ segment, radius }) => ({ segment, radius: radius - SQUEEZE_TOLERANCE }));
     return this.query.objectsCrossing(touching).flatMap(({ id }) => this.objectById(id) ?? []);
   }
@@ -492,7 +692,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
    */
   private squeeze(objects: readonly ObjectStroke[]): void {
     if (objects.length === 0) return;
-    const capsules = this.lineStrokes().flatMap(capsulesOf);
+    const capsules = this.lineStrokes().flatMap((line) => this.worldCapsules(line));
     for (const object of objects) {
       const parts = this.worldParts(object);
       const crosses = ({ segment: { a, b }, radius }: Capsule) =>
@@ -529,10 +729,18 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     return object && !object.fill ? fillInk(object.outline) : null;
   }
 
-  /** Releases the Frozen Object under `point`, if any. Returns whether one was Released. */
+  /**
+   * Releases the Frozen Object under `point`, if any, or else the Frozen
+   * Line that isn't Grounded there, the most recently drawn first. Returns
+   * whether one was Released.
+   */
   releaseAt(point: Vec2): boolean {
     const object = this.objectAt(point, (s) => this.physics.isFrozen(s.body));
-    return object ? this.release(object.id) : false;
+    if (object) return this.release(object.id);
+    const near = this.query.touchedBy({ path: [point], radius: RELEASE_REACH });
+    const ids = near.flatMap((thing) => (thing.thing === 'piece' ? [thing.id] : []));
+    for (const id of [...new Set(ids)].sort((p, q) => q - p)) if (this.release(id)) return true;
+    return false;
   }
 
   /**
@@ -561,12 +769,17 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     this.say({ kind: 'filled', id: object.id, fill });
   }
 
-  /** Releases a Frozen Object, optionally setting it moving. */
+  /**
+   * Releases a Frozen Object, or a Frozen Line that isn't Grounded,
+   * optionally setting it moving.
+   */
   release(id: StrokeId, velocity?: Vec2): boolean {
     const stroke = this.strokes.find((s) => s.id === id);
-    if (stroke?.kind !== 'object' || !this.physics.isFrozen(stroke.body)) return false;
-    this.physics.release(stroke.body);
-    if (velocity) this.physics.setVelocity(stroke.body, velocity);
+    const body = stroke?.kind === 'line' ? stroke.body : stroke?.body;
+    if (!stroke || body == null || !this.physics.isFrozen(body)) return false;
+    this.physics.release(body);
+    if (stroke.kind === 'line') stroke.fell = true;
+    if (velocity) this.physics.setVelocity(body, velocity);
     this.say({ kind: 'released', id });
     return true;
   }
@@ -581,7 +794,8 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
 
   /**
    * Removes Piece `index` of Line `lineId`, for `why`; the rest of the Line
-   * stays fixed where it is, and the Line goes with its last Piece.
+   * stays where it is, fixed or as one body, and the Line goes with its last
+   * Piece.
    */
   removePiece(lineId: StrokeId, index: number, why: Why): void {
     const line = this.lineStrokes().find((s) => s.id === lineId);
@@ -590,9 +804,13 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   }
 
   private dropPiece(line: LineStroke, piece: Piece, why: Why): void {
-    this.bodies.removeBody(piece.body, why);
+    if (line.pieces.length === 1) {
+      this.remove(line.id, why);
+      return;
+    }
+    if (line.body === null) this.bodies.removeBody(piece.body, why);
+    else this.bodies.removePart(piece.party, why);
     line.pieces = line.pieces.filter((p) => p !== piece);
-    if (line.pieces.length === 0) this.remove(line.id, why);
   }
 
   /**
@@ -664,16 +882,22 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   private breakPiece(piece: Piece): Broken | null {
     const line = this.lineStrokes().find((s) => s.id === piece.lineId);
     if (!line) return null;
+    const transform = line.body === null ? AT_ORIGIN : this.physics.getTransform(line.body);
+    const velocity = line.body === null ? { x: 0, y: 0 } : this.physics.getVelocity(line.body);
+    const segments = piece.segments.map(({ a, b }) => ({
+      a: applyTransform(a, transform),
+      b: applyTransform(b, transform),
+    }));
     this.dropPiece(line, piece, 'broke');
     return {
       kind: 'piece',
       debris: {
-        outline: bandPolygon(piece.segments, line.thickness / 2),
-        velocity: { x: 0, y: 0 },
+        outline: bandPolygon(segments, line.thickness / 2),
+        velocity,
         colours: [line.colour],
       },
       colour: line.colour,
-      centre: pieceCentre(piece.segments),
+      centre: pieceCentre(segments),
     };
   }
 
@@ -681,8 +905,14 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     return {
       strokes: this.strokes.map((stroke): SavedStroke => {
         if (stroke.kind === 'line') {
-          const { pieces, ...line } = stroke;
-          return { ...line, pieces: pieces.map(({ body: _body, ...piece }) => piece) };
+          const { pieces, body, ...line } = stroke;
+          const fell = this.hasFallen(stroke);
+          return {
+            ...line,
+            fell,
+            pieces: pieces.map(({ body: _body, ...piece }) => piece),
+            motion: body === null ? null : this.lineMotion(body),
+          };
         }
         const { body, ...object } = stroke;
         return {
@@ -697,16 +927,22 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     };
   }
 
+  private lineMotion(body: BodyId): LineMotion {
+    return {
+      ...motionOf(this.physics, body),
+      frozen: this.physics.isFrozen(body),
+      mass: this.physics.getMass(body),
+    };
+  }
+
   /** Adds the Strokes again in the order they were drawn, each Line's Pieces in order. */
   restore(saved: SavedStrokes): void {
     this.strokes = saved.strokes.map((stroke): Stroke => {
       if (stroke.kind === 'line') {
-        return {
-          ...stroke,
-          pieces: stroke.pieces.map((piece) =>
-            this.addPiece(piece, stroke.thickness, stroke.party),
-          ),
-        };
+        const { pieces, motion, ...line } = stroke;
+        return motion === null
+          ? this.addGrounded(line, pieces)
+          : this.addLoose(line, pieces, motion);
       }
       const { motion, ...object } = stroke;
       const restored = this.addObject(object, {

@@ -5,6 +5,7 @@ import type { SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
+  drawPost,
   objectById,
   reboundHeight,
   runFor,
@@ -13,8 +14,9 @@ import {
 
 const createWorld = sandboxWorlds();
 
-/** A blue Line with a grey ball dropped onto it from 181 px up; returns the ball. */
+/** A Grounded blue Line with a grey ball dropped onto it from 181 px up; returns the ball. */
 function ballOverBlueLine(world: SandboxWorld): number {
+  drawPost(world, { x: 300, y: 600 });
   drawLine(
     world,
     [

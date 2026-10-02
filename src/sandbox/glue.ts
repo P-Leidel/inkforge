@@ -1,7 +1,7 @@
 import type { Colour } from '../materials/colour';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, ContactPair, PhysicsWorld, ShapeId } from '../physics';
-import type { ContactLedger } from './contact-ledger';
+import type { ContactLedger, PartyId } from './contact-ledger';
 
 /**
  * Glue drag, one of the Material rules (ADR 0007): anything moving that
@@ -23,6 +23,11 @@ export interface Gluer {
   readonly body: BodyId;
   /** The one shape of `body` that glues: a Patch's. Absent for a Piece. */
   readonly shape?: ShapeId;
+  /**
+   * A Piece's own Party, whose contacts it glues through: a Line that isn't
+   * Grounded is one body of several. Absent for a Patch.
+   */
+  readonly party?: PartyId;
 }
 
 /**
@@ -50,7 +55,7 @@ export class Glue {
       | 'applyImpulse'
       | 'applyAngularImpulse'
     >,
-    private readonly contacts: Pick<ContactLedger<unknown>, 'touching'>,
+    private readonly contacts: Pick<ContactLedger<unknown>, 'touching' | 'touchingParty'>,
     /** Whether a shape is a Patch's, which the body under it doesn't glue through. */
     private readonly isPatch: (shape: ShapeId) => boolean,
   ) {}
@@ -69,7 +74,11 @@ export class Glue {
     for (const gluer of gluers) {
       const { glueDrag } = this.materials.colours[gluer.colour].line;
       if (glueDrag <= 0) continue;
-      for (const { party, pairs } of this.contacts.touching(gluer.body)) {
+      const touching =
+        gluer.party !== undefined
+          ? this.contacts.touchingParty(gluer.party)
+          : this.contacts.touching(gluer.body);
+      for (const { party, pairs } of touching) {
         if (!this.physics.isFree(party.body)) continue;
         if (!pairs.some((pair) => this.gluesThrough(gluer, pair))) continue;
         const entry = dragged.get(party.body);

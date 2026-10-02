@@ -1,4 +1,6 @@
 import { afterEach } from 'vitest';
+import type { Segment } from '../geometry/segment';
+import { applyTransform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { dragAlong } from '../stroke/pointer-paths';
@@ -7,6 +9,7 @@ import {
   SandboxWorld,
   STEP_SECONDS,
   type Entry,
+  type LineView,
   type ObjectView,
   type SandboxWorldOptions,
 } from './sandbox-world';
@@ -73,6 +76,25 @@ export function drawLine(world: SandboxWorld, path: Vec2[], colour: Colour = 'gr
   const outcome = world.submitStroke(dragAlong(path), colour);
   if (outcome.kind !== 'line') throw new Error(`expected a Line, got ${outcome.kind}`);
   return outcome.id;
+}
+
+/** A Line's capsule centre lines where it is now, in world coordinates. */
+export function worldSegments(line: LineView): Segment[] {
+  return line.segments.map(({ a, b }) => ({
+    a: applyTransform(a, line.transform),
+    b: applyTransform(b, line.transform),
+  }));
+}
+
+/**
+ * Draws a Line from `at` straight down to the Terrain under it, cut there,
+ * and returns its id: a post that grounds a Line drawn to touch it.
+ */
+export function drawPost(world: SandboxWorld, at: Vec2, colour: Colour = 'grey'): number {
+  const id = drawLine(world, [at, { x: at.x, y: world.arena.height }], colour);
+  if (!world.lines.find((line) => line.id === id)!.grounded)
+    throw new Error('the post is not Grounded');
+  return id;
 }
 
 /**

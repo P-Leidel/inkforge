@@ -7,7 +7,8 @@ import type { StressTest } from './stress-test';
 
 const LINE_X = 960;
 const LINE_TOP = 150;
-const LINE_BOTTOM = 750;
+/** Down to the ground, so the Line is Grounded and stays put. */
+const LINE_BOTTOM = 880;
 /** Balls are aimed at this band of the Line, away from its ends. */
 const TARGET_TOP = 250;
 const TARGET_BOTTOM = 600;

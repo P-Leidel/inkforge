@@ -119,9 +119,17 @@ export interface CostEstimate {
  * what was looked at stays the same.
  */
 export type Look =
-  /** A Stroke that doesn't close, as a Line along its raw samples, cut where a new Line is. */
+  /**
+   * A Stroke that doesn't close, as a Line along its raw samples, cut where
+   * a new Line is, and whether it would be Grounded.
+   */
   (
-    | { readonly kind: 'line'; readonly ink: number; readonly onLines: number }
+    | {
+        readonly kind: 'line';
+        readonly ink: number;
+        readonly onLines: number;
+        readonly grounded: boolean;
+      }
     /** A closing Stroke, and whether its Object would overlap the Terrain or an Object. */
     | { readonly kind: 'object'; readonly ink: number; readonly overlaps: boolean }
     /** The Fill of the hollow Object under a point. */
@@ -135,6 +143,8 @@ export type Look =
 export interface Prospect {
   /** What it would make: a Line, an Object (the Stroke closes) or a Fill. */
   readonly kind: Look['kind'];
+  /** For a Line, whether it would hang Frozen, not Grounded; false for anything else. */
+  readonly pinned: boolean;
   /** Why it would be refused, the first reason of those it runs into; null if it wouldn't be. */
   readonly refusal: Refusal | null;
   /** What it would cost, and whether its Tank can pay; null with Ink costs off. */
@@ -531,7 +541,10 @@ export class Game {
     if (samples.length < 2) return null;
     const { closes, ink, onLines } = this.world.measureSamples(samples);
     const nearEnemy = this.nearEnemy(samples);
-    if (!closes) return { kind: 'line', ink, onLines, nearEnemy };
+    if (!closes) {
+      const grounded = this.world.groundsSamples(samples);
+      return { kind: 'line', ink, onLines, grounded, nearEnemy };
+    }
     const result = this.world.previewStroke(samples);
     const overlaps = result.kind === 'rejected' && result.reason === 'overlaps';
     return { kind: 'object', ink, overlaps, nearEnemy };
@@ -560,6 +573,7 @@ export class Game {
     const overlaps = look.kind === 'object' && look.overlaps;
     return {
       kind: look.kind,
+      pinned: look.kind === 'line' && !look.grounded,
       refusal: this.refusal(
         look.kind === 'fill' ? 'fill' : 'draw',
         overlaps,
@@ -896,7 +910,9 @@ export class Game {
       case 'went':
         // An Enemy that reached the Ink Core is gone for the Wave, as a kill is.
         if (entry.what.thing === 'enemy' && entry.why === 'reached') this.defence.killed();
-        if (entry.why !== 'undone') this.heardWent(entry.what, entry.why === 'erased');
+        // Undo told the Game already; a Line Grounded where it hangs comes straight back.
+        if (entry.why !== 'undone' && entry.why !== 'grounded')
+          this.heardWent(entry.what, entry.why === 'erased');
         return;
       case 'start-over':
         // The world was cleared (Clear, or below the Game) or reset below the

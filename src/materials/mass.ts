@@ -1,7 +1,8 @@
 import type { Polygon } from '../geometry/polygon';
 import type { Colour } from './colour';
 import type { EnemyMaterial } from './enemy-table';
-import { fillInk, outlineInk } from './ink';
+import type { Segment } from '../geometry/segment';
+import { fillInk, lineInk, outlineInk } from './ink';
 import type { MaterialTable } from './material-table';
 
 /*
@@ -13,6 +14,20 @@ import type { MaterialTable } from './material-table';
 
 export function outlineMass(outline: Polygon, colour: Colour, table: MaterialTable): number {
   return table.inkMass * outlineInk(outline) * table.colours[colour].outline.density;
+}
+
+/**
+ * A Line that isn't Grounded weighs its ink (its length × its thickness),
+ * weighed by its Colour's Outline density, as an Object's Outline does: a
+ * black bar is heavy, a blue one light.
+ */
+export function lineMass(
+  segments: readonly Segment[],
+  thickness: number,
+  colour: Colour,
+  table: MaterialTable,
+): number {
+  return table.inkMass * lineInk(segments, thickness) * table.colours[colour].outline.density;
 }
 
 export function fillMass(outline: Polygon, fill: Colour | null, table: MaterialTable): number {

@@ -15,6 +15,7 @@ import {
   type MaterialTable,
 } from '../materials/material-table';
 import { createPhysicsWorld, type PhysicsWorld } from '../physics';
+import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import {
   processStroke,
   type RejectionReason,
@@ -575,6 +576,15 @@ export class SandboxWorld {
       (path) => this.query.lyingOnLines(path),
       (points) => cutPolylineOutside(points, this.query.lineCutters(points)),
     );
+  }
+
+  /**
+   * Whether a Line along raw `samples` would be Grounded, cut where a new
+   * Line is: to show, while it is drawn, whether it will hang Frozen.
+   */
+  groundsSamples(samples: readonly Vec2[]): boolean {
+    const segments = cutPolylineOutside(samples, this.query.lineCutters(samples));
+    return segments.length > 0 && this.strokes.grounds(segments, LINE_THICKNESS);
   }
 
   /**

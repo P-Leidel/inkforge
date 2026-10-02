@@ -151,7 +151,7 @@ export type RulesPhysics = Pick<
 /** The contacts that count, as the Contact ledger gives them after each step. */
 export type RulesContacts<T> = Pick<
   ContactLedger<T>,
-  'hits' | 'newContacts' | 'touching' | 'normal'
+  'hits' | 'newContacts' | 'touching' | 'touchingParty' | 'normal'
 >;
 
 /**
@@ -442,12 +442,14 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
    * and an Enemy, when the strength beats its threshold. It wakes a Frozen
    * Object when its push wakes it (`wakes`). It pushes every moving body (an Object, Rubble
    * or a Droplet) outward from its centre by `push` times the strength, but
-   * never faster than `maxPushSpeed`. What it broke then breaks, and red
-   * explodes in turn.
+   * never faster than `maxPushSpeed`. A body of several Parties (a Line that
+   * isn't Grounded) is woken and pushed once, by the first of them it
+   * reaches whole. What it broke then breaks, and red explodes in turn.
    */
   private readonly blastReached = (reached: readonly Reach<T>[]): void => {
     const { blast, wakeSpeed } = this.materials;
     const broken: T[] = [];
+    const pushed = new Set<BodyId>();
     for (const { party, centre, point, strength } of reached) {
       const { body, target } = party;
       const walker = target ? undefined : this.enemies.walkerOf(party);
@@ -458,7 +460,9 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
           continue;
         }
       }
-      if (target && this.numbers.of(target).fixed) continue; // a Piece is only damaged
+      if (target && this.numbers.of(target).fixed) continue; // a fixed Piece is only damaged
+      if (pushed.has(body)) continue;
+      pushed.add(body);
       const mass = this.physics.getMass(body);
       const impulse = Math.min(blast.push * strength, mass * blast.maxPushSpeed);
       if (this.physics.isFrozen(body) && wakes(impulse, mass, wakeSpeed))

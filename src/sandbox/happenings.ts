@@ -62,7 +62,12 @@ export type Why =
   /** A Patch was used up. */
   | 'used-up'
   /** A Patch went with its host's body. */
-  | 'with-host';
+  | 'with-host'
+  /**
+   * A Frozen Line that wasn't Grounded became Grounded: its Pieces come
+   * back at once as fixed ones, where they hung.
+   */
+  | 'grounded';
 
 export type Happening =
   | { readonly kind: 'added'; readonly what: Thing }

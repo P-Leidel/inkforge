@@ -34,6 +34,11 @@ export interface InkThingType {
     /** A Patch: its Colour's Line surface. It is used up, not broken. */
     | 'patch';
   readonly colour: Colour;
+  /**
+   * True for a Piece of a Line that isn't Grounded: it moves with its Line,
+   * so it isn't fixed.
+   */
+  readonly loose?: boolean;
 }
 
 /** What an Enemy is: which of the enemy table's rows it takes. */
@@ -55,6 +60,8 @@ export type BreakingType = ThingType & { readonly kind: 'piece' | 'object' };
 export interface Breakable {
   readonly kind: BreakingType['kind'];
   readonly colour: Colour;
+  /** True for a Piece of a Line that isn't Grounded. */
+  readonly loose?: boolean;
   /** Damage taken so far. */
   damage: number;
   /** Hits above its damage threshold so far (the blue counter). */
@@ -106,7 +113,7 @@ export class Numbers {
     switch (type.kind) {
       case 'piece':
         // Pieces have no impact limit: blue's third-impact break is an Object's.
-        return { surface: line, fixed: true, toughness: { ...line, impactLimit: 0 } };
+        return { surface: line, fixed: !type.loose, toughness: { ...line, impactLimit: 0 } };
       case 'object':
         return { surface: outline, fixed: false, toughness: outline };
       case 'rubble':

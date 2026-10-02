@@ -10,7 +10,9 @@ import { dragAlong, dragBox, dragCircle, dragPolygon } from '../stroke/pointer-p
  * without building it first. Each demo is a Level that `Game.load` sets up
  * on a cleared Arena: its build uses the Sandbox world's commands, then
  * starts physics and lets its Objects go, so that R and Space replay it.
- * Every demo has its Level's name, which the Gallery lists.
+ * Every demo has its Level's name, which the Gallery lists. Every Line in
+ * a demo is Grounded: a Line in mid-air stands on a post down to the
+ * Terrain, drawn after the rest, so the Lines it holds come first.
  */
 export type Demo = Level & Required<Pick<Level, 'name'>> & { build(world: SandboxWorld): void };
 
@@ -20,6 +22,14 @@ const station = (k: number) => 250 + 300 * k;
 function drawLine(world: SandboxWorld, path: Vec2[], colour: Colour): void {
   const outcome = world.submitStroke(dragAlong(path), colour);
   if (outcome.kind !== 'line') throw new Error(`demo Line became ${outcome.kind}`);
+}
+
+/**
+ * Draws a grey Line from `at` straight down to the Terrain under it: a post
+ * that Grounds the Lines it touches.
+ */
+function drawPost(world: SandboxWorld, at: Vec2): void {
+  drawLine(world, [at, { x: at.x, y: world.arena.height }], 'grey');
 }
 
 function drawObject(world: SandboxWorld, samples: Vec2[], colour: Colour): StrokeId {
@@ -62,6 +72,7 @@ export const BOUNCE_DEMO: Demo = {
       );
       return drawObject(world, dragCircle({ x, y: 300 }, 20), 'grey');
     });
+    for (const k of COLOURS.keys()) drawPost(world, { x: station(k) - 90, y: 620 });
     letGo(world, balls);
   },
 };
@@ -92,6 +103,8 @@ export const SLIDE_DEMO: Demo = {
         'grey',
       );
     });
+    // Under each ramp's top, behind its box.
+    for (const k of COLOURS.keys()) drawPost(world, { x: station(k) - 100, y: 360 });
     letGo(world, boxes);
   },
 };
@@ -164,6 +177,7 @@ export const BOULDER_DEMO: Demo = {
       world.fillAt({ x, y: 180 }, 'black');
       return boulder;
     });
+    for (const x of [440, 1240]) drawPost(world, { x, y: 620 });
     letGo(world, boulders);
   },
 };
@@ -199,6 +213,11 @@ export const RUBBLE_DEMO: Demo = {
       world.fillAt({ x, y: 230 }, fill);
       return box;
     });
+    // Under each anvil, through the grey Line below, and under that Line's left end.
+    for (const x of [640, 1260]) {
+      drawPost(world, { x, y: 364 });
+      drawPost(world, { x: x - 160, y: 850 });
+    }
     letGo(world, boxes);
   },
 };
@@ -228,6 +247,8 @@ export const GLUE_DEMO: Demo = {
       if (fill) world.fillAt({ x: 230, y: y - 25 }, fill);
       return ball;
     });
+    // One post through every floor's left end, behind the balls.
+    drawPost(world, { x: 150, y: 250 });
     letGo(
       world,
       lanes.map((ball): [StrokeId, Vec2] => [ball, { x: 500, y: 0 }]),
@@ -264,6 +285,8 @@ export const STICK_DEMO: Demo = {
     const ball = drawObject(world, dragCircle({ x: 750, y: 500 }, 20), 'green');
     drawObject(world, dragBox(1450, 300, 60, 60), 'grey');
     const thrown = drawObject(world, dragBox(1250, 320, 40, 40), 'green');
+    drawPost(world, { x: 200, y: 300 });
+    drawPost(world, { x: 1000, y: 600 });
     letGo(world, [
       [hanger, { x: 0, y: -750 }],
       [ball, { x: 600, y: -400 }],
@@ -308,6 +331,11 @@ export const SPILL_DEMO: Demo = {
       const ball = drawObject(world, dragCircle({ x: x + 135, y: 450 }, 16), 'grey');
       return [box, [ball, { x: 0, y: -550 }] as [StrokeId, Vec2]];
     });
+    // Under each anvil, and under each grey Line's left end.
+    for (const x of [560, 1320]) {
+      drawPost(world, { x, y: 540 });
+      drawPost(world, { x: x - 250, y: 650 });
+    }
     letGo(world, dropped);
   },
 };
@@ -370,6 +398,7 @@ export const SHRAPNEL_DEMO: Demo = {
     for (const x of [390, 860]) drawObject(world, dragBox(x, 440, 30, 100), 'grey');
     const box = drawObject(world, dragBox(600, 150, 80, 80), 'red');
     world.fillAt({ x: 640, y: 190 }, 'grey');
+    drawPost(world, { x: 640, y: 500 });
     letGo(world, [box]);
   },
 };
@@ -399,6 +428,8 @@ export const FUSE_DEMO: Demo = {
     bomb(world, { x: 1390, y: 756 });
     drawObject(world, dragBox(1360, 640, 60, 60), 'grey');
     drawObject(world, dragBox(1430, 690, 50, 50), 'grey');
+    // Under a bend in the middle, out of the way of either end.
+    drawPost(world, { x: 760, y: 640 });
     letGo(world, [bomb(world, { x: 215, y: 150 })]);
   },
 };
@@ -422,6 +453,7 @@ export const MINES_DEMO: Demo = {
         'red',
       );
     }
+    for (const x of [300, 900]) drawPost(world, { x, y: 760 });
     // Its bottom 5 px above the strip's surface.
     const gentle = drawObject(world, dragBox(470, 691, 60, 60), 'grey');
     const dropped = drawObject(world, dragBox(1030, 150, 60, 60), 'grey');
@@ -467,14 +499,15 @@ export const DEMOLITION_DEMO: Demo = {
     world.fillAt({ x: 235, y: 853 }, 'blue');
     drawObject(world, dragBox(720, 826, 50, 50), 'blue');
     world.fillAt({ x: 745, y: 851 }, 'green');
-    // The wall, between the second and the third box. No red: that would add Blasts.
+    // The wall, between the second and the third box, standing on the
+    // ground. No red: that would add Blasts.
     (['grey', 'blue', 'green', 'black'] as const).forEach((colour, k) => {
       const x = 552 + 16 * k;
       drawLine(
         world,
         [
           { x, y: 600 },
-          { x, y: 860 },
+          { x, y: 876 },
         ],
         colour,
       );
@@ -540,9 +573,9 @@ export const STAIRCASE_DEMO: Demo = {
 
 /**
  * A Level of three Waves, each bigger than the last: loading it turns Waves
- * on. Two grey Lines on the way to the Ink Core to start with, a grey box
- * dropped onto the first, and the Arena kept from Wave to Wave. With Waves
- * turned off in F2, only the box drops.
+ * on. Two grey Lines on the way to the Ink Core to start with, a shelf up a
+ * ramp and a low wall, a grey box dropped onto the shelf, and the Arena kept
+ * from Wave to Wave. With Waves turned off in F2, only the box drops.
  */
 export const THREE_WAVES_DEMO: Demo = {
   name: 'Three Waves',
@@ -556,6 +589,7 @@ export const THREE_WAVES_DEMO: Demo = {
     drawLine(
       world,
       [
+        { x: 460, y: ground },
         { x: 700, y: ground - 120 },
         { x: 900, y: ground - 120 },
       ],
@@ -564,8 +598,8 @@ export const THREE_WAVES_DEMO: Demo = {
     drawLine(
       world,
       [
-        { x: 1100, y: ground - 60 },
-        { x: 1100, y: ground - 200 },
+        { x: 1100, y: ground },
+        { x: 1100, y: ground - 50 },
       ],
       'grey',
     );
