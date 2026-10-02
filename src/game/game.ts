@@ -287,6 +287,8 @@ export class Game {
       },
     };
     this.costs = options.inkCosts;
+    // An Enemy's Belly is only ever a Colour this Level has.
+    this.world.bellyColours = (colour) => this.has(colour);
     this.freePlayWaves = options.waves ?? false;
     this.inkTanks = new InkTanks(this.inForce);
     this.reader = this.world.happenings.reader();

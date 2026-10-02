@@ -277,8 +277,10 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
    * Hits and Blasts take damage off an Enemy's HP as they come, but it
    * dies only in its own phase. Then come the Enemies' phases: Enemies
    * reaching the Ink Core, kills (0 HP, then below the screen), Drops, which
-   * draw from the generator, and removing what went out over the Spawn
-   * edge, in that order.
+   * draw from the generator, the Bellies of those that died in the Arena,
+   * let out as Fills are, and removing what went out over the Spawn edge, in
+   * that order. A red Belly's Blast spreads from the next step, so a chain
+   * of Enemies going off is spaced out by the ring's travel time.
    */
   step(seconds: number): void {
     const broken = this.impacts();
@@ -289,7 +291,7 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
     this.glue(seconds);
     this.arena.spreadBlasts(seconds, this.blastReached);
     this.arena.removeUsedUpPatches();
-    this.enemies.afterStep();
+    for (const belly of this.enemies.afterStep()) this.releaseBelly(belly);
     this.removeOutOfView();
   }
 
@@ -572,6 +574,19 @@ export class MaterialRules<T extends Breakable, S extends Sticker, W extends Wal
         },
       })),
     );
+  }
+
+  /**
+   * Lets out a dead Enemy's Belly where its body was, exactly as a broken
+   * Object's Fill: Rubble, a Spill, or, for red, a Blast of its Ink at its
+   * centre.
+   */
+  private releaseBelly(belly: ReleasedFill): void {
+    this.releaseFill(belly);
+    if (this.materials.colours[belly.colour].fill.explodes > 0) {
+      const { x, y } = belly.from.transform;
+      this.arena.addBlast({ x, y }, blastSize(belly.ink, this.materials));
+    }
   }
 
   /**

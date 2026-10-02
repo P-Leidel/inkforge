@@ -785,10 +785,10 @@ describe('Enemies take damage', () => {
     expect(onlyEnemy(world).fullHp).toBe(CRAWLER.hp);
   });
 
-  it('kills a Crawler a black boulder is dropped on: it pops and is gone, releasing nothing', () => {
+  it('kills a Crawler a black boulder is dropped on: it pops and is gone, letting out only its Belly', () => {
     const world = createWorld();
     holdAt(world, 640); // where the boulder falls
-    const id = world.spawn('crawler', { x: 610, y: GROUND_Y - CRAWLER.height / 2 });
+    const id = world.spawn('crawler', { x: 610, y: GROUND_Y - CRAWLER.height / 2 }, 'grey');
     const boulder = drawObject(world, dragBox(585, GROUND_Y - 300, 50, 50), 'black');
     world.fillAt({ x: 610, y: GROUND_Y - 275 }, 'black');
     runFor(world, 0.5);
@@ -806,9 +806,12 @@ describe('Enemies take damage', () => {
     // The pop is a burst of its body, where it stood.
     const xs = pop!.outline.map(({ x }) => x);
     expect(Math.min(...xs)).toBeCloseTo(616 - CRAWLER.width / 2, -1);
-    expect(entriesOf(entries, 'added')).toEqual([]);
-    expect(world.bodyCount).toBe(before - 1);
-    expect(world.rubble).toEqual([]);
+    // Its grey Belly comes out as pebbles, and nothing else.
+    const added = entriesOf(entries, 'added');
+    expect(added.length).toBeGreaterThan(0);
+    expect(added.every(({ what }) => what.thing === 'rubble')).toBe(true);
+    expect(world.bodyCount).toBe(before - 1 + added.length);
+    expect(world.rubble.every(({ colour }) => colour === 'grey')).toBe(true);
   });
 
   it('lets a Blast damage and push a Crawler', () => {

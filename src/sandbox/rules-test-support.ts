@@ -10,7 +10,7 @@ import type { BlastSize, Reach } from './blasts';
 import type { NewContact, Party, PartyHit, Touching } from './contact-ledger';
 import type { Landing, LooseDroplet } from './droplets';
 import type { DropInk } from './drops';
-import type { Walker } from './enemies';
+import { enemyOutline, type Walker } from './enemies';
 import type { Gluer } from './glue';
 import type { Thing, Why } from './happenings';
 import { EnemyRules, type EnemyArena, type Killed } from './enemy-rules';
@@ -148,7 +148,7 @@ export interface FakeDroplet {
  * right unless `headings` says otherwise, and gets past unless it is among
  * the `stalled`.
  */
-export class FakeArena<T, S, W = Walker> implements RulesArena<T, S>, EnemyArena<W> {
+export class FakeArena<T, S, W extends Walker = Walker> implements RulesArena<T, S>, EnemyArena<W> {
   /** What breaking each target lets out; a target not in it is already gone. */
   readonly breaks = new Map<T, Broken>();
   readonly droplets = new Map<BodyId, FakeDroplet>();
@@ -299,10 +299,23 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S>, EnemyArena
     return this.enemyParties.get(party.id);
   }
 
-  /** Says a Crawler died at the origin, unless `killed` says otherwise for its id. */
+  /**
+   * Says a Crawler died at rest at the origin, with the walker's Belly (grey
+   * if it has none), unless `killed` says otherwise for its id.
+   */
   kill(id: number): Killed | null {
     this.log.push({ what: 'kill', with: id });
-    return this.killed.get(id) ?? { id, type: 'crawler', at: { x: 0, y: 0 } };
+    const belly = [...this.walking].find((walker) => walker.id === id)?.belly ?? 'grey';
+    return (
+      this.killed.get(id) ?? {
+        id,
+        type: 'crawler',
+        at: { x: 0, y: 0 },
+        belly,
+        outline: enemyOutline(40, 40),
+        from: { transform: { x: 0, y: 0, angle: 0 }, velocity: { x: 0, y: 0 }, angularVelocity: 0 },
+      }
+    );
   }
 
   drop(killed: Killed, ink: DropInk): void {

@@ -48,7 +48,13 @@ describe('Level 1', () => {
   });
 
   it('has a hint for grey, black, the Crawler and the Runner, and nothing else', () => {
-    expect(Object.keys(LEVEL_1.hints!).sort()).toEqual(['black', 'crawler', 'grey', 'runner']);
+    expect(Object.keys(LEVEL_1.hints!).sort()).toEqual([
+      'belly',
+      'black',
+      'crawler',
+      'grey',
+      'runner',
+    ]);
   });
 
   it('with no defence, lets every Crawler of the first Wave reach the Ink Core', () => {

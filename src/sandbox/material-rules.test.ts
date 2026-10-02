@@ -20,7 +20,7 @@ import {
 } from './contact-ledger';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { drawDrop, type DropInk } from './drops';
-import type { Walker } from './enemies';
+import { enemyOutline, type Walker } from './enemies';
 import { fuseBurns, impactDamage, wakes, type Broken } from './material-rules';
 import { Numbers, type Breakable } from './numbers';
 import { Random } from './random';
@@ -810,6 +810,7 @@ describe('Material rules: Enemies', () => {
     type: 'crawler',
     width: 40,
     height: 40,
+    belly: 'grey',
     damage: 0,
   });
   const party = (id: number, body = id): Party<Breakable> => ({
@@ -851,6 +852,7 @@ describe('Material rules: Enemies', () => {
       type,
       width: height,
       height,
+      belly: 'grey',
       damage: 0,
     });
     const SIDE = { x: -1, y: 0 }; // from what is ahead of it, back towards the Enemy
@@ -1132,6 +1134,7 @@ describe('Material rules: hurting Enemies', () => {
     type: 'crawler',
     width: 40,
     height: 40,
+    belly: 'grey',
     damage: 0,
   });
   const partyOf = (id: number, body: number, target: Breakable | null = null) => ({
@@ -1260,7 +1263,8 @@ describe('Material rules: hurting Enemies', () => {
 
     rules.step(STEP);
 
-    expect(arena.done).toEqual(['kill', 'kill', 'drop', 'drop']);
+    // Each lets out its grey Belly, after the Drops.
+    expect(arena.done).toEqual(['kill', 'kill', 'drop', 'drop', 'rubble', 'rubble']);
     expect(arena.handed('kill')).toEqual([1, 2]);
   });
 });
@@ -1272,6 +1276,7 @@ describe('Material rules: Drops', () => {
     type: 'crawler',
     width: 40,
     height: 40,
+    belly: 'grey',
     damage,
   });
 
@@ -1279,12 +1284,24 @@ describe('Material rules: Drops', () => {
     const { rules, arena } = fakeRules<Breakable>(createMaterialTable());
     arena.walking = [crawler(1, 5000), crawler(2)];
     arena.below = [{ thing: 'enemy', id: 2 }];
-    arena.killed.set(2, { id: 2, type: 'heavy', at: { x: 300, y: 1200 } });
+    arena.killed.set(2, {
+      id: 2,
+      type: 'heavy',
+      at: { x: 300, y: 1200 },
+      belly: 'grey',
+      outline: enemyOutline(64, 64),
+      from: {
+        transform: { x: 300, y: 1200, angle: 0 },
+        velocity: { x: 0, y: 0 },
+        angularVelocity: 0,
+      },
+    });
     arena.beyond = [{ thing: 'object', id: 8 }];
 
     rules.step(STEP);
 
-    expect(arena.done).toEqual(['kill', 'kill', 'drop', 'drop', 'remove']);
+    // Only the one that died in the Arena lets out its Belly, after the Drops.
+    expect(arena.done).toEqual(['kill', 'kill', 'drop', 'drop', 'rubble', 'remove']);
     const drops = arena.handed('drop') as { killed: { id: number; type: string } }[];
     expect(drops.map(({ killed }) => [killed.id, killed.type])).toEqual([
       [1, 'crawler'],
@@ -1332,6 +1349,138 @@ describe('Material rules: Drops', () => {
   });
 });
 
+describe('Material rules: Bellies', () => {
+  const crawler = (id: number, belly: Colour, damage = 5000): Walker => ({
+    id,
+    body: (100 + id) as BodyId,
+    type: 'crawler',
+    width: 40,
+    height: 40,
+    belly,
+    damage,
+  });
+  const CRAWLER_INK = createEnemyTable().types.crawler.belly.ink;
+
+  it('leaves the Drop as it was, drawn first, and lets the Belly out after it, whatever its Colour', () => {
+    // Red packs no Rubble, as a red Fill doesn't, and explodes.
+    const releases: Record<Colour, string[]> = {
+      grey: ['rubble'],
+      black: ['rubble'],
+      blue: ['droplets'],
+      green: ['droplets'],
+      red: ['rubble', 'blast'],
+    };
+    for (const belly of Object.keys(releases) as Colour[]) {
+      const enemies = createEnemyTable();
+      const { rules, arena, random } = fakeRules<Breakable>(createMaterialTable(), enemies);
+      arena.walking = [crawler(1, belly)];
+      const expected = drawDrop(enemies.types.crawler.drop, new Random(random.state));
+
+      rules.step(STEP);
+
+      expect(arena.done, belly).toEqual(['kill', 'drop', ...releases[belly]]);
+      const [{ ink }] = arena.handed('drop') as [{ ink: DropInk }];
+      expect(ink, belly).toEqual(expected);
+    }
+  });
+
+  it("releases its type's Ink, weighing what a Fill of it would", () => {
+    const materials = createMaterialTable();
+    const { rules, arena } = fakeRules<Breakable>(materials);
+    arena.walking = [crawler(1, 'black')];
+
+    rules.step(STEP);
+
+    const [rubble] = arena.handed('rubble') as [{ mass: number; colour: Colour }[]];
+    const mass = rubble.reduce((sum, piece) => sum + piece.mass, 0);
+    const { inkMass, colours } = materials;
+    expect(mass).toBeCloseTo(inkMass * CRAWLER_INK * colours.black.fill.density, 9);
+    expect(rubble.every(({ colour }) => colour === 'black')).toBe(true);
+  });
+
+  it('sets off a red Belly as a Blast of its Ink, at the centre of the Enemy as it died', () => {
+    const materials = createMaterialTable();
+    const { rules, arena } = fakeRules<Breakable>(materials);
+    arena.walking = [crawler(1, 'red')];
+    arena.killed.set(1, {
+      id: 1,
+      type: 'crawler',
+      at: { x: 300, y: 500 },
+      belly: 'red',
+      outline: enemyOutline(40, 40),
+      from: {
+        transform: { x: 300, y: 500, angle: 0 },
+        velocity: { x: 0, y: 0 },
+        angularVelocity: 0,
+      },
+    });
+
+    rules.step(STEP);
+
+    expect(arena.handed('blast')).toEqual([
+      { centre: { x: 300, y: 500 }, size: blastSize(CRAWLER_INK, materials) },
+    ]);
+  });
+
+  it('lets out nothing for an Enemy whose type holds no Belly Ink', () => {
+    const enemies = createEnemyTable();
+    enemies.types.crawler.belly.ink = 0;
+    const { rules, arena } = fakeRules<Breakable>(createMaterialTable(), enemies);
+    arena.walking = [crawler(1, 'red')];
+
+    rules.step(STEP);
+
+    expect(arena.done).toEqual(['kill', 'drop']);
+  });
+
+  it('lets out nothing for an Enemy below the screen, even one at 0 HP, or one that reached the Ink Core', () => {
+    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const reaching = crawler(1, 'red', 0);
+    arena.walking = [reaching, crawler(2, 'red'), crawler(3, 'grey', 0)];
+    arena.below = [
+      { thing: 'enemy', id: 2 },
+      { thing: 'enemy', id: 3 },
+    ];
+    arena.inkCore = 50;
+    const core = {
+      bodyA: 50 as BodyId,
+      bodyB: 101 as BodyId,
+      shapeA: 50 as ShapeId,
+      shapeB: 101 as ShapeId,
+    };
+    contacts.touches.set(reaching.body, [
+      { party: { id: 50, stroke: 50, body: 50 as BodyId, target: null }, pairs: [core] },
+    ]);
+
+    rules.step(STEP);
+
+    // The fakes never forget an Enemy, so the one at 0 HP below the screen is killed twice.
+    expect(arena.done).toEqual(['core', 'remove', 'kill', 'kill', 'kill', 'drop', 'drop', 'drop']);
+  });
+
+  it('lets a Blast kill an Enemy, whose red Belly goes off in turn, in the same step', () => {
+    const { rules, arena, physics } = fakeRules<Breakable>(createMaterialTable());
+    physics.add(102);
+    const next = crawler(2, 'red', 0);
+    arena.walking = [next];
+    arena.enemyParties.set(102, next);
+    arena.reaching = [
+      [
+        {
+          party: { id: 102, stroke: 102, body: 102 as BodyId, target: null },
+          centre: { x: 0, y: 0 },
+          point: { x: 20, y: 0 },
+          strength: 10_000,
+        },
+      ],
+    ];
+
+    rules.step(STEP);
+
+    expect(arena.done).toEqual(['reach', 'kill', 'drop', 'rubble', 'blast']);
+  });
+});
+
 describe('Material rules: pressing wear', () => {
   /** The Crawler's pressing rate, durability per second. */
   const PRESSING = 300;
@@ -1341,6 +1490,7 @@ describe('Material rules: pressing wear', () => {
     type: 'crawler',
     width: 40,
     height: 40,
+    belly: 'grey',
     damage: 0,
   };
   const pieceOf = (colour: Colour = 'grey'): Breakable => ({
@@ -1567,6 +1717,7 @@ describe('Material rules: pressing wear', () => {
       type: 'crawler',
       width: 40,
       height: 40,
+      belly: 'grey',
       damage: 0,
     };
     arena.walking = [crawler, other];

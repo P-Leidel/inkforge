@@ -10,8 +10,8 @@ export interface TutorialCard {
 
 /**
  * The Tutorial's cards, in order: the goal, the controls (drawing a Line,
- * closing an Object, Fill and Release), how to kill an Enemy, and grey vs
- * black.
+ * closing an Object, Fill and Release), how to kill an Enemy, what an
+ * Enemy's Belly spills, and grey vs black.
  */
 export const TUTORIAL_CARDS: readonly TutorialCard[] = [
   {
@@ -54,6 +54,15 @@ export const TUTORIAL_CARDS: readonly TutorialCard[] = [
       'it hard: hang a filled Object above their path and Release it as they pass ' +
       'beneath. The heavier and faster it falls, the harder it hits. Long falls hurt ' +
       'Enemies too.',
+    swatches: [],
+  },
+  {
+    title: 'Full of ink',
+    body:
+      'Every Enemy is full of one Colour of ink, which you can see in its belly. When ' +
+      'it dies in the Arena the ink spills out, just as a broken Object lets out its ' +
+      'Fill: grey and black tumble out as pebbles and stones, blue and green splash, ' +
+      'and red explodes. Pick which one to kill, and where.',
     swatches: [],
   },
   {

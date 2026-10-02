@@ -22,13 +22,14 @@ const refusing: CampaignStore = {
 };
 
 describe('The Tutorial', () => {
-  it('has the goal, the controls, killing, and pebble vs stone with grey and black swatches', () => {
+  it('has the goal, the controls, killing, Bellies, and pebble vs stone with grey and black swatches', () => {
     expect(TUTORIAL_CARDS.map((card) => card.title)).toEqual([
       'Defend the Ink Core',
       'Draw',
       'Close it into an Object',
       'Fill and Release',
       'Crush them',
+      'Full of ink',
       'Pebble or stone?',
     ]);
     expect(TUTORIAL_CARDS.at(-1)!.swatches.map((swatch) => swatch.colour)).toEqual([

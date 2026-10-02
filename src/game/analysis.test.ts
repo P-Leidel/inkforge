@@ -26,7 +26,7 @@ const LEVELS: readonly Level[] = [
 
 describe('What is new in a Wave of the Campaign', () => {
   it("is, in a Level's first Wave, the Colours it is the first to have and the Enemy types first sent", () => {
-    expect(newcomers(LEVELS, 0, 0)).toEqual(['grey', 'crawler']);
+    expect(newcomers(LEVELS, 0, 0)).toEqual(['grey', 'crawler', 'belly']);
   });
 
   it('is an Enemy type in the first Wave that sends one, not before', () => {
@@ -36,6 +36,16 @@ describe('What is new in a Wave of the Campaign', () => {
 
   it('is new to the Campaign, not just to the Level', () => {
     expect(newcomers(LEVELS, 1, 0)).toEqual(['blue']);
+  });
+
+  it('brings Bellies with the first Enemy, and only once', () => {
+    const levels: readonly Level[] = [
+      { tanks: { ...NO_TANKS, grey: 100 }, waves: [wave(0), wave(0, 1)] },
+      { tanks: { ...NO_TANKS, grey: 100 }, waves: [wave(1)] },
+    ];
+    expect(newcomers(levels, 0, 0)).toEqual(['grey']);
+    expect(newcomers(levels, 0, 1)).toEqual(['runner', 'belly']);
+    expect(newcomers(levels, 1, 0)).toEqual(['crawler']);
   });
 
   it('counts an Enemy type only once a whole one is sent', () => {
@@ -58,7 +68,7 @@ describe("The Campaign's Levels", () => {
 
   it('bring each Colour and Enemy type in where planned', () => {
     expect(appearances.filter((wave) => wave.newcomers.length > 0)).toEqual([
-      { l: 0, w: 0, newcomers: ['grey', 'black', 'crawler'] },
+      { l: 0, w: 0, newcomers: ['grey', 'black', 'crawler', 'belly'] },
       { l: 0, w: 1, newcomers: ['runner'] },
       { l: 1, w: 0, newcomers: ['blue', 'green'] },
       { l: 1, w: 2, newcomers: ['heavy'] },
