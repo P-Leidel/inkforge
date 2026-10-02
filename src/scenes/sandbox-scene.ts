@@ -5,6 +5,7 @@ import { browserStore, Campaign } from '../game/campaign';
 import { Game } from '../game/game';
 import { SANDBOX_LEVEL, type Level } from '../game/level';
 import { Session } from '../game/session';
+import { Tutorial, TUTORIAL_KEY } from '../game/tutorial';
 import { DrawingInput, type Flash } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
 import { ENEMY_TYPES } from '../materials/enemy-table';
@@ -19,6 +20,7 @@ import { gaugeCentre, PaletteBar } from '../ui/palette-bar';
 import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../ui/toolbar';
 import { TuningPanel } from '../ui/tuning-panel';
+import { TutorialScreen } from '../ui/tutorial-screen';
 import { WorldRenderer } from '../rendering/world-renderer';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { BALL_CANNON_LEVEL } from '../stress-tests/ball-cannon';
@@ -43,7 +45,10 @@ const STRESS_TESTS = [PEBBLES_LEVEL, BOX_TOWER_LEVEL, BALL_CANNON_LEVEL];
  * rules live in the Game and the Sandbox world below it; what is being
  * played, in the Session over the Game, and which Levels are unlocked, in
  * the Campaign. It opens on the title screen (Campaign, Sandbox, Gallery);
- * while that or the Level list is open, nothing is played behind it.
+ * while that or the Level list is open, nothing is played behind it. The
+ * Tutorial opens the first time Campaign Level 1 starts, and on H; while it
+ * is open, nothing is played or drawn, and Space, a click and Esc only turn
+ * or close its cards.
  */
 export class SandboxScene extends Phaser.Scene {
   /** The rules layer: Phaser's own `game` is the Phaser game. */
@@ -65,6 +70,8 @@ export class SandboxScene extends Phaser.Scene {
   /** The title screen, the Level list and the Gallery's list, over everything. */
   private screen!: MenuScreen;
   private campaign!: Campaign;
+  private tutorial!: Tutorial;
+  private tutorialScreen!: TutorialScreen;
   /** Every frame's timings, for the F1 stats. */
   private readonly frames = new FrameRecorder();
 
@@ -114,6 +121,8 @@ export class SandboxScene extends Phaser.Scene {
     );
     this.menus = [gallery, stressTests];
     toolbar.addButton('Title', () => this.showTitle());
+    this.tutorial = new Tutorial(browserStore(TUTORIAL_KEY));
+    this.tutorialScreen = new TutorialScreen(this);
     this.screen = new MenuScreen(this);
 
     this.bindKeys();
@@ -153,6 +162,7 @@ export class SandboxScene extends Phaser.Scene {
   /** Opens a menu screen; a Stroke being drawn is dropped. */
   private open(title: string, items: Parameters<MenuScreen['show']>[1]): void {
     this.drawing.leave();
+    this.tutorial.hide();
     for (const menu of this.menus) menu.close();
     this.screen.show(title, items);
   }
@@ -196,8 +206,24 @@ export class SandboxScene extends Phaser.Scene {
   /** A Level was loaded: closes any menu screen, names it for F1, and times it from now. */
   private started(): void {
     this.screen.hide();
+    this.tutorial.hide();
+    if (this.tutorial.offer(this.session.reading.campaign?.index ?? null)) this.drawing.leave();
     this.overlay.setSceneName(this.session.reading.name);
     this.frames.sinceStart.restart();
+  }
+
+  /** Whether a menu screen or the Tutorial is open: nothing is played or drawn behind either. */
+  private get blocked(): boolean {
+    return this.screen.isOpen || this.tutorial.isOpen;
+  }
+
+  /** H: opens the Tutorial at card 1, pausing a Wave under way; it stays paused once it closes. */
+  private showTutorial(): void {
+    if (this.screen.isOpen || this.tutorial.isOpen) return;
+    this.drawing.leave();
+    for (const menu of this.menus) menu.close();
+    if (this.world.isRunning) this.gameLayer.togglePause();
+    this.tutorial.open();
   }
 
   /** Takes the world and the Tanks back to the last start; the replay is timed on its own. */
@@ -209,7 +235,7 @@ export class SandboxScene extends Phaser.Scene {
   private bindKeys(): void {
     const keyboard = this.input.keyboard!;
     keyboard.on('keydown', (event: KeyboardEvent) => {
-      if (this.screen.isOpen) return;
+      if (this.blocked) return;
       const enemy = event.shiftKey ? ENEMY_KEYS.get(event.code) : undefined;
       if (enemy) {
         if (this.gameLayer.allowed.spawning) this.gameLayer.spawn(enemy);
@@ -221,9 +247,14 @@ export class SandboxScene extends Phaser.Scene {
         if (this.gameLayer.allowed.eraser) this.drawing.pick('eraser');
       }
     });
-    keyboard
-      .addKey(Phaser.Input.Keyboard.KeyCodes.SPACE)
-      .on('down', () => !this.screen.isOpen && this.gameLayer.togglePause());
+    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on('down', () => {
+      if (this.screen.isOpen) return;
+      // The Space that closes the Tutorial does not also start the Wave.
+      if (this.tutorial.isOpen) this.tutorial.next();
+      else this.gameLayer.togglePause();
+    });
+    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on('down', () => this.tutorial.skip());
+    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.H).on('down', () => this.showTutorial());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.cycle());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F2).on('down', () => this.tuning.toggle());
     keyboard
@@ -231,10 +262,10 @@ export class SandboxScene extends Phaser.Scene {
       .on('down', () => void this.overlay.copyReadings());
     keyboard
       .addKey(Phaser.Input.Keyboard.KeyCodes.R)
-      .on('down', () => !this.screen.isOpen && this.reset());
+      .on('down', () => !this.blocked && this.reset());
     keyboard.on('keydown-Z', (event: KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
-      if (this.screen.isOpen) return;
+      if (this.blocked) return;
       event.preventDefault();
       this.flash(this.drawing.undo());
     });
@@ -247,6 +278,10 @@ export class SandboxScene extends Phaser.Scene {
       Phaser.Input.Events.POINTER_DOWN,
       (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
         if (over.length > 0) return; // a toolbar button
+        if (this.tutorial.isOpen) {
+          if (pointer.leftButtonDown()) this.tutorial.next();
+          return;
+        }
         // A click beside an open menu only closes it.
         const open = this.menus.filter((menu) => menu.isOpen);
         if (open.length > 0) {
@@ -276,12 +311,13 @@ export class SandboxScene extends Phaser.Scene {
     this.flash(this.drawing.tick());
     const start = performance.now();
     // A stress test's update is timed with physics: a few microseconds. Behind
-    // a menu screen, nothing is played.
-    const steps = this.screen.isOpen ? 0 : this.session.advance(deltaMs / 1000);
+    // a menu screen or the Tutorial, nothing is played.
+    const steps = this.blocked ? 0 : this.session.advance(deltaMs / 1000);
     this.frames.physics(performance.now() - start, steps);
     const drawStart = performance.now();
     this.tuning.draw();
     this.rewards.draw(this.gameLayer.defence.reading, this.session.reading.campaign);
+    this.tutorialScreen.draw(this.tutorial);
     this.worldView.draw(deltaMs / 1000);
     const preview = this.drawing.preview();
     if (preview.kind === 'brush') this.preview.drawBrush(preview.pointer);

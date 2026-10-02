@@ -57,6 +57,10 @@ The first mode: a fixed sequence of handmade Levels, each unlocked by clearing t
 Playing any Level outside the Campaign: the Sandbox, a Gallery demo or a stress test. The sandbox tool, sending in Enemies by hand, is on hand, and what the Level leaves out, its Ink Tank maximums or its Waves, is as tuned, never as the last Level left it.
 _Avoid_: Sandbox mode (the Sandbox is a Level)
 
+**Tutorial**:
+The three cards shown the first time Campaign Level 1 starts: the goal, how to kill an Enemy, and grey (pebble) vs black (stone). Shown once, reopened with H.
+_Avoid_: Help screen, onboarding
+
 **Roguelite Mode**:
 The mode unlocked by beating the Campaign's final boss. Ink carries over between Waves, and the player picks upgrades.
 _Avoid_: Endless mode
