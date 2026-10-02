@@ -1080,6 +1080,22 @@ describe('Material rules: Enemies', () => {
     ]);
   });
 
+  it('lets an Enemy whose stuck green Object touches the Ink Core deal it its core damage and disappear', () => {
+    const { rules, contacts, arena } = fakeRules<Breakable>(createMaterialTable());
+    const carrier = crawler(1);
+    arena.walking = [carrier];
+    arena.inkCore = 50;
+    arena.carrying.set(carrier, [77 as BodyId]);
+    contacts.touches.set(77 as BodyId, [{ party: party(50), pairs: [pair(50, 101)] }]);
+
+    rules.step(STEP);
+
+    expect(arena.log.slice(-2)).toEqual([
+      { what: 'core', with: 1 },
+      { what: 'remove', with: { thing: { thing: 'enemy', id: 1 }, why: 'reached' } },
+    ]);
+  });
+
   it('kills an Enemy below the screen, and removes anything else below it or beyond the Spawn edge, once', () => {
     const { rules, arena } = fakeRules<Breakable>(createMaterialTable());
     arena.below = [

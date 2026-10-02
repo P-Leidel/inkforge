@@ -175,6 +175,8 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S>, EnemyArena
   readonly enemyParties = new Map<number, W>();
   /** The Ink Core's Party id. */
   inkCore = -1;
+  /** The bodies stuck to each Enemy; none if not set. */
+  readonly carrying = new Map<W, BodyId[]>();
   /** What lies below the screen, and beyond the Spawn edge. */
   below: Thing[] = [];
   beyond: Thing[] = [];
@@ -305,6 +307,10 @@ export class FakeArena<T, S, W = Walker> implements RulesArena<T, S>, EnemyArena
 
   drop(killed: Killed, ink: DropInk): void {
     this.log.push({ what: 'drop', with: { killed, ink } });
+  }
+
+  carried(walker: W): Iterable<BodyId> {
+    return this.carrying.get(walker) ?? [];
   }
 
   isInkCore(party: Party<unknown>): boolean {

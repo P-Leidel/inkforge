@@ -831,6 +831,21 @@ describe('Enemies take damage', () => {
     expect(objectById(world, green).transform.x).toBeGreaterThan(from + 60);
   });
 
+  it('lets a Crawler reach the Ink Core through a green Object stuck to its front: the Ink Core loses 1 HP; the Crawler is gone', () => {
+    const world = createWorld();
+    const heard = hear(world);
+    const id = world.spawn('crawler', { x: 300, y: GROUND_Y - CRAWLER.height / 2 });
+    const green = drawObject(world, dragBox(300, GROUND_Y - CRAWLER.height - 60, 40, 40), 'green');
+    world.togglePause();
+    world.release(green);
+
+    const reached = stepUntil(world, 45, () => world.enemies.length === 0);
+
+    expect(reached).toBe(true);
+    expect(world.inkCore).toMatchObject({ hp: 9, fullHp: 10 });
+    expect(wentOf(heard())).toEqual([`enemy ${id} reached`]);
+  });
+
   it('lets a Droplet land on a Crawler as a Patch that moves with it', () => {
     const world = createWorld();
     const { blue } = world.materials.colours;

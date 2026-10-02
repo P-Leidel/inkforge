@@ -149,7 +149,7 @@ _Avoid_: Loot, reward
 ### Enemies
 
 **Enemy**:
-An upright physics body that walks toward the Ink Core over whatever it stands on, pushing with a force up to its type's limit. It dies when its HP runs out, from hits, falls, Blasts and the like, or when it falls below the bottom of the screen, and disappears when it reaches the Ink Core.
+An upright physics body that walks toward the Ink Core over whatever it stands on, pushing with a force up to its type's limit. It dies when its HP runs out, from hits, falls, Blasts and the like, or when it falls below the bottom of the screen, and disappears when it reaches the Ink Core: when it, or a green Object stuck to it, touches it.
 _Avoid_: Mob, unit, creep, walker (in player-facing text)
 
 **Crawler**:

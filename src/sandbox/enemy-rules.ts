@@ -2,7 +2,7 @@ import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { EnemyType } from '../materials/enemy-table';
 import type { MaterialTable } from '../materials/material-table';
-import type { ContactHit } from '../physics';
+import type { BodyId, ContactHit } from '../physics';
 import type { Party } from './contact-ledger';
 import { drawDrop, type DropInk } from './drops';
 import type { Walker } from './enemies';
@@ -122,6 +122,8 @@ export interface EnemyArena<W> {
   kill(id: number): Killed | null;
   /** Lets out a dead Enemy's Drop: the Ink of every Colour, from where it died. */
   drop(killed: Killed, ink: DropInk): void;
+  /** The bodies of the green Objects stuck to an Enemy, or stuck to those, and so on. */
+  carried(walker: W): Iterable<BodyId>;
   /** Whether a Party is the Ink Core. */
   isInkCore(party: Party<unknown>): boolean;
   /** Takes `damage` off the Ink Core's HP. */
@@ -398,14 +400,17 @@ export class EnemyRules<W extends Walker> {
   }
 
   /**
-   * Every Enemy touching the Ink Core deals it its type's core damage and
-   * disappears, oldest first. One already at 0 HP dies instead.
+   * Every Enemy touching the Ink Core, itself or through a green Object stuck
+   * to it, deals it its type's core damage and disappears, oldest first. One
+   * already at 0 HP dies instead.
    */
   private reachInkCore(): void {
+    const touchesCore = (body: BodyId) =>
+      [...this.contacts.touching(body)].some(({ party }) => this.arena.isInkCore(party));
     const reached = [...this.arena.walkers()].filter(
       (walker) =>
         !this.isDead(walker) &&
-        [...this.contacts.touching(walker.body)].some(({ party }) => this.arena.isInkCore(party)),
+        (touchesCore(walker.body) || [...this.arena.carried(walker)].some(touchesCore)),
     );
     for (const { id, type } of reached) {
       this.arena.damageInkCore(this.numbers.enemy(type).coreDamage);

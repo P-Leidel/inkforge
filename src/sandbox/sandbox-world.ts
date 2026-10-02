@@ -336,6 +336,7 @@ export class SandboxWorld {
           walkerOf: (party) => this.enemiesKind.byParty(party.id),
           kill: (id) => this.kill(id),
           drop: ({ id, type, at }, ink) => say({ kind: 'dropped', id, type, at, ink }),
+          carried: (enemy) => this.bondsKind.carriedBy(enemy.party),
           isInkCore: (party) => this.inkCoreKind.is(party.id),
           damageInkCore: (damage) => this.inkCoreKind.damage(damage),
           belowScreen: () => this.query.below(this.arena.height),
