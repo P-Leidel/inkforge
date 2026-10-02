@@ -280,7 +280,7 @@ describe('A Level of three Waves', () => {
 
     expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
     const first = game.defence.reading.rewards!.summary;
-    expect(first).toMatchObject({ wave: 1, kills: 1, coreHp: 9 });
+    expect(first).toMatchObject({ wave: 1, kills: 2, coreHp: 9 }); // the Pit's and the Ink Core's
     expect(first.ink.grey).toBeGreaterThan(0);
     for (const colour of Object.keys(game.tanks) as (keyof typeof game.tanks)[]) {
       expect(game.tanks[colour].spendable).toBe(game.tanks[colour].maximum);
@@ -291,7 +291,7 @@ describe('A Level of three Waves', () => {
     game.togglePause();
     playWave(game);
     expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 3 });
-    expect(game.defence.reading.rewards!.summary).toMatchObject({ wave: 2, kills: 0, coreHp: 8 });
+    expect(game.defence.reading.rewards!.summary).toMatchObject({ wave: 2, kills: 1, coreHp: 8 });
 
     game.togglePause();
     playWave(game);

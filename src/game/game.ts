@@ -889,6 +889,8 @@ export class Game {
         }
         return;
       case 'went':
+        // An Enemy that reached the Ink Core is gone for the Wave, as a kill is.
+        if (entry.what.thing === 'enemy' && entry.why === 'reached') this.defence.killed();
         if (entry.why !== 'undone') this.heardWent(entry.what, entry.why === 'erased');
         return;
       case 'start-over':

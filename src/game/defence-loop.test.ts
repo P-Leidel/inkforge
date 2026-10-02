@@ -304,12 +304,13 @@ describe('The end of a Wave', () => {
     step(defence, world, 200);
     defence.killed(ink(40));
     defence.killed(ink(25));
+    defence.killed(); // one reached the Ink Core: a kill with no Drop
     world.inkCore.hp = 7;
 
     killAll(defence, world);
 
     expect(defence.reading.rewards).toEqual({
-      summary: { wave: 1, kills: 2, coreHp: 7, ink: ink(65) },
+      summary: { wave: 1, kills: 3, coreHp: 7, ink: ink(65) },
     });
   });
 

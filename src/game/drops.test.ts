@@ -103,7 +103,7 @@ describe('Drops', () => {
     expect(run(5)).not.toEqual(run(6));
   });
 
-  it('come from a Pit kill; an Enemy reaching the Ink Core drops nothing', () => {
+  it('come from a Pit kill; an Enemy reaching the Ink Core drops nothing, though it counts as a kill', () => {
     const game = createGame(true, { waves: true });
     game.defence.edit((table) => (table.counts = { crawler: 0, runner: 1, heavy: 0 }));
     game.togglePause();
@@ -120,10 +120,10 @@ describe('Drops', () => {
 
     expect(game.world.inkCore.hp).toBe(9);
     expect(picked).toEqual(before);
-    expect(game.defence.reading.rewards?.summary).toMatchObject({ kills: 0 });
+    expect(game.defence.reading.rewards?.summary).toMatchObject({ kills: 1, ink: { grey: 0 } });
   });
 
-  it("count for the Wave's summary: its kills and the Ink the Tanks took", () => {
+  it("count for the Wave's summary: its kills, the Ink Core's too, and the Ink the Tanks took", () => {
     const game = createGame(true, { waves: true });
     game.defence.edit((table) => (table.counts = { crawler: 0, runner: 1, heavy: 0 }));
     game.togglePause();
@@ -136,7 +136,7 @@ describe('Drops', () => {
 
     expect(taken).toBeGreaterThan(0);
     const summary = game.defence.reading.rewards!.summary;
-    expect(summary.kills).toBe(1);
+    expect(summary.kills).toBe(2); // the Pit's and the Ink Core's
     expect(summary.ink.grey).toBeCloseTo(taken, 6);
   });
 

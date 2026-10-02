@@ -51,7 +51,7 @@ export type SpaceVerb = 'start' | 'resume' | 'pause';
 export interface WaveSummary {
   /** Which of the Level's Waves it was, from 1. */
   readonly wave: number;
-  /** How many Enemies died in it. */
+  /** How many Enemies died in it or reached the Ink Core. */
   readonly kills: number;
   /** The Ink Core's HP as it ended. */
   readonly coreHp: number;
@@ -336,13 +336,15 @@ export class DefenceLoop {
 
   /**
    * A kill during a Wave, and the Ink its Drop put in the Tanks, px²: the
-   * Wave's tally, for its summary. Outside a Wave it counts for nothing.
+   * Wave's tally, for its summary. An Enemy that reached the Ink Core counts
+   * as a kill with no Drop (`ink` left out). Outside a Wave it counts for
+   * nothing.
    */
-  killed(ink: Readonly<Record<Colour, number>>): void {
+  killed(ink?: Readonly<Record<Colour, number>>): void {
     const wave = this.current;
     if (!wave) return;
     wave.kills++;
-    for (const colour of COLOURS) wave.ink[colour] += ink[colour];
+    if (ink) for (const colour of COLOURS) wave.ink[colour] += ink[colour];
   }
 
   /**
