@@ -681,6 +681,24 @@ describe('Pressing wear', () => {
     expect(onlyEnemy(world).transform.x).toBeGreaterThan(400);
   });
 
+  it('wears a Piece left hanging over it on the slope, until it walks on to the Ink Core', () => {
+    const world = createWorld();
+    // The sandbox slope rises 1 in 2 from x = 1400. An upright grey wall on it:
+    // once its bottom Piece breaks, the next hangs just above and behind the
+    // Crawler's head as the ground rises under it.
+    const slopeY = (x: number) => GROUND_Y - (x - 1400) / 2;
+    drawLine(world, [
+      { x: 1550, y: slopeY(1550) - 2 },
+      { x: 1550, y: slopeY(1550) - 200 },
+    ]);
+    world.spawn('crawler');
+
+    const reached = stepUntil(world, 120, () => world.enemies.length === 0);
+
+    expect(reached).toBe(true);
+    expect(world.inkCore.hp).toBe(9);
+  });
+
   it('wears nothing on the Terrain and nothing when no Enemy is there', () => {
     const world = createWorld();
     post(world, 300, 86);

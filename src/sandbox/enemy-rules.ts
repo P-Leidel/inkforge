@@ -330,9 +330,10 @@ export class EnemyRules<W extends Walker> {
    * pressing rate. A Piece is pressed when it is in the Enemy's way
    * (`isPressed`); an Object only when the Enemy is also stalled, since one
    * it can shove is pushed, not pressed. A stalled Enemy also presses
-   * whatever touches it from ahead (`isAhead`) and isn't its floor, however
-   * slight the touch: a corner catching its head holds it up as surely as a
-   * wall, and must wear as one, or it would hold it forever. Wear depends on the time in
+   * whatever touches it and isn't its floor, from any side and however
+   * slight the touch: a corner catching its head, or a Piece left hanging
+   * over it as it walks up a slope, holds it up as surely as a wall, and
+   * must wear as one, or it would hold it forever. Wear depends on the time in
    * contact alone, and never wakes a Frozen Object. The Terrain, Rubble, the
    * Ink Core and other Enemies take no damage, so they never wear. Returns
    * the wear, in the order it is dealt; `fixed` says whether a target is a
@@ -356,8 +357,7 @@ export class EnemyRules<W extends Walker> {
           const normal = this.contacts.normal(walker.body, pair);
           if (!normal) continue;
           if (isFloor(normal)) floor = true;
-          else if (isPressed(normal, heading) || (stalled && isAhead(normal, heading)))
-            pressed = true;
+          else if (stalled || isPressed(normal, heading)) pressed = true;
         }
         if (pressed && !fixed(target) && !stalled) pressed = false;
         const amount = pressed ? stacked * rate : floor ? floorWear * rate : 0;

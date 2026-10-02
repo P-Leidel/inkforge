@@ -1451,22 +1451,56 @@ describe('Material rules: pressing wear', () => {
     expect(sloped.damage).toBeCloseTo(0.5 * PRESSING, 6);
   });
 
-  it('wears nothing it only touches from behind or above, nor the Terrain, Rubble or the Ink Core', () => {
+  it('wears nothing it only touches from behind or above while it gets past', () => {
     const { rules, contacts, arena } = rulesFor();
     arena.walking = [crawler];
-    arena.stalled.add(crawler);
-    const [behind, above] = [pieceOf(), pieceOf()];
+    const [behind, above] = [pieceOf(), objectOf()];
     touch(contacts, [
       { target: behind, normal: { x: 1, y: 0 } },
       { target: above, normal: { x: 0, y: 1 } },
-      { target: null, normal: WALL }, // the Terrain, Rubble, the Ink Core: nothing takes damage
+      { target: null, normal: FLOOR },
     ]);
 
     rules.walk(STEP);
     rules.step(STEP);
 
     expect([behind.damage, above.damage]).toEqual([0, 0]);
-    expect(arena.done).toEqual([]);
+  });
+
+  it('wears a Piece or an Object it touches from any side but below while stalled: it holds it there', () => {
+    const { rules, contacts, arena } = rulesFor();
+    arena.walking = [crawler];
+    arena.stalled.add(crawler);
+    // A Piece left hanging over it on a slope, an Object resting on its back.
+    const [behind, above, overBehind] = [pieceOf(), objectOf(), pieceOf()];
+    touch(contacts, [
+      { target: behind, normal: { x: 1, y: 0 } },
+      { target: above, normal: { x: 0, y: 1 } },
+      { target: overBehind, normal: { x: Math.SQRT1_2, y: Math.SQRT1_2 } },
+      { target: null, normal: FLOOR },
+    ]);
+
+    rules.walk(STEP);
+    rules.step(STEP);
+
+    for (const target of [behind, above, overBehind])
+      expect(target.damage).toBeCloseTo(PRESSING * STEP, 9);
+  });
+
+  it('wears nothing of the Terrain, Rubble or the Ink Core, stalled or not', () => {
+    const { rules, contacts, arena } = rulesFor();
+    arena.walking = [crawler];
+    arena.stalled.add(crawler);
+    touch(contacts, [
+      { target: null, normal: WALL }, // the Terrain, Rubble, the Ink Core: nothing takes damage
+      { target: null, normal: { x: 0, y: 1 } },
+      { target: null, normal: FLOOR },
+    ]);
+
+    rules.walk(STEP);
+    rules.step(STEP);
+
+    expect(arena.done).toEqual(['walk']); // it walks, and wears nothing
   });
 
   it('wears what a stack presses harder: stackWear more for each other Enemy in it', () => {
