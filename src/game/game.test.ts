@@ -631,6 +631,98 @@ describe('A Line Grounded after it was drawn', () => {
   });
 });
 
+describe('A Line cut off where it stood', () => {
+  /** A blue wall standing on the ground at x = 400, five Pieces tall, drawn up from the ground. */
+  function blueWall(game: Game) {
+    const outcome = game.submitStroke(
+      dragAlong([
+        { x: 400, y: 880 },
+        { x: 400, y: 880 - 240 },
+      ]),
+      'blue',
+    );
+    if (outcome.kind !== 'line') throw new Error('expected a Line');
+    expect(outcome.grounded).toBe(true);
+    return outcome;
+  }
+
+  it('is still the Stroke it was drawn as: one undo takes back every part, refunding them', () => {
+    const game = createGame(true);
+    const wall = blueWall(game);
+
+    game.eraseAlong([{ x: 400, y: 880 - 2.5 * 48 }], 4); // Piece 2: the top two fall
+    expect(game.world.lines).toHaveLength(2);
+    expect(game.tanks.blue.maximum - game.tanks.blue.spendable).toBeCloseTo(
+      wall.ink - wall.pieces[2]!,
+      6,
+    );
+
+    game.undo();
+
+    expect(game.world.lines).toEqual([]);
+    expect(game.tanks.blue.spendable).toBeCloseTo(game.tanks.blue.maximum, 6);
+    expect(game.history).toEqual([]);
+  });
+
+  it('refunds a fallen run’s Pieces when they are erased', () => {
+    const game = createGame(true);
+    const wall = blueWall(game);
+    game.eraseAlong([{ x: 400, y: 880 - 2.5 * 48 }], 4);
+    const top = game.world.lines.find((line) => line.id !== wall.id)!;
+
+    game.eraseAlong(
+      [
+        { x: 400, y: 880 - 3.5 * 48 },
+        { x: 400, y: 880 - 4.5 * 48 },
+      ],
+      4,
+    );
+
+    expect(game.world.lines.some((line) => line.id === top.id)).toBe(false);
+    expect(game.tanks.blue.maximum - game.tanks.blue.spendable).toBeCloseTo(
+      wall.pieces[0]! + wall.pieces[1]!,
+      6,
+    );
+    game.undo(); // the standing rest
+    expect(game.tanks.blue.spendable).toBeCloseTo(game.tanks.blue.maximum, 6);
+    expect(game.history).toEqual([]);
+  });
+
+  it('is undone with the Stroke even once what still stood is gone', () => {
+    const game = createGame(true);
+    const wall = blueWall(game);
+    game.eraseAlong([{ x: 400, y: 880 - 2.5 * 48 }], 4);
+    game.eraseAlong(
+      [
+        { x: 400, y: 880 - 0.5 * 48 },
+        { x: 400, y: 880 - 1.5 * 48 },
+      ],
+      4,
+    );
+    expect(game.world.lines.some((line) => line.id === wall.id)).toBe(false);
+    expect(game.world.lines).toHaveLength(1);
+
+    game.undo();
+
+    expect(game.world.lines).toEqual([]);
+    expect(game.tanks.blue.spendable).toBeCloseTo(game.tanks.blue.maximum, 6);
+  });
+
+  it('comes back from R as it was when physics started, with what it paid', () => {
+    const game = createGame(true);
+    blueWall(game);
+    runFor(game, 0.1);
+    game.eraseAlong([{ x: 400, y: 880 - 2.5 * 48 }], 4);
+    runFor(game, 1);
+
+    game.reset();
+    expect(game.world.lines).toHaveLength(1);
+    expect(game.world.lines[0]!.pieces).toHaveLength(5);
+    game.undo();
+    expect(game.tanks.blue.spendable).toBeCloseTo(game.tanks.blue.maximum, 6);
+  });
+});
+
 describe('The Eraser refunds what was paid, with Ink costs on', () => {
   it("for an Object, its Outline's and its Fill's prices, and it is gone from undo", () => {
     const game = createGame(true);

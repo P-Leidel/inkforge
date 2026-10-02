@@ -186,6 +186,7 @@ interface Checkpoint {
   readonly strokes: ReadonlyMap<StrokeId, Charge>;
   readonly fills: ReadonlyMap<StrokeId, Paid>;
   readonly history: readonly Action[];
+  readonly splits: ReadonlyMap<StrokeId, StrokeId>;
   readonly loop: LoopPosition;
 }
 
@@ -263,6 +264,13 @@ export class Game {
   private fills = new Map<StrokeId, Paid>();
   /** Strokes and Fills in the order they were made, for undo. */
   private undoHistory: Action[] = [];
+  /**
+   * The Stroke each Line that split off one is part of, by the split-off
+   * Line's id: a run of a Line cut off from the Terrain falls as a Line of
+   * its own, and is charged, refunded and undone with the Stroke it was
+   * drawn as.
+   */
+  private splits = new Map<StrokeId, StrokeId>();
   /**
    * Taken whenever physics starts, as the world takes its own snapshot: with
    * Waves on, as a Wave starts. R returns to it.
@@ -692,7 +700,9 @@ export class Game {
       return true;
     }
     const charge = this.strokes.get(id);
-    if (this.world.removeStroke(id).kind === 'gone') {
+    const parts = [id, ...[...this.splits].filter(([, of]) => of === id).map(([part]) => part)];
+    const removed = parts.map((part) => this.world.removeStroke(part));
+    if (removed.every(({ kind }) => kind === 'gone')) {
       this.forget(id);
       return false;
     }
@@ -874,10 +884,14 @@ export class Game {
     }
   }
 
-  /** Forgets a Stroke that is gone, with its Fill, and takes it out of the undo history. */
+  /**
+   * Forgets a Stroke that is gone, with its Fill and the Lines that split
+   * off it, and takes it out of the undo history.
+   */
   private forget(id: StrokeId): void {
     this.strokes.delete(id);
     this.fills.delete(id);
+    for (const [part, of] of this.splits) if (of === id) this.splits.delete(part);
     this.undoHistory = this.undoHistory.filter((action) => action.id !== id);
   }
 
@@ -908,9 +922,14 @@ export class Game {
       case 'went':
         // An Enemy that reached the Ink Core is gone for the Wave, as a kill is.
         if (entry.what.thing === 'enemy' && entry.why === 'reached') this.defence.killed();
-        // Undo told the Game already; a Line Grounded where it hangs comes straight back.
-        if (entry.why !== 'undone' && entry.why !== 'grounded')
+        // Undo told the Game already; a Line Grounded where it hangs, or cut
+        // off where it stood, comes straight back.
+        if (entry.why !== 'undone' && entry.why !== 'grounded' && entry.why !== 'cut-off')
           this.heardWent(entry.what, entry.why === 'erased');
+        return;
+      case 'split':
+        // Its Pieces come back under `into`, still the Stroke they were drawn as.
+        this.splits.set(entry.into, this.strokeOf(entry.id));
         return;
       case 'start-over':
         // The world was cleared (Clear, or below the Game) or reset below the
@@ -920,6 +939,7 @@ export class Game {
         this.strokes.clear();
         this.fills.clear();
         this.undoHistory = [];
+        this.splits.clear();
         this.checkpoint = null;
         this.defence.restore(FIRST_INTERMISSION);
         return;
@@ -934,36 +954,43 @@ export class Game {
     }
   }
 
+  /** The Stroke a Line is part of: the one it split off, or else itself. */
+  private strokeOf(id: StrokeId): StrokeId {
+    return this.splits.get(id) ?? id;
+  }
+
   private heardAdded(what: Extract<Entry, { kind: 'added' }>['what']): void {
     if (what.thing === 'object' && !this.strokes.has(what.id)) {
       this.strokes.set(what.id, { kind: 'object', paid: { colour: null, price: 0 } });
       this.undoHistory.push({ kind: 'stroke', id: what.id });
     } else if (what.thing === 'piece') {
-      const charge = this.strokes.get(what.id);
+      const id = this.strokeOf(what.id);
+      const charge = this.strokes.get(id);
       if (charge?.kind === 'line') {
         if (charge.colour === null) charge.pieces.set(what.index, 0);
         return;
       }
-      this.strokes.set(what.id, {
+      this.strokes.set(id, {
         kind: 'line',
         colour: null,
         pieces: new Map([[what.index, 0]]),
       });
-      this.undoHistory.push({ kind: 'stroke', id: what.id });
+      this.undoHistory.push({ kind: 'stroke', id });
     }
   }
 
   /** A Piece or an Object went for good: broken, erased or removed. Only the erased is refunded. */
   private heardWent(what: Extract<Entry, { kind: 'went' }>['what'], erased: boolean): void {
-    const charge = this.strokes.get(what.id);
+    const id = what.thing === 'piece' ? this.strokeOf(what.id) : what.id;
+    const charge = this.strokes.get(id);
     if (what.thing === 'object' && charge?.kind === 'object') {
-      if (erased) this.refundStroke(what.id, charge);
-      this.forget(what.id);
+      if (erased) this.refundStroke(id, charge);
+      this.forget(id);
     } else if (what.thing === 'piece' && charge?.kind === 'line') {
       const price = charge.pieces.get(what.index);
       if (erased) this.refund({ colour: charge.colour, price: price ?? 0 });
       charge.pieces.delete(what.index);
-      if (charge.pieces.size === 0) this.forget(what.id);
+      if (charge.pieces.size === 0) this.forget(id);
     }
   }
 
@@ -973,6 +1000,7 @@ export class Game {
       strokes: copyCharges(this.strokes),
       fills: new Map(this.fills),
       history: [...this.undoHistory],
+      splits: new Map(this.splits),
       loop: this.defence.snapshot(),
     };
   }
@@ -984,6 +1012,7 @@ export class Game {
     this.strokes = copyCharges(checkpoint.strokes);
     this.fills = new Map(checkpoint.fills);
     this.undoHistory = [...checkpoint.history];
+    this.splits = new Map(checkpoint.splits);
     this.defence.restore(checkpoint.loop);
   }
 }

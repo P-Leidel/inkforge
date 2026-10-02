@@ -66,6 +66,17 @@ export interface LineTouches {
   readonly loose: readonly number[];
 }
 
+/** A Piece, as a query names it. */
+export type FoundPiece = Extract<Thing, { readonly thing: 'piece' }>;
+
+/** What fixed Pieces touch (`ArenaQuery.holding`). */
+export interface Holding {
+  /** Whether they touch the Terrain or the Ink Core. */
+  readonly ground: boolean;
+  /** The fixed Pieces they touch, themselves among them. */
+  readonly pieces: readonly FoundPiece[];
+}
+
 /** What the query reads of the Arena: where its Spawn edge is. */
 export type SpawnEdge = Pick<Arena, 'spawnSide' | 'width'>;
 
@@ -490,6 +501,35 @@ export class ArenaQuery {
       }
     }
     return { grounded, loose: [...loose].sort((p, q) => p - q) };
+  }
+
+  /**
+   * Holding: what fixed Pieces, the capsules `capsules` in world
+   * coordinates, touch within `tolerance` px of their surface: whether they
+   * touch the Terrain or the Ink Core, and which fixed Pieces (of Grounded
+   * Lines) they touch, by Line id and place, themselves among them.
+   */
+  holding(capsules: readonly Capsule[], tolerance: number): Holding {
+    let ground = false;
+    const pieces = new Map<string, FoundPiece>();
+    for (const { segment, radius } of capsules) {
+      const { a, b } = segment;
+      const reach = radius + tolerance;
+      for (const { what, form } of this.near(polygonBounds([a, b]), reach)) {
+        if (form.kind === 'terrain') {
+          ground ||= form.polygons.some((solid) => capsuleOverlapsPolygon(a, b, reach, solid, 0));
+          continue;
+        }
+        if (form.kind !== 'capsules' || form.moves || what?.thing !== 'piece') continue;
+        const key = `${what.id}.${what.index}`;
+        if (pieces.has(key)) continue;
+        const touches = form.segments.some(
+          (other) => distanceSegmentToSegment(a, b, other.a, other.b) <= reach + form.radius,
+        );
+        if (touches) pieces.set(key, what);
+      }
+    }
+    return { ground, pieces: [...pieces.values()] };
   }
 
   /**

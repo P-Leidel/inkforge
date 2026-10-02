@@ -47,7 +47,7 @@ Whether the player may also build in the Intermission, undo during a Wave, and b
 
 - A **Stroke** is one continuous drag in one Colour.
 - If its end returns near its start, it becomes an **Object**; a marker shows the snap while drawing. Otherwise it becomes a **Line**.
-- A **Grounded** Line, one touching the Terrain or another Grounded Line (within about half a Line's thickness), stays fixed exactly where it was drawn until Pieces break off. A Line that isn't Grounded starts Frozen, like an Object, and falls as one rigid body in its drawn shape when it is freed (section 6.4, [ADR 0014](adr/0014-ungrounded-lines-start-frozen.md)). Objects, Rubble and enemies never ground a Line. While drawing, a Line that won't be Grounded shows the Frozen look.
+- A **Grounded** Line, one touching the Terrain or another Grounded Line (within about half a Line's thickness), stays fixed exactly where it was drawn until Pieces break off; what a broken or erased Piece cuts off from the ground then falls at once, each Line's run as its own rigid body ([ADR 0015](adr/0015-cut-off-lines-collapse.md)). A Line that isn't Grounded starts Frozen, like an Object, and falls as one rigid body in its drawn shape when it is freed (section 6.4, [ADR 0014](adr/0014-ungrounded-lines-start-frozen.md)). Objects, Rubble and enemies never ground a Line. While drawing, a Line that won't be Grounded shows the Frozen look.
 - **Objects** are movable bodies with exactly the drawn shape: circles roll, boxes stack, triangles tip over. Self-crossing closed strokes are rejected with a clear message.
 - Every Colour follows the same drawing rules; only the material differs.
 
@@ -108,7 +108,7 @@ Details:
 - An enemy that reaches the Ink Core deals its damage and disappears, dropping no ink.
 - **Lines** are split into **Pieces** about one enemy wide. Each Piece has durability set by its Colour and cracks visibly as it loses durability.
 - Lines and Objects take damage from hard hits, Blasts, and enemies **Pressing** against them: anything an enemy can't shove or climb wears at a rate set by enemy type, slowly for Crawlers, fast for Heavies, Frozen Objects included. What an enemy stands on wears too. Green Lines also wear down as their glue slows things.
-- A Piece at zero durability breaks off as **Debris**; the rest of the Line stays as it was, fixed or as one falling body. Debris is purely visual and fades after a few seconds.
+- A Piece at zero durability breaks off as **Debris**; the rest of the Line stays as it was, fixed or as one falling body, except that a fixed run no longer connected to the ground collapses: it falls at once as a body of its own. Debris is purely visual and fades after a few seconds.
 - **Objects** have durability too and break into Debris; their Fill comes out (section 6.3).
 - There is no repair mechanic. Damage carries over between Waves.
 

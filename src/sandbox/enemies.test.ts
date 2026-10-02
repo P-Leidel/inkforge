@@ -552,7 +552,7 @@ describe('Pressing wear', () => {
   const durabilities = (world: SandboxWorld) =>
     world.lines.map(({ pieces }) => pieces.map(({ durability }) => durability));
 
-  it('lets a Crawler against a grey Line wear one Piece through in about 20 s; the Piece breaks and the Crawler walks on', () => {
+  it('lets a Crawler against a grey Line wear one Piece through in about 20 s; the Piece breaks, the rest falls and the Crawler walks on', () => {
     const world = createWorld();
     const heard = hear(world);
     const line = post(world, 300, 86); // two Pieces: the Crawler presses the lower one
@@ -567,9 +567,11 @@ describe('Pressing wear', () => {
       return broke !== null;
     });
 
-    expect(wentOf(heard())).toEqual([`piece ${line}.0 broke`]);
+    // The lower Piece was the only one touching the Terrain: the upper one falls.
+    expect(wentOf(heard())).toEqual([`piece ${line}.0 broke`, `piece ${line}.1 cut-off`]);
     expect(broke! - pressedFrom!).toBeCloseTo(6000 / CRAWLER.pressing, 0);
     expect(durabilities(world)).toEqual([[6000]]); // the upper Piece, out of its reach
+    expect(world.lines[0]).toMatchObject({ grounded: false, frozen: false });
     runFor(world, 3);
     expect(onlyEnemy(world).transform.x).toBeGreaterThan(400);
   });
@@ -722,7 +724,8 @@ describe('Pressing wear', () => {
     expect(started[0]![0]).toBeLessThan(6000);
     runFor(world, 16);
     const first = { lines: durabilities(world), enemies: world.enemies };
-    expect(first.lines).toEqual([[6000]]); // worn through
+    expect(first.lines).toHaveLength(1); // worn through: the upper Piece fell
+    expect(first.lines[0]).toHaveLength(1);
 
     world.reset();
     expect(durabilities(world)).toEqual(started);

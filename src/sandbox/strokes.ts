@@ -13,7 +13,7 @@ import { pieceCentre } from '../stroke/pieces';
 import type { StrokeResult } from '../stroke/stroke-pipeline';
 import type { ArenaBodies, ObjectBody } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
-import type { ArenaQuery, Capsule, LineTouches } from './arena-query';
+import type { ArenaQuery, Capsule, FoundPiece, LineTouches } from './arena-query';
 import type { PartyId } from './contact-ledger';
 import type { Happening, Why } from './happenings';
 import type { Broken } from './material-rules';
@@ -249,9 +249,17 @@ function middleOf(segments: readonly Segment[]): Vec2 {
 
 /** A Line's capsules, one per segment of each Piece still there, in order. */
 function capsulesOf(line: LineStroke): Capsule[] {
-  const radius = line.thickness / 2;
-  return line.pieces.flatMap((piece) => piece.segments.map((segment) => ({ segment, radius })));
+  return line.pieces.flatMap((piece) => pieceCapsules(piece, line.thickness));
 }
+
+/** A Piece's capsules, one per segment, in its Line's own coordinates. */
+function pieceCapsules(piece: Piece, thickness: number): Capsule[] {
+  const radius = thickness / 2;
+  return piece.segments.map((segment) => ({ segment, radius }));
+}
+
+/** A Piece's key among every Line's: its Line's id and its place along it. */
+const pieceKey = ({ id, index }: FoundPiece) => `${id}.${index}`;
 
 /** An Object's pose and motion when a snapshot is taken. */
 interface ObjectMotion extends Motion {
@@ -325,6 +333,11 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   /** In the order they were drawn. */
   private strokes: Stroke[] = [];
   private nextId = 1;
+  /**
+   * The capsules, in world coordinates, of the fixed Pieces that went since
+   * grounding was last checked again (`collapse`).
+   */
+  private cut: Capsule[] = [];
 
   constructor(
     private readonly physics: PhysicsWorld,
@@ -338,6 +351,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       | 'lyingOnLines'
       | 'blocksSqueezed'
       | 'touchingLine'
+      | 'holding'
       | 'touchedBy'
     >,
     private readonly poses: Pick<PreviousPoses, 'of'>,
@@ -789,13 +803,14 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     const index = this.strokes.findIndex((s) => s.id === id);
     if (index < 0) return;
     const [stroke] = this.strokes.splice(index, 1);
+    if (stroke!.kind === 'line' && stroke!.body === null) this.cut.push(...capsulesOf(stroke!));
     for (const body of this.bodiesOf(stroke!)) this.bodies.removeBody(body, why);
   }
 
   /**
    * Removes Piece `index` of Line `lineId`, for `why`; the rest of the Line
    * stays where it is, fixed or as one body, and the Line goes with its last
-   * Piece.
+   * Piece. What a fixed one held up falls at the next `collapse`.
    */
   removePiece(lineId: StrokeId, index: number, why: Why): void {
     const line = this.lineStrokes().find((s) => s.id === lineId);
@@ -808,8 +823,12 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       this.remove(line.id, why);
       return;
     }
-    if (line.body === null) this.bodies.removeBody(piece.body, why);
-    else this.bodies.removePart(piece.party, why);
+    if (line.body === null) {
+      this.cut.push(...pieceCapsules(piece, line.thickness));
+      this.bodies.removeBody(piece.body, why);
+    } else {
+      this.bodies.removePart(piece.party, why);
+    }
     line.pieces = line.pieces.filter((p) => p !== piece);
   }
 
@@ -822,6 +841,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     const stroke = this.strokes.find((s) => s.id === id);
     if (!stroke) return { kind: 'gone', id };
     this.remove(id, 'undone');
+    this.collapse();
     const { colour } = stroke;
     if (stroke.kind === 'object') {
       const { outline, fill } = stroke;
@@ -854,8 +874,8 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
    * Breaks an Object or a Piece that the Material rules broke, and reports
    * what comes out of it. A broken Object's body is removed; its Debris and
    * its Fill come out where it was. A broken Piece's body is removed, and
-   * the rest of its Line stays fixed where it is; the Line goes with its
-   * last Piece.
+   * the rest of its Line stays where it is until the step's `collapse`; the
+   * Line goes with its last Piece.
    */
   break(target: StrokeTarget): Broken | null {
     return target.kind === 'piece' ? this.breakPiece(target) : this.breakObject(target);
@@ -937,6 +957,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
 
   /** Adds the Strokes again in the order they were drawn, each Line's Pieces in order. */
   restore(saved: SavedStrokes): void {
+    this.cut = [];
     this.strokes = saved.strokes.map((stroke): Stroke => {
       if (stroke.kind === 'line') {
         const { pieces, motion, ...line } = stroke;
@@ -964,7 +985,165 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
 
   clear(): void {
     this.strokes = [];
+    this.cut = [];
   }
 
-  step(): void {}
+  /** What a fixed Piece that broke this step held up falls. */
+  step(): void {
+    this.collapse();
+  }
+
+  /**
+   * Collapse: checks grounding again where fixed Pieces went since it last
+   * checked, over connected runs of Pieces, not whole Lines. The fixed
+   * Pieces that touched one that went are followed through the fixed Pieces
+   * they touch, within the ground tolerance; a run that reaches the Terrain
+   * or the Ink Core stays, and one that doesn't is cut off and falls at
+   * once. So it only looks at the Pieces connected to what went, and stops
+   * as soon as a run is found to stand.
+   *
+   * Of a cut-off run, each Line's Pieces that touch each other fall as one
+   * body, as a fallen Line: several Lines cut off together fall as several
+   * bodies, and a Line cut in two keeps its id for what still stands, or
+   * else for its first run; each other run falls as a Line of its own, said
+   * as `split`. Each keeps its Pieces, their places along the Line and their
+   * damage.
+   */
+  collapse(): void {
+    if (this.cut.length === 0) return;
+    const tolerance = this.materials.groundTolerance;
+    const starts = this.query.holding(this.cut, tolerance).pieces;
+    this.cut = [];
+    const standing = new Set<string>();
+    const falling = new Map<string, Piece>();
+    /** The fixed Pieces each falling one touches, by key. */
+    const links = new Map<string, string[]>();
+    for (const start of [...starts].sort(byPlace)) {
+      const startKey = pieceKey(start);
+      if (standing.has(startKey) || falling.has(startKey)) continue;
+      const first = this.fixedPiece(start);
+      if (!first) continue;
+      const run = new Map<string, Piece>([[startKey, first]]);
+      const touching = new Map<string, string[]>();
+      const queue = [first];
+      let stands = false;
+      for (let k = 0; k < queue.length && !stands; k++) {
+        const piece = queue[k]!;
+        const key = pieceKey({ thing: 'piece', id: piece.lineId, index: piece.index });
+        const { thickness } = this.lineById(piece.lineId)!;
+        const held = this.query.holding(pieceCapsules(piece, thickness), tolerance);
+        if (held.ground) stands = true;
+        const touched: string[] = [];
+        for (const other of [...held.pieces].sort(byPlace)) {
+          const otherKey = pieceKey(other);
+          if (otherKey === key) continue;
+          if (standing.has(otherKey)) stands = true;
+          touched.push(otherKey);
+          if (run.has(otherKey)) continue;
+          const found = this.fixedPiece(other);
+          if (!found) continue;
+          run.set(otherKey, found);
+          queue.push(found);
+        }
+        touching.set(key, touched);
+      }
+      if (stands) {
+        for (const key of run.keys()) standing.add(key);
+      } else {
+        for (const [key, piece] of run) falling.set(key, piece);
+        for (const [key, touched] of touching) links.set(key, touched);
+      }
+    }
+    const lineIds = [...new Set([...falling.values()].map((piece) => piece.lineId))];
+    for (const id of lineIds.sort((p, q) => p - q)) this.cutOff(id, falling, links);
+  }
+
+  /**
+   * Lets the Pieces of Grounded Line `id` that are `falling` fall, each run
+   * of them that touch each other (`links`) as one body.
+   */
+  private cutOff(
+    id: StrokeId,
+    falling: ReadonlyMap<string, Piece>,
+    links: ReadonlyMap<string, readonly string[]>,
+  ): void {
+    const index = this.strokes.findIndex((s) => s.id === id);
+    const line = this.strokes[index] as LineStroke;
+    const keyOf = (piece: Piece) => pieceKey({ thing: 'piece', id, index: piece.index });
+    const mine = line.pieces.filter((piece) => falling.has(keyOf(piece)));
+    // Runs of its falling Pieces that touch each other, in order along it.
+    const runs: Piece[][] = [];
+    const placed = new Set<string>();
+    for (const piece of mine) {
+      if (placed.has(keyOf(piece))) continue;
+      const run = [piece];
+      placed.add(keyOf(piece));
+      for (let k = 0; k < run.length; k++) {
+        for (const key of links.get(keyOf(run[k]!)) ?? []) {
+          const other = falling.get(key);
+          if (!other || other.lineId !== id || placed.has(key)) continue;
+          placed.add(key);
+          run.push(other);
+        }
+      }
+      runs.push(run.sort((p, q) => p.index - q.index));
+    }
+    const stays = line.pieces.filter((piece) => !falling.has(keyOf(piece)));
+    for (const piece of mine) this.bodies.removeBody(piece.body, 'cut-off');
+    const base = {
+      kind: 'line',
+      colour: line.colour,
+      thickness: line.thickness,
+      fell: true,
+    } as const;
+    runs.forEach((run, k) => {
+      const keeps = k === 0 && stays.length === 0;
+      const into = keeps ? id : this.nextId++;
+      if (!keeps) this.say({ kind: 'split', id, into });
+      const party = keeps ? line.party : this.bodies.newId();
+      const fallen = this.fall({ ...base, id: into, party }, run);
+      if (keeps) this.strokes[index] = fallen;
+      else this.strokes.push(fallen);
+    });
+    if (stays.length > 0) line.pieces = stays;
+  }
+
+  /**
+   * Adds Line `line` falling from where `pieces`, fixed ones that were cut
+   * off, stood: one moving body, as a fallen Line.
+   */
+  private fall(line: Omit<LineStroke, 'pieces' | 'body'>, pieces: readonly Piece[]): LineStroke {
+    const segments = pieces.flatMap((piece) => piece.segments);
+    const origin = { ...middleOf(segments), angle: 0 };
+    const saved = pieces.map(({ body: _body, segments, ...piece }) => ({
+      ...piece,
+      lineId: line.id,
+      segments: segments.map(({ a, b }) => ({ a: sub(a, origin), b: sub(b, origin) })),
+      loose: true,
+    }));
+    return this.addLoose(line, saved, {
+      transform: origin,
+      velocity: { x: 0, y: 0 },
+      angularVelocity: 0,
+      frozen: false,
+      mass: lineMass(segments, line.thickness, line.colour, this.materials),
+    });
+  }
+
+  /** The fixed Piece a query found, if its Line is still Grounded. */
+  private fixedPiece({ id, index }: FoundPiece): Piece | undefined {
+    const line = this.lineById(id);
+    if (!line || line.body !== null) return undefined;
+    return line.pieces.find((piece) => piece.index === index);
+  }
+
+  private lineById(id: StrokeId): LineStroke | undefined {
+    const stroke = this.strokes.find((s) => s.id === id);
+    return stroke?.kind === 'line' ? stroke : undefined;
+  }
+}
+
+/** Pieces in drawing order: by their Line's id, then their place along it. */
+function byPlace(p: FoundPiece, q: FoundPiece): number {
+  return p.id - q.id || p.index - q.index;
 }
