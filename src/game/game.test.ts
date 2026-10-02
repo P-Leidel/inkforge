@@ -201,52 +201,50 @@ describe("Colours a Level doesn't have", () => {
     return game;
   }
 
-  for (const inkCosts of [true, false]) {
-    describe(`with Ink costs ${inkCosts ? 'on' : 'off'}`, () => {
-      it('refuses a blue Stroke as not in this Level, and makes nothing', () => {
-        const game = withoutBlue(inkCosts);
+  describe('with Ink costs on', () => {
+    it('refuses a blue Stroke as not in this Level, and makes nothing', () => {
+      const game = withoutBlue(true);
 
-        const line = game.submitStroke(
-          dragAlong([
-            { x: 200, y: 500 },
-            { x: 300, y: 500 },
-          ]),
-          'blue',
-        );
-        const box = game.submitStroke(dragBox(300, 600, 100, 100), 'blue');
+      const line = game.submitStroke(
+        dragAlong([
+          { x: 200, y: 500 },
+          { x: 300, y: 500 },
+        ]),
+        'blue',
+      );
+      const box = game.submitStroke(dragBox(300, 600, 100, 100), 'blue');
 
-        expect(game.has('blue')).toBe(false);
-        expect(line).toMatchObject({ kind: 'refused', reason: 'not-in-level', colour: 'blue' });
-        expect(box).toMatchObject({ kind: 'refused', reason: 'not-in-level' });
-        expect(game.world.lines).toHaveLength(0);
-        expect(game.world.objects).toHaveLength(0);
-        expect(game.history).toHaveLength(0);
-      });
-
-      it('refuses a blue Fill as not in this Level, and the Object stays hollow', () => {
-        const game = withoutBlue(inkCosts);
-        const box = drawBox(game, 300, 500, 100, 'grey');
-
-        const outcome = game.fillAt({ x: 350, y: 550 }, 'blue');
-
-        expect(outcome).toMatchObject({ kind: 'refused', reason: 'not-in-level', id: box });
-        expect(game.world.objects[0]!.fill).toBeNull();
-      });
-
-      it('says so of a look in blue, and nothing of one in grey', () => {
-        const game = withoutBlue(inkCosts);
-        const look = game.lookAtStroke(
-          dragAlong([
-            { x: 200, y: 500 },
-            { x: 300, y: 500 },
-          ]),
-        )!;
-
-        expect(game.prospect(look, 'blue').refusal).toBe('not-in-level');
-        expect(game.prospect(look, 'grey').refusal).toBeNull();
-      });
+      expect(game.has('blue')).toBe(false);
+      expect(line).toMatchObject({ kind: 'refused', reason: 'not-in-level', colour: 'blue' });
+      expect(box).toMatchObject({ kind: 'refused', reason: 'not-in-level' });
+      expect(game.world.lines).toHaveLength(0);
+      expect(game.world.objects).toHaveLength(0);
+      expect(game.history).toHaveLength(0);
     });
-  }
+
+    it('refuses a blue Fill as not in this Level, and the Object stays hollow', () => {
+      const game = withoutBlue(true);
+      const box = drawBox(game, 300, 500, 100, 'grey');
+
+      const outcome = game.fillAt({ x: 350, y: 550 }, 'blue');
+
+      expect(outcome).toMatchObject({ kind: 'refused', reason: 'not-in-level', id: box });
+      expect(game.world.objects[0]!.fill).toBeNull();
+    });
+
+    it('says so of a look in blue, and nothing of one in grey', () => {
+      const game = withoutBlue(true);
+      const look = game.lookAtStroke(
+        dragAlong([
+          { x: 200, y: 500 },
+          { x: 300, y: 500 },
+        ]),
+      )!;
+
+      expect(game.prospect(look, 'blue').refusal).toBe('not-in-level');
+      expect(game.prospect(look, 'grey').refusal).toBeNull();
+    });
+  });
 
   it('says not in this Level before not enough', () => {
     const game = withoutBlue(true);
@@ -258,6 +256,16 @@ describe("Colours a Level doesn't have", () => {
       'blue',
     );
     expect(huge).toMatchObject({ kind: 'refused', reason: 'not-in-level' });
+  });
+
+  it('has every Colour with Ink costs off, a maximum of 0 or not, and draws and fills in it', () => {
+    const game = withoutBlue(false);
+    drawBox(game, 300, 500, 100, 'blue');
+
+    fill(game, { x: 350, y: 550 }, 'blue');
+
+    for (const colour of COLOURS) expect(game.has(colour)).toBe(true);
+    expect(game.world.objects[0]!.fill).toBe('blue');
   });
 
   it('has every Colour in the sandbox', () => {

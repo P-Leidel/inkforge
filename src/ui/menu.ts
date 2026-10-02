@@ -53,6 +53,12 @@ export class Menu {
     return this.open;
   }
 
+  /** Shows or hides the button; a hidden Menu is closed and takes no clicks. */
+  setVisible(visible: boolean): void {
+    if (!visible) this.close();
+    this.button.setVisible(visible);
+  }
+
   toggle(): void {
     this.show(!this.open);
   }

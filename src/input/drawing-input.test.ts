@@ -43,6 +43,7 @@ function drawingOver(game: Game) {
     get allowed() {
       return game.allowed;
     },
+    has: (colour) => game.has(colour),
   };
   return {
     input: new DrawingInput(commands),
@@ -225,30 +226,56 @@ describe('Drawing input', () => {
       expect(game.tanks.red.spendable).toBe(game.tanks.red.maximum);
     });
 
-    for (const inkCosts of [true, false]) {
-      it(`flashes "Not in this Level" for a blue Stroke and Fill where the Level has no blue, Ink costs ${inkCosts ? 'on' : 'off'}`, () => {
-        const game = createGame(inkCosts);
-        game.editInk((table) => (table.tanks.blue = 0));
-        const { input } = drawingOver(game);
-        expect(drag(input, dragBox(300, 200, 300, 300))).toBeNull(); // in grey
-        input.pick('blue');
-        const line = dragAlong([
-          { x: 200, y: 700 },
-          { x: 300, y: 700 },
-        ]);
+    it('flashes "Not in this Level" for a blue Stroke and Fill once the Level has no blue', () => {
+      const game = createGame(true);
+      const { input } = drawingOver(game);
+      expect(drag(input, dragBox(300, 200, 300, 300))).toBeNull(); // in grey
+      input.pick('blue');
+      game.editInk((table) => (table.tanks.blue = 0)); // F2, with blue picked
+      const line = dragAlong([
+        { x: 200, y: 700 },
+        { x: 300, y: 700 },
+      ]);
 
-        input.press(line[0]!, 'left');
-        for (const sample of line.slice(1)) input.move(sample);
-        expect(input.preview()).toMatchObject({ kind: 'stroke', refused: true });
-        const stroke = input.release();
-        const fill = click(input, { x: 450, y: 350 });
+      input.press(line[0]!, 'left');
+      for (const sample of line.slice(1)) input.move(sample);
+      expect(input.preview()).toMatchObject({ kind: 'stroke', refused: true });
+      const stroke = input.release();
+      const fill = click(input, { x: 450, y: 350 });
 
-        expect(stroke).toMatchObject({ message: 'Not in this Level' });
-        expect(fill).toMatchObject({ message: 'Not in this Level' });
-        expect(game.world.lines).toEqual([]);
-        expect(game.world.objects[0]!.fill).toBeNull();
+      expect(stroke).toMatchObject({ message: 'Not in this Level' });
+      expect(fill).toMatchObject({ message: 'Not in this Level' });
+      expect(game.world.lines).toEqual([]);
+      expect(game.world.objects[0]!.fill).toBeNull();
+    });
+
+    it("can't pick a Colour the Level doesn't have, and falls back from one to the first it has", () => {
+      const game = createGame(true);
+      const { input } = drawingOver(game);
+      input.pick('blue');
+      game.editInk((table) => {
+        table.tanks.grey = 0;
+        table.tanks.green = 0;
       });
-    }
+
+      input.pick('green');
+      expect(input.tool).toBe('blue');
+
+      game.editInk((table) => (table.tanks.blue = 0));
+      input.tick();
+      expect(input.tool).toBe('black');
+    });
+
+    it('picks any Colour with Ink costs off, even one whose maximum is 0', () => {
+      const game = createGame(false);
+      game.editInk((table) => (table.tanks.blue = 0));
+      const { input } = drawingOver(game);
+
+      input.pick('blue');
+      input.tick();
+
+      expect(input.tool).toBe('blue');
+    });
 
     it('flashes "Not enough <Colour>" around an Object its Fill\'s Tank can\'t pay for', () => {
       const game = createGame(true);
@@ -776,6 +803,7 @@ describe('Drawing input', () => {
         get allowed() {
           return { eraser: answers.eraser };
         },
+        has: () => true,
       };
       return { input: new DrawingInput(commands), erased: () => erased };
     }

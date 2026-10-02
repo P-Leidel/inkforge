@@ -148,7 +148,7 @@ export class TuningPanel {
       header,
       element('div', 'tuning-section', 'Ink'),
       this.switch(
-        'Ink costs (off: Ink is unlimited)',
+        'Ink costs (off: every Colour, unlimited)',
         () => this.game.inkCosts,
         (on) => (this.game.inkCosts = on),
       ),

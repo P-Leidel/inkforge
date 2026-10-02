@@ -51,7 +51,7 @@ Everything an Arena starts with: the Arena itself (its Terrain, Spawn and Ink Co
 _Avoid_: Stage, map, arena description, scenario
 
 **Campaign**:
-The first mode: a fixed sequence of handmade Levels, each unlocked by clearing the one before. Ink Tanks reset to the Level's maximums every Wave; a Colour whose maximum is 0 is not in the Level.
+The first mode: a fixed sequence of handmade Levels, each unlocked by clearing the one before. Ink Tanks reset to the Level's maximums every Wave; a Colour whose maximum is 0 is not in the Level, and is not shown. With Ink costs off, every Colour is in every Level, unlimited.
 
 **Free play**:
 Playing any Level outside the Campaign: the Sandbox, a Gallery demo or a stress test. The sandbox tool, sending in Enemies by hand, is on hand, and what the Level leaves out, its Ink Tank maximums or its Waves, is as tuned, never as the last Level left it.

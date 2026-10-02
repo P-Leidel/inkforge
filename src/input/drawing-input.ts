@@ -1,5 +1,5 @@
 import type { Vec2 } from '../geometry/vec2';
-import type { Colour } from '../materials/colour';
+import { COLOURS, type Colour } from '../materials/colour';
 import type {
   Allowed,
   CostEstimate,
@@ -48,6 +48,8 @@ export interface DrawingCommands {
   undo(): UndoOutcome;
   /** What the player may do now: drawing input reads whether the Eraser is on hand here. */
   readonly allowed: Pick<Allowed, 'eraser'>;
+  /** Whether this Level has `colour`: one it doesn't can't be picked. */
+  has(colour: Colour): boolean;
 }
 
 /**
@@ -122,13 +124,13 @@ export class DrawingInput {
   }
 
   /**
-   * Picks a Colour to draw in, or the Eraser, if it is on hand: put away, it
-   * can't be picked. A Stroke being drawn carries on in a new Colour, and is
+   * Picks a Colour to draw in, or the Eraser, if it is on hand: put away, or
+   * a Colour the Level doesn't have, it can't be picked. A Stroke being drawn carries on in a new Colour, and is
    * dropped when the Eraser is picked; a held Eraser stops when a Colour is
    * picked.
    */
   pick(tool: Tool): void {
-    if (tool === 'eraser' && !this.commands.allowed.eraser) return;
+    if (tool === 'eraser' ? !this.commands.allowed.eraser : !this.commands.has(tool)) return;
     this.picked = tool;
     if (tool === 'eraser') this.stroke = null;
     else this.erasing = null;
@@ -222,14 +224,19 @@ export class DrawingInput {
 
   /**
    * Once a frame, before physics steps: with the Eraser picked but not on
-   * hand (a Campaign Level was loaded), the pick falls back to grey;
+   * hand, or a Colour the Level doesn't have (a Campaign Level was loaded),
+   * the pick falls back to the first Colour it has;
    * otherwise a held Eraser erases along its path since it last erased, and
    * carries on from its end. Held still, it keeps erasing what moves into
    * the brush. Returns what to flash if erasing was refused for the first
    * time this press.
    */
   tick(): Flash | null {
-    if (this.picked === 'eraser' && !this.commands.allowed.eraser) this.pick('grey');
+    const picked = this.picked;
+    if (picked === 'eraser' ? !this.commands.allowed.eraser : !this.commands.has(picked)) {
+      const colour = COLOURS.find((colour) => this.commands.has(colour));
+      if (colour) this.pick(colour);
+    }
     return this.erase();
   }
 
