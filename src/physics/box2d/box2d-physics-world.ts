@@ -85,6 +85,7 @@ import type {
   ContactHit,
   ContactPair,
   NearBody,
+  NearShape,
   PhysicsWorld,
   PhysicsWorldOptions,
   ShapeId,
@@ -145,9 +146,10 @@ interface AddedCapsule {
  * change the engine. Nothing is carried over from the old body by hand.
  */
 interface BodyDescription {
-  readonly own: BodyShapes;
+  /** Its own shapes; `removeOwnShapes` takes some away. */
+  own: BodyShapes;
   /** Its own shapes' ids, one per polygon, capsule or circle; they stay through rebuilds. */
-  readonly shapes: readonly ShapeId[];
+  shapes: readonly ShapeId[];
   /** The surface of its own shapes: a copy, so editing the one it was given changes nothing. */
   surface: Surface;
   /** Mass per m², the same over its own shapes; 1 on fixed bodies, which have no mass. */
@@ -179,7 +181,7 @@ interface BodyRecord extends BodyDescription {
   b2Id: b2BodyId;
   frozen: boolean;
   /** The mass of its own shapes at density 1. */
-  readonly unit: UnitMass;
+  unit: UnitMass;
   /** What a moving body was created with, to read back exactly while the engine still holds it. */
   placed?: Placement;
 }
@@ -397,14 +399,18 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
   /** The mass of a body's own shapes at density 1; none for a fixed body. */
   function unitMassOfDef(def: BodyDef): UnitMass {
     if (!def.motion) return NO_MASS;
-    const { shapes } = def;
+    return unitMassOfShapes(def.shapes);
+  }
+
+  /** The mass of own shapes at density 1. */
+  function unitMassOfShapes(shapes: BodyShapes): UnitMass {
     switch (shapes.kind) {
       case 'polygons':
         return unitMassOf(shapes.polygons);
       case 'circle':
         return unitMassOfCircle(shapes.radius);
       case 'capsules':
-        throw new Error('A moving body of capsules is not supported');
+        return unitMassOfCapsules(shapes.segments, shapes.radius);
     }
   }
 
@@ -518,6 +524,43 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     const r = toM(radius);
     const area = Math.PI * r * r;
     return { area, centre: new b2Vec2(0, 0), inertia: 0.5 * area * r * r };
+  }
+
+  /**
+   * Capsules' mass at density 1, about their common centre, as the engine
+   * reckons each capsule's: where two meet, their round ends overlap and
+   * count twice, as they do in the engine.
+   */
+  function unitMassOfCapsules(segments: readonly Segment[], radius: number): UnitMass {
+    const r = toM(radius);
+    let area = 0;
+    let cx = 0;
+    let cy = 0;
+    let inertiaAboutOrigin = 0;
+    for (const { a, b } of segments) {
+      const p = toB2(a);
+      const q = toB2(b);
+      const length = Math.hypot(q.x - p.x, q.y - p.y);
+      const circle = Math.PI * r * r;
+      const box = 2 * r * length;
+      const mass = circle + box;
+      const mx = (p.x + q.x) / 2;
+      const my = (p.y + q.y) / 2;
+      // Box2D's b2ComputeCapsuleMass, about the capsule's centre.
+      const lc = (4 * r) / (3 * Math.PI);
+      const h = length / 2;
+      const inertia =
+        circle * (0.5 * r * r + h * h + 2 * h * lc) + (box * (4 * r * r + length * length)) / 12;
+      area += mass;
+      cx += mass * mx;
+      cy += mass * my;
+      inertiaAboutOrigin += inertia + mass * (mx * mx + my * my);
+    }
+    if (area === 0) return NO_MASS;
+    cx /= area;
+    cy /= area;
+    const inertia = inertiaAboutOrigin - area * (cx * cx + cy * cy);
+    return { area, centre: new b2Vec2(cx, cy), inertia };
   }
 
   function unitMassOf(parts: readonly Polygon[]): UnitMass {
@@ -1066,6 +1109,38 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       }
     },
 
+    shapesOf(id) {
+      return record(id).shapes;
+    },
+
+    removeOwnShapes(id, shapes) {
+      const rec = record(id);
+      const { own } = rec;
+      if (own.kind !== 'capsules' && own.kind !== 'polygons')
+        throw new Error('Only capsules and polygons can be removed from a body');
+      const going = new Set(shapes);
+      const keep = rec.shapes.map((shape) => !going.has(shape));
+      if (!keep.some(Boolean)) throw new Error('A body must keep one of its own shapes');
+      for (const b2Shape of ownShapes(rec)) {
+        if (going.has(b2Shape_GetUserData(b2Shape) as ShapeId)) b2DestroyShape(b2Shape);
+      }
+      rec.shapes = rec.shapes.filter((_, k) => keep[k]);
+      rec.own =
+        own.kind === 'capsules'
+          ? { ...own, segments: own.segments.filter((_, k) => keep[k]) }
+          : { ...own, polygons: own.polygons.filter((_, k) => keep[k]) };
+      if (rec.moves) {
+        rec.unit = unitMassOfShapes(rec.own);
+        if (!rec.frozen) b2Body_ApplyMassFromShapes(rec.b2Id);
+      }
+      // The engine's end events for these are lost at the next step's start.
+      for (const [key, pair] of touching) {
+        if (!going.has(pair.shapeA) && !going.has(pair.shapeB)) continue;
+        untouch(key);
+        pendingEnds.push(pair);
+      }
+    },
+
     addCapsule(body, segment, radius, surface) {
       const rec = record(body);
       const id = nextShapeId++ as ShapeId;
@@ -1189,9 +1264,18 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
     touchNormal,
 
     bodiesWithin(centre, radius) {
+      const nearest = new Map<BodyId, NearBody>();
+      for (const { body, point, distance } of world.shapesWithin(centre, radius)) {
+        const current = nearest.get(body);
+        if (!current || distance < current.distance) nearest.set(body, { body, point, distance });
+      }
+      return [...nearest.values()];
+    },
+
+    shapesWithin(centre, radius) {
       const c = toB2(centre);
       const r = toM(radius);
-      const nearest = new Map<BodyId, NearBody>();
+      const found: NearShape[] = [];
       // The query tests fat bounding boxes only; the distance is measured
       // to each shape.
       const box = new b2AABB(c.x - r, c.y - r, c.x + r, c.y + r);
@@ -1207,15 +1291,12 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
           if (!point) return true;
           const distance = Math.hypot(point.x - centre.x, point.y - centre.y);
           if (distance > radius) return true;
-          const current = nearest.get(body);
-          if (!current || distance < current.distance) {
-            nearest.set(body, { body, point, distance });
-          }
+          found.push({ body, shape: id, point, distance });
           return true;
         },
         null,
       );
-      return [...nearest.values()];
+      return found;
     },
 
     shapesNear({ minX, minY, maxX, maxY }) {

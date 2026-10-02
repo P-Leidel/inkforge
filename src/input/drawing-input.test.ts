@@ -414,6 +414,33 @@ describe('Drawing input', () => {
     });
   });
 
+  describe('the Frozen preview', () => {
+    it('pins a Line drawn in mid-air, and not one drawn down to the ground', () => {
+      const game = createGame(false);
+      const { input } = drawingOver(game);
+      const drag = (path: readonly Vec2[]) => {
+        const samples = dragAlong(path);
+        input.press(samples[0]!, 'left');
+        for (const sample of samples.slice(1)) input.move(sample);
+        return input.preview();
+      };
+
+      expect(
+        drag([
+          { x: 300, y: 300 },
+          { x: 500, y: 300 },
+        ]),
+      ).toMatchObject({ kind: 'stroke', closes: false, pinned: true });
+      input.release();
+      expect(
+        drag([
+          { x: 700, y: 700 },
+          { x: 700, y: 880 },
+        ]),
+      ).toMatchObject({ kind: 'stroke', closes: false, pinned: false });
+    });
+  });
+
   describe('the refusal preview', () => {
     it('shows a closing Stroke over an Object as refused, worked out again only on new samples', () => {
       const game = createGame(false);
@@ -471,6 +498,7 @@ describe('Drawing input', () => {
         colour: 'black',
         samples: null,
         closes: false,
+        pinned: false,
         refused: false,
         pointer: { x: 300, y: 200 },
         cost: null,

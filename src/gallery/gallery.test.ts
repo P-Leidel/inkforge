@@ -108,6 +108,14 @@ describe('Colour gallery', () => {
     });
   }
 
+  it('Grounds every Line of every demo: none hangs Frozen', () => {
+    for (const demo of GALLERY) {
+      const world = createWorld({ arena: demo.arena });
+      demo.build(world);
+      for (const line of world.lines) expect(line.grounded, demo.name).toBe(true);
+    }
+  });
+
   it('Three Waves: loads with Waves on, paused in the first Intermission', () => {
     const game = createGame(true);
 
@@ -122,7 +130,9 @@ describe('Colour gallery', () => {
     const world = createWorld();
     BOUNCE_DEMO.build(world);
 
-    expect(world.lines.map((line) => line.colour)).toEqual([...COLOURS]);
+    // Each on a grey post, drawn after them.
+    expect(world.lines.slice(0, 5).map((line) => line.colour)).toEqual([...COLOURS]);
+    expect(world.lines.every((line) => line.grounded)).toBe(true);
   });
 
   it('Slide: the box races down blue and holds on black', () => {
@@ -227,7 +237,7 @@ describe('Colour gallery', () => {
     expect(greyFilled).toBeGreaterThan(hollow!);
     expect(blackFilled).toBeGreaterThan(greyFilled!);
     expect(onGrey).toBeGreaterThan(1.5 * blackFilled!);
-    const [, ...green] = world.lines;
+    const green = world.lines.slice(1, 4);
     for (const line of green) expect(line.pieces.some((p) => p.wear > 0)).toBe(true);
   });
 

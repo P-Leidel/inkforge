@@ -4,7 +4,7 @@ import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import type { SandboxWorld } from './sandbox-world';
 import { STEP_SECONDS } from './sandbox-world';
-import { drawLine, drawObject, objectById, runFor, sandboxWorlds } from './test-support';
+import { drawLine, drawObject, drawPost, objectById, runFor, sandboxWorlds } from './test-support';
 
 const createWorld = sandboxWorlds();
 const TABLE = DEFAULT_MATERIAL_TABLE;
@@ -139,6 +139,7 @@ describe('A red Line', () => {
 
   it('sets off a bomb at its end', () => {
     const world = createWorld();
+    drawPost(world, { x: 300, y: 600 });
     const line = fuse(world, { x: 300, y: 600 }, { x: 540, y: 600 });
     // A Frozen 40 px red ball just past the end of the fuse.
     const bomb = drawObject(world, dragCircle({ x: 570, y: 600 }, 20), 'red');
@@ -153,6 +154,8 @@ describe('A red Line', () => {
 
   it('damages a grey Piece of another Line nearby, and leaves one beyond its reach alone', () => {
     const world = createWorld();
+    // A post under the left ends Grounds all three Lines.
+    drawPost(world, { x: 300, y: 600 });
     fuse(world, { x: 300, y: 600 }, { x: 540, y: 600 });
     const near = drawLine(world, [
       { x: 300, y: 630 },

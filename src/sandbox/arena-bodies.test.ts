@@ -50,6 +50,11 @@ class StubPhysics implements BodiesPhysics {
     this.log.push(`slide ${body}`);
   };
 
+  shapesOf = () => [];
+  removeOwnShapes = (body: BodyId, shapes: readonly ShapeId[]) => {
+    this.log.push(`remove own shapes ${shapes.join(' ')} of ${body}`);
+  };
+
   addCapsule = (body: BodyId) => {
     const shape = this.nextShape++ as ShapeId;
     this.capsules.get(body)!.add(shape);

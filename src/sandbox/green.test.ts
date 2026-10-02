@@ -6,6 +6,7 @@ import type { SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
+  drawPost,
   entriesOf,
   hear,
   objectById,
@@ -110,6 +111,7 @@ describe('Sticking', () => {
    */
   function hangUnderLine(world: SandboxWorld): { box: number; line: number } {
     const box = drawObject(world, dragBox(530, 460, 40, 40), 'green');
+    drawPost(world, { x: 400, y: 400 });
     const line = floor(world, 400, 400, 700, 'grey');
     launch(world, box, { x: 0, y: -400 });
     runFor(world, 1);

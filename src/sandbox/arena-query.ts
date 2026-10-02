@@ -11,11 +11,11 @@ import {
   type Bounds,
   type Polygon,
 } from '../geometry/polygon';
-import type { Segment } from '../geometry/segment';
+import { distanceSegmentToSegment, type Segment } from '../geometry/segment';
 import { capsulePolygon } from '../geometry/separation';
 import { applyTransform, transformPoints, type Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
-import type { BodyId, NearBody, PhysicsWorld } from '../physics';
+import type { BodyId, NearBody, NearShape, PhysicsWorld } from '../physics';
 import { COLLIDER_TOLERANCE } from '../stroke/stroke-rules';
 import { spawnEdgeX, type Arena } from './arena';
 import type { ArenaBodies, Figure, Form } from './arena-bodies';
@@ -46,13 +46,25 @@ export type { Capsule } from '../geometry/overlap';
  */
 
 /** What the query asks of the physics module. */
-export type QueryPhysics = Pick<PhysicsWorld, 'shapesNear' | 'getTransform' | 'bodiesWithin'>;
+export type QueryPhysics = Pick<
+  PhysicsWorld,
+  'shapesNear' | 'getTransform' | 'bodiesWithin' | 'shapesWithin'
+>;
 
 /** An Object, as a query names it. */
 export type FoundObject = Extract<Thing, { readonly thing: 'object' }>;
 
 type ObjectForm = Extract<Form, { readonly kind: 'object' }>;
+type CapsulesForm = Extract<Form, { readonly kind: 'capsules' }>;
 type EnemyForm = Extract<Form, { readonly kind: 'enemy' }>;
+
+/** What a new Line touches (`ArenaQuery.touchingLine`). */
+export interface LineTouches {
+  /** Whether it touches the Terrain, the Ink Core or a fixed (Grounded) Piece. */
+  readonly grounded: boolean;
+  /** The Lines that aren't Grounded whose Pieces it touches, by id, oldest first. */
+  readonly loose: readonly number[];
+}
 
 /** What the query reads of the Arena: where its Spawn edge is. */
 export type SpawnEdge = Pick<Arena, 'spawnSide' | 'width'>;
@@ -156,6 +168,20 @@ export class ArenaQuery {
     return parts.map((part) => transformPoints(part, transform));
   }
 
+  /**
+   * A Piece's capsule centre lines where it is now: a fixed Piece's never
+   * move, and a Piece of a Line that isn't Grounded moves with its body.
+   */
+  private segments(body: BodyId, form: CapsulesForm): readonly Segment[] {
+    if (!form.moves) return form.segments;
+    const transform = this.physics.getTransform(body);
+    if (transform.x === 0 && transform.y === 0 && transform.angle === 0) return form.segments;
+    return form.segments.map(({ a, b }) => ({
+      a: applyTransform(a, transform),
+      b: applyTransform(b, transform),
+    }));
+  }
+
   /** A circle's centre where it is now. */
   private centre(body: BodyId): Vec2 {
     const { x, y } = this.physics.getTransform(body);
@@ -180,7 +206,7 @@ export class ArenaQuery {
       case 'enemy':
         return polygonBounds(this.enemyOutline(body, form));
       case 'capsules':
-        return grow(polygonBounds(form.segments.flatMap(ends)), form.radius);
+        return grow(polygonBounds(this.segments(body, form).flatMap(ends)), form.radius);
       case 'circle': {
         const { x, y } = this.centre(body);
         return {
@@ -335,7 +361,7 @@ export class ArenaQuery {
         case 'object':
           return this.parts(body, form).some((solid) => convexPolygonsOverlap(room, solid));
         case 'capsules':
-          return form.segments.some((segment) =>
+          return this.segments(body, form).some((segment) =>
             convexPolygonsOverlap(room, capsulePolygon(segment, form.radius)),
           );
         case 'enemy':
@@ -362,7 +388,7 @@ export class ArenaQuery {
           if (body === squeezed) return false;
           return this.parts(body, form).some((solid) => convexPolygonsOverlap(part, solid));
         case 'capsules':
-          return form.segments.some((segment) =>
+          return this.segments(body, form).some((segment) =>
             convexPolygonsOverlap(part, capsulePolygon(segment, form.radius)),
           );
         case 'circle':
@@ -413,13 +439,57 @@ export class ArenaQuery {
     const found: Segment[] = [];
     for (const run of runs(path)) {
       const bands: Capsule[] = [];
-      for (const { what, form } of this.near(polygonBounds(run.flatMap(ends)), 0)) {
+      for (const { what, body, form } of this.near(polygonBounds(run.flatMap(ends)), 0)) {
         if (form.kind !== 'capsules' || what?.thing !== 'piece') continue;
-        for (const segment of form.segments) bands.push({ segment, radius: form.radius });
+        for (const segment of this.segments(body, form))
+          bands.push({ segment, radius: form.radius });
       }
       for (const { a, b } of run) found.push(...partsInsideCapsules(a, b, bands));
     }
     return found;
+  }
+
+  /**
+   * Grounding: what a new Line, the capsules `capsules` in world
+   * coordinates, touches within `tolerance` px of its surface: whether it
+   * touches the Terrain, the Ink Core or a fixed Piece (one of a Grounded
+   * Line), and which Lines that aren't Grounded it touches. Objects, Rubble,
+   * Enemies, Droplets and Patches never ground a Line.
+   */
+  touchingLine(capsules: readonly Capsule[], tolerance: number): LineTouches {
+    let grounded = false;
+    const loose = new Set<number>();
+    for (const { segment, radius } of capsules) {
+      const { a, b } = segment;
+      const reach = radius + tolerance;
+      for (const { what, body, form } of this.near(polygonBounds([a, b]), reach)) {
+        switch (form.kind) {
+          case 'terrain':
+            if (!grounded)
+              grounded = form.polygons.some((solid) =>
+                capsuleOverlapsPolygon(a, b, reach, solid, 0),
+              );
+            break;
+          case 'capsules': {
+            if (what?.thing !== 'piece' || (!form.moves && grounded)) break;
+            if (form.moves && loose.has(what.id)) break;
+            const touches = this.segments(body, form).some(
+              (other) => distanceSegmentToSegment(a, b, other.a, other.b) <= reach + form.radius,
+            );
+            if (!touches) break;
+            if (form.moves) loose.add(what.id);
+            else grounded = true;
+            break;
+          }
+          case 'object':
+          case 'enemy':
+          case 'circle':
+          case 'capsule':
+            break;
+        }
+      }
+    }
+    return { grounded, loose: [...loose].sort((p, q) => p - q) };
   }
 
   /**
@@ -464,7 +534,7 @@ export class ArenaQuery {
       case 'object':
         return brushTouchesPolygon(brush, this.outline(body, form));
       case 'capsules':
-        return brushTouchesCapsules(brush, form.segments, form.radius);
+        return brushTouchesCapsules(brush, this.segments(body, form), form.radius);
       case 'circle':
         return brushTouchesCircle(brush, this.centre(body), form.radius);
       case 'capsule': {
@@ -483,5 +553,14 @@ export class ArenaQuery {
    */
   bodiesWithin(centre: Vec2, radius: number): NearBody[] {
     return this.physics.bodiesWithin(centre, radius);
+  }
+
+  /**
+   * Radius, shape by shape: every body's own shape, not a Patch, within
+   * `radius` px of `centre`, measured to its nearest point. In no
+   * particular order.
+   */
+  shapesWithin(centre: Vec2, radius: number): NearShape[] {
+    return this.physics.shapesWithin(centre, radius);
   }
 }

@@ -1,0 +1,13 @@
+# Lines stay fixed only when Grounded; the rest start Frozen and fall
+
+Status: Accepted. Supersedes [ADR 0002](0002-lines-stay-fixed.md).
+
+ADR 0002 kept every Line fixed where it was drawn, even in mid-air, for one readable rule ("lines stay, shapes fall"). That kept ramps and walls doing exactly what the player drew, but it took away something players reach for at once: drawing a bar of ink above the Enemies and dropping it on them. Dropping things is part of the game, and a bar is the cheapest thing to drop.
+
+So a Line stays fixed only when it is **Grounded**: it touches the Terrain, or a Line that is Grounded, transitively, within a small tolerance (about half a Line's thickness, `groundTolerance` in the material table), so a Line drawn to end at the ground counts. Objects, Rubble and Enemies never ground a Line. Walls and ramps are built from the ground up, so they keep the old rule and stay readable; grounding is what tells a wall from a bar.
+
+A Line that isn't Grounded starts **Frozen**, as an Object does ([ADR 0004](0004-objects-start-frozen.md)), for the same reason: timing. It hangs where it was drawn until it is Released (right-click), hit hard enough or reached by a strong enough Blast, through the same thresholds as a Frozen Object. Then the whole Line falls as one rigid body with exactly its drawn shape, still no joints ([ADR 0003](0003-no-joints-in-mvp.md)). Its Pieces keep their own durability and can still break off one by one; the rest stays one body. It weighs its ink by its Colour's Outline density, so its hits follow the one impact rule: a black bar hurts, a grey one barely does, and red goes off when the hit beats its durability.
+
+We rejected Lines that fall unless supported (the alternative ADR 0002 turned down) because they bring back wobbly, unstable structures; and we rejected a "pinned Line" the player could mark fixed in mid-air, because it is a second rule to learn where grounding already says what is fixed. Two ungrounded Lines that touch are separate bodies, each Frozen: Releasing one doesn't release the other, though it may knock it loose. A Frozen Line a Grounded one is later drawn to touch becomes Grounded where it hangs, so a shelf and its post can be drawn in either order. Once a Line has fallen it stays loose, like an Object: it never becomes Grounded again, even resting on the Terrain, Enemies can shove it, and in the Aftermath it is Frozen again if it is at rest.
+
+Collapse, checking grounding again when a Piece breaks, is left for later: until then a Grounded Line stays fixed, whatever breaks.

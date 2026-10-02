@@ -47,13 +47,22 @@ export type BodiesPhysics = Pick<
   | 'removeShape'
   | 'setSurface'
   | 'setShapeSurface'
+  | 'shapesOf'
+  | 'removeOwnShapes'
   | 'reset'
 >;
 
 /** What of the Contact ledger Arena bodies calls. */
 export type BodiesLedger<T> = Pick<
   ContactLedger<T>,
-  'newId' | 'register' | 'unregister' | 'squeezed' | 'party' | 'restore'
+  | 'newId'
+  | 'register'
+  | 'unregister'
+  | 'unregisterParty'
+  | 'hostShape'
+  | 'squeezed'
+  | 'party'
+  | 'restore'
 >;
 
 /** Where an Object's body is, what it is made of, and how it starts. */
@@ -105,6 +114,33 @@ export interface EnemyBody {
   readonly velocity?: Vec2;
 }
 
+/**
+ * Where a Line that isn't Grounded is, and how it starts: one moving body of
+ * capsules, its Pieces' segments in its own coordinates.
+ */
+export interface LooseLineBody {
+  /** World position of the body's origin; the world origin as it is drawn. */
+  readonly position: Vec2;
+  /** Rotation about `position`, radians; 0 by default. */
+  readonly angle?: number;
+  readonly thickness: number;
+  readonly mass: number;
+  /** Whether it starts Frozen. */
+  readonly frozen: boolean;
+  /** Linear velocity, px/s, if it starts moving (not Frozen). */
+  readonly velocity?: Vec2;
+  /** Angular velocity, rad/s, if it starts moving (not Frozen). */
+  readonly angularVelocity?: number;
+}
+
+/** One Piece of a Line that isn't Grounded: its segments in the body's own coordinates. */
+export interface LoosePiece<P> {
+  readonly segments: readonly Segment[];
+  readonly what: Thing;
+  /** Who it is, given the body and its own shapes on it. */
+  readonly who: (body: BodyId, shapes: readonly ShapeId[]) => P;
+}
+
 /** Who a new body is, given the body: a kind builds its record around it. */
 type Who<P> = (body: BodyId) => P;
 
@@ -123,8 +159,16 @@ type What = Thing | null;
 export type Form =
   /** The Terrain: convex polygons. */
   | { readonly kind: 'terrain'; readonly polygons: readonly Polygon[] }
-  /** A Piece: connected capsules. */
-  | { readonly kind: 'capsules'; readonly segments: readonly Segment[]; readonly radius: number }
+  /**
+   * A Piece: connected capsules. A fixed Piece's never leave the origin; a
+   * Piece of a Line that isn't Grounded `moves` with its body.
+   */
+  | {
+      readonly kind: 'capsules';
+      readonly segments: readonly Segment[];
+      readonly radius: number;
+      readonly moves?: boolean;
+    }
   /** An Object: the Outline it is drawn and filled by, and the convex parts it collides with. */
   | { readonly kind: 'object'; readonly outline: Polygon; readonly parts: readonly Polygon[] }
   /** Rubble or a Droplet: a circle about the origin. */
@@ -169,6 +213,17 @@ interface ShapeEntry extends Figure {
   readonly what: Thing;
   readonly type: ThingType;
   readonly order: number;
+  /** The Party it lies on. */
+  readonly host: PartyId;
+}
+
+/** A Piece of a Line that isn't Grounded: some of its body's own shapes, and a Party. */
+interface PartEntry extends Figure {
+  readonly what: Thing;
+  readonly party: PartyId;
+  /** Its own shapes on the body. */
+  readonly shapes: readonly ShapeId[];
+  readonly order: number;
 }
 
 /** Where a Patch can be laid on a body made of `form`. */
@@ -193,6 +248,10 @@ export class ArenaBodies<T> {
   private readonly bodies = new Map<BodyId, BodyEntry>();
   /** Every added shape, in the order it was added. */
   private readonly shapes = new Map<ShapeId, ShapeEntry>();
+  /** The Pieces of Lines that aren't Grounded, by each of their own shapes. */
+  private readonly parts = new Map<ShapeId, PartEntry>();
+  /** Those Pieces by their Party. */
+  private readonly partsByParty = new Map<PartyId, PartEntry>();
   /** Bodies and shapes added so far: the next one's place in the order. */
   private added = 0;
 
@@ -253,6 +312,56 @@ export class ArenaBodies<T> {
     });
     const form: Form = { kind: 'capsules', segments, radius: thickness / 2 };
     return this.register(body, type, form, what, who);
+  }
+
+  /**
+   * Adds a Line that isn't Grounded, Party `line`, with `type`'s surface:
+   * one moving body of capsules, whose hits wake Frozen Objects, each of its
+   * Pieces a Party of its own, some of its shapes. Patches lie along each
+   * Piece's capsules. Returns the Pieces' Parties, in order.
+   */
+  addLooseLine<P extends Party<T>>(
+    def: LooseLineBody,
+    type: ThingType,
+    line: PartyId,
+    pieces: readonly LoosePiece<P>[],
+  ): P[] {
+    const radius = def.thickness / 2;
+    const body = this.physics.addBody({
+      shapes: { kind: 'capsules', segments: pieces.flatMap((p) => p.segments), radius },
+      surface: this.numbers.surface(type),
+      position: def.position,
+      angle: def.angle,
+      motion: {
+        mass: def.mass,
+        velocity: def.velocity,
+        angularVelocity: def.angularVelocity,
+        frozen: def.frozen,
+        wakes: true,
+      },
+      reportsHits: true,
+    });
+    const form: Form = { kind: 'capsules', segments: [], radius, moves: true };
+    this.track(body, line, null, type, form, false);
+    const own = this.physics.shapesOf(body);
+    let k = 0;
+    return pieces.map(({ segments, what, who }) => {
+      const shapes = own.slice(k, (k += segments.length));
+      const party = who(body, shapes);
+      const entry: PartEntry = {
+        what,
+        body,
+        form: { kind: 'capsules', segments, radius, moves: true },
+        party: party.id,
+        shapes,
+        order: this.added++,
+      };
+      for (const shape of shapes) this.parts.set(shape, entry);
+      this.partsByParty.set(party.id, entry);
+      this.contacts.register(party);
+      this.say({ kind: 'added', what });
+      return party;
+    });
   }
 
   /** Adds an Object with `type`'s surface; Patches lie along `outline`. */
@@ -362,11 +471,47 @@ export class ArenaBodies<T> {
       this.say({ kind: 'went', what: this.shapes.get(shape)!.what, why: 'with-host', ...motion });
       this.shapes.delete(shape);
     }
+    const parts = this.partsOf(body);
+    for (const part of parts) this.forgetPart(part);
     this.bodies.delete(body);
     this.physics.removeBody(body);
     this.contacts.unregister(body);
     if (entry.what) this.say({ kind: 'went', what: entry.what, why, ...motion });
-    this.gone(new Set([entry.party]));
+    for (const part of parts) this.say({ kind: 'went', what: part.what, why, ...motion });
+    this.gone(new Set([entry.party, ...parts.map((part) => part.party)]));
+  }
+
+  /**
+   * Removes one Piece of a Line that isn't Grounded, Party `party`, for
+   * `why`: its shapes, with the shapes added on it, and its Party. The body
+   * stays with the rest. Every kind hears that it went before this returns.
+   * Does nothing to one already gone.
+   */
+  removePart(party: PartyId, why: Why): void {
+    const part = this.partsByParty.get(party);
+    if (!part) return;
+    const { body } = part;
+    const motion = this.motionOf(body);
+    for (const [shape, added] of this.shapes) {
+      if (added.host !== party) continue;
+      this.say({ kind: 'went', what: added.what, why: 'with-host', ...motion });
+      this.dropShape(shape);
+    }
+    this.forgetPart(part);
+    this.physics.removeOwnShapes(body, part.shapes);
+    this.contacts.unregisterParty(party);
+    this.say({ kind: 'went', what: part.what, why, ...motion });
+    this.gone(new Set([party]));
+  }
+
+  /** The Pieces of the Line that isn't Grounded with this body, in order; none for any other body. */
+  private partsOf(body: BodyId): PartEntry[] {
+    return [...this.partsByParty.values()].filter((part) => part.body === body);
+  }
+
+  private forgetPart(part: PartEntry): void {
+    for (const shape of part.shapes) this.parts.delete(shape);
+    this.partsByParty.delete(part.party);
   }
 
   /** Where a body is and how it moves, as it or a shape on it goes. */
@@ -397,8 +542,9 @@ export class ArenaBodies<T> {
     if (body === undefined || !entry) return null;
     const shape = this.physics.addCapsule(body, segment, radius, this.numbers.surface(type));
     entry.shapes.add(shape);
+    if (this.partsByParty.has(host)) this.contacts.hostShape(shape, host);
     const form: Form = { kind: 'capsule', segment, radius };
-    this.shapes.set(shape, { body, type, what, form, order: this.added++ });
+    this.shapes.set(shape, { body, type, what, form, order: this.added++, host });
     this.say({ kind: 'added', what });
     return { shape, body };
   }
@@ -428,6 +574,8 @@ export class ArenaBodies<T> {
    * lands on.
    */
   surfaceOf(party: PartyId): HostSurface | null {
+    const part = this.partsByParty.get(party);
+    if (part) return surfaceOfForm(part.form);
     const body = this.contacts.party(party)?.body;
     const entry = body === undefined ? undefined : this.bodies.get(body);
     return entry?.lands ? surfaceOfForm(entry.form) : null;
@@ -440,7 +588,7 @@ export class ArenaBodies<T> {
   figures(found: Iterable<BodyShape>): Figure[] {
     const figures = new Map<number, Figure>();
     for (const { body, shape } of found) {
-      const added = this.shapes.get(shape);
+      const added = this.shapes.get(shape) ?? this.parts.get(shape);
       const entry = added?.body === body ? added : this.bodies.get(body);
       if (entry) figures.set(entry.order, { what: entry.what, body: entry.body, form: entry.form });
     }
@@ -468,8 +616,10 @@ export class ArenaBodies<T> {
    */
   clear(): void {
     for (const shape of [...this.shapes.keys()]) this.dropShape(shape);
-    for (const { body, what } of [...this.bodies.values()]) {
-      if (!what) continue; // the Terrain or the Ink Core
+    this.parts.clear();
+    this.partsByParty.clear();
+    for (const { body, type } of [...this.bodies.values()]) {
+      if (!type) continue; // the Terrain or the Ink Core
       this.bodies.delete(body);
       this.physics.removeBody(body);
       this.contacts.unregister(body);
@@ -484,6 +634,8 @@ export class ArenaBodies<T> {
     this.physics.reset();
     this.bodies.clear();
     this.shapes.clear();
+    this.parts.clear();
+    this.partsByParty.clear();
     this.contacts.restore(contacts);
   }
 }

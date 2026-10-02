@@ -7,6 +7,7 @@ import type { SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
+  drawPost,
   entriesOf,
   FIXED_BODIES,
   hear,
@@ -60,6 +61,7 @@ describe('Breaking', () => {
 
   it('a grey Object is cracked by a hard landing and breaks on the next', () => {
     const world = createWorld();
+    drawPost(world, { x: 200, y: 700 });
     drawLine(
       world,
       [

@@ -15,6 +15,7 @@ import type { EnemyView, PatchView, SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
+  drawPost,
   entriesOf,
   hear,
   mirrored,
@@ -22,6 +23,7 @@ import {
   runFor,
   sandboxWorlds,
   wentOf,
+  worldSegments,
 } from './test-support';
 
 const createWorld = sandboxWorlds();
@@ -271,7 +273,7 @@ describe('Enemies walk', () => {
     ]);
     const outcome = world.submitStroke(dragBox(-30, 400, 60, 60), 'grey');
 
-    const xs = world.lines[0]!.segments.flatMap(({ a, b }) => [a.x, b.x]);
+    const xs = worldSegments(world.lines[0]!).flatMap(({ a, b }) => [a.x, b.x]);
     expect(Math.min(...xs)).toBeCloseTo(0, 6);
     expect(outcome.kind).toBe('rejected');
   });
@@ -476,7 +478,7 @@ describe('Strokes meet Enemies', () => {
     return onlyEnemy(world);
   };
   const xsOf = (world: SandboxWorld) =>
-    world.lines.flatMap(({ segments }) => segments.flatMap(({ a, b }) => [a.x, b.x]));
+    world.lines.flatMap((line) => worldSegments(line).flatMap(({ a, b }) => [a.x, b.x]));
   const lengthOf = (world: SandboxWorld) =>
     world.lines
       .flatMap(({ segments }) => segments)
@@ -661,15 +663,18 @@ describe('Pressing wear', () => {
     for (const type of ['crawler', 'runner', 'heavy'] as const) {
       const { height } = DEFAULT_ENEMY_TABLE.types[type];
       const world = createWorld();
-      // A short Line hanging at a slant, its low round end just above the Enemy's head.
+      // A short Line hanging Frozen at a slant, its low round end just above
+      // the Enemy's head: worn away or knocked loose, it lets the Enemy by.
       drawLine(world, [
         { x: 300, y: GROUND_Y - height - 2 },
         { x: 330, y: GROUND_Y - height - 20 },
       ]);
       expect(world.lines[0]!.pieces).toHaveLength(1);
       world.spawn(type);
-      runFor(world, 50);
-      expect(onlyEnemy(world).transform.x, type).toBeGreaterThan(400);
+      const by = stepUntil(world, 50, () =>
+        world.enemies.every(({ transform }) => transform.x > 400),
+      );
+      expect(by, type).toBe(true);
     }
 
     const world = createWorld();
@@ -746,7 +751,8 @@ describe('Enemies take damage', () => {
   function drop(height: number): { hp: number; pieces: number[] } {
     const world = createWorld();
     editEnemies(world.enemyTable, (table) => (table.floorWear = 0));
-    drawLine(world, [
+    drawPost(world, { x: 700, y: 700 });
+    const line = drawLine(world, [
       { x: 700, y: 700 },
       { x: 900, y: 700 },
     ]);
@@ -761,7 +767,7 @@ describe('Enemies take damage', () => {
     world.step();
     return {
       hp: onlyEnemy(world).hp,
-      pieces: world.lines[0]!.pieces.map(({ durability }) => durability),
+      pieces: world.lines.find(({ id }) => id === line)!.pieces.map(({ durability }) => durability),
     };
   }
 
@@ -1134,7 +1140,7 @@ describe('From a Spawn on the right', () => {
     ]);
     const outcome = world.submitStroke(dragBox(WIDTH - 30, 400, 60, 60), 'grey');
 
-    const xs = world.lines[0]!.segments.flatMap(({ a, b }) => [a.x, b.x]);
+    const xs = worldSegments(world.lines[0]!).flatMap(({ a, b }) => [a.x, b.x]);
     expect(Math.max(...xs)).toBeCloseTo(WIDTH, 6);
     expect(outcome.kind).toBe('rejected');
   });

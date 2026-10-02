@@ -6,6 +6,7 @@ import type { LineView, SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
+  drawPost,
   entriesOf,
   FIXED_BODIES,
   hear,
@@ -49,8 +50,12 @@ function boulder(world: SandboxWorld, x: number, y: number): number {
   return id;
 }
 
-/** A horizontal Line at y = 700 from x = 200 to x = 680: ten Pieces of 48 px. */
+/**
+ * A horizontal Line at y = 700 from x = 200 to x = 680: ten Pieces of 48 px,
+ * Grounded by a post under its left end.
+ */
 function shelf(world: SandboxWorld, colour: 'grey' | 'black' | 'blue' = 'grey'): number {
+  drawPost(world, { x: 200, y: 700 });
   return drawLine(
     world,
     [
@@ -79,7 +84,9 @@ describe('Lines break Piece by Piece', () => {
       expect(piece.durability).toBe(GREY_LINE);
       expect(piece.wear).toBe(0);
     }
-    expect(world.bodyCount).toBe(FIXED_BODIES + 10);
+    // Every Piece of a Grounded Line is a fixed body of its own: the shelf's and its post's.
+    const pieces = world.lines.reduce((sum, l) => sum + l.pieces.length, 0);
+    expect(world.bodyCount).toBe(FIXED_BODIES + pieces);
   });
 
   it('breaks a grey Piece after hard hits, and the rest of the Line stays fixed', () => {
@@ -89,6 +96,7 @@ describe('Lines break Piece by Piece', () => {
       { x: 600, y: 300 },
       { x: 600, y: 780 },
     ]);
+    drawPost(world, { x: 600, y: 780 });
     const target = pieceAt(lineById(world, wall), { x: 600, y: 564 });
     const throwBall = () => {
       const ball = drawObject(world, dragCircle({ x: 540, y: 560 }, 20));
@@ -148,6 +156,7 @@ describe('Lines break Piece by Piece', () => {
   it('breaks the grey Line under a boulder, while the same boulder only cracks a black Line', () => {
     const world = createWorld();
     const grey = shelf(world, 'grey');
+    drawPost(world, { x: 1000, y: 700 });
     const black = drawLine(
       world,
       [
@@ -219,23 +228,28 @@ describe('Taking back, Clear and Reset after a Piece has broken', () => {
 
   it("taking back a Line removes what's left of it", () => {
     const world = createWorld();
-    const earlier = drawLine(world, [
-      { x: 200, y: 400 },
-      { x: 400, y: 400 },
-    ]);
+    const earlier = drawPost(world, { x: 100, y: 400 });
     const { id, rock } = brokenShelf(world);
     world.remove(rock);
+    const others = world.lines.filter((l) => l.id !== id);
 
     world.removeStroke(id);
 
-    expect(world.lines.map((l) => l.id)).toEqual([earlier]);
-    expect(world.bodyCount).toBe(FIXED_BODIES + lineById(world, earlier).pieces.length);
+    expect(world.lines.map((l) => l.id)).toEqual(others.map((l) => l.id));
+    expect(world.lines[0]!.id).toBe(earlier);
+    const pieces = others.reduce((sum, l) => sum + l.pieces.length, 0);
+    expect(world.bodyCount).toBe(FIXED_BODIES + pieces);
     expect(world.lines.some((l) => l.id === id)).toBe(false);
   });
 
   it('taking back a Line whose every Piece broke finds it gone', () => {
     const world = createWorld();
-    // A short red Line under a boulder: one Piece, which breaks at once.
+    // A short red Line under a boulder: one Piece, which breaks at once. A
+    // grey prop under its left end, slanting away, Grounds it.
+    drawLine(world, [
+      { x: 420, y: 700 },
+      { x: 300, y: 880 },
+    ]);
     const red = drawLine(
       world,
       [

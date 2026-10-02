@@ -14,6 +14,7 @@ export type {
   ContactHit,
   ContactPair,
   NearBody,
+  NearShape,
   PhysicsWorld,
   PhysicsWorldOptions,
   ShapeId,

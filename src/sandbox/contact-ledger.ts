@@ -1,5 +1,12 @@
 import type { Vec2 } from '../geometry/vec2';
-import type { BodyId, ContactHit, ContactPair, PhysicsWorld, StepReport } from '../physics';
+import type {
+  BodyId,
+  ContactHit,
+  ContactPair,
+  PhysicsWorld,
+  ShapeId,
+  StepReport,
+} from '../physics';
 
 /**
  * The Contact ledger: which contacts count. It is fed each step's report
@@ -7,7 +14,9 @@ import type { BodyId, ContactHit, ContactPair, PhysicsWorld, StepReport } from '
  * engine's report order: the step's hits, its new contacts, and who
  * touches whom. It owns everything that decides this:
  *
- * - who each body is (its Party), registered by Arena bodies as a kind adds it;
+ * - who each body is (its Party), registered by Arena bodies as a kind adds
+ *   it; a body may be several Parties, each some of its shapes (a Line that
+ *   isn't Grounded, one Party per Piece);
  * - the Settled pairs, which deal no damage and aren't new until they
  *   come apart;
  * - the Squeezed Objects, which are in no channel while they slide, and
@@ -50,6 +59,12 @@ export interface Party<T> {
    */
   readonly stroke: PartyId;
   readonly body: BodyId;
+  /**
+   * The shapes of `body` that are this Party, when the body is several
+   * (a Line that isn't Grounded: one per Piece). Absent when the Party is
+   * its whole body. Shapes added on the body (Patches) are its host's.
+   */
+  readonly shapes?: readonly ShapeId[];
   /** What takes damage on this side, or null (Terrain, Rubble, Droplets). */
   readonly target: T | null;
   /** True for a Droplet: it deals no damage, and nothing sticks to it. */
@@ -100,8 +115,17 @@ const sameShapes = (p: ContactPair, q: ContactPair) =>
 export class ContactLedger<T> {
   /** The Terrain is 0; the rest count up from 1. */
   private nextId = 1;
-  /** The Party of every registered body. */
+  /** The Party of every registered body that is one Party. */
   private readonly parties = new Map<BodyId, Party<T>>();
+  /** The Parties of every registered body that is several, in the order registered. */
+  private readonly shared = new Map<BodyId, Party<T>[]>();
+  /** The Party of each shape of a body that is several Parties. */
+  private readonly byShape = new Map<ShapeId, Party<T>>();
+  /**
+   * Hosts of shapes added on a body that is several Parties (Patches): the
+   * Party they lie on.
+   */
+  private readonly hosts = new Map<ShapeId, Party<T>>();
   /** The same Parties by their id. */
   private readonly byId = new Map<PartyId, Party<T>>();
   /** Who touches whom, both ways round, with the shape pairs they touch through. */
@@ -147,20 +171,54 @@ export class ContactLedger<T> {
     return id;
   }
 
-  /** A body was added: from now on it is `party` to every rule. */
+  /**
+   * A body was added: from now on it is `party` to every rule, or the part
+   * of it `party.shapes` names.
+   */
   register(party: Party<T>): void {
-    this.parties.set(party.body, party);
     this.byId.set(party.id, party);
+    if (!party.shapes) {
+      this.parties.set(party.body, party);
+      return;
+    }
+    let parties = this.shared.get(party.body);
+    if (!parties) {
+      parties = [];
+      this.shared.set(party.body, parties);
+    }
+    parties.push(party);
+    for (const shape of party.shapes) this.byShape.set(shape, party);
   }
 
-  /** The Party of a registered body. */
+  /**
+   * A shape was added on a body that is several Parties (a Patch): its
+   * contacts are `host`'s.
+   */
+  hostShape(shape: ShapeId, host: PartyId): void {
+    const party = this.byId.get(host);
+    if (party) this.hosts.set(shape, party);
+  }
+
+  /** The Party of a registered body that is one Party. */
   partyOf(body: BodyId): Party<T> | undefined {
     return this.parties.get(body);
   }
 
+  /** The Party a shape of a registered body is: its own, or its body's. */
+  partyAt(body: BodyId, shape: ShapeId): Party<T> | undefined {
+    return this.parties.get(body) ?? this.byShape.get(shape) ?? this.hosts.get(shape);
+  }
+
+  /** Every Party of a registered body: one, or several in the order registered. */
+  partiesOf(body: BodyId): readonly Party<T>[] {
+    const party = this.parties.get(body);
+    return party ? [party] : (this.shared.get(body) ?? []);
+  }
+
   /** Every registered body. */
-  bodies(): Iterable<BodyId> {
-    return this.parties.keys();
+  *bodies(): Iterable<BodyId> {
+    yield* this.parties.keys();
+    yield* this.shared.keys();
   }
 
   /** The registered Party with this id: a body there now. */
@@ -168,14 +226,37 @@ export class ContactLedger<T> {
     return this.byId.get(id);
   }
 
-  /** A body was removed: its Party goes, with everything it touched and was Settled with. */
+  /**
+   * A body was removed: its Parties go, with everything they touched and
+   * were Settled with.
+   */
   unregister(body: BodyId): void {
-    const party = this.parties.get(body);
-    if (!party) return;
-    this.parties.delete(body);
-    this.byId.delete(party.id);
+    const parties = this.partiesOf(body);
+    if (parties.length === 0) return;
     this.sliding.delete(body);
     this.slideEnded.delete(body);
+    for (const party of parties) this.forget(party);
+    this.parties.delete(body);
+    this.shared.delete(body);
+  }
+
+  /**
+   * One Party of a body that is several went, and its body stays (a Piece
+   * broke off a Line that isn't Grounded): it goes, with everything it
+   * touched and was Settled with, and so do the shapes added on it.
+   */
+  unregisterParty(id: PartyId): void {
+    const party = this.byId.get(id);
+    if (!party?.shapes) return;
+    const parties = this.shared.get(party.body);
+    if (parties) parties.splice(parties.indexOf(party), 1);
+    this.forget(party);
+  }
+
+  private forget(party: Party<T>): void {
+    this.byId.delete(party.id);
+    for (const shape of party.shapes ?? []) this.byShape.delete(shape);
+    for (const [shape, host] of this.hosts) if (host === party) this.hosts.delete(shape);
     const mine = this.contacts.get(party.id);
     if (mine) {
       for (const other of mine.keys()) {
@@ -199,12 +280,20 @@ export class ContactLedger<T> {
   }
 
   /**
-   * The Parties touching `body`'s Party now, Settled included; none while
-   * either side is Squeezed.
+   * The Parties touching `body`'s Parties now, Settled included, Party by
+   * Party; none while either side is Squeezed.
    */
   *touching(body: BodyId): Iterable<Touching<T>> {
-    const party = this.parties.get(body);
-    if (!party || this.sliding.has(body)) return;
+    for (const party of this.partiesOf(body)) yield* this.touchingParty(party.id);
+  }
+
+  /**
+   * The Parties touching Party `id` now, Settled included; none while
+   * either side is Squeezed.
+   */
+  *touchingParty(id: PartyId): Iterable<Touching<T>> {
+    const party = this.byId.get(id);
+    if (!party || this.sliding.has(party.body)) return;
     const mine = this.contacts.get(party.id);
     if (!mine) return;
     for (const contact of mine.values()) {
@@ -253,7 +342,8 @@ export class ContactLedger<T> {
     // was squeezed off: what it touches then is Settled, so settling onto a
     // Line deals no damage, as when physics starts.
     for (const body of this.slideEnded) {
-      const party = this.parties.get(body)!;
+      const party = this.parties.get(body);
+      if (!party) continue;
       for (const other of this.contacts.get(party.id)?.keys() ?? []) {
         this.settled.add(eitherWay(party.id, other));
       }
@@ -265,8 +355,8 @@ export class ContactLedger<T> {
     }
 
     for (const hit of report.hits) {
-      const a = this.parties.get(hit.bodyA);
-      const b = this.parties.get(hit.bodyB);
+      const a = this.partyAt(hit.bodyA, hit.shapeA);
+      const b = this.partyAt(hit.bodyB, hit.shapeB);
       if (!a || !b || this.sliding.has(a.body) || this.sliding.has(b.body)) continue;
       if (this.settled.has(eitherWay(a.id, b.id))) continue;
       this.hitList.push({ a, b, hit });
@@ -288,8 +378,8 @@ export class ContactLedger<T> {
    * it, since the engine's contacts change all at once in a step.
    */
   private begin(pair: ContactPair): void {
-    const a = this.parties.get(pair.bodyA);
-    const b = this.parties.get(pair.bodyB);
+    const a = this.partyAt(pair.bodyA, pair.shapeA);
+    const b = this.partyAt(pair.bodyB, pair.shapeB);
     if (!a || !b) return;
     const contact = this.contacts.get(a.id)?.get(b.id);
     if (contact) {
@@ -304,8 +394,8 @@ export class ContactLedger<T> {
 
   /** Two shapes stopped touching. Ends for shape pairs it doesn't hold are ignored. */
   private end(pair: ContactPair): void {
-    const a = this.parties.get(pair.bodyA);
-    const b = this.parties.get(pair.bodyB);
+    const a = this.partyAt(pair.bodyA, pair.shapeA);
+    const b = this.partyAt(pair.bodyB, pair.shapeB);
     if (!a || !b) return;
     const contact = this.contacts.get(a.id)?.get(b.id);
     if (!contact) return;
@@ -347,6 +437,9 @@ export class ContactLedger<T> {
    */
   restore(saved: SavedContacts): void {
     this.parties.clear();
+    this.shared.clear();
+    this.byShape.clear();
+    this.hosts.clear();
     this.byId.clear();
     this.contacts.clear();
     this.sliding.clear();

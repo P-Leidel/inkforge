@@ -392,9 +392,25 @@ describe('What a Stroke or a Fill would do, with Ink costs on', () => {
     const game = createGame(false);
     expect(stroke(game, dragBox(400, 300, 100, 100), 'grey')).toEqual({
       kind: 'object',
+      pinned: false,
       refusal: null,
       cost: null,
     });
+  });
+
+  it('says whether a Line would hang Frozen: one in mid-air does, one down to the ground doesn’t', () => {
+    const game = createGame(true);
+    const midAir = dragAlong([
+      { x: 400, y: 300 },
+      { x: 600, y: 300 },
+    ]);
+    const toGround = dragAlong([
+      { x: 400, y: 700 },
+      { x: 400, y: 880 },
+    ]);
+
+    expect(stroke(game, midAir, 'grey')).toMatchObject({ kind: 'line', pinned: true });
+    expect(stroke(game, toGround, 'grey')).toMatchObject({ kind: 'line', pinned: false });
   });
 
   it('looks at nothing with too few samples to be anything', () => {
@@ -562,8 +578,17 @@ describe('Undo refunds exactly what was paid, with Ink costs on', () => {
 
   it('skips a Line whose every Piece broke', () => {
     const game = createGame(true);
+    // A grey prop, made below the Game, Grounds the red Line drawn onto its top.
+    game.world.submitStroke(
+      dragAlong([
+        { x: 420, y: 700 },
+        { x: 300, y: 880 },
+      ]),
+      'grey',
+    );
     const box = drawBox(game, 1200, 300, 40);
     const red = drawLine(game, 700, 420, 40, 'red'); // one Piece, which breaks at once
+    expect(game.world.lines.find((line) => line.id === red.id)!.grounded).toBe(true);
     const rock = boulder(game, 440, 250);
     runFor(game, 0);
     game.world.release(rock);
@@ -576,6 +601,33 @@ describe('Undo refunds exactly what was paid, with Ink costs on', () => {
 
     expect(game.world.objects.some((o) => o.id === box)).toBe(false);
     expect(game.tanks.red.spendable).toBe(redLeft);
+  });
+});
+
+describe('A Line Grounded after it was drawn', () => {
+  it('keeps what it cost: undo refunds it in full', () => {
+    const game = createGame(true);
+    const full = game.tanks.blue.spendable;
+    const shelf = drawLine(game, 700, 400, 200, 'blue');
+    expect(shelf.grounded).toBe(false);
+    const paid = full - game.tanks.blue.spendable;
+    expect(paid).toBeGreaterThan(0);
+    const post = game.submitStroke(
+      dragAlong([
+        { x: 400, y: 700 },
+        { x: 400, y: 880 },
+      ]),
+      'grey',
+    );
+    expect(post.kind).toBe('line');
+    expect(game.world.lines.find((line) => line.id === shelf.id)!.grounded).toBe(true);
+
+    game.undo(); // the post
+    game.undo(); // the shelf
+
+    expect(game.world.lines).toEqual([]);
+    expect(game.tanks.blue.spendable).toBeCloseTo(full, 6);
+    expect(game.history).toEqual([]);
   });
 });
 
