@@ -14,7 +14,7 @@ export type Refusal =
   | 'not-in-level'
   /** It costs more than its Colour's Tank holds. */
   | 'not-enough'
-  /** A sandbox tool (the Eraser, sending in Enemies) is put away: the Campaign. */
+  /** The sandbox tool, sending in Enemies, is put away: the Campaign. */
   | 'not-on-hand';
 
 /** What each Refusal says, and how it bears on what something costs. */

@@ -14,7 +14,7 @@ A **Campaign** of three handmade Levels, opened from a new title screen beside t
 
 The **Analysis** arrives in the Intermission: before every Wave, the Intermission panel shows the next Wave's Enemy types and counts, and one line when a Colour or Enemy type appears for the first time.
 
-The provisional rules become F2 switches, settled by the exit playtest. The Eraser leaves the Campaign. Each Arena says which side its Spawn is on, so a later Arena can have its Ink Core elsewhere.
+The provisional rules become F2 switches, settled by the exit playtest. Sending in Enemies by hand leaves the Campaign; the Eraser stays. Each Arena says which side its Spawn is on, so a later Arena can have its Ink Core elsewhere.
 
 The milestone answers one question: **do three Levels in a row teach the Colours one step at a time, each a fair puzzle under scarce Ink?**
 
@@ -75,7 +75,7 @@ The milestone answers one question: **do three Levels in a row teach the Colours
   - **Undo during a Wave** (on), with its full refund.
   - **Build while paused** (on): drawing, filling and undo while a Wave is paused.
 - Covered by **Copy as JSON** (under `rules`) and **Defaults**. The exit playtest decides each one, recorded in an ADR, and the `PROVISIONAL` notes in `game.ts` and `defence-loop.ts` go with it.
-- **The Eraser is a sandbox tool.** It is on the toolbar in the Sandbox and the Gallery, and not in the Campaign. The game has no erasing, so GDD §10's "erasing a Stroke from an earlier Wave gives no ink back" is settled by there being nothing to erase.
+- **The Eraser is on hand everywhere.** It is on the toolbar in the Sandbox, the Gallery and the Campaign, so players can clear away their own leftovers when they block the Enemies' way or the way to hurt them. It refunds what it removes, like undo, which settles GDD §10's "erasing a Stroke from an earlier Wave gives no ink back" the other way. Sending in Enemies by hand is the one sandbox tool, kept out of the Campaign.
 
 ### Colours a Level doesn't have
 
@@ -124,7 +124,7 @@ Each is a plain `Level` (Arena, Waves, Tanks) in `src/levels/`. The Arena sketch
 - **Campaign** (new, headless, in `src/game/`). Holds the Levels in order, says which are unlocked, unlocks the next when one is cleared, and saves through a small storage port: `localStorage` in the browser, a fake in tests. It knows nothing of Phaser.
 - **Session** (#126). Gains playing a Campaign Level and the next one, and tells the Campaign when a Level is cleared.
 - **Defence loop.** Its reading gains the next Wave's counts for the Analysis. The provisional rules become its options, set from F2 through the Game.
-- **Game.** The "Not in this Level" refusal; Eraser availability by what is being played.
+- **Game.** The "Not in this Level" refusal; sending in Enemies by what is being played; the Eraser always on hand.
 - **Arena and Arena query.** The Spawn's side.
 - **Scene and UI.** The title screen and the Level list, the panel's Analysis, hints and buttons, the greyed palette, and F2's Rules section. They draw readings and forward clicks; no rule lives there.
 
@@ -148,7 +148,7 @@ Vertical slices, one GitHub issue each, linking to this spec. Each slice extends
 2. **Campaign flow.** The Campaign module and its storage port, the title screen, the Level list, unlocking, the cleared and lost panels with their buttons, and saving. Three stand-in Levels (the sandbox Arena with short Waves) until the real ones land.
 3. **Colours a Level doesn't have.** The greyed palette and "Not in this Level".
 4. **Analysis.** The next Wave's counts on the Intermission panel, and the first-appearance hints.
-5. **Rules switches.** F2's Rules section for the three provisional rules, and the Eraser out of the Campaign.
+5. **Rules switches.** F2's Rules section for the three provisional rules, and sending in Enemies out of the Campaign.
 6. **Level 1.**
 7. **Level 2.**
 8. **Level 3.**
@@ -165,7 +165,7 @@ Vertical slices, one GitHub issue each, linking to this spec. Each slice extends
   - Playing a Campaign Level and clearing its last Wave unlocks the next and saves it; Next Level loads it at its first Wave.
   - A lost Level keeps the Campaign as it was; Restart Level loads it again from Wave 1.
   - A Stroke or a Fill in a Colour the Level doesn't have is refused with "Not in this Level", with Ink costs on or off.
-  - Each provisional switch, turned off, bars what it names; the Eraser is barred in the Campaign.
+  - Each provisional switch, turned off, bars what it names; sending in Enemies is barred in the Campaign, and the Eraser is not.
   - The Defence loop's reading gives the next Wave's counts in every Intermission, the first included.
 - **Seam 4: the Levels.** Each loads and is one screen, has the Colours and Enemy types its row in the table gives it, and a Crawler sent in with no defence reaches the Ink Core: no Level traps an Enemy against Terrain.
 - **Unchanged:** the gallery replay tests, the render budget test and `npm run verdict` pass as they are.
@@ -185,7 +185,7 @@ Decided while writing this spec:
 
 - The milestone's question is the Campaign's learning curve, with each Level a fair puzzle as its condition. The GDD's go/no-go test needs the boss and stays with milestone 6.
 - The Campaign has no pick of rewards; the rewards screen stays a summary (candidate 4 of the review after #117).
-- The three provisional rules of ADR 0012 become F2 switches with today's defaults, decided by the exit playtest. The Eraser is a sandbox tool only, so the game has no erasing.
+- The three provisional rules of ADR 0012 become F2 switches with today's defaults, decided by the exit playtest. The Eraser is on hand in the Campaign too, refunding like undo; sending in Enemies is a sandbox tool only.
 - The Spawn on the left and the Ink Core on the right is not a rule of the game: each Arena says which side its Spawn is on. All three Levels keep it on the left.
 - A Colour a Level doesn't have is shown greyed and refused, not hidden, so the player sees what is coming.
 - The Analysis shows types and counts, not order or gaps.

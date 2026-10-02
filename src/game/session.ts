@@ -35,9 +35,9 @@ export interface SessionReading {
  * Level and remembers it, `playCampaign` and `playNext` a Campaign Level,
  * `clear` loads it again (Clear), and `advance` advances the Game and then
  * the stress test, in that order. Once a Campaign Level is cleared, it tells
- * the Campaign, which unlocks the next. It puts the sandbox tools (the
- * Eraser and sending in Enemies) away for a Campaign Level and back for
- * Free play. Until told otherwise, it plays the
+ * the Campaign, which unlocks the next. It puts the sandbox tool (sending
+ * in Enemies) away for a Campaign Level and back for Free play; the Eraser
+ * stays on hand. Until told otherwise, it plays the
  * sandbox, as a new Game is. R stays a Game command.
  */
 export class Session {
@@ -72,7 +72,7 @@ export class Session {
 
   /**
    * Loads `level` and remembers it, for Clear. It is not a Campaign Level,
-   * even if the Campaign has it: Free play, with the sandbox tools on hand.
+   * even if the Campaign has it: Free play, with the sandbox tool on hand.
    */
   play(level: Level): void {
     this.campaignIndex = null;
@@ -83,7 +83,7 @@ export class Session {
   /**
    * Loads the Campaign's Level at `index`, from 0, at its first Wave, if it
    * is unlocked; returns whether it did. A locked one can't be played. The
-   * sandbox tools are put away.
+   * sandbox tool, sending in Enemies, is put away.
    */
   playCampaign(index: number): boolean {
     const campaign = this.campaign;

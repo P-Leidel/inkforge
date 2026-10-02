@@ -657,6 +657,30 @@ describe('Pressing wear', () => {
     expect((before - lower()) / 2).toBeCloseTo(2 * 1.5 * CRAWLER.pressing, -1);
   });
 
+  it('wears a Line or an Object whose corner only catches a stalled Enemy’s head, until it walks on', () => {
+    for (const type of ['crawler', 'runner', 'heavy'] as const) {
+      const { height } = DEFAULT_ENEMY_TABLE.types[type];
+      const world = createWorld();
+      // A short Line hanging at a slant, its low round end just above the Enemy's head.
+      drawLine(world, [
+        { x: 300, y: GROUND_Y - height - 2 },
+        { x: 330, y: GROUND_Y - height - 20 },
+      ]);
+      expect(world.lines[0]!.pieces).toHaveLength(1);
+      world.spawn(type);
+      runFor(world, 50);
+      expect(onlyEnemy(world).transform.x, type).toBeGreaterThan(400);
+    }
+
+    const world = createWorld();
+    // A Frozen box in mid-air, its bottom corner just below a Crawler's head.
+    drawObject(world, dragBox(300, GROUND_Y - CRAWLER.height + 2 - 60, 60, 60), 'grey');
+    world.spawn('crawler');
+    runFor(world, 30);
+    expect(world.objects).toEqual([]);
+    expect(onlyEnemy(world).transform.x).toBeGreaterThan(400);
+  });
+
   it('wears nothing on the Terrain and nothing when no Enemy is there', () => {
     const world = createWorld();
     post(world, 300, 86);

@@ -91,9 +91,9 @@ export type SpawnOutcome =
  * anywhere, and Space says what it does itself.
  */
 export interface Allowed {
-  /** Whether the Eraser is on hand: in Free play, never in a Campaign Level. */
+  /** Whether the Eraser is on hand: always, in the Campaign as in Free play. */
   readonly eraser: boolean;
-  /** Whether sending in Enemies (Shift+1–3) is on hand, as the Eraser is. */
+  /** Whether sending in Enemies (Shift+1–3) is on hand: in Free play, never in a Campaign Level. */
   readonly spawning: boolean;
   readonly draw: Bar | null;
   readonly fill: Bar | null;
@@ -222,10 +222,9 @@ export interface GameOptions {
  * also allow them between Waves and while a Wave is paused, and undo during
  * a Wave, all on by default. Releasing works anywhere.
  *
- * The Eraser and sending in Enemies are the sandbox tools, on hand or put
- * away together (`sandboxTools`): put away, as in the Campaign, erasing and
- * spawning are refused. What the player may do now is read in one place,
- * `allowed`.
+ * The Eraser is always on hand. Sending in Enemies is the sandbox tool, on
+ * hand or put away (`sandboxTools`): put away, as in the Campaign, spawning
+ * is refused. What the player may do now is read in one place, `allowed`.
  *
  * A Level is loaded whole: what it leaves out, its Tank maximums or its
  * Waves, comes from Free play (F2's Ink table and Waves switch), never from
@@ -326,10 +325,10 @@ export class Game {
   }
 
   /**
-   * Whether the sandbox tools, the Eraser and sending in Enemies, are on
-   * hand: the Session puts them away for a Campaign Level and back for Free
-   * play. Put away, `eraseAlong` and `spawn` are refused ('not-on-hand').
-   * On hand by default.
+   * Whether the sandbox tool, sending in Enemies, is on hand: the Session
+   * puts it away for a Campaign Level and back for Free play. Put away,
+   * `spawn` is refused ('not-on-hand'). On hand by default. The Eraser is
+   * not one: it is on hand in the Campaign too.
    */
   get sandboxTools(): boolean {
     return this.toolsOnHand;
@@ -340,14 +339,15 @@ export class Game {
   }
 
   /**
-   * What the player may do now: whether the sandbox tools are on hand, and
-   * what bars drawing, filling, erasing and undo, as the Defence loop says.
+   * What the player may do now: whether the Eraser and sending in Enemies
+   * are on hand, and what bars drawing, filling, erasing and undo, as the
+   * Defence loop says.
    * The palette, the HUD, the scene's keys and drawing input read it here.
    */
   get allowed(): Allowed {
     const { defence } = this;
     return {
-      eraser: this.toolsOnHand,
+      eraser: true,
       spawning: this.toolsOnHand,
       draw: defence.bar('draw'),
       fill: defence.bar('fill'),
@@ -631,11 +631,10 @@ export class Game {
    * The Eraser: removes what its brush passes over, and refunds what was
    * paid for it: an Object's Outline and Fill, a Piece's price. Rubble,
    * Droplets and Patches are a broken Fill's, and that Ink is spent. It is
-   * refused while the Eraser is put away (the Campaign), and while the
-   * Defence loop bars erasing.
+   * on hand in the Campaign too, and refused only while the Defence loop
+   * bars erasing.
    */
   eraseAlong(path: readonly Vec2[], radius: number): EraseOutcome {
-    if (!this.toolsOnHand) return { kind: 'refused', reason: 'not-on-hand' };
     const bar = this.defence.bar('erase');
     if (bar) return { kind: 'refused', reason: bar };
     this.catchUp();

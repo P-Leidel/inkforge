@@ -170,7 +170,7 @@ describe('The rules switches, turned off (provisional, F2)', () => {
   });
 });
 
-describe('The sandbox tools: the Eraser and sending in Enemies', () => {
+describe('The Eraser and the sandbox tool, sending in Enemies', () => {
   const brush = [
     { x: 590, y: 200 },
     { x: 810, y: 200 },
@@ -189,25 +189,23 @@ describe('The sandbox tools: the Eraser and sending in Enemies', () => {
     expect(game.world.enemyCount).toBe(1);
   });
 
-  it('put away, are refused, Waves on or off, and nothing is erased, refunded or sent in; on hand again, they work', () => {
+  it('put away, refuse sending in Enemies, Waves on or off, but leave the Eraser on hand; on hand again, spawning works', () => {
     const game = createGame(true);
-    expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
-    const left = game.tanks.grey.spendable;
-
     game.sandboxTools = false;
-    expect(game.allowed).toMatchObject({ eraser: false, spawning: false });
+    expect(game.allowed).toMatchObject({ eraser: true, spawning: false });
     for (const waves of [false, true]) {
       game.waves = waves;
-      expect(game.eraseAlong(brush, 12)).toEqual({ kind: 'refused', reason: 'not-on-hand' });
       expect(game.spawn('crawler')).toEqual({ kind: 'refused', reason: 'not-on-hand' });
+      expect(game.submitStroke(FAR, 'grey').kind).toBe('line');
+      const left = game.tanks.grey.spendable;
+      expect(game.eraseAlong(brush, 12)).toEqual({ kind: 'erased' });
+      expect(game.world.lines).toEqual([]);
+      expect(game.tanks.grey.spendable).toBeGreaterThan(left); // refunded, as by undo
     }
-    expect(game.world.lines).toHaveLength(1);
     expect(game.world.enemyCount).toBe(0);
-    expect(game.tanks.grey.spendable).toBe(left);
 
     game.sandboxTools = true;
-    expect(game.eraseAlong(brush, 12)).toEqual({ kind: 'erased' });
-    expect(game.world.lines).toEqual([]);
+    expect(game.spawn('crawler')).toEqual({ kind: 'spawned' });
   });
 });
 

@@ -6,8 +6,8 @@ import { FONT_FAMILY, PALETTE } from '../rendering/palette';
 import { inward, spawnEdgeX } from '../sandbox/arena';
 
 /**
- * The control hints: the sandbox tools, the Eraser (E) and sending in
- * Enemies (Shift+1–3), only while they are on hand.
+ * The control hints: the Eraser (E) and sending in Enemies (Shift+1–3)
+ * only while they are on hand.
  */
 export function helpText({ eraser, spawning }: Pick<Allowed, 'eraser' | 'spawning'>): string {
   return [
