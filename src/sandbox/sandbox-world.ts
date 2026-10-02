@@ -26,6 +26,7 @@ import { SANDBOX_ARENA, type Arena } from './arena';
 import { ArenaBodies } from './arena-bodies';
 import type { Kind } from './arena-contents';
 import { ArenaQuery } from './arena-query';
+import { rollBelly } from './belly';
 import { Blasts, type BlastView } from './blasts';
 import { Bonds, type BondView } from './bonds';
 import { ContactLedger, type PartyId, type SavedContacts } from './contact-ledger';
@@ -201,6 +202,8 @@ export class SandboxWorld {
   /** The Arena as it is now: the base Arena, or the one the latest Clear was onto. */
   private current: Arena;
   readonly random: Random;
+  /** The generator's seed: a Clear starts it over from there. */
+  private readonly seed: number;
   readonly materials: MaterialTable;
   readonly enemyTable: EnemyTable;
   /** What a thing's numbers are, from the material and enemy tables as they are now. */
@@ -229,6 +232,11 @@ export class SandboxWorld {
   private snapshot: Snapshot | null = null;
   /** The material and enemy tables' revisions last applied to the physics world; none yet. */
   private appliedRevisions: readonly number[] = [];
+  /**
+   * Whether the Level has a Colour, for rolling Bellies: the Game sets it
+   * to its own. Every Colour, until it does.
+   */
+  private hasColour: (colour: Colour) => boolean = () => true;
   private running = false;
   private accumulator = 0;
   private elapsed = 0;
@@ -238,7 +246,8 @@ export class SandboxWorld {
   constructor(options: SandboxWorldOptions = {}) {
     this.baseArena = options.arena ?? SANDBOX_ARENA;
     this.current = this.baseArena;
-    this.random = new Random(options.seed ?? 1);
+    this.seed = options.seed ?? 1;
+    this.random = new Random(this.seed);
     this.materials = options.materials ?? createMaterialTable();
     this.enemyTable = options.enemies ?? createEnemyTable();
     this.numbers = new Numbers(this.materials, this.enemyTable);
@@ -437,10 +446,22 @@ export class SandboxWorld {
   /**
    * Sends in an Enemy of `type` from the Spawn, out of view,
    * paused or running. Given `at`, it appears with its centre there instead,
-   * for tests and demos. Returns its id.
+   * for tests and demos. Its Belly is rolled from the generator by its
+   * type's weights, among the Colours the Level has (`bellyColours`), or
+   * is `belly`, if given. Returns its id.
    */
-  spawn(type: EnemyType, at?: Vec2): number {
-    return this.enemiesKind.spawn(type, at);
+  spawn(type: EnemyType, at?: Vec2, belly?: Colour): number {
+    const colour =
+      belly ?? rollBelly(this.numbers.enemy(type).belly.weights, this.hasColour, this.random);
+    return this.enemiesKind.spawn(type, colour, at);
+  }
+
+  /**
+   * Sets which Colours the Level has, which an Enemy's Belly is rolled
+   * from: a Level without red never has an Enemy that explodes.
+   */
+  set bellyColours(has: (colour: Colour) => boolean) {
+    this.hasColour = has;
   }
 
   /** How many Enemies are in the Arena. */
@@ -458,12 +479,14 @@ export class SandboxWorld {
 
   /**
    * An Enemy dies: it pops, a burst of its body that is visual only, and
-   * goes, releasing nothing physical. Says what died and where.
+   * goes, releasing nothing physical itself. Says what died, where, and
+   * moving how, for the Material rules to let out its Belly.
    */
   private kill(id: number): Killed | null {
     const enemy = this.enemiesKind.view(id);
-    if (!enemy) return null;
-    const { type, outline, transform, velocity } = enemy;
+    const from = this.enemiesKind.motion(id);
+    if (!enemy || !from) return null;
+    const { type, belly, outline, transform, velocity } = enemy;
     this.happenings.say({
       kind: 'popped',
       id,
@@ -472,7 +495,7 @@ export class SandboxWorld {
       velocity,
     });
     this.enemiesKind.remove(id, 'died');
-    return { id, type, at: { x: transform.x, y: transform.y } };
+    return { id, type, at: { x: transform.x, y: transform.y }, belly, outline, from };
   }
 
   /**
@@ -664,9 +687,11 @@ export class SandboxWorld {
    * back to. Nothing is left touching or Settled, since every kind
    * unregisters its bodies. It starts over: the Debris goes too. The Arena
    * becomes `arena`, a Level's own, or else the base Arena again, with its
-   * Terrain, Spawn and Ink Core; it stays through R.
+   * Terrain, Spawn and Ink Core; it stays through R. The generator starts
+   * over from its seed, so a Level plays the same whatever came before.
    */
   clear(arena: Arena = this.baseArena): void {
+    this.random.state = new Random(this.seed).state;
     this.bodies.clear();
     for (const kind of this.kinds) kind.clear();
     this.poses.forget();

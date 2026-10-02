@@ -17,6 +17,20 @@ export interface DropRange {
   max: number;
 }
 
+/**
+ * An Enemy type's Belly: the one Colour of ink each Enemy carries, rolled
+ * when it is sent in, and let out where it dies as a broken Object's Fill is.
+ */
+export interface BellyMaterial {
+  /** The Ink (px²) a Belly holds, as a Fill's: it decides how much Rubble, Spill or Blast it lets out. */
+  ink: number;
+  /**
+   * How often each Colour is rolled, against the others: a Colour's chance
+   * is its weight over the sum of the weights of the Colours the Level has.
+   */
+  weights: Record<Colour, number>;
+}
+
 /** One Enemy type's numbers. */
 export interface EnemyMaterial {
   /** Width (px) of its body, an upright rounded box. */
@@ -53,6 +67,8 @@ export interface EnemyMaterial {
   coreDamage: number;
   /** The Ink of each Colour its Drop holds when it dies. */
   drop: Record<Colour, DropRange>;
+  /** Its Belly: the ink it carries and lets out where it dies, on top of its Drop. */
+  belly: BellyMaterial;
 }
 
 export interface EnemyTable {
@@ -102,6 +118,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
         black: { min: 0, max: 15 },
         red: { min: 0, max: 10 },
       },
+      belly: { ink: 1200, weights: { grey: 4, blue: 2, green: 2, black: 1, red: 1 } },
     },
     runner: {
       width: 32,
@@ -124,6 +141,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
         black: { min: 0, max: 10 },
         red: { min: 0, max: 10 },
       },
+      belly: { ink: 800, weights: { grey: 3, blue: 3, green: 2, black: 1, red: 1 } },
     },
     heavy: {
       width: 64,
@@ -147,6 +165,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
         black: { min: 20, max: 60 },
         red: { min: 10, max: 40 },
       },
+      belly: { ink: 3000, weights: { grey: 2, blue: 1, green: 1, black: 4, red: 2 } },
     },
   },
   floorWear: 1,

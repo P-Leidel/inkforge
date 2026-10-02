@@ -1,15 +1,22 @@
 import type { Polygon } from '../geometry/polygon';
+import type { Colour } from '../materials/colour';
 import type { Vec2 } from '../geometry/vec2';
 import type { EnemyType } from '../materials/enemy-table';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, ContactHit } from '../physics';
+import type { Motion } from './arena-contents';
 import type { Party } from './contact-ledger';
 import { drawDrop, type DropInk } from './drops';
 import type { Walker } from './enemies';
 import type { Thing, Why } from './happenings';
 import type { Numbers } from './numbers';
 import type { Random } from './random';
-import { impactDamage, type RulesContacts, type RulesPhysics } from './material-rules';
+import {
+  impactDamage,
+  type ReleasedFill,
+  type RulesContacts,
+  type RulesPhysics,
+} from './material-rules';
 
 /**
  * Enemy rules: an Enemy's life, from walking to its Drop. Headless and part
@@ -17,7 +24,7 @@ import { impactDamage, type RulesContacts, type RulesPhysics } from './material-
  * one order: `walk` before each physics step, and after it `wear` (pressing
  * and floor wear, which the Material rules deal as damage), `hurt` for the
  * hits and Blasts an Enemy takes, and `afterStep` (reaching the Ink Core,
- * deaths, Drops). They decide whether an Enemy stands, climbs or is
+ * deaths, Drops, and the Bellies the Material rules then let out). They decide whether an Enemy stands, climbs or is
  * stalled, its Stack, what it presses, and when it dies. What its numbers
  * are they ask `Numbers`; they carry their decisions out through their own
  * narrow port, `EnemyArena`, which the world wires to the Enemies kind,
@@ -79,6 +86,12 @@ export interface Killed {
   readonly id: number;
   readonly type: EnemyType;
   readonly at: Vec2;
+  /** The Colour of its Belly. */
+  readonly belly: Colour;
+  /** Its body's outline about its centre. */
+  readonly outline: Polygon;
+  /** Its body's pose and motion as it died. */
+  readonly from: Motion;
 }
 
 /** Wear an Enemy deals what it presses or stands on in a step, for the Material rules to deal. */
@@ -116,8 +129,9 @@ export interface EnemyArena<W> {
   /** The Enemy whose Party this is, if any. */
   walkerOf(party: Party<unknown>): W | undefined;
   /**
-   * Kills Enemy `id` at once: it pops and goes, releasing nothing physical.
-   * Says what died and where; null if it is already gone.
+   * Kills Enemy `id` at once: it pops and goes, releasing nothing physical
+   * itself (the Material rules let out its Belly). Says what died, where
+   * and moving how; null if it is already gone.
    */
   kill(id: number): Killed | null;
   /** Lets out a dead Enemy's Drop: the Ink of every Colour, from where it died. */
@@ -392,11 +406,32 @@ export class EnemyRules<W extends Walker> {
   /**
    * The Enemies' phases at the end of a step, in an order that must not
    * change: Enemies reaching the Ink Core, kills (0 HP, then below the
-   * screen), then Drops, which draw from the generator.
+   * screen), then Drops, which draw from the generator. Returns the Bellies
+   * of those that died in the Arena, in the order they died, for the
+   * Material rules to let out as broken Objects' Fills: one that fell
+   * below the screen, or reached the Ink Core, lets out none.
    */
-  afterStep(): void {
+  afterStep(): ReleasedFill[] {
     this.reachInkCore();
-    this.drop(this.kill());
+    const killed = this.kill();
+    this.drop(killed.map(({ dead }) => dead));
+    return killed.flatMap(({ dead, inArena }) => {
+      const belly = inArena ? this.bellyOf(dead) : null;
+      return belly ? [belly] : [];
+    });
+  }
+
+  /**
+   * A dead Enemy's Belly as a Fill: its Colour, at its type's Ink as it is
+   * now, filling its body's outline and moving as it moved. Null if its
+   * type's Belly holds no Ink.
+   */
+  private bellyOf({ type, belly, outline, from }: Killed): ReleasedFill | null {
+    const { ink } = this.numbers.enemy(type).belly;
+    if (ink <= 0) return null;
+    const { inkMass, colours } = this.materials;
+    const mass = inkMass * ink * colours[belly].fill.density;
+    return { colour: belly, mass, ink, outline, from };
   }
 
   /**
@@ -420,19 +455,21 @@ export class EnemyRules<W extends Walker> {
 
   /**
    * Kills: every Enemy at 0 HP dies, oldest first, then every one wholly
-   * below the bottom of the screen. Returns what died, in that order.
+   * below the bottom of the screen. Returns what died, in that order, and
+   * whether it died in the Arena: at 0 HP, and not below the screen.
    */
-  private kill(): Killed[] {
-    const killed: Killed[] = [];
-    const kill = (id: number) => {
+  private kill(): { dead: Killed; inArena: boolean }[] {
+    const below = new Set(
+      this.arena.belowScreen().flatMap((thing) => (thing.thing === 'enemy' ? [thing.id] : [])),
+    );
+    const killed: { dead: Killed; inArena: boolean }[] = [];
+    const kill = (id: number, inArena: boolean) => {
       const dead = this.arena.kill(id);
-      if (dead) killed.push(dead);
+      if (dead) killed.push({ dead, inArena });
     };
     const dead = [...this.arena.walkers()].filter((walker) => this.isDead(walker));
-    for (const { id } of dead) kill(id);
-    for (const thing of this.arena.belowScreen()) {
-      if (thing.thing === 'enemy') kill(thing.id);
-    }
+    for (const { id } of dead) kill(id, !below.has(id));
+    for (const id of below) kill(id, false);
     return killed;
   }
 

@@ -1,6 +1,7 @@
 import type { Polygon } from '../geometry/polygon';
 import { transformPoints } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
+import type { Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
 import { enemyMass } from '../materials/mass';
 import type { MaterialTable } from '../materials/material-table';
@@ -92,6 +93,8 @@ export interface Walker {
   /** Width and height (px) of its body, from the enemy table when it was sent in. */
   readonly width: number;
   readonly height: number;
+  /** Its Belly: the Colour of ink it carries, rolled when it was sent in. */
+  readonly belly: Colour;
   /** Damage taken so far: it dies once this reaches its type's HP. */
   damage: number;
 }
@@ -103,6 +106,8 @@ export interface EnemyView extends Poses {
   readonly outline: Polygon;
   readonly width: number;
   readonly height: number;
+  /** Its Belly: the Colour of ink it carries and lets out where it dies. */
+  readonly belly: Colour;
   /** Linear velocity, px/s. */
   readonly velocity: Vec2;
   /** HP left, never below 0. */
@@ -154,7 +159,7 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     return this.enemies.map((enemy) => this.viewOf(enemy));
   }
 
-  private viewOf({ id, type, width, height, body, damage }: EnemyRecord): EnemyView {
+  private viewOf({ id, type, width, height, belly, body, damage }: EnemyRecord): EnemyView {
     const fullHp = this.numbers.enemy(type).hp;
     return {
       id,
@@ -162,6 +167,7 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
       outline: enemyOutline(width, height),
       width,
       height,
+      belly,
       ...this.poses.of(body),
       velocity: this.physics.getVelocity(body),
       hp: Math.max(0, fullHp - damage),
@@ -173,6 +179,12 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
   view(id: number): EnemyView | undefined {
     const enemy = this.enemies.find((enemy) => enemy.id === id);
     return enemy && this.viewOf(enemy);
+  }
+
+  /** Enemy `id`'s pose and motion now; undefined if it is gone. */
+  motion(id: number): Motion | undefined {
+    const enemy = this.enemies.find((enemy) => enemy.id === id);
+    return enemy && motionOf(this.physics, enemy.body);
   }
 
   /** The Enemy whose Party this is, if any. */
@@ -202,12 +214,12 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
   }
 
   /**
-   * Sends in an Enemy of `type` from the Spawn: it stands at the lane's far
+   * Sends in an Enemy of `type`, carrying `belly`, from the Spawn: it stands at the lane's far
    * end, its back to the wall, or on top of what already stands there. Or,
    * given `at`, it appears with its centre there, whatever is in the way
    * (for tests and demos). Returns its id.
    */
-  spawn(type: EnemyType, at?: Vec2): number {
+  spawn(type: EnemyType, belly: Colour, at?: Vec2): number {
     const numbers = this.numbers.enemy(type);
     const { width, height } = numbers;
     const outline = enemyOutline(width, height);
@@ -218,7 +230,8 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     while (!at && y - height > 0 && blocked()) y -= height + SPAWN_GAP;
     const id = this.nextId++;
     const mass = enemyMass(numbers, this.materials);
-    const enemy = { id, party: this.bodies.newId(), type, width, height, mass, damage: 0 };
+    const party = this.bodies.newId();
+    const enemy = { id, party, type, width, height, belly, mass, damage: 0 };
     this.addBody(enemy, {
       transform: { x, y, angle: 0 },
       velocity: { x: 0, y: 0 },

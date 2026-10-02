@@ -81,5 +81,6 @@ export const LEVEL_1: Level = {
     black: 'New: black makes the strongest wall, but there is little of it',
     crawler: 'New: Crawlers walk slowly and climb over each other',
     runner: 'New: Runners are fast and hop over slower Enemies',
+    belly: 'New: Enemies are full of ink: killing one spills it',
   },
 };

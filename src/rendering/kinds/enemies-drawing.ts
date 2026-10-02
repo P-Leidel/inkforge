@@ -4,6 +4,7 @@ import type { Vec2 } from '../../geometry/vec2';
 import type { EnemyType } from '../../materials/enemy-table';
 import type { EnemyView } from '../../sandbox/sandbox-world';
 import { fillPolygon, strokePolygon } from '../draw';
+import { INK_HUES } from '../ink';
 import { PALETTE } from '../palette';
 import { drawn, type DrawnKind } from './drawn-kind';
 
@@ -21,6 +22,16 @@ const BAR_GAP = 6;
 const BAR_BORDER = 1;
 /** Below this share of its HP left, the bar shows red. */
 const LOW_HP = 0.3;
+/**
+ * The Belly's window: its width and height as shares of the Enemy's, how far
+ * below its centre it sits (a share of its height), and its rim, light
+ * enough to show black on a dark Heavy.
+ */
+const BELLY_WIDTH = 0.56;
+const BELLY_HEIGHT = 0.4;
+const BELLY_DROP = 0.14;
+const BELLY_RIM = 0xd9d6cc;
+const BELLY_RIM_WIDTH = 1.5;
 
 /** How an Enemy type looks: its body and edge colours, and how far (px per px up) it leans forward. */
 interface Look {
@@ -47,7 +58,10 @@ export const POP_HUES: Readonly<Record<EnemyType, readonly number[]>> = {
  * HP bar above it once it is hurt. Placeholder art, with two eyes on the
  * side it walks toward, the Ink Core's, which is to the right: a Crawler is
  * a low grey-brown box, a Runner a narrow one leaning forward, a Heavy a
- * big dark one. The lean is only drawn: its body stays upright. Its pop is
+ * big dark one. Each shows its Belly, the ink it carries, as a window low
+ * in its body, in that Colour's hue (a plain box, to keep each Enemy a few
+ * drawing calls), so the player can see what
+ * it will spill. The lean is only drawn: its body stays upright. Its pop is
  * Debris, which the renderer bursts.
  */
 export class EnemiesDrawing implements DrawnKind {
@@ -76,6 +90,13 @@ export class EnemiesDrawing implements DrawnKind {
       const body = transformPoints(leant, transform);
       g.fillStyle(hue, 1);
       fillPolygon(g, body);
+      const belly = bellyWindow(enemy.width, enemy.height);
+      const bellyX = transform.x + belly.x + lean * (enemy.height / 2 - belly.y - belly.height / 2);
+      const bellyY = transform.y + belly.y;
+      g.fillStyle(INK_HUES[enemy.belly], 1);
+      g.fillRect(bellyX, bellyY, belly.width, belly.height);
+      g.lineStyle(BELLY_RIM_WIDTH, BELLY_RIM, 1);
+      g.strokeRect(bellyX, bellyY, belly.width, belly.height);
       g.lineStyle(EDGE_WIDTH, edge, 1);
       strokePolygon(g, body);
       const front = transform.x + enemy.width / 2 - EYE_IN + lean * (enemy.height - EYE_DOWN);
@@ -102,4 +123,18 @@ export class EnemiesDrawing implements DrawnKind {
     g.fillStyle(left < LOW_HP ? PALETTE.hpLow : PALETTE.hpFull, 1);
     g.fillRect(minX, top, enemy.width * left, BAR_HEIGHT);
   }
+}
+
+/**
+ * The window an Enemy `width` by `height` shows its Belly in, relative to
+ * its centre: a box low in its body, clear of its eyes, by its top left
+ * corner and its size.
+ */
+export function bellyWindow(
+  width: number,
+  height: number,
+): { x: number; y: number; width: number; height: number } {
+  const w = BELLY_WIDTH * width;
+  const h = BELLY_HEIGHT * height;
+  return { x: -w / 2, y: BELLY_DROP * height - h / 2, width: w, height: h };
 }

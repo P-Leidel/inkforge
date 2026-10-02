@@ -3,15 +3,19 @@ import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
 import type { Level } from './level';
 import { arrivals } from './wave-table';
 
-/** What a first-appearance hint is about: a Colour or an Enemy type. */
-export type Newcomer = Colour | EnemyType;
+/**
+ * What a first-appearance hint is about: a Colour, an Enemy type, or
+ * `belly`, that Enemies are full of ink, which comes with the first Enemy.
+ */
+export type Newcomer = Colour | EnemyType | 'belly';
 
 /**
  * What is new to the Campaign in the Wave at `wave` (from 0) of the Level at
  * `level` (from 0) of `levels`, in the Campaign's order: first the Colours,
- * palette order, then the Enemy types. A Colour is new in the first Wave of
- * the first Level that has it, a Tank maximum above 0; an Enemy type in the
- * first Wave that sends one in. New to the Campaign, not just to the Level:
+ * palette order, then the Enemy types, then Bellies. A Colour is new in the
+ * first Wave of the first Level that has it, a Tank maximum above 0; an
+ * Enemy type in the first Wave that sends one in; Bellies in the first Wave
+ * that sends in any Enemy. New to the Campaign, not just to the Level:
  * what an earlier Level brought is not new again.
  */
 export function newcomers(levels: readonly Level[], level: number, wave: number): Newcomer[] {
@@ -28,12 +32,16 @@ export function newcomers(levels: readonly Level[], level: number, wave: number)
   return [];
 }
 
-/** What the Wave at `wave` of `level` has: the Level's Colours, if it is its first Wave, and the Enemy types it sends. */
+/**
+ * What the Wave at `wave` of `level` has: the Level's Colours, if it is its
+ * first Wave, the Enemy types it sends, and Bellies if it sends any.
+ */
 function arrivingIn(level: Level, wave: number): Newcomer[] {
   const colours = wave === 0 ? COLOURS.filter((colour) => (level.tanks?.[colour] ?? 0) > 0) : [];
   const table = level.waves?.[wave];
   const sent = new Set(table ? arrivals(table) : []);
-  return [...colours, ...ENEMY_TYPES.filter((type) => sent.has(type))];
+  const types = ENEMY_TYPES.filter((type) => sent.has(type));
+  return [...colours, ...types, ...(types.length > 0 ? (['belly'] as const) : [])];
 }
 
 /**

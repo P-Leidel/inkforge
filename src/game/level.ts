@@ -34,9 +34,10 @@ export interface Level {
   readonly tanks?: Readonly<Record<Colour, number>>;
   /**
    * A Campaign Level's hints: one line for each Colour and Enemy type it is
-   * the first to bring, shown when it first appears.
+   * the first to bring, and for Bellies (`belly`) if it brings the first
+   * Enemy, shown when it first appears.
    */
-  readonly hints?: Readonly<Partial<Record<Colour | EnemyType, string>>>;
+  readonly hints?: Readonly<Partial<Record<Colour | EnemyType | 'belly', string>>>;
   /**
    * What is already built there, for free (ADR 0009): it runs on the Sandbox
    * world below the Game, and what it makes joins the undo history at price

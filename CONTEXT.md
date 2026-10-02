@@ -35,7 +35,7 @@ The paused phase between two Waves, and before the first. The player can't draw 
 _Avoid_: Build Phase, break, shop
 
 **Analysis**:
-What the Intermission shows of the next Wave: each Enemy type it sends and how many, and in the Campaign, a line for each Colour or Enemy type appearing for the first time. Not the order or the gaps.
+What the Intermission shows of the next Wave: each Enemy type it sends and how many, and in the Campaign, a line for each Colour or Enemy type appearing for the first time, and one for Bellies with the first Enemy. Not the order or the gaps, nor the Bellies, which are rolled.
 _Avoid_: Preview, scouting
 
 **Aftermath**:
@@ -58,7 +58,7 @@ Playing any Level outside the Campaign: the Sandbox, a Gallery demo or a stress 
 _Avoid_: Sandbox mode (the Sandbox is a Level)
 
 **Tutorial**:
-The cards shown the first time Campaign Level 1 starts: the goal, the controls (drawing a Line, closing an Object, Fill and Release), how to kill an Enemy, and grey (pebble) vs black (stone). Shown once, reopened with H.
+The cards shown the first time Campaign Level 1 starts: the goal, the controls (drawing a Line, closing an Object, Fill and Release), how to kill an Enemy, what an Enemy's Belly spills, and grey (pebble) vs black (stone). Shown once, reopened with H.
 _Avoid_: Help screen, onboarding
 
 **Roguelite Mode**:
@@ -122,11 +122,11 @@ The fragments a broken Piece or Object bursts into, and the pop of an Enemy that
 _Avoid_: Rubble (which is physical)
 
 **Rubble**:
-The pebbles (grey) or stones (black) a Fill releases when its Object breaks. Real bodies that roll, pile up and hit things, but never break, and vanish a few seconds after they are released.
+The pebbles (grey) or stones (black) a Fill releases when its Object breaks, or a Belly when its Enemy dies. Real bodies that roll, pile up and hit things, but never break, and vanish a few seconds after they are released.
 _Avoid_: Shrapnel, Debris
 
 **Spill**:
-The Droplets that fly out when a blue or green-filled Object breaks.
+The Droplets that fly out when a blue or green-filled Object breaks, or an Enemy with a blue or green Belly dies.
 
 **Droplet**:
 One flying bit of a Spill. It sticks to the first enemy or surface it hits and becomes a Patch there.
@@ -137,7 +137,7 @@ The strip of spilled ink a Droplet leaves on an enemy or surface. It behaves lik
 _Avoid_: Puddle, stain
 
 **Blast**:
-The ring of force that spreads out from red ink when it is destroyed, weakening with distance.
+The ring of force that spreads out from red ink when it is destroyed (a red Line, Outline or Fill, or a red Belly as its Enemy dies), weakening with distance.
 _Avoid_: Shockwave, explosion radius
 
 ### Ink
@@ -161,8 +161,12 @@ _Avoid_: Loot, reward
 ### Enemies
 
 **Enemy**:
-An upright physics body that walks toward the Ink Core over whatever it stands on, pushing with a force up to its type's limit. It dies when its HP runs out, from hits, falls, Blasts and the like, or when it falls below the bottom of the screen, and disappears when it reaches the Ink Core: when it, or a green Object stuck to it, touches it.
+An upright physics body that walks toward the Ink Core over whatever it stands on, pushing with a force up to its type's limit. It carries a Belly. It dies when its HP runs out, from hits, falls, Blasts and the like, or when it falls below the bottom of the screen, and disappears when it reaches the Ink Core: when it, or a green Object stuck to it, touches it.
 _Avoid_: Mob, unit, creep, walker (in player-facing text)
+
+**Belly**:
+The one Colour of ink an Enemy carries, rolled when it is sent in, weighted by its type, from the Colours the Level has, and shown on it. When the Enemy dies in the Arena, its Belly comes out where it died exactly as a broken Object's Fill does, at an amount fixed by its type: Rubble, a Spill or a Blast. Falling below the screen spills nothing, nor does reaching the Ink Core. It comes on top of the Drop, which it never changes.
+_Avoid_: Enemy Fill, Enemy ink, load (a Fill is an Object's)
 
 **Crawler**:
 The basic slow walker. It climbs other Enemies.
