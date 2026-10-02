@@ -732,27 +732,18 @@ describe('Drawing input', () => {
       expect(world.lines).toHaveLength(1);
     });
 
-    it('falls back to grey once a frame after it is put away while picked', () => {
+    it('stays on hand, picked or not, when the sandbox tool is put away (a Campaign Level)', () => {
       const game = createGame(false);
       const { input } = drawingOver(game);
       input.pick('eraser');
 
-      game.sandboxTools = false; // a Campaign Level was loaded
-      expect(input.tool).toBe('eraser');
-      input.tick();
-
-      expect(input.tool).toBe('grey');
-    });
-
-    it('cannot be picked while it is put away', () => {
-      const game = createGame(false);
-      const { input } = drawingOver(game);
-      input.pick('blue');
       game.sandboxTools = false;
+      input.tick();
+      expect(input.tool).toBe('eraser');
 
+      input.pick('blue');
       input.pick('eraser');
-
-      expect(input.tool).toBe('blue');
+      expect(input.tool).toBe('eraser');
     });
   });
 

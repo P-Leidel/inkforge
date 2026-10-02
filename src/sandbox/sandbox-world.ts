@@ -586,7 +586,7 @@ export class SandboxWorld {
   }
 
   /**
-   * The Eraser, a testing tool of the sandbox: removes everything closer
+   * The Eraser: removes everything closer
    * than `radius` px to `path` (a drag, or a click's one point): whole
    * Objects with their Fills, the Pieces of Lines, Rubble, Droplets and
    * Patches. Erasing is not breaking: nothing bursts, releases its Fill or

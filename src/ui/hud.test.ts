@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { helpText } from './hud';
 
 describe("The HUD's help line", () => {
-  it('offers the sandbox tools, the Eraser and sending in Enemies, in Free play', () => {
+  it('offers the Eraser and sending in Enemies in Free play', () => {
     const help = helpText({ eraser: true, spawning: true });
 
     expect(help).toContain('E: eraser');
     expect(help).toContain('Shift+1–3: Enemy');
   });
 
-  it('leaves both out while they are put away (a Campaign Level), and keeps the rest', () => {
+  it('leaves out what is put away, and keeps the rest', () => {
     const help = helpText({ eraser: false, spawning: false });
 
     expect(help).not.toContain('eraser');

@@ -54,7 +54,7 @@ _Avoid_: Stage, map, arena description, scenario
 The first mode: a fixed sequence of handmade Levels, each unlocked by clearing the one before. Ink Tanks reset to the Level's maximums every Wave; a Colour whose maximum is 0 is not in the Level.
 
 **Free play**:
-Playing any Level outside the Campaign: the Sandbox, a Gallery demo or a stress test. The sandbox tools, the Eraser and sending in Enemies by hand, are on hand, and what the Level leaves out, its Ink Tank maximums or its Waves, is as tuned, never as the last Level left it.
+Playing any Level outside the Campaign: the Sandbox, a Gallery demo or a stress test. The sandbox tool, sending in Enemies by hand, is on hand, and what the Level leaves out, its Ink Tank maximums or its Waves, is as tuned, never as the last Level left it.
 _Avoid_: Sandbox mode (the Sandbox is a Level)
 
 **Roguelite Mode**:
@@ -96,7 +96,7 @@ What happens to an Object a new Line is drawn across: it slides the shortest way
 _Avoid_: Push-out, overlap
 
 **Eraser**:
-A sandbox tool for testing, not part of the game: on hand in Free play, never in the Campaign, like sending in Enemies by hand. It quietly removes whatever its brush passes over, whole Objects with their Fills, the Pieces of Lines, Rubble, Droplets and Patches. Erasing is not breaking: nothing bursts into Debris, releases its Fill or sets off a Blast. It refunds the Ink paid for what it removes, like undo.
+The player's tool for clearing away what they no longer want, on hand in the Campaign as in Free play. It quietly removes whatever its brush passes over, whole Objects with their Fills, the Pieces of Lines, Rubble, Droplets and Patches. Erasing is not breaking: nothing bursts into Debris, releases its Fill or sets off a Blast. It refunds the Ink paid for what it removes, like undo.
 _Avoid_: Delete, rubber
 
 ### Breaking
@@ -166,7 +166,7 @@ An Enemy pressing a step whose top is at most 1.2 of its own heights above its f
 _Avoid_: Jumping, hopping, stacking (as a scripted move)
 
 **Pressing**:
-An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate, half again for each other Enemy in its **Stack**; what it stands on wears at the floor wear times its rate. Wear goes by time in contact, not force, and never wakes a Frozen Object.
+An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate, half again for each other Enemy in its **Stack**; what it stands on wears at the floor wear times its rate. A stalled Enemy presses whatever touches it from ahead, however slightly, such as a corner catching its head. Wear goes by time in contact, not force, and never wakes a Frozen Object.
 _Avoid_: Attacking, wall (a Line is never called a wall)
 
 **Stack**:

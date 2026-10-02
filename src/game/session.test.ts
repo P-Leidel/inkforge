@@ -355,13 +355,13 @@ describe('A Session in the Campaign', () => {
       expect(session.reading.campaign!.index).toBe(0);
     });
   });
-  describe('the sandbox tools: the Eraser and sending in Enemies', () => {
+  describe('the Eraser and the sandbox tool, sending in Enemies', () => {
     const brush = [
       { x: 290, y: 500 },
       { x: 510, y: 500 },
     ];
 
-    it('are put away in a Campaign Level: erasing and spawning are refused there, after Next Level and Restart Level too', () => {
+    it('put sending in Enemies away in a Campaign Level, after Next Level and Restart Level too, and leave the Eraser on hand', () => {
       const { game, session } = campaignSession();
       session.playCampaign(0);
       playWave(game, session);
@@ -371,10 +371,11 @@ describe('A Session in the Campaign', () => {
 
       for (const again of [false, true]) {
         if (again) session.clear();
-        expect(game.allowed).toMatchObject({ eraser: false, spawning: false });
-        expect(game.eraseAlong(brush, 12)).toEqual({ kind: 'refused', reason: 'not-on-hand' });
+        expect(game.allowed).toMatchObject({ eraser: true, spawning: false });
         expect(game.spawn('crawler')).toEqual({ kind: 'refused', reason: 'not-on-hand' });
         expect(game.world.lines).toHaveLength(1);
+        expect(game.eraseAlong(brush, 12)).toEqual({ kind: 'erased' });
+        expect(game.world.lines).toEqual([]);
       }
     });
 
