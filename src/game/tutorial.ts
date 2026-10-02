@@ -29,7 +29,7 @@ export const TUTORIAL_CARDS: readonly TutorialCard[] = [
       'to its start is a Line. A Line that touches the ground, or another Line that ' +
       'does, stays fixed exactly where you drew it until Enemies wear it down. One drawn ' +
       'in mid-air starts Frozen and falls when Released. Lines are your walls and ' +
-      'ramps. Ctrl+Z undoes.',
+      'ramps. Hold Ctrl for a straight one. Ctrl+Z undoes.',
     swatches: [],
   },
   {

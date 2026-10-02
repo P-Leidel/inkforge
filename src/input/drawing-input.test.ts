@@ -167,6 +167,98 @@ describe('Drawing input', () => {
     });
   });
 
+  describe('the straight-line key', () => {
+    /** A wavy drag in mid-air, from (200, 300) to (500, 300) by way of (350, 200). */
+    const wavy = () =>
+      dragAlong([
+        { x: 200, y: 300 },
+        { x: 350, y: 200 },
+        { x: 500, y: 300 },
+      ]);
+
+    /** How far the world's only Line spreads across and up, in its own frame. */
+    function lineSpread(world: SandboxWorld): { across: number; up: number } {
+      expect(world.lines).toHaveLength(1);
+      const points = world.lines[0]!.segments.flatMap(({ a, b }) => [a, b]);
+      const spread = (values: number[]) => Math.max(...values) - Math.min(...values);
+      return { across: spread(points.map(({ x }) => x)), up: spread(points.map(({ y }) => y)) };
+    }
+
+    it('draws a held drag as one straight Line from its press to its release', () => {
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
+
+      input.straighten(true);
+      expect(drag(input, wavy())).toBeNull();
+
+      const { across, up } = lineSpread(world);
+      expect(across).toBeCloseTo(300, 0);
+      expect(up).toBeCloseTo(0, 0);
+    });
+
+    it('draws the path again once the key is let go mid-drag', () => {
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
+      const samples = wavy();
+
+      input.straighten(true);
+      input.press(samples[0]!, 'left');
+      for (const sample of samples.slice(1)) input.move(sample);
+      input.straighten(false);
+      input.release();
+
+      expect(lineSpread(world).up).toBeGreaterThan(50);
+    });
+
+    it('previews the straight segment while held, and the path drawn once let go', () => {
+      const game = createGame(false);
+      const { input } = drawingOver(game);
+      const samples = wavy();
+      input.press(samples[0]!, 'left');
+      for (const sample of samples.slice(1)) input.move(sample);
+
+      input.straighten(true);
+      const straight = input.preview();
+      input.straighten(false);
+      const drawn = input.preview();
+
+      expect(straight.kind === 'stroke' && straight.samples).toEqual([
+        samples[0],
+        samples[samples.length - 1],
+      ]);
+      expect(drawn.kind === 'stroke' && drawn.samples).toEqual(samples);
+    });
+
+    it('still fills the Object under a click', () => {
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
+      const id = box(world, input);
+      input.pick('red');
+
+      input.straighten(true);
+      expect(click(input, inBox)).toBeNull();
+
+      expect(objectById(world, id).fill).toBe('red');
+    });
+
+    it('never fills for a drag that comes back to its start', () => {
+      const game = createGame(false);
+      const world = game.world;
+      const { input } = drawingOver(game);
+      const id = box(world, input);
+      input.pick('red');
+
+      input.straighten(true);
+      drag(input, dragAlong([inBox, { x: 400, y: 300 }, { x: inBox.x + 1, y: inBox.y }]));
+
+      expect(objectById(world, id).fill).toBeNull();
+      expect(world.lines).toEqual([]);
+    });
+  });
+
   describe('flashes', () => {
     it('flashes the Outline of an Object already filled, closed, with "Already filled" at the pointer', () => {
       const game = createGame(false);
