@@ -109,6 +109,8 @@ export class DrawingInput {
   private lastPointer: Vec2 | null = null;
   /** Pointer samples of the Stroke being drawn, or null. */
   private stroke: Vec2[] | null = null;
+  /** Whether the straight-line key is held: see `straighten`. */
+  private straight = false;
   /** The Eraser's path since it last erased, while its button is held, or null. */
   private erasing: Vec2[] | null = null;
   /** Whether this press of the Eraser has flashed its refusal: it flashes once a press. */
@@ -159,6 +161,15 @@ export class DrawingInput {
     return this.erase();
   }
 
+  /**
+   * Whether the straight-line key is held. While it is, the Stroke being
+   * drawn is one straight segment from where it was pressed to the pointer;
+   * let go, it is the path drawn again, which is kept all along.
+   */
+  straighten(held: boolean): void {
+    this.straight = held;
+  }
+
   /** The pointer moved to `point`: a held Stroke or Eraser follows it. */
   move(point: Vec2): void {
     this.pointer = this.lastPointer = point;
@@ -186,6 +197,7 @@ export class DrawingInput {
     this.stroke = null;
     if (!stroke || this.picked === 'eraser') return null;
     const pointer = stroke[stroke.length - 1]!;
+    // A click is told by the path drawn, so a drag back to its start is never one.
     if (isFillClick(stroke)) {
       const outcome = this.commands.fillAt(stroke[0]!, this.picked);
       let message: string;
@@ -203,7 +215,7 @@ export class DrawingInput {
       const { outline } = outcome;
       return { path: [...outline, outline[0]!], message, pointer };
     }
-    const outcome = this.commands.submitStroke(stroke, this.picked);
+    const outcome = this.commands.submitStroke(this.drawn(stroke), this.picked);
     if (outcome.kind === 'refused') {
       const message = REFUSALS[outcome.reason].message(outcome.colour);
       return { path: outcome.path, message, pointer };
@@ -253,7 +265,7 @@ export class DrawingInput {
     const pointer = this.pointer;
     if (this.picked === 'eraser') return { kind: 'brush', pointer };
     const colour = this.picked;
-    const samples = this.stroke;
+    const samples = this.stroke && this.drawn(this.stroke);
     const look = this.pendingLook();
     const prospect = look && this.commands.prospect(look, colour);
     const refusal = prospect?.refusal ?? null;
@@ -273,15 +285,15 @@ export class DrawingInput {
    * The look at what is pending: the Stroke being drawn, or between Strokes,
    * the Fill under the pointer. The one throttle rule: a look is taken again
    * only when what it was taken at changed. For a Stroke, that is its
-   * samples; for a Fill, the pointer or the Sandbox world, since Objects
+   * samples and whether it is drawn straight; for a Fill, the pointer or the Sandbox world, since Objects
    * move while physics runs. Neither look depends on the Colour, which only
    * the price does.
    */
   private pendingLook(): Look | null {
     const { stroke, pointer } = this;
     if (stroke) {
-      return this.lookAgain(['stroke', stroke, stroke.length], () =>
-        this.commands.lookAtStroke(stroke),
+      return this.lookAgain(['stroke', stroke, stroke.length, this.straight], () =>
+        this.commands.lookAtStroke(this.drawn(stroke)),
       );
     }
     if (!pointer) return this.lookAgain(['nothing'], () => null);
@@ -289,6 +301,15 @@ export class DrawingInput {
     return this.lookAgain(['fill', x, y, this.commands.world.changes], () =>
       this.commands.lookAtFill(pointer),
     );
+  }
+
+  /**
+   * The samples the Stroke being drawn stands for: with the straight-line key
+   * held, its first and last; otherwise all of them.
+   */
+  private drawn(stroke: readonly Vec2[]): readonly Vec2[] {
+    if (!this.straight || stroke.length < 2) return stroke;
+    return [stroke[0]!, stroke[stroke.length - 1]!];
   }
 
   /** The last look, or a new one if it was taken at anything other than `at`. */

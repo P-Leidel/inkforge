@@ -159,6 +159,7 @@ Every Enemy is full of one Colour of ink, its **Belly**, shown as a window in it
 |---|---|
 | Choose a Colour | Keys 1–5 or click the palette |
 | Draw | Hold left mouse button and drag |
+| Draw a straight Line | Hold Ctrl (Cmd on a Mac) while dragging |
 | Fill | Click inside a closed Object (no drag) with a Colour selected |
 | Release a Frozen Object or Line (Wave only) | Right-click it |
 | Undo | Ctrl+Z |

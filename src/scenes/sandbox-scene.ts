@@ -276,6 +276,11 @@ export class SandboxScene extends Phaser.Scene {
     keyboard
       .addKey(Phaser.Input.Keyboard.KeyCodes.R)
       .on('down', () => !this.blocked && this.reset());
+    // Ctrl (Cmd on a Mac) held draws straight; pressed or let go with the
+    // pointer still, the preview follows at once.
+    const straighten = (event: KeyboardEvent) => this.drawing.straighten(straightKey(event));
+    keyboard.on('keydown', straighten);
+    keyboard.on('keyup', straighten);
     keyboard.on('keydown-Z', (event: KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       if (this.blocked) return;
@@ -301,14 +306,19 @@ export class SandboxScene extends Phaser.Scene {
           for (const menu of open) menu.close();
           return;
         }
+        this.drawing.straighten(straightKey(pointer.event));
         if (pointer.leftButtonDown()) this.flash(this.drawing.press(at(pointer), 'left'));
         else if (pointer.rightButtonDown()) this.drawing.press(at(pointer), 'right');
       },
     );
-    this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) =>
-      this.drawing.move(at(pointer)),
-    );
-    const release = () => this.flash(this.drawing.release());
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
+      this.drawing.straighten(straightKey(pointer.event));
+      this.drawing.move(at(pointer));
+    });
+    const release = (pointer: Phaser.Input.Pointer) => {
+      this.drawing.straighten(straightKey(pointer.event));
+      this.flash(this.drawing.release());
+    };
     this.input.on(Phaser.Input.Events.POINTER_UP, release);
     this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, release);
   }
@@ -344,6 +354,11 @@ export class SandboxScene extends Phaser.Scene {
     this.hud.draw(this.session.reading.status ?? undefined);
     this.frames.draw(performance.now() - drawStart);
   }
+}
+
+/** Whether the straight-line key is held: Ctrl, or Cmd on a Mac. */
+function straightKey(event: { readonly ctrlKey: boolean; readonly metaKey: boolean }): boolean {
+  return event.ctrlKey || event.metaKey;
 }
 
 /** Where the pointer is in the world. */

@@ -68,7 +68,7 @@ _Avoid_: Endless mode
 ### Drawing
 
 **Stroke**:
-One continuous drag of the pointer in one Colour. Becomes either a Line or an Object.
+One continuous drag of the pointer in one Colour. Becomes either a Line or an Object. While Ctrl is held, it is one straight segment from where the drag began to the pointer, so it always becomes a Line.
 _Avoid_: Drawing, path
 
 **Line**:
