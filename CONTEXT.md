@@ -31,7 +31,7 @@ The phase in which physics runs, enemies walk toward the Ink Core, and the playe
 _Avoid_: Round, combat phase
 
 **Intermission**:
-The paused phase between two Waves, and before the first. The player can't draw (provisionally, while testing, they can). When a Wave ends, it shows that Wave's rewards (for now a summary: kills, the Ink Core's HP, the Ink picked up), every Ink Tank refills to its maximum and every Object at rest is Frozen again; the Arena otherwise stays as the Wave left it, damage included. Before each Wave it shows the Analysis. Space starts the next Wave.
+The paused phase between two Waves, and before the first. The player can't draw (provisionally, while testing, they can). When a Wave ends, it shows that Wave's rewards (for now a summary: kills, which count the Enemies that reached the Ink Core too, the Ink Core's HP, the Ink picked up), every Ink Tank refills to its maximum and every Object at rest is Frozen again; the Arena otherwise stays as the Wave left it, damage included. Before each Wave it shows the Analysis. Space starts the next Wave.
 _Avoid_: Build Phase, break, shop
 
 **Analysis**:
@@ -149,7 +149,7 @@ _Avoid_: Loot, reward
 ### Enemies
 
 **Enemy**:
-An upright physics body that walks toward the Ink Core over whatever it stands on, pushing with a force up to its type's limit. It dies when its HP runs out, from hits, falls, Blasts and the like, or when it falls below the bottom of the screen, and disappears when it reaches the Ink Core.
+An upright physics body that walks toward the Ink Core over whatever it stands on, pushing with a force up to its type's limit. It dies when its HP runs out, from hits, falls, Blasts and the like, or when it falls below the bottom of the screen, and disappears when it reaches the Ink Core: when it, or a green Object stuck to it, touches it.
 _Avoid_: Mob, unit, creep, walker (in player-facing text)
 
 **Crawler**:
@@ -166,7 +166,7 @@ An Enemy pressing a step whose top is at most 1.2 of its own heights above its f
 _Avoid_: Jumping, hopping, stacking (as a scripted move)
 
 **Pressing**:
-An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate, half again for each other Enemy in its **Stack**; what it stands on wears at the floor wear times its rate. A stalled Enemy presses whatever touches it from ahead, however slightly, such as a corner catching its head. Wear goes by time in contact, not force, and never wakes a Frozen Object.
+An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate, half again for each other Enemy in its **Stack**; what it stands on wears at the floor wear times its rate. A stalled Enemy presses whatever touches it from any side but below, however slightly, such as a corner catching its head or a Piece left hanging over it on a slope. Wear goes by time in contact, not force, and never wakes a Frozen Object.
 _Avoid_: Attacking, wall (a Line is never called a wall)
 
 **Stack**:

@@ -681,6 +681,24 @@ describe('Pressing wear', () => {
     expect(onlyEnemy(world).transform.x).toBeGreaterThan(400);
   });
 
+  it('wears a Piece left hanging over it on the slope, until it walks on to the Ink Core', () => {
+    const world = createWorld();
+    // The sandbox slope rises 1 in 2 from x = 1400. An upright grey wall on it:
+    // once its bottom Piece breaks, the next hangs just above and behind the
+    // Crawler's head as the ground rises under it.
+    const slopeY = (x: number) => GROUND_Y - (x - 1400) / 2;
+    drawLine(world, [
+      { x: 1550, y: slopeY(1550) - 2 },
+      { x: 1550, y: slopeY(1550) - 200 },
+    ]);
+    world.spawn('crawler');
+
+    const reached = stepUntil(world, 120, () => world.enemies.length === 0);
+
+    expect(reached).toBe(true);
+    expect(world.inkCore.hp).toBe(9);
+  });
+
   it('wears nothing on the Terrain and nothing when no Enemy is there', () => {
     const world = createWorld();
     post(world, 300, 86);
@@ -829,6 +847,21 @@ describe('Enemies take damage', () => {
     expect(stuck).toBeDefined();
     expect(world.bonds.some((bond) => bond.object === green)).toBe(true);
     expect(objectById(world, green).transform.x).toBeGreaterThan(from + 60);
+  });
+
+  it('lets a Crawler reach the Ink Core through a green Object stuck to its front: the Ink Core loses 1 HP; the Crawler is gone', () => {
+    const world = createWorld();
+    const heard = hear(world);
+    const id = world.spawn('crawler', { x: 300, y: GROUND_Y - CRAWLER.height / 2 });
+    const green = drawObject(world, dragBox(300, GROUND_Y - CRAWLER.height - 60, 40, 40), 'green');
+    world.togglePause();
+    world.release(green);
+
+    const reached = stepUntil(world, 45, () => world.enemies.length === 0);
+
+    expect(reached).toBe(true);
+    expect(world.inkCore).toMatchObject({ hp: 9, fullHp: 10 });
+    expect(wentOf(heard())).toEqual([`enemy ${id} reached`]);
   });
 
   it('lets a Droplet land on a Crawler as a Patch that moves with it', () => {

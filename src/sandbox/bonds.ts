@@ -80,6 +80,25 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
     this.attach({ id: this.nextId++, object, stuck, host, anchors });
   }
 
+  /**
+   * The bodies of the Objects stuck to Party `host`, of those stuck to them,
+   * and so on: what it carries.
+   */
+  carriedBy(host: PartyId): BodyId[] {
+    const carrying = new Set([host]);
+    const carried: BodyId[] = [];
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const { stuck, host, body } of this.bonds) {
+        if (!carrying.has(host) || carrying.has(stuck)) continue;
+        carrying.add(stuck);
+        carried.push(body);
+        grew = true;
+      }
+    }
+    return carried;
+  }
+
   private body(party: PartyId): BodyId | null {
     return this.parties.party(party)?.body ?? null;
   }
