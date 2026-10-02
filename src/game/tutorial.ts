@@ -8,7 +8,11 @@ export interface TutorialCard {
   readonly swatches: readonly { readonly colour: Colour; readonly label: string }[];
 }
 
-/** The Tutorial's cards, in order: the goal, how to kill an Enemy, and grey vs black. */
+/**
+ * The Tutorial's cards, in order: the goal, the controls (drawing a Line,
+ * closing an Object, Fill and Release), how to kill an Enemy, and grey vs
+ * black.
+ */
 export const TUTORIAL_CARDS: readonly TutorialCard[] = [
   {
     title: 'Defend the Ink Core',
@@ -19,11 +23,37 @@ export const TUTORIAL_CARDS: readonly TutorialCard[] = [
     swatches: [],
   },
   {
+    title: 'Draw',
+    body:
+      'Pick a Colour with 1–5 and drag to draw. A stroke whose end does not come back ' +
+      'to its start is a Line: it stays fixed exactly where you drew it, even in mid-air, ' +
+      'until Enemies wear it down. Lines are your walls and ramps. Ctrl+Z undoes.',
+    swatches: [],
+  },
+  {
+    title: 'Close it into an Object',
+    body:
+      'Bring a stroke back to its start, until the marker shows, and it becomes an ' +
+      'Object: a solid body with exactly the shape you drew. It must not cross itself, ' +
+      'and may touch Terrain and other Objects but not overlap them. Every Object ' +
+      'starts Frozen, hanging where you drew it.',
+    swatches: [],
+  },
+  {
+    title: 'Fill and Release',
+    body:
+      'Click inside an Object to fill it with the picked Colour: the Fill gives it its ' +
+      'weight. Right-click a Frozen Object to Release it and let it fall. A hard hit ' +
+      'frees it too.',
+    swatches: [],
+  },
+  {
     title: 'Crush them',
     body:
       'Walls only hold Enemies back, and they wear through them. To kill an Enemy, hit ' +
-      'it hard. Draw a closed shape above their path and it hangs Frozen. Click inside ' +
-      'it to fill it, then right-click to drop it on them. Long falls hurt too.',
+      'it hard: hang a filled Object above their path and Release it as they pass ' +
+      'beneath. The heavier and faster it falls, the harder it hits. Long falls hurt ' +
+      'Enemies too.',
     swatches: [],
   },
   {
