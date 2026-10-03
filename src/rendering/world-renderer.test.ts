@@ -326,6 +326,44 @@ describe('World renderer: between steps', () => {
     renderer.destroy();
   });
 
+  it('keeps each Run’s tiles its own when the Runs change places along the Line', () => {
+    const world = createWorld();
+    const recording = new RecordingScene();
+    const renderer = new WorldRenderer(recording.asScene(), world);
+    // A bridge standing on both feet: Pieces 0 and 7 lie on the ground.
+    const id = drawLine(world, [
+      { x: 300, y: 880 },
+      { x: 348, y: 880 },
+      { x: 348, y: 784 },
+      { x: 444, y: 784 },
+      { x: 444, y: 880 },
+      { x: 492, y: 880 },
+    ]);
+    const runsOf = () => world.lines.find((line) => line.id === id)!.runs;
+    world.eraseAlong([{ x: 348, y: 856 }], 4); // Piece 1
+    world.eraseAlong([{ x: 420, y: 784 }], 4); // Piece 4: Pieces 2 and 3 fall
+    renderer.draw();
+    expect(runsOf().map((run) => run.pieces[0]!.index)).toEqual([0, 2]);
+
+    world.eraseAlong([{ x: 310, y: 880 }], 4); // Piece 0: what stands now comes after what fell
+    expect(runsOf().map((run) => [run.grounded, run.pieces[0]!.index])).toEqual([
+      [false, 2],
+      [true, 5],
+    ]);
+    world.togglePause();
+    world.advance(10 * STEP_SECONDS);
+    world.togglePause();
+    renderer.draw();
+
+    // The falling Run's tiles go where it is now; the standing Run's are never moved.
+    const [fallen] = runsOf();
+    const placed = recording.placed.filter((tile) => !tile.destroyed);
+    expect(placed.length).toBeGreaterThan(0);
+    for (const tile of placed)
+      expect(tile.position).toEqual({ x: fallen!.transform.x, y: fallen!.transform.y });
+    renderer.destroy();
+  });
+
   it('draws the pose now while paused', () => {
     const world = createWorld();
     const recording = new RecordingScene();

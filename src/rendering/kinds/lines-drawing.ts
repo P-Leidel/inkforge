@@ -16,10 +16,16 @@ type Graphics = Phaser.GameObjects.Graphics;
 /** Lines are baked in tiles of at most this many px square. */
 const LINE_TILE = 256;
 
+/** A Run's tiles, and the places along the Line of the Pieces it had when they were made. */
+interface BakedRun {
+  readonly pieces: ReadonlySet<number>;
+  readonly tiles: readonly BakedDrawing[];
+}
+
 /** A Line as drawn: each Run's tiles, once baked, and what they were last baked with. */
 interface DrawnLine {
-  /** Each Run's tiles, in order along the Line; null until baked. */
-  runs: BakedDrawing[][] | null;
+  /** Each Run's tiles, in order along the Line as they were made; null until baked. */
+  runs: BakedRun[] | null;
   /** The places along the Line of its Pieces still there. */
   readonly pieces: Set<number>;
   /** Each Piece's crack stage, in order along the Line, as last baked. */
@@ -106,8 +112,8 @@ export class LinesDrawing implements DrawnKind {
     for (const line of this.views()) {
       const drawnLine = this.lines.get(line.id);
       if (!drawnLine) continue;
-      // A Run that lost its last Piece is gone: the rest are no longer where they were in order.
-      if (drawnLine.runs && drawnLine.runs.length !== line.runs.length) unbake(drawnLine);
+      let tiles = drawnLine.runs && tilesOf(drawnLine.runs, line.runs);
+      if (drawnLine.runs && !tiles) unbake(drawnLine);
       const stages = line.runs.flatMap((run) => run.pieces.map((piece) => crackStage(piece.wear)));
       const frozen = line.runs.map((run) => run.frozen);
       const stale =
@@ -115,13 +121,15 @@ export class LinesDrawing implements DrawnKind {
       if (stale) {
         // Around each whole Run as it first shows, and its pin: it only loses Pieces from here on.
         const reach = Math.max(inkReach(line.colour, line.thickness), PIN_REACH);
-        drawnLine.runs ??= line.runs.map((run) =>
-          tilesAlong(run.segments, reach, LINE_TILE).map(
+        drawnLine.runs ??= line.runs.map((run) => ({
+          pieces: new Set(run.pieces.map((piece) => piece.index)),
+          tiles: tilesAlong(run.segments, reach, LINE_TILE).map(
             (rect) => new BakedDrawing(this.scene, rect),
           ),
-        );
+        }));
+        tiles ??= drawnLine.runs.map((run) => run.tiles);
         line.runs.forEach((run, k) =>
-          bakeInto(this.scene, drawnLine.runs![k]!, (g) => drawRun(g, line, run)),
+          bakeInto(this.scene, tiles![k]!, (g) => drawRun(g, line, run)),
         );
         drawnLine.stages = stages;
         drawnLine.frozen = frozen;
@@ -130,15 +138,29 @@ export class LinesDrawing implements DrawnKind {
       line.runs.forEach((run, k) => {
         if (run.grounded) return;
         const { x, y, angle } = drawn(run, fraction);
-        for (const tile of drawnLine.runs![k]!) tile.image.setPosition(x, y).setRotation(angle);
+        for (const tile of tiles![k]!) tile.image.setPosition(x, y).setRotation(angle);
       });
     }
   }
 }
 
+/**
+ * Each of `runs`' tiles, in their order: a Run only loses Pieces, so its
+ * tiles are those made with its first Piece left, wherever the Runs are in
+ * order now. Null when a Run lost its last Piece, or has none made.
+ */
+function tilesOf(
+  baked: readonly BakedRun[],
+  runs: readonly RunView[],
+): (readonly BakedDrawing[])[] | null {
+  if (baked.length !== runs.length) return null;
+  const tiles = runs.map((run) => baked.find((b) => b.pieces.has(run.pieces[0]!.index))?.tiles);
+  return tiles.every((t) => t !== undefined) ? tiles : null;
+}
+
 /** Frees a Line's tiles, to be made again when it is next drawn. */
 function unbake(line: DrawnLine): void {
-  for (const tiles of line.runs ?? []) for (const tile of tiles) tile.destroy();
+  for (const { tiles } of line.runs ?? []) for (const tile of tiles) tile.destroy();
   line.runs = null;
   line.stale = true;
 }
