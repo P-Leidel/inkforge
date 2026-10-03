@@ -40,7 +40,8 @@ describe('What a Stroke spends', () => {
 
     expect(outcome.kind).toBe('line');
     if (outcome.kind !== 'line') return;
-    const { segments, thickness } = lineById(world, outcome.id);
+    const { runs, thickness } = lineById(world, outcome.id);
+    const { segments } = runs[0]!;
     expect(thickness).toBe(LINE_THICKNESS);
     expect(outcome).toMatchObject({
       kind: 'line',
@@ -57,7 +58,8 @@ describe('What a Stroke spends', () => {
     const outcome = world.submitStroke(dragAlong(SHELF), 'grey');
 
     if (outcome.kind !== 'line') throw new Error('expected a Line');
-    const { pieces, thickness } = lineById(world, outcome.id);
+    const { runs, thickness } = lineById(world, outcome.id);
+    const { pieces } = runs[0]!;
     expect(outcome.pieces).toHaveLength(10);
     expect(outcome.pieces).toEqual(pieces.map((piece) => lineInk(piece.segments, thickness)));
     const sum = outcome.pieces.reduce((total, ink) => total + ink, 0);
@@ -74,7 +76,7 @@ describe('What a Stroke spends', () => {
     );
 
     if (thin.kind !== 'line' || normal.kind !== 'line') throw new Error('expected two Lines');
-    expect(thin.ink).toBe(lineInk(lineById(world, thin.id).segments, 4));
+    expect(thin.ink).toBe(lineInk(lineById(world, thin.id).runs[0]!.segments, 4));
     expect(thin.ink).toBeCloseTo(normal.ink / 2, 6);
   });
 
@@ -214,10 +216,10 @@ describe('What taking back a Stroke or a Fill gives back', () => {
     const world = createWorld();
     const line = drawLine(world, SHELF, 'grey');
     const drawn = lineById(world, line);
-    const ink = lineInk(drawn.segments, drawn.thickness);
+    const ink = lineInk(drawn.runs[0]!.segments, drawn.thickness);
     world.eraseAlong([{ x: 200 + 48 * 4 + 24, y: 700 }], 12); // Piece 4
     const left = lineById(world, line);
-    expect(left.pieces).toHaveLength(9);
+    expect(left.runs[0]!.pieces).toHaveLength(9);
 
     const taken = world.removeStroke(line);
 
@@ -225,7 +227,7 @@ describe('What taking back a Stroke or a Fill gives back', () => {
       kind: 'line',
       id: line,
       colour: 'grey',
-      ink: lineInk(left.segments, left.thickness),
+      ink: lineInk(left.runs[0]!.segments, left.thickness),
     });
     if (taken.kind === 'line') expect(taken.ink).toBeCloseTo((ink * 9) / 10, 6);
   });
@@ -241,8 +243,11 @@ describe('What taking back a Stroke or a Fill gives back', () => {
     runFor(world, 1.5);
     world.remove(rock);
     const left = lineById(world, drawn.id);
-    expect(left.pieces.length).toBeLessThan(10);
-    const standing = left.pieces.reduce((sum, piece) => sum + drawn.pieces[piece.index]!, 0);
+    expect(left.runs[0]!.pieces.length).toBeLessThan(10);
+    const standing = left.runs[0]!.pieces.reduce(
+      (sum, piece) => sum + drawn.pieces[piece.index]!,
+      0,
+    );
 
     const taken = world.removeStroke(drawn.id);
 

@@ -11,6 +11,7 @@ import {
   type Entry,
   type LineView,
   type ObjectView,
+  type PieceView,
   type SandboxWorldOptions,
 } from './sandbox-world';
 
@@ -78,12 +79,19 @@ export function drawLine(world: SandboxWorld, path: Vec2[], colour: Colour = 'gr
   return outcome.id;
 }
 
-/** A Line's capsule centre lines where it is now, in world coordinates. */
+/** A Line's Pieces still there, Run by Run. */
+export function piecesOf(line: LineView): PieceView[] {
+  return line.runs.flatMap((run) => run.pieces);
+}
+
+/** A Line's capsule centre lines where they are now, Run by Run, in world coordinates. */
 export function worldSegments(line: LineView): Segment[] {
-  return line.segments.map(({ a, b }) => ({
-    a: applyTransform(a, line.transform),
-    b: applyTransform(b, line.transform),
-  }));
+  return line.runs.flatMap((run) =>
+    run.segments.map(({ a, b }) => ({
+      a: applyTransform(a, run.transform),
+      b: applyTransform(b, run.transform),
+    })),
+  );
 }
 
 /**
@@ -92,7 +100,7 @@ export function worldSegments(line: LineView): Segment[] {
  */
 export function drawPost(world: SandboxWorld, at: Vec2, colour: Colour = 'grey'): number {
   const id = drawLine(world, [at, { x: at.x, y: world.arena.height }], colour);
-  if (!world.lines.find((line) => line.id === id)!.grounded)
+  if (!world.lines.find((line) => line.id === id)!.runs.every((run) => run.grounded))
     throw new Error('the post is not Grounded');
   return id;
 }

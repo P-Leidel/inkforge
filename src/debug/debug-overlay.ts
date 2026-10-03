@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { transformPoints } from '../geometry/transform';
+import { applyTransform, transformPoints } from '../geometry/transform';
 import type { Game } from '../game/game';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { contentCounts } from '../sandbox/content-counts';
@@ -128,9 +128,11 @@ export class DebugOverlay {
     const lines = this.world.lines;
     // Each Piece's capsules as one outline (their union, with flat ends), not a path per capsule.
     for (const line of lines) {
-      for (const { segments } of line.pieces) {
-        const band = bandPolygon(segments, line.thickness / 2);
-        strokePolygon(g, line.grounded ? band : transformPoints(band, line.transform));
+      for (const run of line.runs) {
+        for (const { segments } of run.pieces) {
+          const band = bandPolygon(segments, line.thickness / 2);
+          strokePolygon(g, run.grounded ? band : transformPoints(band, run.transform));
+        }
       }
     }
     for (const { transform: t, radius } of this.world.rubble) {
@@ -153,12 +155,13 @@ export class DebugOverlay {
       }
     }
     let k = 0;
-    for (const line of lines) {
-      for (const piece of line.pieces) {
+    for (const run of lines.flatMap((line) => line.runs)) {
+      for (const piece of run.pieces) {
         // At the middle of the Piece's middle capsule.
         const { a, b } = piece.segments[Math.floor(piece.segments.length / 2)]!;
-        const middle =
+        const own =
           piece.segments.length % 2 === 0 ? a : { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const middle = applyTransform(own, run.transform);
         this.label(k++)
           .setText(` ${Math.ceil(piece.durability)} `)
           .setPosition(middle.x, middle.y)
@@ -188,7 +191,7 @@ export class DebugOverlay {
   private readings(): Readings {
     const world = this.world;
     let pieces = 0;
-    for (const line of world.lines) pieces += line.pieces.length;
+    for (const line of world.lines) for (const run of line.runs) pieces += run.pieces.length;
     let graphics = 0;
     let commands = 0;
     let texts = 0;

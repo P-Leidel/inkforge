@@ -314,11 +314,11 @@ describe('Patches', () => {
         .map((p) => middle(p.segment));
     const laid = onShelf();
     expect(laid.length).toBeGreaterThan(0);
-    expect(world.lines.find((l) => l.id === shelf)).toMatchObject({ frozen: true });
+    expect(world.lines.find((l) => l.id === shelf)!.runs).toMatchObject([{ frozen: true }]);
 
     const post = drawPost(world, { x: 350, y: 700 });
 
-    expect(world.lines.find((l) => l.id === shelf)).toMatchObject({ grounded: true });
+    expect(world.lines.find((l) => l.id === shelf)!.runs).toMatchObject([{ grounded: true }]);
     expect(onShelf()).toHaveLength(laid.length);
     onShelf().forEach((at, k) => {
       expect(at.x).toBeCloseTo(laid[k]!.x, 3);
@@ -327,8 +327,8 @@ describe('Patches', () => {
 
     world.eraseAlong([{ x: 350, y: GROUND_Y - 24 }], 4); // the post's foot
 
-    expect(world.lines.find((l) => l.id === shelf)).toMatchObject({ grounded: false });
-    expect(world.lines.find((l) => l.id === post)).toMatchObject({ grounded: false });
+    expect(world.lines.find((l) => l.id === shelf)!.runs).toMatchObject([{ grounded: false }]);
+    expect(world.lines.find((l) => l.id === post)!.runs).toMatchObject([{ grounded: false }]);
     expect(onShelf()).toHaveLength(laid.length);
     runFor(world, 2);
     expect(onShelf()).toHaveLength(laid.length);

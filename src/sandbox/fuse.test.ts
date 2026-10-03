@@ -15,7 +15,9 @@ const fuse = (world: SandboxWorld, from: Vec2, to: Vec2) => drawLine(world, [fro
 
 /** The Line's Pieces still there, by their place along it; none once it is gone. */
 function piecesOf(world: SandboxWorld, id: number): number[] {
-  return world.lines.find((line) => line.id === id)?.pieces.map((piece) => piece.index) ?? [];
+  return (
+    world.lines.find((line) => line.id === id)?.runs[0]!.pieces.map((piece) => piece.index) ?? []
+  );
 }
 
 /** A grey ball thrown down onto `at`, hard enough to break the red Piece it lands on. */
@@ -97,7 +99,9 @@ describe('A red Line', () => {
       expect(object.durability).toBe(TABLE.colours.red.outline.durability);
       expect(object.transform.y).toBeCloseTo(596 - size / 2, 0);
       expect(piecesOf(world, line)).toHaveLength(5);
-      expect(world.lines[0]!.pieces.every((p) => p.durability === RED_LINE.durability)).toBe(true);
+      expect(
+        world.lines[0]!.runs[0]!.pieces.every((p) => p.durability === RED_LINE.durability),
+      ).toBe(true);
       expect(world.blasts).toHaveLength(0);
     }
   });
@@ -114,7 +118,9 @@ describe('A red Line', () => {
 
     expect(objectById(world, box).durability).toBe(TABLE.colours.grey.outline.durability);
     expect(piecesOf(world, line)).toHaveLength(5);
-    expect(world.lines[0]!.pieces.every((p) => p.durability === RED_LINE.durability)).toBe(true);
+    expect(world.lines[0]!.runs[0]!.pieces.every((p) => p.durability === RED_LINE.durability)).toBe(
+      true,
+    );
   });
 
   it('keeps its Pieces under an Object resting on it when physics starts again', () => {
@@ -170,7 +176,7 @@ describe('A red Line', () => {
     runFor(world, 2);
 
     const durabilities = (id: number) =>
-      world.lines.find((l) => l.id === id)!.pieces.map((p) => p.durability);
+      world.lines.find((l) => l.id === id)!.runs[0]!.pieces.map((p) => p.durability);
     const grey = TABLE.colours.grey.line.durability;
     expect(durabilities(near).every((d) => d < grey)).toBe(true);
     expect(durabilities(far).every((d) => d === grey)).toBe(true);
@@ -198,7 +204,7 @@ describe('A red Line and Reset', () => {
     const line = build(world);
     while (piecesOf(world, line).length > 6) world.step();
     world.togglePause();
-    const pieces = world.lines.map((l) => l.pieces);
+    const pieces = world.lines.map((l) => l.runs[0]!.pieces);
     const blasts = world.blasts;
     expect(blasts.length).toBeGreaterThan(0);
     world.togglePause(); // a snapshot mid-burn
@@ -207,7 +213,7 @@ describe('A red Line and Reset', () => {
     const first = world.contents;
 
     world.reset();
-    expect(world.lines.map((l) => l.pieces)).toEqual(pieces);
+    expect(world.lines.map((l) => l.runs[0]!.pieces)).toEqual(pieces);
     expect(world.blasts).toEqual(blasts);
     runFor(world, 2);
 

@@ -112,7 +112,7 @@ describe('Colour gallery', () => {
     for (const demo of GALLERY) {
       const world = createWorld({ arena: demo.arena });
       demo.build(world);
-      for (const line of world.lines) expect(line.grounded, demo.name).toBe(true);
+      for (const line of world.lines) expect(line.runs[0]!.grounded, demo.name).toBe(true);
     }
   });
 
@@ -132,7 +132,7 @@ describe('Colour gallery', () => {
 
     // Each on a grey post, drawn after them.
     expect(world.lines.slice(0, 5).map((line) => line.colour)).toEqual([...COLOURS]);
-    expect(world.lines.every((line) => line.grounded)).toBe(true);
+    expect(world.lines.every((line) => line.runs[0]!.grounded)).toBe(true);
   });
 
   it('Slide: the box races down blue and holds on black', () => {
@@ -200,9 +200,9 @@ describe('Colour gallery', () => {
     runFor(world, 2);
 
     const [grey, black] = world.lines;
-    expect(grey!.pieces.length).toBeLessThan(5);
-    expect(black!.pieces).toHaveLength(5);
-    expect(black!.pieces.some((p) => p.wear > 0.25)).toBe(true);
+    expect(grey!.runs[0]!.pieces.length).toBeLessThan(5);
+    expect(black!.runs[0]!.pieces).toHaveLength(5);
+    expect(black!.runs[0]!.pieces.some((p) => p.wear > 0.25)).toBe(true);
     const [fallen, held] = world.objects;
     expect(fallen!.transform.y).toBeGreaterThan(700);
     expect(held!.transform.y + 30).toBeCloseTo(616, 0);
@@ -221,7 +221,8 @@ describe('Colour gallery', () => {
     expect(stones.length).toBeGreaterThan(0);
     // The grey Lines under the pebbles and under the stones; the anvils between.
     const [underPebbles, , underStones] = world.lines;
-    const worn = (line: typeof underPebbles) => Math.max(...line!.pieces.map((p) => p.wear));
+    const worn = (line: typeof underPebbles) =>
+      Math.max(...line!.runs[0]!.pieces.map((p) => p.wear));
     expect(worn(underStones)).toBeGreaterThan(0.25); // cracked
     expect(worn(underPebbles)).toBeLessThan(worn(underStones));
   });
@@ -238,7 +239,7 @@ describe('Colour gallery', () => {
     expect(blackFilled).toBeGreaterThan(greyFilled!);
     expect(onGrey).toBeGreaterThan(1.5 * blackFilled!);
     const green = world.lines.slice(1, 4);
-    for (const line of green) expect(line.pieces.some((p) => p.wear > 0)).toBe(true);
+    for (const line of green) expect(line.runs[0]!.pieces.some((p) => p.wear > 0)).toBe(true);
   });
 
   it('Stick: each green Object glues itself to the first new thing it touches', () => {

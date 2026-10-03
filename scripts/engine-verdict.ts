@@ -134,7 +134,7 @@ function pushOut() {
         }
         const object = world.objects[0]!;
         const line = world.lines[0]!;
-        const overlapping = line.segments.some((s) =>
+        const overlapping = line.runs[0]!.segments.some((s) =>
           object.parts.some((part) =>
             capsuleOverlapsPolygon(s.a, s.b, 4, transformPoints(part, object.transform)),
           ),

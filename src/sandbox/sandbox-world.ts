@@ -76,6 +76,7 @@ export {
   type MadeStroke,
   type ObjectView,
   type PieceView,
+  type RunView,
   type RemovedFill,
   type RemovedStroke,
   type StrokeId,
@@ -558,8 +559,8 @@ export class SandboxWorld {
   }
 
   /**
-   * Releases the Frozen Object under `point`, if physics is running. Returns
-   * whether an Object was Released.
+   * Releases the Frozen Object, or else the Frozen Run of a Line, under
+   * `point`, if physics is running. Returns whether one was Released.
    */
   releaseAt(point: Vec2): boolean {
     return this.running && this.strokes.releaseAt(point);
@@ -617,8 +618,9 @@ export class SandboxWorld {
   }
 
   /**
-   * Releases a Frozen Object, optionally setting it moving (the stress tests
-   * launch balls this way). Only while physics is running.
+   * Releases a Frozen Object, or every Frozen Run of a Line, optionally
+   * setting it moving (the stress tests launch balls this way). Only while
+   * physics is running.
    */
   release(id: StrokeId, velocity?: Vec2): boolean {
     return this.running && this.strokes.release(id, velocity);

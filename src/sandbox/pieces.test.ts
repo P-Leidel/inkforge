@@ -11,6 +11,7 @@ import {
   FIXED_BODIES,
   hear,
   objectById,
+  piecesOf,
   runFor,
   sandboxWorlds,
   wentOf,
@@ -30,7 +31,7 @@ function lineById(world: SandboxWorld, id: number): LineView {
 /** The index of the Piece of a Line whose capsules pass nearest `point`. */
 function pieceAt(line: LineView, point: Vec2): number {
   let best = { index: -1, distance: Infinity };
-  for (const piece of line.pieces) {
+  for (const piece of line.runs[0]!.pieces) {
     for (const { a, b } of piece.segments) {
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const distance = Math.hypot(mid.x - point.x, mid.y - point.y);
@@ -40,8 +41,9 @@ function pieceAt(line: LineView, point: Vec2): number {
   return best.index;
 }
 
+/** The places along Line `id` of its Pieces still there, Run by Run. */
 const pieceIndexes = (world: SandboxWorld, id: number) =>
-  lineById(world, id).pieces.map((p) => p.index);
+  piecesOf(lineById(world, id)).map((p) => p.index);
 
 /** A 60 px black box filled with black: the boulder. */
 function boulder(world: SandboxWorld, x: number, y: number): number {
@@ -79,13 +81,13 @@ describe('Lines break Piece by Piece', () => {
     const id = shelf(world);
 
     const line = lineById(world, id);
-    expect(line.pieces.map((p) => p.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    for (const piece of line.pieces) {
+    expect(line.runs[0]!.pieces.map((p) => p.index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    for (const piece of line.runs[0]!.pieces) {
       expect(piece.durability).toBe(GREY_LINE);
       expect(piece.wear).toBe(0);
     }
     // Every Piece of a Grounded Line is a fixed body of its own: the shelf's and its post's.
-    const pieces = world.lines.reduce((sum, l) => sum + l.pieces.length, 0);
+    const pieces = world.lines.reduce((sum, l) => sum + l.runs[0]!.pieces.length, 0);
     expect(world.bodyCount).toBe(FIXED_BODIES + pieces);
   });
 
@@ -105,11 +107,11 @@ describe('Lines break Piece by Piece', () => {
       world.release(ball, { x: 800, y: 0 });
       runFor(world, 1);
     };
-    const before = lineById(world, wall).pieces;
+    const before = lineById(world, wall).runs[0]!.pieces;
 
     throwBall();
     throwBall();
-    const cracked = lineById(world, wall).pieces.find((p) => p.index === target)!;
+    const cracked = lineById(world, wall).runs[0]!.pieces.find((p) => p.index === target)!;
     expect(cracked.durability).toBeLessThan(GREY_LINE);
     expect(cracked.wear).toBeGreaterThan(0.5);
 
@@ -122,31 +124,32 @@ describe('Lines break Piece by Piece', () => {
     expect(bodiesBesidesRubble()).toBeLessThan(bodies);
     expect(wentOf(heard())).toContain(`piece ${wall}.${target} broke`);
     expect(entriesOf(heard(), 'burst').length).toBeGreaterThanOrEqual(2); // the Piece and the ball
-    // Every Piece below it, on the post, is still there, exactly where it was drawn.
-    expect(lineById(world, wall).pieces.map((p) => p.segments)).toEqual(
+    // Every Piece below it, on the post, is still there, exactly where it was drawn;
+    // those above it fell, as a Run of the same Line.
+    const [above, below] = lineById(world, wall).runs;
+    expect(below!.grounded).toBe(true);
+    expect(below!.pieces.map((p) => p.segments)).toEqual(
       before.filter((p) => p.index > target).map((p) => p.segments),
     );
-    // Those above it fell, as a Line of their own.
-    const above = world.lines.find((l) => l.id !== wall && l.id !== post)!;
-    expect(above.grounded).toBe(false);
-    expect(above.pieces.map((p) => p.index)).toEqual(
+    expect(above!.grounded).toBe(false);
+    expect(above!.pieces.map((p) => p.index)).toEqual(
       before.filter((p) => p.index < target).map((p) => p.index),
     );
+    expect(world.lines.map((l) => l.id)).toEqual([wall, post]);
   });
 
-  it('splits a Line when a Piece in the middle breaks: the Grounded side stays and the other falls', () => {
+  it('cuts a Line in two Runs when a Piece in the middle breaks: the Grounded one stays and the other falls', () => {
     const world = createWorld();
     const id = shelf(world);
     const rock = boulder(world, 440, 250);
     drop(world, rock, 1.5);
 
-    expect(pieceIndexes(world, id)).toEqual([0, 1, 2, 3]);
-    expect(lineById(world, id).grounded).toBe(true);
-    const right = world.lines.find((l) => l.pieces.some((p) => p.index > 5))!;
-    expect(right.id).toBeGreaterThan(id);
-    expect(right.grounded).toBe(false);
-    expect(right.pieces.map((p) => p.index)).toEqual([6, 7, 8, 9]);
-    expect(right.transform.y).toBeGreaterThan(100); // well below where it stood
+    const [left, right] = lineById(world, id).runs;
+    expect(left!.grounded).toBe(true);
+    expect(left!.pieces.map((p) => p.index)).toEqual([0, 1, 2, 3]);
+    expect(right!.grounded).toBe(false);
+    expect(right!.pieces.map((p) => p.index)).toEqual([6, 7, 8, 9]);
+    expect(right!.transform.y).toBeGreaterThan(100); // well below where it stood
   });
 
   it('keeps both halves of a Line fixed when a Piece in the middle breaks and each is still Grounded', () => {
@@ -156,8 +159,8 @@ describe('Lines break Piece by Piece', () => {
     const rock = boulder(world, 440, 250);
     drop(world, rock, 1.5);
 
-    const left = lineById(world, id).pieces.filter((p) => p.index < 4);
-    const right = lineById(world, id).pieces.filter((p) => p.index > 5);
+    const left = lineById(world, id).runs[0]!.pieces.filter((p) => p.index < 4);
+    const right = lineById(world, id).runs[0]!.pieces.filter((p) => p.index > 5);
     expect(pieceIndexes(world, id)).not.toContain(4);
     expect(pieceIndexes(world, id)).not.toContain(5);
     expect(left).toHaveLength(4);
@@ -194,9 +197,9 @@ describe('Lines break Piece by Piece', () => {
     world.release(onBlack);
     runFor(world, 2);
 
-    expect(lineById(world, grey).pieces.length).toBeLessThan(10);
+    expect(lineById(world, grey).runs[0]!.pieces.length).toBeLessThan(10);
     expect(pieceIndexes(world, black)).toHaveLength(10);
-    const worn = lineById(world, black).pieces.filter((p) => p.wear > 0);
+    const worn = lineById(world, black).runs[0]!.pieces.filter((p) => p.wear > 0);
     expect(worn.length).toBeGreaterThan(0);
     for (const piece of worn) expect(piece.wear).toBeLessThan(1);
     // The boulder rests on the black Line.
@@ -210,7 +213,8 @@ describe('Lines break Piece by Piece', () => {
     world.fillAt({ x: 440, y: 665 }, 'black');
     drop(world, box, 60);
 
-    for (const piece of lineById(world, id).pieces) expect(piece.durability).toBe(GREY_LINE);
+    for (const piece of lineById(world, id).runs[0]!.pieces)
+      expect(piece.durability).toBe(GREY_LINE);
   });
 
   it('wears a blue Line down through bounces that beat its threshold', () => {
@@ -219,7 +223,7 @@ describe('Lines break Piece by Piece', () => {
     const ball = drawObject(world, dragCircle({ x: 440, y: 300 }, 20));
     drop(world, ball, 3);
 
-    const worn = lineById(world, id).pieces.filter((p) => p.durability < BLUE_LINE);
+    const worn = lineById(world, id).runs[0]!.pieces.filter((p) => p.durability < BLUE_LINE);
     expect(worn.length).toBeGreaterThan(0);
   });
 
@@ -230,7 +234,7 @@ describe('Lines break Piece by Piece', () => {
       { x: 330, y: 500 },
     ]);
 
-    expect(lineById(world, id).pieces).toHaveLength(1);
+    expect(lineById(world, id).runs[0]!.pieces).toHaveLength(1);
   });
 });
 
@@ -245,7 +249,7 @@ describe('Taking back, Clear and Reset after a Piece has broken', () => {
     world.togglePause();
     world.togglePause(); // the snapshot: the boulder let go, the shelf whole
     runFor(world, 1.5);
-    expect(lineById(world, id).pieces.length).toBeLessThan(10);
+    expect(lineById(world, id).runs[0]!.pieces.length).toBeLessThan(10);
     return { id, rock };
   }
 
@@ -260,7 +264,7 @@ describe('Taking back, Clear and Reset after a Piece has broken', () => {
 
     expect(world.lines.map((l) => l.id)).toEqual(others.map((l) => l.id));
     expect(world.lines[0]!.id).toBe(earlier);
-    const pieces = others.reduce((sum, l) => sum + l.pieces.length, 0);
+    const pieces = others.reduce((sum, l) => sum + l.runs[0]!.pieces.length, 0);
     expect(world.bodyCount).toBe(FIXED_BODIES + pieces);
     expect(world.lines.some((l) => l.id === id)).toBe(false);
   });
@@ -297,7 +301,7 @@ describe('Taking back, Clear and Reset after a Piece has broken', () => {
     world.fillAt({ x: 440, y: 300 }, 'grey');
     drop(world, ball, 1.5); // cracks the shelf
     expect(world.objects.map((o) => o.id)).toContain(ball);
-    const cracked = lineById(world, id).pieces.map((p) => p.durability);
+    const cracked = lineById(world, id).runs[0]!.pieces.map((p) => p.durability);
     expect(cracked.some((d) => d < GREY_LINE)).toBe(true);
     world.togglePause();
     world.remove(ball);
@@ -307,12 +311,12 @@ describe('Taking back, Clear and Reset after a Piece has broken', () => {
     world.togglePause();
     world.togglePause(); // the snapshot: shelf cracked, boulder let go
     runFor(world, 1.5);
-    expect(lineById(world, id).pieces.length).toBeLessThan(10);
+    expect(lineById(world, id).runs[0]!.pieces.length).toBeLessThan(10);
     const heard = hear(world);
 
     world.reset();
 
-    expect(lineById(world, id).pieces.map((p) => p.durability)).toEqual(cracked);
+    expect(lineById(world, id).runs[0]!.pieces.map((p) => p.durability)).toEqual(cracked);
     // It starts over, and every Piece comes back as added.
     const [start, ...added] = heard();
     expect(start!.kind).toBe('start-over');
