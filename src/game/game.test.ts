@@ -9,7 +9,7 @@ import type { Game } from './game';
 import { fromLineLength, inLineLength } from './ink-table';
 import { SANDBOX_LEVEL } from './level';
 import { games } from './test-support';
-import { FIXED_BODIES } from '../sandbox/test-support';
+import { FIXED_BODIES, piecesOf } from '../sandbox/test-support';
 
 /** A Game over a new Sandbox world. Every test says whether Ink costs are on. */
 const createGame = games();
@@ -76,7 +76,7 @@ function brokenShelf(game: Game) {
   game.world.release(rock);
   runFor(game, 1.5);
   game.world.remove(rock);
-  const standing = game.world.lines.find((line) => line.id === shelf.id)!.runs[0]!.pieces;
+  const standing = piecesOf(game.world.lines.find((line) => line.id === shelf.id)!);
   expect(standing.length).toBeLessThan(10);
   expect(standing.length).toBeGreaterThan(0);
   return { shelf, standing: standing.map((piece) => piece.index) };

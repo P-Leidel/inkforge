@@ -9,6 +9,7 @@ import {
   entriesOf,
   hear,
   objectById,
+  piecesOf,
   runFor,
   sandboxWorlds,
   wentOf,
@@ -71,7 +72,7 @@ describe('Eraser', () => {
     expect(objectById(world, neighbour).durability).toBe(durability);
   });
 
-  it('erases only the Pieces it touches; the rest of the Line stays fixed, and a red one sets off nothing', () => {
+  it('erases only the Pieces it touches; the rest of the Line hangs on in two, and a red one sets off nothing', () => {
     const world = createWorld();
     const line = shelf(world, 'red');
     const before = world.lines[0]!.runs[0]!.pieces;
@@ -81,11 +82,18 @@ describe('Eraser', () => {
     eraseAt(world, onPiece(4));
     runFor(world, 1);
 
-    const pieces = world.lines.find((l) => l.id === line)!.runs[0]!.pieces;
+    const left = world.lines.find((l) => l.id === line)!;
+    expect(left.runs).toMatchObject([{ frozen: true }, { frozen: true }]);
+    const pieces = piecesOf(left);
     expect(pieces.map((p) => p.index)).toEqual([0, 1, 2, 3, 5, 6, 7, 8, 9]);
-    expect(pieces).toEqual(before.filter((p) => p.index !== 4));
+    const damage = ({ index, durability, wear }: (typeof pieces)[number]) => ({
+      index,
+      durability,
+      wear,
+    });
+    expect(pieces.map(damage)).toEqual(before.filter((p) => p.index !== 4).map(damage));
     expect(world.blasts).toEqual([]);
-    expect(heard().map((entry) => entry.kind)).toEqual(['went']);
+    expect(heard().map((entry) => entry.kind)).toEqual(['went', 'reformed']);
     expect(wentOf(heard())).toEqual([`piece ${line}.4 erased`]);
   });
 
@@ -222,6 +230,6 @@ describe('Eraser', () => {
 
     expect(contents(world)).toEqual(erased);
     expect(world.objects).toEqual([]);
-    expect(world.lines[0]!.runs[0]!.pieces).toHaveLength(9);
+    expect(piecesOf(world.lines[0]!)).toHaveLength(9);
   });
 });

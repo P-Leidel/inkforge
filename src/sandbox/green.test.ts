@@ -10,6 +10,7 @@ import {
   entriesOf,
   hear,
   objectById,
+  piecesOf,
   runFor,
   sandboxWorlds,
 } from './test-support';
@@ -65,14 +66,17 @@ describe('Glue drag', () => {
     world.materials.colours.green.line.durability = 250;
     const green = floor(world, 700, 100, 900, 'green');
     const grey = floor(world, 700, 1000, 1752, 'grey');
-    const count = world.lines.map((line) => line.runs[0]!.pieces.length);
+    const count = world.lines.map((line) => piecesOf(line).length);
     const onGreen = ballOnFloor(world, 200, 'black');
     ballOnFloor(world, 1100, 'black');
     for (const ball of world.objects) launch(world, ball.id, { x: 400, y: 0 });
 
     const heard = hear(world);
     runFor(world, 0.2);
-    const pieces = (id: number) => world.lines.find((l) => l.id === id)?.runs[0]!.pieces ?? [];
+    const pieces = (id: number) => {
+      const line = world.lines.find((l) => l.id === id);
+      return line ? piecesOf(line) : [];
+    };
     // Rolling starts no impact: the grey Line under the other ball is untouched.
     expect(pieces(grey).every((p) => p.wear === 0)).toBe(true);
     expect(pieces(green).some((p) => p.wear > 0.25)).toBe(true);
