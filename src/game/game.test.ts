@@ -413,6 +413,32 @@ describe('What a Stroke or a Fill would do, with Ink costs on', () => {
     expect(stroke(game, toGround, 'grey')).toMatchObject({ kind: 'line', pinned: false });
   });
 
+  it('says a Line hangs Frozen as the Line it makes will, not as its raw samples do', () => {
+    const game = createGame(true);
+    // A shelf with a spike down to the ground, thinner than a Line: the Line it makes runs straight across.
+    const spiked = dragAlong([
+      { x: 400, y: 840 },
+      { x: 500, y: 840 },
+      { x: 501, y: 880 },
+      { x: 502, y: 840 },
+      { x: 600, y: 840 },
+    ]);
+
+    expect(stroke(game, spiked, 'grey')).toMatchObject({ kind: 'line', pinned: true });
+    expect(game.submitStroke(spiked, 'grey')).toMatchObject({ kind: 'line', grounded: false });
+  });
+
+  it('doesn’t pin a Stroke begun on the ground before it is long enough to be a Line', () => {
+    const game = createGame(true);
+    const begun = dragAlong([
+      { x: 400, y: 880 },
+      { x: 400, y: 872 },
+    ]);
+
+    expect(game.submitStroke(begun, 'grey')).toEqual({ kind: 'dropped' });
+    expect(stroke(game, begun, 'grey')).toMatchObject({ kind: 'line', pinned: false });
+  });
+
   it('looks at nothing with too few samples to be anything', () => {
     const game = createGame(true);
     expect(game.lookAtStroke([{ x: 400, y: 300 }])).toBeNull();

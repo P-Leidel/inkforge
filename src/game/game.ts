@@ -533,9 +533,10 @@ export class Game {
 
   /**
    * Looks at what a Stroke with these raw samples would be if it were
-   * submitted now, without the Stroke pipeline but for a closing Stroke,
-   * whose Object may overlap: the Sandbox world measures the samples as
-   * drawn. Null with too few samples to be anything.
+   * submitted now. Its Ink is measured on the samples as drawn; whether a
+   * Line would be Grounded, and whether an Object would overlap, are asked
+   * of the Stroke pipeline, as submitting would. Null with too few samples
+   * to be anything.
    */
   lookAtStroke(samples: readonly Vec2[]): Look | null {
     if (samples.length < 2) return null;
