@@ -24,10 +24,13 @@ import { WorldRenderer } from './world-renderer';
  * Demolition chain. Phaser replays every call on every frame, circles
  * re-tessellated each time, so a frame's rendering cost grows with it.
  * With Strokes, Patches and Rubble baked, what is left is Debris, Droplets,
- * bonds, Blast rings and the Terrain: the chain peaks at 974. It peaked at
- * 2,485 with Strokes and Patches as Graphics, and at 7,399 with Rubble too.
+ * bonds, Blast rings and the Terrain: the chain peaks at 2,003, about 1,700
+ * of it Debris, 8 calls a square. (The 974 once given here, and the 2,485
+ * with Strokes and Patches as Graphics and 7,399 with Rubble too, were
+ * counted while the recording lost Graphics from its display list, Debris's
+ * among them.)
  */
-const REPLAYED_PER_FRAME = 1_500;
+const REPLAYED_PER_FRAME = 2_500;
 /** Drawing calls baked in any one frame after the first, for looks that changed (peak 306). */
 const BAKED_PER_FRAME = 1_000;
 /** Texture memory for the Demolition scene, bytes (peak 5.1 MB). */
@@ -111,7 +114,9 @@ class RecordingScene {
             target.position = { x: Number(args[0]), y: Number(args[1]) };
           } else if (name === 'destroy') {
             target.destroyed = true;
-            this.displayList.splice(this.displayList.indexOf(proxy), 1);
+            // One off the display list, such as a texture's image, leaves the list as it is.
+            const at = this.displayList.indexOf(proxy);
+            if (at >= 0) this.displayList.splice(at, 1);
           } else if (!String(name).startsWith('set') && name !== 'add' && name !== 'render') {
             target.calls++;
           }
