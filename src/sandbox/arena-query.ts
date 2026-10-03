@@ -51,10 +51,10 @@ export type QueryPhysics = Pick<
   'shapesNear' | 'getTransform' | 'bodiesWithin' | 'shapesWithin'
 >;
 
-/** An Object, as a query names it. */
 /** Whatever the Eraser's brush can touch: every Thing but an Enemy. */
 export type Erasable = Exclude<Thing, { readonly thing: 'enemy' }>;
 
+/** An Object, as a query names it. */
 export type FoundObject = Extract<Thing, { readonly thing: 'object' }>;
 
 type ObjectForm = Extract<Form, { readonly kind: 'object' }>;
