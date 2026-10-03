@@ -590,10 +590,14 @@ export class SandboxWorld {
   }
 
   /**
-   * Whether a Line along raw `samples` would be Grounded, cut where a new
-   * Line is: to show, while it is drawn, whether it will hang Frozen.
+   * Whether the Line a Stroke along raw `samples` would make now would be
+   * Grounded, by the Stroke pipeline, as `submitStroke` makes it: to show,
+   * while it is drawn, whether it will hang Frozen. Samples too few to make
+   * a Line yet are cut where a new Line is, as drawn.
    */
   groundsSamples(samples: readonly Vec2[]): boolean {
+    const result = processStroke(samples, this.strokeContext({}));
+    if (result.kind === 'line') return this.strokes.grounds(result.segments, result.thickness);
     const segments = cutPolylineOutside(samples, this.query.lineCutters(samples));
     return segments.length > 0 && this.strokes.grounds(segments, LINE_THICKNESS);
   }
