@@ -110,6 +110,25 @@ describe('Grounded Lines', () => {
     runFor(world, 1);
     expect(startOf(lineById(world, shelf))).toEqual({ x: 400, y: 700 });
   });
+
+  it('says a Frozen Line it grounds is reformed, its Pieces neither going nor coming', () => {
+    const world = createWorld();
+    const shelf = drawLine(world, [
+      { x: 400, y: 700 },
+      { x: 600, y: 700 },
+    ]);
+    const heard = hear(world);
+
+    const post = drawLine(world, [
+      { x: 500, y: GROUND },
+      { x: 500, y: 700 },
+    ]);
+
+    const entries = heard();
+    expect(entriesOf(entries, 'went')).toEqual([]);
+    expect(entriesOf(entries, 'added').every(({ what }) => what.id === post)).toBe(true);
+    expect(entriesOf(entries, 'reformed').map(({ id }) => id)).toEqual([shelf]);
+  });
 });
 
 describe('Lines that are not Grounded', () => {

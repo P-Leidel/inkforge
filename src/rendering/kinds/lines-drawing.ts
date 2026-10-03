@@ -33,7 +33,8 @@ interface DrawnLine {
  * The Lines, each baked in tiles of its own, so a long diagonal one doesn't
  * need a texture the size of the screen. A Line is made with its first
  * Piece, baked again when a Piece comes or goes, a Piece's crack stage
- * changes or it is Released or Frozen, and freed with its last Piece. A
+ * changes or it is Released or Frozen, made again when it changes form
+ * (`reformed`), and freed with its last Piece. A
  * Line that isn't Grounded is baked in its own coordinates, and its tiles
  * move and turn with it; a Frozen one is pinned halfway along.
  */
@@ -57,7 +58,19 @@ export class LinesDrawing implements DrawnKind {
     else if (entry.kind === 'released') {
       const line = this.lines.get(entry.id);
       if (line) line.stale = true;
-    }
+    } else if (entry.kind === 'reformed') this.reform(entry.id);
+  }
+
+  /**
+   * A Line changed form: its tiles are made again where it is now, a
+   * Grounded one's in the world's coordinates, one that isn't in its own.
+   */
+  private reform(id: StrokeId): void {
+    const line = this.lines.get(id);
+    if (!line) return;
+    for (const tile of line.tiles ?? []) tile.destroy();
+    line.tiles = null;
+    line.stale = true;
   }
 
   /** A Piece came: its Line is baked when next drawn. */

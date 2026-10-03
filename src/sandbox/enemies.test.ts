@@ -568,7 +568,9 @@ describe('Pressing wear', () => {
     });
 
     // The lower Piece was the only one touching the Terrain: the upper one falls.
-    expect(wentOf(heard())).toEqual([`piece ${line}.0 broke`, `piece ${line}.1 cut-off`]);
+    const entries = heard();
+    expect(wentOf(entries)).toEqual([`piece ${line}.0 broke`]);
+    expect(entriesOf(entries, 'reformed').map((entry) => entry.id)).toEqual([line]);
     expect(broke! - pressedFrom!).toBeCloseTo(6000 / CRAWLER.pressing, 0);
     expect(durabilities(world)).toEqual([[6000]]); // the upper Piece, out of its reach
     expect(world.lines[0]).toMatchObject({ grounded: false, frozen: false });
