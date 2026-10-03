@@ -568,6 +568,11 @@ export class ArenaBodies<T> {
     this.physics.removeShape(shape);
   }
 
+  /** The body of the Party with this id, or null for one with no body. */
+  bodyOf(party: PartyId): BodyId | null {
+    return this.contacts.party(party)?.body ?? null;
+  }
+
   /**
    * The surface of the body with this Party, in its own coordinates: where
    * a Patch can be laid on it. Null for a Party with no body, or one nothing
