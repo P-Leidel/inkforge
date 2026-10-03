@@ -4,6 +4,7 @@ import type { Vec2 } from '../geometry/vec2';
 import { TERRAIN_SURFACE } from '../materials/material-table';
 import type { BodyId, BodyShape, PhysicsWorld, ShapeId } from '../physics';
 import type { HostSurface } from './arena-contents';
+import type { EnemyShape } from './enemy-shape';
 import {
   TERRAIN_PARTY,
   type ContactLedger,
@@ -107,15 +108,22 @@ export interface CircleBody {
   readonly bullet?: boolean;
 }
 
-/** Where an Enemy's body is, and how it starts. It never rotates, and is never Frozen. */
+/**
+ * Where an Enemy's body is, and how it starts. It is never Frozen, and
+ * turns only if its shape doesn't stay upright.
+ */
 export interface EnemyBody {
   /** World position of its centre. */
   readonly position: Vec2;
-  /** Its outline relative to its centre: one convex polygon. */
-  readonly outline: Polygon;
+  /** Rotation about `position`, radians; 0 by default. */
+  readonly angle?: number;
+  /** Its shape: the convex parts it collides with, and its outline, about its centre. */
+  readonly shape: EnemyShape;
   readonly mass: number;
   /** Linear velocity, px/s. */
   readonly velocity?: Vec2;
+  /** Angular velocity, rad/s. */
+  readonly angularVelocity?: number;
 }
 
 /**
@@ -177,8 +185,8 @@ export type Form =
   | { readonly kind: 'object'; readonly outline: Polygon; readonly parts: readonly Polygon[] }
   /** Rubble or a Droplet: a circle about the origin. */
   | { readonly kind: 'circle'; readonly radius: number }
-  /** An Enemy: an upright rounded box, the one convex polygon it collides with. */
-  | { readonly kind: 'enemy'; readonly outline: Polygon }
+  /** An Enemy: its outline, and the convex parts it collides with (`EnemyShape`). */
+  | { readonly kind: 'enemy'; readonly outline: Polygon; readonly parts: readonly Polygon[] }
   /** A Patch: one capsule, on its host. */
   | { readonly kind: 'capsule'; readonly segment: Segment; readonly radius: number };
 
@@ -397,18 +405,29 @@ export class ArenaBodies<T> {
   }
 
   /**
-   * Adds an Enemy with `type`'s surface: an upright body a walking force
-   * drives, whose hits wake Frozen Objects. Patches lie along its outline.
+   * Adds an Enemy with `type`'s surface: a body a walking force drives,
+   * upright if its shape stays so, whose hits wake Frozen Objects. Patches
+   * lie along its outline.
    */
   addEnemy<P extends Party<T>>(def: EnemyBody, type: ThingType, what: Thing, who: Who<P>): P {
+    const { shape } = def;
     const body = this.physics.addBody({
-      shapes: { kind: 'polygons', polygons: [def.outline] },
+      shapes: { kind: 'polygons', polygons: shape.parts },
       surface: this.numbers.surface(type),
       position: def.position,
-      motion: { mass: def.mass, velocity: def.velocity, wakes: true, upright: true, driven: true },
+      angle: def.angle,
+      motion: {
+        mass: def.mass,
+        velocity: def.velocity,
+        angularVelocity: def.angularVelocity,
+        wakes: true,
+        upright: shape.staysUpright,
+        driven: true,
+      },
       reportsHits: true,
     });
-    return this.register(body, type, { kind: 'enemy', outline: def.outline }, what, who);
+    const form: Form = { kind: 'enemy', outline: shape.outline, parts: shape.parts };
+    return this.register(body, type, form, what, who);
   }
 
   /**

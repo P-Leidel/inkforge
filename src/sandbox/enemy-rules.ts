@@ -180,15 +180,16 @@ export class EnemyRules<W extends Walker> {
   }
 
   /**
-   * Before each physics step of `seconds`: every Enemy standing on
-   * something it can walk on walks, oldest first. One in the air, or only
-   * on what is too steep, doesn't push. Each says whether it is stalled,
+   * Before each physics step of `seconds`: every Enemy standing upright on
+   * something it can walk on walks, oldest first. One in the air, only on
+   * what is too steep, or Tipped (not `upright`), doesn't push. Each says whether it is stalled,
    * for pressing after the step. One that climbs (`climbs`) walks too,
    * standing or not, and climbs as well.
    */
   walk(seconds: number): void {
     this.stalled.clear();
     for (const walker of this.arena.walkers()) {
+      if (!walker.shape.upright(this.physics.getTransform(walker.body))) continue;
       const climbs = this.climbs(walker);
       if ((climbs || this.stands(walker)) && this.arena.walk(walker, seconds))
         this.stalled.add(walker.id);
@@ -214,10 +215,12 @@ export class EnemyRules<W extends Walker> {
    * contact is below it, not ahead, and it walks on.
    */
   private climbs(walker: W): boolean {
-    if (this.numbers.enemy(walker.type).climb <= 0) return false;
+    const { climb } = walker.shape;
+    if (!climb || this.numbers.enemy(walker.type).climb <= 0) return false;
     const heading = this.arena.heading(walker);
-    const step = this.numbers.climbStep * walker.height;
-    const feet = () => this.physics.getTransform(walker.body).y + walker.height / 2;
+    const step = this.numbers.climbStep * climb.height;
+    const at = () => this.physics.getTransform(walker.body);
+    const feet = () => walker.shape.feet(at());
     for (const { party, pairs } of this.contacts.touching(walker.body)) {
       if (party.harmless) continue;
       const other = this.arena.walkerOf(party);
@@ -228,33 +231,15 @@ export class EnemyRules<W extends Walker> {
           return normal !== null && test(normal);
         });
       if (other) {
-        if (!touches((normal) => isAhead(normal, heading))) continue;
+        if (!other.shape.climb || !touches((normal) => isAhead(normal, heading))) continue;
         if (feet() - this.stepTop(other, walker) <= step + 1e-9) return true;
       } else if (!this.arena.isInkCore(party)) {
         if (!touches((normal) => isPressed(normal, heading) && normal.y < OVERHANG)) continue;
-        if (!this.arena.blocksClimb(this.roomOver(walker, feet() - step))) return true;
+        const room = climb.roomAhead(at(), heading, feet() - step);
+        if (!this.arena.blocksClimb(room)) return true;
       }
     }
     return false;
-  }
-
-  /**
-   * The room an Enemy needs to stand just ahead of it with its feet at
-   * `top` (y): a box as wide and tall as its body, from its front onward.
-   */
-  private roomOver(walker: W, top: number): Polygon {
-    const { x } = this.physics.getTransform(walker.body);
-    const heading = this.arena.heading(walker);
-    const near = x + (heading * walker.width) / 2;
-    const far = near + heading * walker.width;
-    const [minX, maxX] = [Math.min(near, far), Math.max(near, far)];
-    const minY = top - walker.height;
-    return [
-      { x: minX, y: minY },
-      { x: maxX, y: minY },
-      { x: maxX, y: top },
-      { x: minX, y: top },
-    ];
   }
 
   /**
@@ -262,7 +247,9 @@ export class EnemyRules<W extends Walker> {
    * that of the highest Enemy standing on it, on another and so on.
    */
   private stepTop(step: W, climber: W): number {
-    const top = (walker: W) => this.physics.getTransform(walker.body).y - walker.height / 2;
+    // An Enemy that is no step has no top: none stands higher than the one below it.
+    const top = (walker: W) =>
+      walker.shape.climb?.top(this.physics.getTransform(walker.body)) ?? Infinity;
     let highest = top(step);
     for (const above of this.stackedOn(step, new Set([climber, step]))) {
       highest = Math.min(highest, top(above));

@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
-import { transformPoints } from '../../geometry/transform';
-import type { Vec2 } from '../../geometry/vec2';
+import { polygonBounds } from '../../geometry/polygon';
+import { transformPoints, type Transform } from '../../geometry/transform';
 import type { EnemyType } from '../../materials/enemy-table';
 import type { EnemyView } from '../../sandbox/sandbox-world';
 import { fillPolygon, strokePolygon } from '../draw';
@@ -108,20 +108,24 @@ export class EnemiesDrawing implements DrawnKind {
     }
   }
 
-  /** A thin bar above the Enemy, as wide as it is: the share of its HP left. */
-  private drawHpBar(g: Phaser.GameObjects.Graphics, enemy: EnemyView, { x, y }: Vec2): void {
+  /**
+   * A thin bar above the Enemy, as wide as its outline where it is drawn:
+   * the share of its HP left.
+   */
+  private drawHpBar(g: Phaser.GameObjects.Graphics, enemy: EnemyView, at: Transform): void {
     const left = enemy.fullHp > 0 ? Math.min(1, Math.max(0, enemy.hp / enemy.fullHp)) : 0;
-    const minX = x - enemy.width / 2;
-    const top = y - enemy.height / 2 - BAR_GAP - BAR_HEIGHT;
+    const { minX, minY, maxX } = polygonBounds(transformPoints(enemy.outline, at));
+    const width = maxX - minX;
+    const top = minY - BAR_GAP - BAR_HEIGHT;
     g.fillStyle(PALETTE.hpEmpty, 1);
     g.fillRect(
       minX - BAR_BORDER,
       top - BAR_BORDER,
-      enemy.width + 2 * BAR_BORDER,
+      width + 2 * BAR_BORDER,
       BAR_HEIGHT + 2 * BAR_BORDER,
     );
     g.fillStyle(left < LOW_HP ? PALETTE.hpLow : PALETTE.hpFull, 1);
-    g.fillRect(minX, top, enemy.width * left, BAR_HEIGHT);
+    g.fillRect(minX, top, width * left, BAR_HEIGHT);
   }
 }
 

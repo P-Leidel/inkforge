@@ -22,6 +22,7 @@ import type { Thing } from './happenings';
 import { Numbers } from './numbers';
 import { Random } from './random';
 import { mirrored } from './test-support';
+import { boxShape } from './enemy-shape';
 
 const worlds: PhysicsWorld[] = [];
 afterEach(() => {
@@ -103,7 +104,7 @@ function setup(arena: Arena = SANDBOX_ARENA) {
   const enemy = (position: Vec2, outline: Polygon) => {
     const what = { thing: 'enemy', id: ++things } as const;
     const party = bodies.addEnemy(
-      { position, outline, mass: 1 },
+      { position, shape: { ...boxShape(1, 1), parts: [outline], outline }, mass: 1 },
       { kind: 'enemy', type: 'crawler' },
       what,
       own(),

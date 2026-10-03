@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { Polygon } from '../geometry/polygon';
+import { polygonBounds, type Polygon } from '../geometry/polygon';
+import { transformPoints } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { fillInk, outlineInk } from '../materials/ink';
@@ -20,7 +21,8 @@ import {
 } from './contact-ledger';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { drawDrop, type DropInk } from './drops';
-import { enemyOutline, type Walker } from './enemies';
+import type { Walker } from './enemies';
+import { boxOutline, boxShape, type EnemyShape } from './enemy-shape';
 import { fuseBurns, impactDamage, wakes, type Broken } from './material-rules';
 import { Numbers, type Breakable } from './numbers';
 import { Random } from './random';
@@ -808,8 +810,7 @@ describe('Material rules: Enemies', () => {
     id,
     body: (100 + id) as BodyId,
     type: 'crawler',
-    width: 40,
-    height: 40,
+    shape: boxShape(40, 40),
     belly: 'grey',
     damage: 0,
   });
@@ -850,8 +851,7 @@ describe('Material rules: Enemies', () => {
       id,
       body: (100 + id) as BodyId,
       type,
-      width: height,
-      height,
+      shape: boxShape(height, height),
       belly: 'grey',
       damage: 0,
     });
@@ -863,7 +863,7 @@ describe('Material rules: Enemies', () => {
       const fake = fakeRules<Breakable>(createMaterialTable(), enemies);
       for (const [walker, feet] of walkers) {
         fake.physics.add(walker.body, {
-          transform: { x: 0, y: feet - walker.height / 2, angle: 0 },
+          transform: { x: 0, y: feet - walker.shape.feet({ x: 0, y: 0, angle: 0 }), angle: 0 },
         });
         fake.arena.enemyParties.set(walker.id, walker);
       }
@@ -890,6 +890,66 @@ describe('Material rules: Enemies', () => {
       add(bodyOf(a), partyOf(b));
       add(bodyOf(b), partyOf(a));
     }
+
+    /**
+     * A shape that is no box: a trunk on two legs, all three parts of one
+     * body, that turns, never climbs, and is Tipped if `tipped`.
+     */
+    const legged = (tipped: boolean): EnemyShape => {
+      const box = (minX: number, minY: number, maxX: number, maxY: number) => [
+        { x: minX, y: minY },
+        { x: maxX, y: minY },
+        { x: maxX, y: maxY },
+        { x: minX, y: maxY },
+      ];
+      const parts = [box(-40, -40, 40, 0), box(-40, 0, -30, 40), box(30, 0, 40, 40)];
+      const outline = box(-40, -40, 40, 40);
+      return {
+        parts,
+        outline,
+        staysUpright: false,
+        bounds: (at) => polygonBounds(transformPoints(outline, at)),
+        feet: (at) =>
+          Math.max(...parts.flatMap((part) => transformPoints(part, at).map((p) => p.y))),
+        upright: () => !tipped,
+      };
+    };
+
+    it('lets a Tipped Enemy push nowhere, standing or not', () => {
+      const walker = { ...enemy(1, 'heavy', 80), shape: legged(true) };
+      const { rules, contacts, arena } = arenaOf([[walker, GROUND]]);
+      touch(contacts, walker, TERRAIN_PARTY, UP);
+
+      rules.walk(STEP);
+
+      expect(arena.handed('walk')).toEqual([]);
+    });
+
+    it('walks an upright Enemy of any shape on what it stands on', () => {
+      const walker = { ...enemy(1, 'heavy', 80), shape: legged(false) };
+      const { rules, contacts, arena } = arenaOf([[walker, GROUND]]);
+      touch(contacts, walker, TERRAIN_PARTY, UP);
+
+      rules.walk(STEP);
+
+      expect(arena.handed('walk')).toEqual([walker]);
+    });
+
+    it('never lets an Enemy climb one whose shape has no climbing: it only presses it', () => {
+      const climber = enemy(1, 'crawler', 40);
+      const boss = { ...enemy(2, 'heavy', 80), shape: legged(false) };
+      const { rules, contacts, arena } = arenaOf([
+        [climber, GROUND],
+        [boss, GROUND],
+      ]);
+      touch(contacts, climber, boss, SIDE);
+      touch(contacts, climber, TERRAIN_PARTY, UP);
+
+      rules.walk(STEP);
+
+      expect(arena.handed('climb')).toEqual([]);
+      expect(arena.handed('walk')).toEqual([climber]);
+    });
 
     it('lets a Crawler climb an Enemy whose top is within its step, and walk on as it does', () => {
       const [climber, step] = [enemy(1, 'crawler', 40), enemy(2, 'crawler', 40)];
@@ -1132,8 +1192,7 @@ describe('Material rules: hurting Enemies', () => {
     id,
     body: (100 + id) as BodyId,
     type: 'crawler',
-    width: 40,
-    height: 40,
+    shape: boxShape(40, 40),
     belly: 'grey',
     damage: 0,
   });
@@ -1274,8 +1333,7 @@ describe('Material rules: Drops', () => {
     id,
     body: (100 + id) as BodyId,
     type: 'crawler',
-    width: 40,
-    height: 40,
+    shape: boxShape(40, 40),
     belly: 'grey',
     damage,
   });
@@ -1289,7 +1347,7 @@ describe('Material rules: Drops', () => {
       type: 'heavy',
       at: { x: 300, y: 1200 },
       belly: 'grey',
-      outline: enemyOutline(64, 64),
+      outline: boxOutline(64, 64),
       from: {
         transform: { x: 300, y: 1200, angle: 0 },
         velocity: { x: 0, y: 0 },
@@ -1354,8 +1412,7 @@ describe('Material rules: Bellies', () => {
     id,
     body: (100 + id) as BodyId,
     type: 'crawler',
-    width: 40,
-    height: 40,
+    shape: boxShape(40, 40),
     belly,
     damage,
   });
@@ -1407,7 +1464,7 @@ describe('Material rules: Bellies', () => {
       type: 'crawler',
       at: { x: 300, y: 500 },
       belly: 'red',
-      outline: enemyOutline(40, 40),
+      outline: boxOutline(40, 40),
       from: {
         transform: { x: 300, y: 500, angle: 0 },
         velocity: { x: 0, y: 0 },
@@ -1488,8 +1545,7 @@ describe('Material rules: pressing wear', () => {
     id: 1,
     body: 101 as BodyId,
     type: 'crawler',
-    width: 40,
-    height: 40,
+    shape: boxShape(40, 40),
     belly: 'grey',
     damage: 0,
   };
@@ -1715,8 +1771,7 @@ describe('Material rules: pressing wear', () => {
       id: 2,
       body: 102 as BodyId,
       type: 'crawler',
-      width: 40,
-      height: 40,
+      shape: boxShape(40, 40),
       belly: 'grey',
       damage: 0,
     };
