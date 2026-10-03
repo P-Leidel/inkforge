@@ -21,6 +21,8 @@ import type { Numbers, ThingType } from './numbers';
  * - adding a body registers its Party;
  * - removing one unregisters it and tells every kind what went before the
  *   call returns, so nothing is left attached to a body that is gone;
+ * - rebuilding Parties on new bodies (`rehost`) tells no kind, and carries
+ *   over what they touched: they never went;
  * - sliding one marks it Squeezed.
  *
  * It also says what was added and what went, and why, for the list of what
@@ -63,6 +65,8 @@ export type BodiesLedger<T> = Pick<
   | 'squeezed'
   | 'party'
   | 'restore'
+  | 'carry'
+  | 'rejoin'
 >;
 
 /** Where an Object's body is, what it is made of, and how it starts. */
@@ -254,6 +258,8 @@ export class ArenaBodies<T> {
   private readonly partsByParty = new Map<PartyId, PartEntry>();
   /** Bodies and shapes added so far: the next one's place in the order. */
   private added = 0;
+  /** The Parties being rebuilt on new bodies (`rehost`): no kind hears that they went. */
+  private kept: ReadonlySet<PartyId> = new Set();
 
   /**
    * @param gone Hears each Party that went, as it goes: the Sandbox world
@@ -478,7 +484,7 @@ export class ArenaBodies<T> {
     this.contacts.unregister(body);
     if (entry.what) this.say({ kind: 'went', what: entry.what, why, ...motion });
     for (const part of parts) this.say({ kind: 'went', what: part.what, why, ...motion });
-    this.gone(new Set([entry.party, ...parts.map((part) => part.party)]));
+    this.tellGone([entry.party, ...parts.map((part) => part.party)]);
   }
 
   /**
@@ -501,7 +507,32 @@ export class ArenaBodies<T> {
     this.physics.removeOwnShapes(body, part.shapes);
     this.contacts.unregisterParty(party);
     this.say({ kind: 'went', what: part.what, why, ...motion });
-    this.gone(new Set([party]));
+    this.tellGone([party]);
+  }
+
+  /**
+   * Runs `act`, which removes the bodies of Parties `parties` and adds them
+   * again under the same Parties: a Line changing form. They never went: no
+   * kind hears that they did, and what they touched and were Settled with
+   * carries over to their new bodies. One that `act` doesn't add again goes
+   * once it is done.
+   */
+  rehost(parties: ReadonlySet<PartyId>, act: () => void): void {
+    const carried = this.contacts.carry(parties);
+    this.kept = parties;
+    try {
+      act();
+    } finally {
+      this.kept = new Set();
+    }
+    this.contacts.rejoin(carried);
+    this.tellGone([...parties].filter((party) => !this.contacts.party(party)));
+  }
+
+  /** Tells every kind that these Parties went, but those being rebuilt. */
+  private tellGone(parties: readonly PartyId[]): void {
+    const gone = parties.filter((party) => !this.kept.has(party));
+    if (gone.length > 0) this.gone(new Set(gone));
   }
 
   /** The Pieces of the Line that isn't Grounded with this body, in order; none for any other body. */

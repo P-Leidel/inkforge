@@ -21,7 +21,9 @@ import type {
  *   come apart;
  * - the Squeezed Objects, which are in no channel while they slide, and
  *   restart from rest where their slide ends as if physics started there:
- *   what they touch then is Settled.
+ *   what they touch then is Settled;
+ * - what a Party rebuilt on a new body (a Line changing form) touched and
+ *   was Settled with, which carries over to the new body.
  *
  * Touching is built from the report's begins and ends, so it changes only
  * when contacts do, and a resting pile costs nothing per step. It is part of
@@ -103,6 +105,17 @@ export interface SavedContacts {
   readonly settled: readonly number[];
 }
 
+/**
+ * What Parties rebuilt on new bodies were Settled with and touched as they
+ * went (`carry`), for when they are registered again (`rejoin`).
+ */
+export interface CarriedContacts {
+  /** Their Settled pairs, by `pairKey` with the lower id first. */
+  readonly settled: readonly number[];
+  /** The pairs they touched, the same way. */
+  readonly touching: readonly number[];
+}
+
 /** One side's entry for two Parties touching. Both sides share `pairs`. */
 interface Contact<T> extends Touching<T> {
   readonly pairs: ContactPair[];
@@ -144,6 +157,13 @@ export class ContactLedger<T> {
   private readonly parted = new Set<number>();
   /** No step has run since `restore`: the Settled pairs haven't been checked against the engine yet. */
   private unchecked = false;
+  /**
+   * Pairs a rebuilt Party touched as it went (`rejoin`): beginning again in
+   * the next step doesn't make them new.
+   */
+  private readonly rejoining = new Set<number>();
+  /** Settled pairs of a rebuilt Party, which stay Settled only if they touch again in the next step. */
+  private readonly recheck = new Set<number>();
   private readonly hitList: PartyHit<T>[] = [];
   private readonly newList: NewContact<T>[] = [];
 
@@ -274,6 +294,34 @@ export class ContactLedger<T> {
     }
   }
 
+  /**
+   * Parties `ids` are about to go with their bodies and come back under the
+   * same ids on new ones (a Line changing form): what they were Settled with
+   * and touched, to hand `rejoin` once they are registered again.
+   */
+  carry(ids: ReadonlySet<PartyId>): CarriedContacts {
+    const mine = (key: number) => ids.has(Math.floor(key / ID_LIMIT)) || ids.has(key % ID_LIMIT);
+    const touching = new Set([...this.rejoining].filter(mine));
+    for (const id of ids) {
+      for (const other of this.contacts.get(id)?.keys() ?? []) touching.add(eitherWay(id, other));
+    }
+    return { settled: [...this.settled].filter(mine), touching: [...touching] };
+  }
+
+  /**
+   * The Parties `carry` was given are registered again: they are Settled
+   * with what they were, and what they touched isn't new when it begins
+   * again in the next step. A pair that doesn't begin again in it has come
+   * apart.
+   */
+  rejoin(carried: CarriedContacts): void {
+    for (const key of carried.settled) {
+      this.settled.add(key);
+      this.recheck.add(key);
+    }
+    for (const key of carried.touching) this.rejoining.add(key);
+  }
+
   /** An Object started sliding off a Line: call it after every `physics.slideOut`. */
   squeezed(body: BodyId): void {
     if (this.parties.has(body)) this.sliding.add(body);
@@ -353,6 +401,10 @@ export class ContactLedger<T> {
       for (const key of this.settled) if (!this.touches(key)) this.settled.delete(key);
       this.unchecked = false;
     }
+    // The same for the Settled pairs a rebuilt Party carried.
+    for (const key of this.recheck) if (!this.touches(key)) this.settled.delete(key);
+    this.recheck.clear();
+    this.rejoining.clear();
 
     for (const hit of report.hits) {
       const a = this.partyAt(hit.bodyA, hit.shapeA);
@@ -389,7 +441,8 @@ export class ContactLedger<T> {
     const pairs = [pair];
     this.link(a, b, pairs);
     this.link(b, a, pairs);
-    if (!this.parted.has(eitherWay(a.id, b.id))) this.newList.push({ a, b, pair });
+    const key = eitherWay(a.id, b.id);
+    if (!this.parted.has(key) && !this.rejoining.has(key)) this.newList.push({ a, b, pair });
   }
 
   /** Two shapes stopped touching. Ends for shape pairs it doesn't hold are ignored. */
@@ -423,7 +476,8 @@ export class ContactLedger<T> {
   }
 
   save(): SavedContacts {
-    const settled = new Set(this.settled);
+    // What a rebuilt Party touched as it went touches still, until the next step says otherwise.
+    const settled = new Set([...this.settled, ...this.rejoining]);
     for (const [id, mine] of this.contacts) {
       for (const other of mine.keys()) if (id < other) settled.add(pairKey(id, other));
     }
@@ -445,6 +499,8 @@ export class ContactLedger<T> {
     this.sliding.clear();
     this.slideEnded.clear();
     this.parted.clear();
+    this.rejoining.clear();
+    this.recheck.clear();
     this.hitList.length = 0;
     this.newList.length = 0;
     this.settled = new Set(saved.settled);

@@ -53,7 +53,9 @@ export interface Kind<Name extends string, Saved, Views> {
   clear(): void;
   /**
    * Hears which Parties went (broken, undone, removed, erased, capped or
-   * vanished), its own too: whatever of it was attached to them goes. Arena
+   * vanished), its own too: whatever of it was attached to them goes. A
+   * Party rebuilt on a new body under its id (a Line changing form) never
+   * went, and it hears nothing of it. Arena
    * bodies tells every kind, in kind order, as each body goes, before the
    * removal returns, so it may hear this during any kind's turn, its own
    * included. It only forgets its own records and lets go of what they held,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
-import { dragBox } from '../stroke/pointer-paths';
+import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import type { LineView, SandboxWorld } from './sandbox-world';
 import {
   drawLine,
@@ -291,6 +291,28 @@ describe('Collapse: what a Piece that goes held up falls', () => {
     runFor(world, 2);
     expect(world.bonds.map((bond) => bond.object)).toEqual([box]);
     expect(objectById(world, box).transform.y).toBeGreaterThan(hung + 100);
+  });
+
+  it('lets a Blast still spreading hurt each Piece of a Line it cuts off only once', () => {
+    const world = createWorld();
+    const id = wall(world, 560);
+    // A red-filled ball dropped beside the wall's foot, fast enough to explode as it lands.
+    const bomb = drawObject(world, dragCircle({ x: 500, y: GROUND - 43 }, 40), 'red');
+    world.fillAt({ x: 500, y: GROUND - 43 }, 'red');
+    world.togglePause();
+    world.release(bomb, { x: 0, y: 900 });
+    // Until the ring has reached the wall's lowest three Pieces, and not its top two.
+    while ((world.blasts[0]?.radius ?? 0) < 100) world.step();
+    const durability = () => piecesOf(lineById(world, id)).map((p) => p.durability);
+    const struck = durability();
+    expect(struck[1]).toBeLessThan(struck[4]!);
+    expect(struck[2]).toBeLessThan(struck[4]!);
+
+    eraseAt(world, { x: 560, y: GROUND - PIECE / 2 });
+    for (let step = 0; step < 4; step++) world.step();
+
+    expect(lineById(world, id).runs).toMatchObject([{ grounded: false }]);
+    expect(durability().slice(0, 2)).toEqual(struck.slice(1, 3));
   });
 });
 

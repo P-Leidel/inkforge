@@ -12,7 +12,7 @@ import {
   type Surface,
 } from '../physics';
 import { circleDef, lineDef, objectDef, terrainDef } from '../physics/test-bodies';
-import { ContactLedger, TERRAIN_PARTY, type Party, type Touching } from './contact-ledger';
+import { ContactLedger, pairKey, TERRAIN_PARTY, type Party, type Touching } from './contact-ledger';
 
 describe('The Contact ledger', () => {
   /** A ledger whose Objects slide while their body is in `slides`. */
@@ -143,6 +143,66 @@ describe('The Contact ledger', () => {
       ledger.step(report({ begins: [pair(second, ball, 99, 30)] }));
 
       expect(newOf(ledger)).toEqual([['party 2', 'party 3', 99, 30]]);
+    });
+  });
+
+  describe('a Party rebuilt on a new body (a Line changing form)', () => {
+    /** Takes `line`'s body away and registers it again on body 17, carrying its contacts. */
+    function rebuild(ledger: ContactLedger<string>, line: Party<string>): Party<string> {
+      const carried = ledger.carry(new Set([line.id]));
+      ledger.unregister(line.body);
+      const moved = party(line.id, 17);
+      ledger.register(moved);
+      ledger.rejoin(carried);
+      return moved;
+    }
+
+    it('stays Settled with what it was, and what it touched isn’t new when it touches again', () => {
+      const line = party(1, 7);
+      const box = party(2, 8);
+      const { ledger } = settled(line, box);
+      const ball = party(3, 9);
+      ledger.register(ball);
+      ledger.step(report({ begins: [pair(line, ball)] }));
+      expect(newOf(ledger)).toEqual([['party 1', 'party 3', 10, 30]]);
+
+      const moved = rebuild(ledger, line);
+      ledger.step(
+        report({
+          begins: [pair(moved, box), pair(moved, ball)],
+          hits: [hit(moved, box, 900), hit(moved, ball, 400)],
+        }),
+      );
+
+      expect(newOf(ledger)).toEqual([]);
+      expect(hitsOf(ledger)).toEqual([['party 1', 'party 3', 400]]);
+      expect(touchingOf(ledger, moved)).toEqual(['party 2', 'party 3']);
+    });
+
+    it('lets what it carried come apart when it doesn’t touch again in the next step', () => {
+      const line = party(1, 7);
+      const box = party(2, 8);
+      const { ledger } = settled(line, box);
+
+      const moved = rebuild(ledger, line);
+      ledger.step(report({}));
+      ledger.step(report({ begins: [pair(moved, box)], hits: [hit(moved, box, 900)] }));
+
+      expect(newOf(ledger)).toEqual([['party 1', 'party 2', 10, 20]]);
+      expect(hitsOf(ledger)).toEqual([['party 1', 'party 2', 900]]);
+    });
+
+    it('saves what it touched as it went as touching still, before the next step', () => {
+      const { ledger } = setup();
+      const line = party(1, 7);
+      const ball = party(3, 9);
+      ledger.register(line);
+      ledger.register(ball);
+      ledger.step(report({ begins: [pair(line, ball)] }));
+
+      rebuild(ledger, line);
+
+      expect(ledger.save().settled).toEqual([pairKey(1, 3)]);
     });
   });
 
