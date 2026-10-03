@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inkforge Architecture Review 9</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f1f2f4;
+    --surface: #ffffff;
+    --ink: #15171c;
+    --muted: #5b616e;
+    --rule: #d7dae0;
+    --strong: #1d7f36;
+    --strong-bg: #e1f3e5;
+    --explore: #8c5f0e;
+    --explore-bg: #fbefd6;
+    --spec: #4e5563;
+    --spec-bg: #e6e8ec;
+    --tag-bg: #eceef2;
+    --note-bg: #eef0f4;
+    --leak: #b8322a;
+    --leak-bg: #fbe6e3;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d2027;
+      --surface: #252933;
+      --ink: #e8e2d0;
+      --muted: #9aa0ad;
+      --rule: #3a404d;
+      --strong: #62d98b;
+      --strong-bg: #1d3a28;
+      --explore: #f0c05a;
+      --explore-bg: #3b321d;
+      --spec: #c0c5cf;
+      --spec-bg: #333845;
+      --tag-bg: #2f3440;
+      --note-bg: #2c313c;
+      --leak: #f07a6e;
+      --leak-bg: #3d2524;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d2027;
+    --surface: #252933;
+    --ink: #e8e2d0;
+    --muted: #9aa0ad;
+    --rule: #3a404d;
+    --strong: #62d98b;
+    --strong-bg: #1d3a28;
+    --explore: #f0c05a;
+    --explore-bg: #3b321d;
+    --spec: #c0c5cf;
+    --spec-bg: #333845;
+    --tag-bg: #2f3440;
+    --note-bg: #2c313c;
+    --leak: #f07a6e;
+    --leak-bg: #3d2524;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+  h1 { font-size: 1.9rem; line-height: 1.15; }
+  h2 { font-size: 1.45rem; line-height: 1.2; }
+  p { margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  code { font-size: .9em; }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+  .label { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+
+  .page { max-width: 72rem; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  .head { display: flex; flex-direction: column; gap: 16px; }
+  .titlerow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .scope { font-size: 14px; color: var(--muted); max-width: 52rem; }
+  .legend { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .swatch { display: inline-block; width: 24px; height: 16px; }
+  .swatch-seam { display: inline-block; width: 32px; border-top: 1.5px dashed var(--muted); }
+
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .points { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 60rem; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 8px; }
+  .tile { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: 0 6px; font-size: 13px; line-height: 1.35; }
+  .tile .n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--muted); }
+  .tile .st { grid-column: 2; font-size: 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tile.done { background: var(--note-bg); border-color: transparent; }
+  .tile.done .st { color: var(--muted); }
+  .tile.keep .st { color: var(--strong); }
+  .tile.park .st { color: var(--explore); }
+
+  .candidates { display: flex; flex-direction: column; gap: 36px; }
+  .cand { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 16px; }
+  .cand-head { display: flex; flex-direction: column; gap: 8px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+  .b-strong { background: var(--strong-bg); color: var(--strong); }
+  .b-explore { background: var(--explore-bg); color: var(--explore); }
+  .b-tag { background: var(--tag-bg); color: var(--muted); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .files { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+  .files .note { opacity: .75; }
+
+  .ba { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .prose3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .prose3 > div { display: flex; flex-direction: column; gap: 4px; }
+  .wins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wins li::before { content: "▪"; color: var(--strong); margin-right: 8px; }
+  .callout { background: var(--explore-bg); border-left: 3px solid var(--explore); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+  .evidence { background: var(--note-bg); border-left: 3px solid var(--muted); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+
+  .also ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 64rem; }
+
+  .top { background: var(--surface); border: 3px solid var(--strong); border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .top .label { color: var(--strong); }
+  .top p { max-width: 52rem; }
+
+  @media (min-width: 640px) {
+    .page { padding-inline: 24px; padding-block: 56px 80px; }
+    h1 { font-size: 2.3rem; }
+    h2 { font-size: 1.6rem; }
+    .cand { padding: 28px; }
+    .panel { padding: 20px; }
+    .top { padding: 32px; }
+  }
+  @media (min-width: 768px) { .prose3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .ba { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Diagram sheets are drafting paper in both themes, so the hand-drawn diagrams read the same. */
+  .sheet { background: #fbfbfa; color: #16181d; border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-x: auto; min-width: 0; }
+  /* Mermaid sheets follow the viewer's theme, as the Mermaid rendering does. */
+  .sheet.themed { background: var(--surface); color: var(--ink); }
+  .sheet.themed .s-muted { color: var(--muted); }
+  .s-muted { color: #6a707c; }
+  .s-label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tiny { font-size: 11px; }
+  .small { font-size: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 3px 8px; font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .pad { padding: 8px 10px; }
+  .pad-lg { padding: 14px 16px; }
+  .mod { border: 1.5px solid #5b616e; background: #ffffff; border-radius: 4px; }
+  .plan { border: 1.5px dashed #7a808c; background: #ffffff; border-radius: 4px; color: #4a505b; }
+  .leakbox { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; border-radius: 4px; }
+  .okbox { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; border-radius: 4px; }
+  /* A deep module is drawn like the game's black ink: a heavy dark core in a pale rim. */
+  .deep { background: #050506; color: #eef0f3; border: 3px solid #8a909e; border-radius: 5px; }
+  .deep .faded { color: #8f96a3; }
+  .deep .chip { border: 1px solid #3c414c; color: #d6d9df; border-radius: 3px; }
+  .deep .chip.if { border-color: #eef0f3; color: #ffffff; font-weight: 600; }
+  .mod .chip, .plan .chip { border: 1px solid #c9cdd4; border-radius: 3px; background: #ffffff; color: #2c3038; }
+  .chip.red { border: 1px solid #e3a39c; background: #fde8e5; color: #8f1f16; border-radius: 3px; }
+  .chip.dash { border: 1px dashed #7a808c; background: #ffffff; color: #4a505b; border-radius: 3px; }
+  .seam { border-top: 1.5px dashed #7a808c; }
+  .arrow { text-align: center; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: #6a707c; }
+  .stack { display: flex; flex-direction: column; gap: 12px; min-width: 330px; }
+  .row { display: grid; gap: 8px; }
+  .row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .frame { border: 1.5px dashed #7a808c; border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .frame.solid { border-style: solid; border-color: #5b616e; background: #ffffff; }
+  .strong-t { font-weight: 600; font-size: 12.5px; }
+  .newtag { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; background: #d23a2e; color: #ffffff; border-radius: 2px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
+  .newtag.grey { background: #6a707c; }
+
+  /* Questions and bands */
+  .qrows { display: flex; flex-direction: column; gap: 6px; min-width: 330px; }
+  .qrow { padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .qrow b { font-size: 12.5px; font-weight: 600; }
+  .qrow span { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .band { border-left: 4px solid #7a808c; background: #ffffff; padding: 6px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; color: #2c3038; }
+  .band .t { color: #6a707c; white-space: nowrap; }
+  .band.leak { border-left-color: #d23a2e; background: #fde8e5; color: #8f1f16; }
+  .band.leak .t { color: #8f1f16; }
+  .band.planned { border-left-style: dashed; background: #f6f7f8; color: #4a505b; }
+  .band.thick { border-left: 6px solid #050506; background: #050506; color: #eef0f3; padding: 14px 12px; }
+  .band.thick .t { color: #8f96a3; }
+
+  /* C3: what a thing's numbers come from */
+  .things { display: grid; grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; min-width: 360px; align-items: baseline; }
+  .things .h { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: #6a707c; font-weight: 600; }
+  .things .k { color: #16181d; font-weight: 600; }
+  .things .v { color: #2c3038; }
+  .things .bad { color: #8f1f16; }
+  .things .q { color: #6a707c; font-style: italic; }
+
+  /* C6: a kind across the World renderer */
+  .grid9 { display: grid; grid-template-columns: minmax(5.6rem, auto) repeat(9, 2.35rem) 2.4rem; gap: 5px 2px; align-items: center; min-width: 470px; }
+  .colhead { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; line-height: 1.15; color: #4a505b; }
+  .rowhead { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; color: #2c3038; line-height: 1.25; }
+  .cell { width: 13px; height: 13px; border-radius: 999px; justify-self: center; display: inline-block; }
+  .c-on { background: #16181d; }
+  .c-off { border: 1.5px solid #d7dae0; }
+  .c-plan { border: 1.5px dashed #d23a2e; }
+  .tot { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; font-weight: 600; color: #8f1f16; font-variant-numeric: tabular-nums; }
+  .key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: #6a707c; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .key span { display: flex; align-items: center; gap: 6px; }
+  .kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .kinds .chip { text-align: center; }
+
+  pre.mermaid { background: transparent; margin: 0; font-size: 13px; }
+  pre.mermaid .label { text-transform: none; letter-spacing: normal; font-size: inherit; font-weight: inherit; color: inherit; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
+</head>
+<body>
+<style>
+  .split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  @media (min-width: 768px) { .split { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .when { font-size: 13px; color: var(--muted); }
+  .states { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; }
+  .states .st { padding: 4px 8px; border: 1.5px solid #5b616e; border-radius: 3px; background: #ffffff; color: #2c3038; }
+  .states .st.red { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; }
+  .states .st.new { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; }
+  .states .st.plan { border: 1.5px dashed #7a808c; color: #4a505b; }
+  .mass { display: flex; align-items: flex-end; gap: 18px; min-width: 330px; }
+  .mass .col { display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; color: #4a505b; }
+  .mass .bars { display: flex; align-items: flex-end; gap: 3px; }
+  .mass .bi { width: 26px; background: #d7dae0; border: 1px solid #9aa0ad; }
+  .mass .bm { width: 26px; background: #5b616e; }
+  .mass .bi.red { background: #fde8e5; border-color: #d23a2e; }
+</style>
+
+<main class="page">
+
+  <header class="head">
+    <div class="titlerow">
+      <h1>Inkforge architecture review</h1>
+      <span class="mono meta">P-Leidel/inkforge · 790e111 (#170) · 2026-10-03</span>
+    </div>
+    <p class="scope">Scope: <code>src/</code> since the review after milestone 5 (3ca1e62). That covers 83 files, +5548 / −1225 lines. Weighted toward what changed most: Lines that aren't Grounded start Frozen (ADR 0014), Collapse (ADR 0016), Enemy Bellies (ADR 0015), straight Lines, the Tutorial and the Campaign toolbar. Each candidate is judged against milestone 6: the Siege Walker and its boss arena. All 1153 tests in 81 files pass on 790e111.</p>
+    <div class="legend">
+      <span class="label">Legend</span>
+      <span class="item"><span class="swatch mod"></span>module</span>
+      <span class="item"><span class="swatch plan"></span>milestone 6 or later</span>
+      <span class="item"><span class="swatch-seam"></span>seam</span>
+      <span class="item"><svg width="30" height="10" aria-hidden="true"><line x1="0" y1="5" x2="22" y2="5" stroke="#d23a2e" stroke-width="2" stroke-dasharray="4 3"/><path d="M22 1 L29 5 L22 9 Z" fill="#d23a2e"/></svg>leakage</span>
+      <span class="item"><span class="swatch deep"></span>deep module, drawn like black ink</span>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="queue-h">
+    <span id="queue-h" class="label">The queue from the review after milestone 5, today</span>
+    <div class="tiles">
+      <div class="tile done"><span class="n">C1</span><span>Load a Level whole</span><span class="st">done · #153</span></div>
+      <div class="tile done"><span class="n">C2</span><span>Ask the Game once what the player may do</span><span class="st">done · #154</span></div>
+      <div class="tile done"><span class="n">C3</span><span>The Enemy's rules in one module</span><span class="st">done · #155 · still one box (C2 here)</span></div>
+      <div class="tile park"><span class="n">C4</span><span>Give the end of a Level one owner</span><span class="st">open · now the start too (C4 here)</span></div>
+      <div class="tile done"><span class="n">C5</span><span>Nearness to Enemies in the Arena query</span><span class="st">done · #156</span></div>
+      <div class="tile park"><span class="n">C6</span><span>Hand the scene one reading</span><span class="st">open · ~6 Defence readings a frame (C5 here)</span></div>
+    </div>
+    <ul class="points">
+      <li>Four of the six paid off. The Game's <code>allowed</code> reading and one <code>Refusal</code> table (<code>refusal.ts</code>) took the Eraser, the bars and "Not in this Level" out of the scene and the palette.</li>
+      <li>The new friction is in <b>the Line</b>. ADR 0014 and ADR 0016 gave a Line three forms (Grounded, Frozen, fallen) and a run-by-run Collapse. <code>strokes.ts</code> doubled to 1149 lines to hold them, and with them a confirmed behaviour change that contradicts the glossary's Bond.</li>
+      <li>Milestone 6's friction is in <b>the Enemy</b>. An Enemy is one upright box in about 20 places, and an Enemy type is a closed union copied into about 8 tables.</li>
+    </ul>
+  </section>
+
+  <section id="candidates" class="candidates" aria-label="Candidates">
+
+    <!-- C1 -->
+    <article id="c1" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 1 · the hot spot, with a confirmed behaviour change</span>
+        <h2>Give a Line one form, and change it in place</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">contradicts the Bond in CONTEXT.md</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/strokes.ts <span class="note">(LineStroke 196–216: <code>body: BodyId | null</code> + <code>fell</code> + Piece's <code>loose</code> + the engine's <code>isFrozen</code> · add 449–485 · groundTouched 571–593 · hasFallen 599–602 mutates <code>fell</code> while asking · collapse 1012–1059 · cutOff 1065–1109 · fall 1115–1131)</span></li>
+        <li>src/sandbox/arena-bodies.ts <span class="note">(removeBody 465–482: every form change is a removal, so shapes added on it go "with-host" and <code>gone(parties)</code> fires)</span></li>
+        <li>src/sandbox/patches.ts <span class="note">(gone 319–326)</span> · src/sandbox/bonds.ts <span class="note">(gone 133–140)</span></li>
+        <li>src/game/game.ts <span class="note">(hear 929 skips <code>'grounded'</code> and <code>'cut-off'</code> · the <code>splits</code> map at 189, 273, 705, 896, 934, 944, 961, 1005, 1017)</span> · src/sandbox/happenings.ts</li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(remove 618–620 never collapses; eraseAlong 642 and Strokes' removeStroke 844 and step 992 remember to · groundsSamples 585–588: a third way to ask "would it be Grounded?")</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: a form change is a removal and an add</span>
+          <div class="stack">
+            <div class="states"><span class="st">Frozen</span>→ <span class="tiny s-muted">a Grounded Line touches it</span> →<span class="st red">removeBody 'grounded' + addGrounded</span></div>
+            <div class="states"><span class="st">Grounded run</span>→ <span class="tiny s-muted">its foot goes</span> →<span class="st red">removeBody 'cut-off' + fall + 'split'</span></div>
+            <div class="row row-3">
+              <div class="qrow leakbox"><b>Patches · bonds</b><span>hear gone(), drop what was on it</span></div>
+              <div class="qrow leakbox"><b>Game</b><span>skips 2 Whys, keeps splits</span></div>
+              <div class="qrow leakbox"><b>Callers</b><span>must call collapse()</span></div>
+            </div>
+            <div class="things">
+              <span class="h">a Line's form</span><span class="h">read from</span><span class="h">written in</span>
+              <span class="k">Grounded</span><span class="v">body === null</span><span class="v">add · groundTouched</span>
+              <span class="k">Frozen</span><span class="v">physics.isFrozen</span><span class="v">engine · release</span>
+              <span class="k">fallen</span><span class="v">fell · hasFallen()</span><span class="bad">a query that writes</span>
+              <span class="k">would ground</span><span class="v">3 entry points</span><span class="q">preview can disagree</span>
+            </div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one module owns a Line's form and its changes</span>
+          <div class="stack">
+            <div class="row row-3">
+              <div class="mod pad tiny"><b>Strokes</b><br>Objects, Fill, Squeeze</div>
+              <div class="mod pad tiny"><b>Sandbox world</b><br>erase · remove · step</div>
+              <div class="mod pad tiny"><b>Game</b><br>one id per Stroke</div>
+            </div>
+            <div class="arrow">↓ add · removePiece · release · step ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Lines · form and grounding</span>
+                <div class="chips"><span class="chip if">add</span><span class="chip if">removePiece</span><span class="chip if">release</span><span class="chip if">grounds</span><span class="chip if">view</span></div>
+                <div class="chips faded tiny"><span class="chip">form: grounded | frozen | fallen</span><span class="chip">one grounding walk, both ways</span><span class="chip">collapse on every fixed removal</span><span class="chip">change quietly: Parties kept</span><span class="chip">split keeps its Stroke</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>A Line's form is four fields that agree only by convention, and each change is a body removal. Everything hosted on the Line hears it as gone. Grounding is walked twice, once outward in <code>groundTouched</code> and once inward in <code>collapse</code>, and Collapse runs only where a caller remembers it.</p></div>
+        <div><span class="label">Solution</span><p>Put a Line's form, its grounding walk and its changes in one module behind Strokes. A change of form keeps the Line's Parties, as a snapshot rebuild already does, and runs quietly. Collapse follows every fixed removal, and a split keeps its Stroke, so the Game's <code>splits</code> map goes.</p></div>
+        <div><span class="label">Wins</span><ul class="wins"><li>Bonds and Patches survive form changes</li><li>locality: grounding, one walk</li><li>Collapse can't be forgotten</li><li>Game loses <code>splits</code>, 9 sites</li><li>preview and outcome agree</li><li>tests: <code>grounding</code> and <code>collapse</code> unchanged</li></ul></div>
+      </div>
+
+      <div class="evidence">Confirmed with a scratch run through <code>SandboxWorld</code>. A green box glued under a grey Line propped on a post, as in <code>green.test.ts</code>'s <code>hangUnderLine</code>, has 1 bond. Erasing the post's foot makes the Line collapse, and the box has 0 bonds before any step. A green box glued under a Frozen Line that a post then grounds goes from 1 bond to 0 the same way. Patches use the same <code>gone</code> path. No test in <code>collapse.test.ts</code> or <code>grounding.test.ts</code> mentions bonds or Patches. <code>CONTEXT.md</code> says a Bond "lasts until either side breaks, is undone or is removed by a cap", and that the green Object "never sticks again". Neither Collapse nor grounding is one of those. Only <code>strokes.ts:568</code> mentions it, for grounding only.</div>
+      <div class="callout">For the grilling: should a green Object glued to a collapsing run fall with it, still glued, and should a Patch ride along? Or is letting go intended, in which case the glossary's Bond needs a fourth way to end? And should a Line keep its Stroke id when it is split?</div>
+    </article>
+
+    <!-- C2 -->
+    <article id="c2" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 2 · gate for milestone 6</span>
+        <h2>Give the Enemy's body a seam: a box today, the Siege Walker next</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process · two adapters</span><span class="badge b-tag">milestone 6</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/enemies.ts <span class="note">(Walker 89–100 is <code>{ body, width, height }</code> · enemyOutline at 167, 212, 225, 261 · spawnClear/atSpawn 209–254 · addBody 256–270 · walk/climb 286–310)</span></li>
+        <li>src/sandbox/enemy-rules.ts <span class="note">(13 reads of <code>walker.body</code> / <code>.width</code> / <code>.height</code>: climbs, roomOver, stepTop, standing, wear, hitImpulse, bellyOf, reachInkCore · EnemyArena 108–149)</span></li>
+        <li>src/sandbox/arena-bodies.ts <span class="note">(Form 'enemy' is one convex polygon, 176 · addEnemy <code>upright: true</code>, 402 · PartEntry 211–218 and addLooseLine 323–363: one body, many Parties)</span></li>
+        <li>src/sandbox/material-rules.ts <span class="note">(blastReached 455: hurt once per Party reached)</span> · src/sandbox/sandbox-world.ts <span class="note">(kill 485–499)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet themed">
+          <span class="s-label s-muted">Before: the Enemy rules read the box</span>
+          <pre class="mermaid">
+flowchart TB
+  R[Enemy rules] -.feet = y + height/2.-> B[(one upright box)]
+  R -.room ahead: width.-> B
+  R -.touching body.-> B
+  R -.Belly in box outline.-> B
+  E[Enemies] -.enemyOutline x4.-> B
+  M[Material rules] -.hurt per Party.-> B
+  W[Sandbox world] -.kill outline.-> B
+  classDef leak stroke:#d23a2e,stroke-width:2px;
+  class R,E,M,W leak
+          </pre>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the rules ask, the body answers</span>
+          <div class="stack">
+            <div class="row row-2">
+              <div class="mod pad tiny"><b>Enemy rules</b><br>walk, climb, wear, reach</div>
+              <div class="mod pad tiny"><b>Material rules</b><br>one damage intake per Enemy</div>
+            </div>
+            <div class="arrow">↓ feet · top · ahead · touching · outline · hurt ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Enemy body</span>
+                <div class="chips"><span class="chip if">feet</span><span class="chip if">ahead</span><span class="chip if">touching</span><span class="chip if">outline</span><span class="chip if">parties</span></div>
+              </div>
+            </div>
+            <div class="row row-2">
+              <div class="mod pad tiny"><b>Box adapter</b><br>Crawler, Runner, Heavy: today's code</div>
+              <div class="plan pad tiny"><b>Siege Walker adapter</b><br>legs as Parts on one body, can tip</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>"An Enemy is one upright box" is assumed in about 20 places across 5 files. The Siege Walker has no seam to plug into. The GDD beats it by tripping it, which an <code>upright</code> body can't do. A Blast would also hurt it once per leg.</p></div>
+        <div><span class="label">Solution</span><p>Put the Enemy's body behind a small interface the Enemy rules ask: where are its feet, what is ahead and touching, its outline, its Parties. Today's box is one adapter, and the Siege Walker is the second. It is built on the one-body-many-Parties path loose Lines already use.</p></div>
+        <div><span class="label">Wins</span><ul class="wins"><li>two adapters: a real seam</li><li>leverage: rules unchanged for the boss</li><li>damage once per Enemy</li><li>reuses PartEntry, removePart</li><li>tests: one fake body</li></ul></div>
+      </div>
+      <div class="callout">Pairs with ADR 0010, 0011 and 0013 (capped-force walking and climbing). It keeps them as they are; only where "feet" and "ahead" come from changes. Best taken into the milestone 6 spec, not before it.</div>
+    </article>
+
+    <!-- C3 -->
+    <article id="c3" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 3 · pairs with C2</span>
+        <h2>One entry per Enemy type, and Waves that name only what they send</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/materials/enemy-table.ts <span class="note">(ENEMY_TYPES 10 · types: Record 75)</span> · src/game/wave-table.ts <span class="note">(counts: <code>Record&lt;EnemyType, number&gt;</code> 12 · arrivals sends types in ENEMY_TYPES order, 42–48)</span></li>
+        <li>src/levels/level-1.ts, level-2.ts, level-3.ts <span class="note">(every Wave lists every type)</span></li>
+        <li>src/ui/rewards-screen.ts <span class="note">(ENEMY_NAMES 11–15)</span> · src/rendering/kinds/enemies-drawing.ts <span class="note">(LOOKS 43, POP_HUES 50)</span> · src/rendering/palette.ts</li>
+        <li>src/scenes/sandbox-scene.ts <span class="note">(ENEMY_KEYS 37)</span> · src/ui/hud.ts <span class="note">(23)</span> · src/game/level.ts <span class="note">(hints keyed by type, 40)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: adding a type touches every table</span>
+          <div class="grid9" style="grid-template-columns: minmax(6rem, auto) repeat(8, 2.35rem) 2.4rem;">
+            <span></span><span class="colhead">enemy table</span><span class="colhead">waves</span><span class="colhead">L1–3</span><span class="colhead">names</span><span class="colhead">looks</span><span class="colhead">pop hue</span><span class="colhead">keys</span><span class="colhead">HUD</span><span class="colhead">sites</span>
+            <span class="rowhead">Crawler</span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="tot">8</span>
+            <span class="rowhead">Runner</span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="tot">8</span>
+            <span class="rowhead">Heavy</span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="cell c-on"></span><span class="tot">8</span>
+            <span class="rowhead">Siege Walker</span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="cell c-plan"></span><span class="tot">8+</span>
+          </div>
+          <span class="tiny s-muted">L1–3: <code>'siege-walker': 0</code> in every Wave of every Level. Shift+4 would send in a boss.</span>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one catalogue entry, Waves partial</span>
+          <div class="stack">
+            <div class="deep pad-lg">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span class="s-label">Enemy catalogue</span>
+                <div class="chips faded tiny"><span class="chip">numbers</span><span class="chip">name, plural</span><span class="chip">look, pop hue</span><span class="chip">body adapter (C2)</span><span class="chip">sandbox key?</span></div>
+              </div>
+            </div>
+            <div class="arrow">↓ read by ↓</div>
+            <div class="row row-3">
+              <div class="mod pad tiny"><b>Wave</b><br><code>{ heavy: 2 }</code></div>
+              <div class="mod pad tiny"><b>Renderer · HUD</b></div>
+              <div class="mod pad tiny"><b>Rewards · Analysis</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>An Enemy type is a closed union that every table repeats. A Wave must count every type, and the order of <code>ENEMY_TYPES</code> decides the order of arrival, so a boss always comes last.</p></div>
+        <div><span class="label">Solution</span><p>Put one catalogue entry per type, holding everything that varies by type. A Wave names only what it sends, and when, if it needs to.</p></div>
+        <div><span class="label">Wins</span><ul class="wins"><li>locality: a type, one entry</li><li>Levels stop listing zeros</li><li>boss arrival is the Wave's call</li></ul></div>
+      </div>
+    </article>
+
+    <!-- C4 -->
+    <article id="c4" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 4 · carried over, now wider</span>
+        <h2>Give the start and the end of a Level one owner</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">two small bugs</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/game/session.ts <span class="note">(advance 116–123: polls <code>phase === 'cleared'</code> every frame; safe only because <code>Campaign.cleared</code> is idempotent)</span></li>
+        <li>src/scenes/sandbox-scene.ts <span class="note">(onPanel 179–191: <code>'retry-wave'</code> → <code>this.reset()</code>, past the Session · started 218–226: toolbar, Tutorial offer, overlay, three <code>session.reading</code>s · showTutorial 234–240 pauses through <code>world.isRunning</code>)</span></li>
+        <li>src/ui/rewards-screen.ts <span class="note">(panelActions 94–109 · 52: <code>Level ${index + 2} unlocked</code>, not the Level's name)</span></li>
+        <li>src/game/analysis.ts <span class="note">(39–44: newcomers from the Level's data)</span> vs src/game/defence-loop.ts <span class="note">(nextCounts 233–241: from F2's live table)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the scene stitches the edges of a Level</span>
+          <div class="stack">
+            <div class="band leak">started: toolbar · Tutorial due? · overlay<span class="t">scene</span></div>
+            <div class="band">play the Waves<span class="t">Game · Defence loop</span></div>
+            <div class="band leak">cleared? polled every frame<span class="t">Session.advance</span></div>
+            <div class="band leak">which buttons · "Level n unlocked"<span class="t">rewards screen</span></div>
+            <div class="band leak">button → command · Retry past the Session<span class="t">scene</span></div>
+            <div class="band planned">Campaign cleared · Roguelite unlocked<span class="t">M6: where?</span></div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the Session offers, the scene forwards</span>
+          <div class="stack">
+            <div class="row row-2">
+              <div class="mod pad tiny"><b>Scene</b><br>draws, forwards a choice</div>
+              <div class="mod pad tiny"><b>Rewards screen</b><br>draws the offer</div>
+            </div>
+            <div class="seam"></div>
+            <div class="band thick">Session · reading.started · reading.offer · act(choice)<span class="t">one owner</span></div>
+            <div class="chips tiny"><span class="chip dash">tutorial due</span><span class="chip dash">free-play controls</span><span class="chip dash">next · retry · restart · list</span><span class="chip dash">campaign cleared (M6)</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>What happens as a Level starts and ends is decided in the scene, the rewards screen and the Session. The scene has no tests. Retry Wave goes past the Session, and "Level n unlocked" ignores Level names.</p></div>
+        <div><span class="label">Solution</span><p>The Session's reading carries what a start needs (Tutorial, controls) and what the end offers. <code>act(choice)</code> carries the choice out, and the Session tells the Campaign once.</p></div>
+        <div><span class="label">Wins</span><ul class="wins"><li>tests: session.test, no Phaser</li><li>Retry goes through the Session</li><li>the boss's ending has a home</li></ul></div>
+      </div>
+      <div class="callout">The hint mismatch from the last review still holds. The Analysis counts from F2's live table, but the first-appearance lines come from the Level's data. It only shows after an F2 edit.</div>
+    </article>
+
+    <!-- C5 -->
+    <article id="c5" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 5 · carried over</span>
+        <h2>Hand the scene one reading a frame</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/scenes/sandbox-scene.ts <span class="note">(update 331–356: drawing, session, defence, palette, tuning, tutorial, world view, overlay, HUD)</span></li>
+        <li>src/ui/hud.ts <span class="note">(78: <code>Pick&lt;Game, 'world' | 'defence' | 'allowed'&gt;</code> · SPAWN_COUNT_RISE 56 copies world-renderer.ts:43)</span> · src/ui/tuning-panel.ts <span class="note">(241–248: notices a load by object identity)</span></li>
+        <li>src/game/game.ts <span class="note">(Colours here 432–434)</span> vs src/ui/palette-bar.ts <span class="note">(63)</span> · src/rendering/kinds/enemies-drawing.ts <span class="note">(HP bar 24, 123)</span> vs ink-core-drawing.ts <span class="note">(19, 55–64)</span></li>
+      </ul>
+
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: Defence loop readings built per frame</span>
+          <div class="mass">
+            <div class="col"><div class="bars"><div class="bi red" style="height:26px"></div></div>Session.advance</div>
+            <div class="col"><div class="bars"><div class="bi red" style="height:52px"></div></div>session.reading ×2</div>
+            <div class="col"><div class="bars"><div class="bi red" style="height:52px"></div></div>HUD ×2</div>
+            <div class="col"><div class="bars"><div class="bi red" style="height:26px"></div></div>rewards</div>
+            <div class="col"><div class="bars"><div class="bm" style="height:156px;width:10px"></div></div>≈ 6</div>
+          </div>
+          <span class="tiny s-muted">Each one allocates and recounts the next Wave. Two run <code>hintLines</code> again.</span>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one reading, drawn by many</span>
+          <div class="stack">
+            <div class="band thick">Session.frame(): phase · place · offer · tools · Colours here · Tanks<span class="t">once a frame</span></div>
+            <div class="row row-3">
+              <div class="mod pad tiny">HUD</div>
+              <div class="mod pad tiny">Palette</div>
+              <div class="mod pad tiny">F2 · loaded()</div>
+            </div>
+            <div class="row row-2">
+              <div class="mod pad tiny">one HP bar: Enemy, Ink Core, boss</div>
+              <div class="mod pad tiny">one Spawn marker rise</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The HUD and F2 still reach past the Game into <code>world</code> and <code>defence</code>. "Colours here" and the HP bar each have two copies. A boss HP bar would be a third.</p></div>
+        <div><span class="label">Solution</span><p>Build one reading a frame in the Session and pass it to everything that draws. F2 hears a load instead of comparing objects. Share one HP bar.</p></div>
+        <div><span class="label">Wins</span><ul class="wins"><li>leverage: one reading, 6 readers</li><li>Game can hide world, defence</li><li>boss HP bar for free</li></ul></div>
+      </div>
+    </article>
+
+  </section>
+
+  <section class="panel also" aria-labelledby="also-h">
+    <span id="also-h" class="label">Also noticed, not candidates</span>
+    <ul>
+      <li><b>The Game is about 30 members wide</b> and still exposes <code>world</code> and <code>defence</code>. It narrows by itself once C4 and C5 land, so it isn't a candidate of its own.</li>
+      <li><b>Doc drift:</b> <code>defence-loop.ts:18</code> and <code>sandbox-world.ts:754–759</code> say "every Object at rest" for the Aftermath. <code>freezeResting</code> and <code>CONTEXT.md</code> include Lines that aren't Grounded.</li>
+      <li><b>Dead branch:</b> <code>ERASE_ORDER</code> gives <code>'enemy'</code> a rank (<code>sandbox-world.ts:146–153</code>), but the Arena query's <code>touches</code> never returns an Enemy.</li>
+      <li><b>The Tutorial's first card</b> (<code>tutorial.ts:20</code>) says the Enemies come "from the left" and the Ink Core is "on the right". That's true of Levels 1–3, but a boss arena could flip it. The card could read the Arena's <code>spawnSide</code>.</li>
+      <li><b>R after an F2 edit</b> can roll different Bellies. The rolls read the live <code>Game.has</code>, but the number of draws stays the same, so the replay order holds.</li>
+    </ul>
+  </section>
+
+  <section id="top-recommendation" class="top" aria-labelledby="top-h">
+    <span class="label">Top recommendation</span>
+    <h2 id="top-h"><a href="#c1">Give a Line one form, and change it in place</a></h2>
+    <p>It's where the code changed most, it has a confirmed behaviour change that contradicts the glossary (Bonds and Patches lost when a Line is grounded or collapses), and it is in-process. <code>grounding.test.ts</code> and <code>collapse.test.ts</code> already test it through <code>SandboxWorld</code>, so they survive the refactor. Then take <a href="#c2">C2</a> and <a href="#c3">C3</a> into the milestone 6 spec, with the Siege Walker as the second body adapter.</p>
+  </section>
+
+</main>
+</body>
+</html>

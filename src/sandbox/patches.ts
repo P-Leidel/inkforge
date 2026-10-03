@@ -164,6 +164,12 @@ export interface PatchRecord {
 
 type SavedPatch = Omit<PatchRecord, 'kind' | 'body' | 'shape'>;
 
+/** A Patch lifted off its host while the host's body is rebuilt (`Patches.lift`). */
+export interface LiftedPatch {
+  /** It, with its centre line in the world, as it was lifted. */
+  readonly saved: SavedPatch;
+}
+
 /**
  * The Patches in the Arena, oldest first, and the cap on them. Patch ids
  * are never reused. A Patch has no Party of its own: hits and contacts on
@@ -183,7 +189,7 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   constructor(
     private readonly physics: PhysicsWorld,
     private readonly materials: MaterialTable,
-    private readonly bodies: Pick<ArenaBodies<unknown>, 'addShape' | 'removeShape'>,
+    private readonly bodies: Pick<ArenaBodies<unknown>, 'addShape' | 'removeShape' | 'bodyOf'>,
     private readonly poses: Pick<PreviousPoses, 'of'>,
   ) {}
 
@@ -297,6 +303,44 @@ export class Patches implements Kind<'patches', readonly SavedPatch[], readonly 
   removeUsedUp(): void {
     const used = this.patches.filter((patch) => patch.used >= this.capacity(patch));
     if (used.length > 0) this.removeAll(used, 'used-up');
+  }
+
+  /**
+   * Takes the Patches on the hosts with these Parties off them, so that
+   * they can be laid again once the hosts' bodies are rebuilt under the
+   * same Parties (`land`).
+   */
+  lift(hosts: ReadonlySet<PartyId>): LiftedPatch[] {
+    const lifted = this.patches.filter(({ host }) => hosts.has(host));
+    if (lifted.length === 0) return [];
+    for (const { shape } of lifted) this.bodies.removeShape(shape, 'with-host');
+    this.patches = this.patches.filter(({ host }) => !hosts.has(host));
+    return lifted.map(({ kind: _kind, body, shape, ...saved }) => {
+      this.byShape.delete(shape);
+      const host = this.physics.getTransform(body);
+      const { a, b } = saved.segment;
+      return {
+        saved: { ...saved, segment: { a: applyTransform(a, host), b: applyTransform(b, host) } },
+      };
+    });
+  }
+
+  /**
+   * Lays again what `lift` took off, on its hosts' new bodies, where it lay
+   * in the world, in its place among the Patches. One whose host is gone is
+   * gone.
+   */
+  land(lifted: readonly LiftedPatch[]): void {
+    if (lifted.length === 0) return;
+    for (const { saved } of lifted) {
+      const body = this.bodies.bodyOf(saved.host);
+      if (body === null) continue;
+      const host = this.physics.getTransform(body);
+      const local = (p: Vec2) => rotate(sub(p, host), -host.angle);
+      this.attach({ ...saved, segment: { a: local(saved.segment.a), b: local(saved.segment.b) } });
+    }
+    // Oldest first: Patch ids are given out in order.
+    this.patches.sort((p, q) => p.id - q.id);
   }
 
   save(): readonly SavedPatch[] {

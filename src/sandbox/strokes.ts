@@ -357,6 +357,11 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
     private readonly poses: Pick<PreviousPoses, 'of'>,
     /** Appends to the list of what happened: a Fill and a Release. */
     private readonly say: (happening: Happening) => void,
+    /**
+     * Runs `act`, which takes away the bodies of Parties `parties` and adds
+     * them again under the same Parties, keeping what is stuck to them.
+     */
+    private readonly rehost: (parties: ReadonlySet<PartyId>, act: () => void) => void,
   ) {}
 
   get views(): StrokeViews {
@@ -566,7 +571,7 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
    * Grounds the Lines with these ids, if they are Frozen and haven't fallen,
    * and the Frozen ones they touch in turn: a Grounded Line drawn to touch
    * them holds them. Each becomes fixed where it hangs, its Pieces' damage
-   * and all; what was attached to it lets go, as if it went.
+   * and all, with what is stuck to it.
    */
   private groundTouched(ids: readonly StrokeId[]): void {
     const queue = [...ids];
@@ -584,8 +589,11 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
         })),
         loose: false,
       }));
-      this.bodies.removeBody(body, 'grounded');
-      const grounded = this.addGrounded(rest, saved);
+      let grounded!: LineStroke;
+      this.rehost(new Set(pieces.map((piece) => piece.party)), () => {
+        this.bodies.removeBody(body, 'grounded');
+        grounded = this.addGrounded(rest, saved);
+      });
       this.strokes[index] = grounded;
       const segments = saved.flatMap((piece) => piece.segments);
       queue.push(...this.touches(segments, grounded.thickness).loose);
@@ -1089,21 +1097,23 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       runs.push(run.sort((p, q) => p.index - q.index));
     }
     const stays = line.pieces.filter((piece) => !falling.has(keyOf(piece)));
-    for (const piece of mine) this.bodies.removeBody(piece.body, 'cut-off');
     const base = {
       kind: 'line',
       colour: line.colour,
       thickness: line.thickness,
       fell: true,
     } as const;
-    runs.forEach((run, k) => {
-      const keeps = k === 0 && stays.length === 0;
-      const into = keeps ? id : this.nextId++;
-      if (!keeps) this.say({ kind: 'split', id, into });
-      const party = keeps ? line.party : this.bodies.newId();
-      const fallen = this.fall({ ...base, id: into, party }, run);
-      if (keeps) this.strokes[index] = fallen;
-      else this.strokes.push(fallen);
+    this.rehost(new Set(mine.map((piece) => piece.party)), () => {
+      for (const piece of mine) this.bodies.removeBody(piece.body, 'cut-off');
+      runs.forEach((run, k) => {
+        const keeps = k === 0 && stays.length === 0;
+        const into = keeps ? id : this.nextId++;
+        if (!keeps) this.say({ kind: 'split', id, into });
+        const party = keeps ? line.party : this.bodies.newId();
+        const fallen = this.fall({ ...base, id: into, party }, run);
+        if (keeps) this.strokes[index] = fallen;
+        else this.strokes.push(fallen);
+      });
     });
     if (stays.length > 0) line.pieces = stays;
   }

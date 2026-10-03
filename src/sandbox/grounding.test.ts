@@ -6,6 +6,7 @@ import type { LineView, SandboxWorld } from './sandbox-world';
 import {
   drawLine,
   drawObject,
+  drawPost,
   entriesOf,
   hear,
   objectById,
@@ -315,5 +316,30 @@ describe('Lines that are not Grounded', () => {
     expect(loose.kind === 'declined' && loose.made.kind === 'line' && loose.made.grounded).toBe(
       false,
     );
+  });
+
+  it('keeps a green Object stuck to a Frozen Line when a Grounded one grounds it, where it hangs', () => {
+    const world = createWorld();
+    const box = drawObject(world, dragBox(530, 460, 40, 40), 'green');
+    const shelf = drawLine(world, [
+      { x: 400, y: 400 },
+      { x: 700, y: 400 },
+    ]);
+    // Up into the Frozen shelf, too gently to wake it, where it sticks.
+    world.togglePause();
+    world.release(box, { x: 0, y: -400 });
+    runFor(world, 1);
+    expect(world.bonds.map((bond) => bond.object)).toEqual([box]);
+    expect(lineById(world, shelf)).toMatchObject({ grounded: false, frozen: true });
+    const hung = objectById(world, box).transform;
+
+    drawPost(world, { x: 400, y: 400 });
+
+    expect(lineById(world, shelf)).toMatchObject({ grounded: true });
+    expect(world.bonds.map((bond) => bond.object)).toEqual([box]);
+    runFor(world, 2);
+    expect(world.bonds.map((bond) => bond.object)).toEqual([box]);
+    expect(objectById(world, box).transform.x).toBeCloseTo(hung.x, 0);
+    expect(objectById(world, box).transform.y).toBeCloseTo(hung.y, 0);
   });
 });

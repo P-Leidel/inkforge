@@ -295,6 +295,46 @@ describe('Patches', () => {
     expect(on(100, 300)).toBe(onGround);
   });
 
+  it('stay on a Line as it is Grounded, and as it collapses, and ride it down', () => {
+    const world = spillWorld();
+    // Nothing wakes the Frozen shelf: the spill only lays Patches on it.
+    world.materials.wakeSpeed = Infinity;
+    const shelf = drawLine(
+      world,
+      [
+        { x: 350, y: 700 },
+        { x: 650, y: 700 },
+      ],
+      'grey',
+    );
+    spill(world, [spillBox(world, 500, 690, 'blue', 160)]);
+    const onShelf = () =>
+      world.patches
+        .filter((p) => Math.abs(middle(p.segment).x - 500) < 150)
+        .map((p) => middle(p.segment));
+    const laid = onShelf();
+    expect(laid.length).toBeGreaterThan(0);
+    expect(world.lines.find((l) => l.id === shelf)).toMatchObject({ frozen: true });
+
+    const post = drawPost(world, { x: 350, y: 700 });
+
+    expect(world.lines.find((l) => l.id === shelf)).toMatchObject({ grounded: true });
+    expect(onShelf()).toHaveLength(laid.length);
+    onShelf().forEach((at, k) => {
+      expect(at.x).toBeCloseTo(laid[k]!.x, 3);
+      expect(at.y).toBeCloseTo(laid[k]!.y, 3);
+    });
+
+    world.eraseAlong([{ x: 350, y: GROUND_Y - 24 }], 4); // the post's foot
+
+    expect(world.lines.find((l) => l.id === shelf)).toMatchObject({ grounded: false });
+    expect(world.lines.find((l) => l.id === post)).toMatchObject({ grounded: false });
+    expect(onShelf()).toHaveLength(laid.length);
+    runFor(world, 2);
+    expect(onShelf()).toHaveLength(laid.length);
+    for (const at of onShelf()) expect(at.y).toBeGreaterThan(800);
+  });
+
   it('are capped: over the cap, the oldest go first', () => {
     const world = spillWorld();
     world.materials.patchCap = 5;

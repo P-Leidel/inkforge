@@ -37,7 +37,7 @@ import { InkCore, type InkCoreView } from './ink-core';
 import { EnemyRules, type Killed } from './enemy-rules';
 import { MaterialRules } from './material-rules';
 import { Numbers } from './numbers';
-import { Patches, type PatchView } from './patches';
+import { Patches, type LiftedPatch, type PatchView } from './patches';
 import { PreviousPoses } from './previous-poses';
 import { Random } from './random';
 import { Rubble, type RubbleView } from './rubble';
@@ -273,7 +273,16 @@ export class SandboxWorld {
     const { physics, materials, numbers, bodies, query, poses } = this;
     const arena = () => this.current;
     this.inkCoreKind = new InkCore(arena, this.enemyTable, bodies);
-    this.strokes = new Strokes(physics, materials, numbers, bodies, query, poses, say);
+    this.strokes = new Strokes(
+      physics,
+      materials,
+      numbers,
+      bodies,
+      query,
+      poses,
+      say,
+      (parties, act) => this.rehost(parties, act),
+    );
     this.rubbleKind = new Rubble(physics, materials, bodies, poses);
     this.enemiesKind = new Enemies(
       physics,
@@ -703,6 +712,21 @@ export class SandboxWorld {
     }
     this.snapshot = null;
     this.happenings.say({ kind: 'start-over' });
+  }
+
+  /**
+   * Runs `act`, which takes away the bodies of Parties `parties` and adds
+   * them again under the same Parties: a Line changing form. What is stuck
+   * to them comes along, where it was in the world.
+   */
+  private rehost(parties: ReadonlySet<PartyId>, act: () => void): void {
+    // Lifted and laid again quietly: the same Patches, under the same ids.
+    let patches: LiftedPatch[] = [];
+    this.happenings.quietly(() => (patches = this.patchesKind.lift(parties)));
+    const bonds = this.bondsKind.lift(parties);
+    act();
+    this.bondsKind.land(bonds);
+    this.happenings.quietly(() => this.patchesKind.land(patches));
   }
 
   /**

@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
+import { dragBox } from '../stroke/pointer-paths';
 import type { LineView, SandboxWorld } from './sandbox-world';
 import {
   drawLine,
+  drawObject,
   drawPost,
   entriesOf,
   hear,
+  objectById,
   runFor,
   sandboxWorlds,
   wentOf,
@@ -239,5 +242,30 @@ describe('Collapse: what a Piece that goes held up falls', () => {
     world.removeStroke(post);
 
     expect(lineById(world, shelf)).toMatchObject({ grounded: false, frozen: false });
+  });
+
+  it('keeps a green Object stuck to a Line that collapses, and it rides the Line down', () => {
+    const world = createWorld();
+    const box = drawObject(world, dragBox(530, 460, 40, 40), 'green');
+    const post = drawPost(world, { x: 400, y: 400 });
+    const shelf = drawLine(world, [
+      { x: 400, y: 400 },
+      { x: 700, y: 400 },
+    ]);
+    // Up into the shelf, where it sticks.
+    world.togglePause();
+    world.release(box, { x: 0, y: -400 });
+    runFor(world, 1);
+    expect(world.bonds.map((bond) => bond.object)).toEqual([box]);
+    const hung = objectById(world, box).transform.y;
+
+    eraseAt(world, { x: 400, y: GROUND - PIECE / 2 }); // the post's foot
+
+    expect(lineById(world, shelf)).toMatchObject({ grounded: false });
+    expect(lineById(world, post)).toMatchObject({ grounded: false });
+    expect(world.bonds.map((bond) => bond.object)).toEqual([box]);
+    runFor(world, 2);
+    expect(world.bonds.map((bond) => bond.object)).toEqual([box]);
+    expect(objectById(world, box).transform.y).toBeGreaterThan(hung + 100);
   });
 });

@@ -37,6 +37,16 @@ interface BondRecord {
 
 type SavedBond = Omit<BondRecord, 'body' | 'bond'> & { readonly anchors: BondAnchors };
 
+/** A bond lifted off its host while the host's body is rebuilt (`Bonds.lift`). */
+export interface LiftedBond {
+  /** Its place among the bonds, oldest first. */
+  readonly place: number;
+  readonly saved: SavedBond;
+  /** Where it holds the host, in the world, and the host's angle, as it was lifted. */
+  readonly onHost: Vec2;
+  readonly hostAngle: number;
+}
+
 /**
  * The bonds in the Arena, oldest first. Bond ids, like Stroke ids, are never
  * reused. Bonds come after every kind with bodies, so that restoring them
@@ -109,6 +119,52 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
     if (stuck === null || host === null) return;
     const bond = this.physics.addBond(stuck, host, anchors);
     this.bonds.push({ ...saved, body: stuck, bond });
+  }
+
+  /**
+   * Takes the bonds on the hosts with these Parties off them, saying
+   * nothing, so that they can be landed again once the hosts' bodies are
+   * rebuilt under the same Parties (`land`). The stuck Objects stay as they
+   * are.
+   */
+  lift(hosts: ReadonlySet<PartyId>): LiftedBond[] {
+    const lifted: LiftedBond[] = [];
+    this.bonds.forEach(({ body: _body, bond, ...saved }, place) => {
+      if (!hosts.has(saved.host)) return;
+      const anchors = this.physics.getBond(bond)!;
+      const host = this.physics.getTransform(this.body(saved.host)!);
+      lifted.push({
+        place,
+        saved: { ...saved, anchors },
+        onHost: applyTransform(anchors.onB, host),
+        hostAngle: host.angle,
+      });
+      this.physics.removeBond(bond);
+    });
+    const gone = new Set(lifted.map(({ place }) => place));
+    this.bonds = this.bonds.filter((_, place) => !gone.has(place));
+    return lifted;
+  }
+
+  /**
+   * Holds again what `lift` took off, on its hosts' new bodies, where it
+   * held them in the world, in its place among the bonds. One whose host is
+   * gone is gone.
+   */
+  land(lifted: readonly LiftedBond[]): void {
+    for (const { place, saved, onHost, hostAngle } of lifted) {
+      const host = this.body(saved.host);
+      const stuck = this.body(saved.stuck);
+      if (host === null || stuck === null) continue;
+      const pb = this.physics.getTransform(host);
+      const anchors: BondAnchors = {
+        onA: saved.anchors.onA,
+        onB: rotate(sub(onHost, pb), -pb.angle),
+        angle: saved.anchors.angle + pb.angle - hostAngle,
+      };
+      const bond = this.physics.addBond(stuck, host, anchors);
+      this.bonds.splice(place, 0, { ...saved, body: stuck, bond });
+    }
   }
 
   save(): readonly SavedBond[] {
