@@ -76,7 +76,7 @@ A Stroke whose end does not return to its start, made of one or more Runs: drawn
 _Avoid_: Wall, platform, segment chain
 
 **Run**:
-A stretch of a Line's Pieces that stand, hang or fall as one: all of a Line's Pieces that still stand are one Grounded Run, and each Run that isn't Grounded is one rigid body. Grounded, Frozen and fallen are a Run's. Once a Run has fallen it stays loose, like an Object, and never becomes Grounded again. Not to be confused with a run of the game.
+A connected stretch of a Line's Pieces, touching each other within the ground tolerance, that stand, hang or fall as one: all of a Line's Pieces that still stand are one Grounded Run, and each Run that isn't Grounded is one rigid body. Grounded, Frozen and fallen are a Run's. Once a Run has fallen it stays loose, like an Object, and never becomes Grounded again. Not to be confused with a run of the game.
 _Avoid_: Part, section, split-off Line
 
 **Grounded**:
@@ -118,7 +118,7 @@ One short section of a Line, about one enemy wide, that has its own durability a
 _Avoid_: Segment, chunk
 
 **Collapse**:
-What happens when a Piece of a Grounded Line breaks, is erased or is undone with its Line: grounding is checked again over connected stretches of Pieces, and each stretch no longer connected to the Terrain, directly or through Grounded Lines, falls at once. Each Line's stretch falls as a Run of it, a rigid body of its own; a Line cut in two keeps standing where it still reaches the ground, and stays one Line, keeping what is stuck to it.
+What happens when a Piece of a Grounded Line breaks, is erased or is undone with its Line: grounding is checked again over connected stretches of Pieces, and each stretch no longer connected to the Terrain, directly or through Grounded Lines, falls at once. Each Line's stretch falls as a Run of it, a rigid body of its own; a Line cut in two keeps standing where it still reaches the ground, and stays one Line, keeping what is stuck to it. A Run that isn't Grounded comes apart the same way when a Piece of it goes: each stretch that still touches is a Run of its own, Frozen where it hangs if the Run was, otherwise moving on as it moved.
 _Avoid_: Cave-in, structural failure
 
 **Debris**:

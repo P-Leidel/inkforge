@@ -1,6 +1,6 @@
 # Cut-off Lines collapse when a Piece goes
 
-Status: Accepted. Amends the last paragraph of [ADR 0014](0014-ungrounded-lines-start-frozen.md). Its fourth paragraph is superseded by [ADR 0017](0017-lines-keep-their-stroke-when-they-change-form.md): a Line cut in two stays one Line, its cut-off stretches falling as Runs of it.
+Status: Accepted. Amends the last paragraph of [ADR 0014](0014-ungrounded-lines-start-frozen.md). Its fourth paragraph is superseded by [ADR 0017](0017-lines-keep-their-stroke-when-they-change-form.md): a Line cut in two stays one Line, its cut-off stretches falling as Runs of it. [ADR 0018](0018-runs-hold-together-by-touching.md) applies its connectivity rule to every Run, not only the Grounded one.
 
 ADR 0014 left a Grounded Line fixed whatever broke, so a wall whose foot a Heavy wore through, or a platform a Blast cut off its post, went on hanging in mid-air. That looks like a bug, and it takes away the most satisfying thing a wall can do: come down. So grounding is checked again whenever a fixed Piece goes: when it breaks, when the Eraser removes it, and when undo takes back a Grounded Line. Erasing is not breaking, but it changes what is connected just the same.
 

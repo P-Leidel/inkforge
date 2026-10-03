@@ -1,6 +1,6 @@
 # Lines stay fixed only when Grounded; the rest start Frozen and fall
 
-Status: Accepted. Supersedes [ADR 0002](0002-lines-stay-fixed.md).
+Status: Accepted. Supersedes [ADR 0002](0002-lines-stay-fixed.md). "The rest stays one body" in the third paragraph is superseded by [ADR 0018](0018-runs-hold-together-by-touching.md): what is left comes apart into the stretches that still touch.
 
 ADR 0002 kept every Line fixed where it was drawn, even in mid-air, for one readable rule ("lines stay, shapes fall"). That kept ramps and walls doing exactly what the player drew, but it took away something players reach for at once: drawing a bar of ink above the Enemies and dropping it on them. Dropping things is part of the game, and a bar is the cheapest thing to drop.
 
