@@ -23,6 +23,7 @@ import {
   runFor,
   sandboxWorlds,
   wentOf,
+  piecesOf,
   worldSegments,
 } from './test-support';
 
@@ -481,7 +482,7 @@ describe('Strokes meet Enemies', () => {
     world.lines.flatMap((line) => worldSegments(line).flatMap(({ a, b }) => [a.x, b.x]));
   const lengthOf = (world: SandboxWorld) =>
     world.lines
-      .flatMap(({ segments }) => segments)
+      .flatMap((line) => line.runs.flatMap(({ segments }) => segments))
       .reduce((sum, { a, b }) => sum + Math.hypot(b.x - a.x, b.y - a.y), 0);
 
   it('cuts a Line drawn across a paused Crawler at the Crawler', () => {
@@ -550,7 +551,7 @@ describe('Pressing wear', () => {
       colour,
     );
   const durabilities = (world: SandboxWorld) =>
-    world.lines.map(({ pieces }) => pieces.map(({ durability }) => durability));
+    world.lines.map((line) => piecesOf(line).map(({ durability }) => durability));
 
   it('lets a Crawler against a grey Line wear one Piece through in about 20 s; the Piece breaks, the rest falls and the Crawler walks on', () => {
     const world = createWorld();
@@ -561,9 +562,9 @@ describe('Pressing wear', () => {
     let broke: number | null = null;
 
     stepUntil(world, 45, () => {
-      const [lower] = world.lines[0]!.pieces;
+      const [lower] = world.lines[0]!.runs[0]!.pieces;
       if (pressedFrom === null && lower!.durability < 6000) pressedFrom = world.time;
-      if (broke === null && world.lines[0]!.pieces.length < 2) broke = world.time;
+      if (broke === null && world.lines[0]!.runs[0]!.pieces.length < 2) broke = world.time;
       return broke !== null;
     });
 
@@ -573,7 +574,7 @@ describe('Pressing wear', () => {
     expect(entriesOf(entries, 'reformed').map((entry) => entry.id)).toEqual([line]);
     expect(broke! - pressedFrom!).toBeCloseTo(6000 / CRAWLER.pressing, 0);
     expect(durabilities(world)).toEqual([[6000]]); // the upper Piece, out of its reach
-    expect(world.lines[0]).toMatchObject({ grounded: false, frozen: false });
+    expect(world.lines[0]!.runs).toMatchObject([{ grounded: false, frozen: false }]);
     runFor(world, 3);
     expect(onlyEnemy(world).transform.x).toBeGreaterThan(400);
   });
@@ -609,7 +610,7 @@ describe('Pressing wear', () => {
     let steppedOn: number | null = null;
 
     stepUntil(world, 20, () => {
-      const pieces = world.lines[0]?.pieces ?? [];
+      const pieces = world.lines[0]?.runs[0]!.pieces ?? [];
       if (steppedOn === null && pieces.some(({ durability }) => durability < 250))
         steppedOn = world.time;
       return entriesOf(heard(), 'exploded').length > 0;
@@ -653,7 +654,7 @@ describe('Pressing wear', () => {
     expect(stepUntil(world, 20, stacked)).toBe(true);
     runFor(world, 0.5);
 
-    const lower = () => world.lines[0]!.pieces[0]!.durability;
+    const lower = () => world.lines[0]!.runs[0]!.pieces[0]!.durability;
     const before = lower();
     runFor(world, 2);
 
@@ -673,7 +674,7 @@ describe('Pressing wear', () => {
         { x: 300, y: GROUND_Y - height - 2 },
         { x: 330, y: GROUND_Y - height - 20 },
       ]);
-      expect(world.lines[0]!.pieces).toHaveLength(1);
+      expect(world.lines[0]!.runs[0]!.pieces).toHaveLength(1);
       world.spawn(type);
       const by = stepUntil(world, 50, () =>
         world.enemies.every(({ transform }) => transform.x > 400),
@@ -772,7 +773,9 @@ describe('Enemies take damage', () => {
     world.step();
     return {
       hp: onlyEnemy(world).hp,
-      pieces: world.lines.find(({ id }) => id === line)!.pieces.map(({ durability }) => durability),
+      pieces: world.lines
+        .find(({ id }) => id === line)!
+        .runs[0]!.pieces.map(({ durability }) => durability),
     };
   }
 
@@ -959,13 +962,13 @@ describe('Runner and Heavy', () => {
         ],
         colour,
       );
-      const full = world.lines[0]!.pieces[0]!.durability;
-      const count = world.lines[0]!.pieces.length;
+      const full = world.lines[0]!.runs[0]!.pieces[0]!.durability;
+      const count = world.lines[0]!.runs[0]!.pieces.length;
       world.spawn('heavy');
       let pressedFrom: number | null = null;
       let broke: number | null = null;
       stepUntil(world, 60, () => {
-        const { pieces } = world.lines[0]!;
+        const pieces = piecesOf(world.lines[0]!);
         if (pressedFrom === null && pieces.some(({ durability }) => durability < full))
           pressedFrom = world.time;
         if (broke === null && pieces.length < count) broke = world.time;

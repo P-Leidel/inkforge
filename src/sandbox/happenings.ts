@@ -62,12 +62,7 @@ export type Why =
   /** A Patch was used up. */
   | 'used-up'
   /** A Patch went with its host's body. */
-  | 'with-host'
-  /**
-   * A Grounded Line's Pieces were cut off from the Terrain: they come back
-   * at once as a Line that falls, where they stood.
-   */
-  | 'cut-off';
+  | 'with-host';
 
 export type Happening =
   | { readonly kind: 'added'; readonly what: Thing }
@@ -83,18 +78,12 @@ export type Happening =
   /** An Object was filled, or undo took its Fill back (`fill` null). */
   | { readonly kind: 'filled'; readonly id: number; readonly fill: Colour | null }
   /**
-   * Some of Line `id`'s Pieces, cut off from the Terrain, fall as a Line of
-   * their own, `into`, keeping their places along the Line. It comes before
-   * they are `added` under `into`.
-   */
-  | { readonly kind: 'split'; readonly id: number; readonly into: number }
-  /**
    * Line `id` changed form, keeping its Pieces and what is stuck to them:
-   * Grounded where it hung Frozen, or cut off and falling where it stood.
-   * Its Pieces neither went nor came.
+   * Runs of it Grounded where they hung Frozen, or cut off and falling as
+   * Runs of their own where they stood. Its Pieces neither went nor came.
    */
   | { readonly kind: 'reformed'; readonly id: number }
-  /** The player Released a Frozen Object. */
+  /** The player Released a Frozen Object, or Runs of Line `id`. */
   | { readonly kind: 'released'; readonly id: number }
   /** Debris bursts from a broken Outline or band, in world coordinates. */
   | {

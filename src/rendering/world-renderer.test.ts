@@ -291,6 +291,36 @@ describe('World renderer: between steps', () => {
     renderer.destroy();
   });
 
+  it('draws each Run of a Line cut in two on its own: what stands stays put, what falls moves', () => {
+    const world = createWorld();
+    const recording = new RecordingScene();
+    const renderer = new WorldRenderer(recording.asScene(), world);
+    renderer.draw();
+    const bare = recording.textures.size;
+    const id = drawLine(world, [
+      { x: 400, y: 880 },
+      { x: 400, y: 880 - 5 * 48 },
+    ]);
+    renderer.draw();
+
+    world.eraseAlong([{ x: 400, y: 880 - 2.5 * 48 }], 4); // Piece 2: the top two fall
+    const fell = world.lines.find((line) => line.id === id)!.runs[1]!.transform.y;
+    world.togglePause();
+    world.advance(20 * STEP_SECONDS);
+    world.togglePause();
+    renderer.draw();
+
+    const [, top] = world.lines.find((line) => line.id === id)!.runs;
+    expect(top!.transform.y).toBeGreaterThan(fell + 5);
+    // The falling Run's tiles go where it is now; the standing Run's are never moved.
+    const placed = recording.placed.filter((tile) => !tile.destroyed);
+    expect(placed.length).toBeGreaterThan(0);
+    for (const tile of placed)
+      expect(tile.position).toEqual({ x: top!.transform.x, y: top!.transform.y });
+    expect(recording.textures.size - bare).toBeGreaterThan(placed.length);
+    renderer.destroy();
+  });
+
   it('draws the pose now while paused', () => {
     const world = createWorld();
     const recording = new RecordingScene();

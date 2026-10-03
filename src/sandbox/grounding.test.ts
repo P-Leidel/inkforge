@@ -27,7 +27,7 @@ function lineById(world: SandboxWorld, id: number): LineView {
 
 /** Where a Line's first point is now, in the world. */
 function startOf(line: LineView): Vec2 {
-  return applyTransform(line.segments[0]!.a, line.transform);
+  return applyTransform(line.runs[0]!.segments[0]!.a, line.runs[0]!.transform);
 }
 
 describe('Grounded Lines', () => {
@@ -39,8 +39,8 @@ describe('Grounded Lines', () => {
     ]);
 
     const line = lineById(world, id);
-    expect(line.grounded).toBe(true);
-    expect(line.frozen).toBe(false);
+    expect(line.runs[0]!.grounded).toBe(true);
+    expect(line.runs[0]!.frozen).toBe(false);
     runFor(world, 1);
     expect(startOf(lineById(world, id))).toEqual({ x: 400, y: 700 });
   });
@@ -58,8 +58,8 @@ describe('Grounded Lines', () => {
       { x: 800, y: GROUND - 4 - groundTolerance - 2 },
     ]);
 
-    expect(lineById(world, near).grounded).toBe(true);
-    expect(lineById(world, far).grounded).toBe(false);
+    expect(lineById(world, near).runs[0]!.grounded).toBe(true);
+    expect(lineById(world, far).runs[0]!.grounded).toBe(false);
   });
 
   it('grounds a Line through other Grounded Lines, transitively', () => {
@@ -77,7 +77,7 @@ describe('Grounded Lines', () => {
       { x: 600, y: 600 },
     ]);
 
-    for (const id of [post, arm, hook]) expect(lineById(world, id).grounded).toBe(true);
+    for (const id of [post, arm, hook]) expect(lineById(world, id).runs[0]!.grounded).toBe(true);
   });
 
   it('is not grounded by an Object, however it touches it', () => {
@@ -89,7 +89,7 @@ describe('Grounded Lines', () => {
     ]);
 
     expect(objectById(world, box).frozen).toBe(true);
-    expect(lineById(world, id).grounded).toBe(false);
+    expect(lineById(world, id).runs[0]!.grounded).toBe(false);
   });
 
   it('grounds a Frozen Line once a Grounded one is drawn to touch it', () => {
@@ -98,7 +98,7 @@ describe('Grounded Lines', () => {
       { x: 400, y: 700 },
       { x: 600, y: 700 },
     ]);
-    expect(lineById(world, shelf).grounded).toBe(false);
+    expect(lineById(world, shelf).runs[0]!.grounded).toBe(false);
 
     drawLine(world, [
       { x: 500, y: GROUND },
@@ -106,7 +106,7 @@ describe('Grounded Lines', () => {
     ]);
 
     const line = lineById(world, shelf);
-    expect(line.grounded).toBe(true);
+    expect(line.runs[0]!.grounded).toBe(true);
     runFor(world, 1);
     expect(startOf(lineById(world, shelf))).toEqual({ x: 400, y: 700 });
   });
@@ -139,14 +139,14 @@ describe('Lines that are not Grounded', () => {
       { x: 600, y: 500 },
     ]);
 
-    expect(lineById(world, id)).toMatchObject({ grounded: false, frozen: true });
+    expect(lineById(world, id).runs).toMatchObject([{ grounded: false, frozen: true }]);
     runFor(world, 1);
     expect(startOf(lineById(world, id)).y).toBeCloseTo(500, 6);
 
     expect(world.releaseAt({ x: 500, y: 502 })).toBe(true);
     runFor(world, 0.3);
     const line = lineById(world, id);
-    expect(line.frozen).toBe(false);
+    expect(line.runs[0]!.frozen).toBe(false);
     expect(startOf(line).y).toBeGreaterThan(520);
   });
 
@@ -163,11 +163,11 @@ describe('Lines that are not Grounded', () => {
     runFor(world, 0.3);
 
     const after = lineById(world, id);
-    expect(after.pieces.length).toBe(before.pieces.length);
-    expect(after.segments).toEqual(before.segments);
+    expect(after.runs[0]!.pieces.length).toBe(before.runs[0]!.pieces.length);
+    expect(after.runs[0]!.segments).toEqual(before.runs[0]!.segments);
     // The shape stays: the distance between its two ends is as drawn.
-    const first = applyTransform(after.segments[0]!.a, after.transform);
-    const last = applyTransform(after.segments.at(-1)!.b, after.transform);
+    const first = applyTransform(after.runs[0]!.segments[0]!.a, after.runs[0]!.transform);
+    const last = applyTransform(after.runs[0]!.segments.at(-1)!.b, after.runs[0]!.transform);
     expect(Math.hypot(last.x - first.x, last.y - first.y)).toBeCloseTo(200, 0);
     expect(first.y).toBeGreaterThan(520);
   });
@@ -184,7 +184,7 @@ describe('Lines that are not Grounded', () => {
     world.release(boulder);
     runFor(world, 1);
 
-    expect(lineById(world, id).frozen).toBe(false);
+    expect(lineById(world, id).runs[0]!.frozen).toBe(false);
   });
 
   it('are freed by a strong enough Blast', () => {
@@ -193,7 +193,7 @@ describe('Lines that are not Grounded', () => {
       { x: 440, y: GROUND - 50 },
       { x: 560, y: GROUND - 50 },
     ]);
-    expect(lineById(world, id).grounded).toBe(false);
+    expect(lineById(world, id).runs[0]!.grounded).toBe(false);
     // A red ball dropped hard onto the ground under it explodes as it lands.
     const bomb = drawObject(world, dragCircle({ x: 500, y: GROUND - 23 }, 15), 'red');
     runFor(world, 0);
@@ -201,7 +201,7 @@ describe('Lines that are not Grounded', () => {
     runFor(world, 0.3);
 
     expect(world.objects.find((o) => o.id === bomb)).toBeUndefined();
-    expect(lineById(world, id).frozen).toBe(false);
+    expect(lineById(world, id).runs[0]!.frozen).toBe(false);
   });
 
   it('are separate bodies when they touch: Releasing one leaves the other Frozen', () => {
@@ -219,8 +219,8 @@ describe('Lines that are not Grounded', () => {
     expect(world.release(first)).toBe(true);
     runFor(world, 0.2);
 
-    expect(lineById(world, first).frozen).toBe(false);
-    expect(lineById(world, second).frozen).toBe(true);
+    expect(lineById(world, first).runs[0]!.frozen).toBe(false);
+    expect(lineById(world, second).runs[0]!.frozen).toBe(true);
   });
 
   it('damage the Enemies they fall on, a black bar more than a grey one', () => {
@@ -260,20 +260,20 @@ describe('Lines that are not Grounded', () => {
     runFor(world, 2);
 
     const landed = lineById(world, id);
-    expect(landed.grounded).toBe(false);
-    expect(landed.frozen).toBe(false);
+    expect(landed.runs[0]!.grounded).toBe(false);
+    expect(landed.runs[0]!.frozen).toBe(false);
     world.pause();
     world.freezeResting();
-    expect(lineById(world, id)).toMatchObject({ grounded: false, frozen: true });
+    expect(lineById(world, id).runs).toMatchObject([{ grounded: false, frozen: true }]);
 
     // Touching a Grounded Line now doesn't ground it: it fell.
     const resting = lineById(world, id);
-    const end = applyTransform(resting.segments.at(-1)!.b, resting.transform);
+    const end = applyTransform(resting.runs[0]!.segments.at(-1)!.b, resting.runs[0]!.transform);
     drawLine(world, [
       { x: end.x + 2, y: GROUND },
       { x: end.x + 2, y: end.y - 30 },
     ]);
-    expect(lineById(world, id).grounded).toBe(false);
+    expect(lineById(world, id).runs[0]!.grounded).toBe(false);
   });
 
   it('lose a Piece that breaks off, and the rest stays one body', () => {
@@ -282,17 +282,17 @@ describe('Lines that are not Grounded', () => {
       { x: 300, y: 500 },
       { x: 600, y: 500 },
     ]);
-    const pieces = lineById(world, id).pieces.length;
+    const pieces = lineById(world, id).runs[0]!.pieces.length;
     const heard = hear(world);
 
     world.eraseAlong([{ x: 310, y: 500 }], 4);
 
-    expect(lineById(world, id).pieces.length).toBe(pieces - 1);
+    expect(lineById(world, id).runs[0]!.pieces.length).toBe(pieces - 1);
     expect(entriesOf(heard(), 'went').map(({ why }) => why)).toEqual(['erased']);
     runFor(world, 0);
     expect(world.release(id)).toBe(true);
     runFor(world, 0.3);
-    expect(lineById(world, id).pieces.length).toBe(pieces - 1);
+    expect(lineById(world, id).runs[0]!.pieces.length).toBe(pieces - 1);
   });
 
   it('come back from R as they were when physics started', () => {
@@ -306,7 +306,7 @@ describe('Lines that are not Grounded', () => {
     runFor(world, 0.5);
     world.reset();
 
-    expect(lineById(world, id)).toMatchObject({ frozen: true, grounded: false });
+    expect(lineById(world, id).runs).toMatchObject([{ frozen: true, grounded: false }]);
     expect(startOf(lineById(world, id))).toEqual({ x: 400, y: 500 });
   });
 
@@ -349,12 +349,12 @@ describe('Lines that are not Grounded', () => {
     world.release(box, { x: 0, y: -400 });
     runFor(world, 1);
     expect(world.bonds.map((bond) => bond.object)).toEqual([box]);
-    expect(lineById(world, shelf)).toMatchObject({ grounded: false, frozen: true });
+    expect(lineById(world, shelf).runs).toMatchObject([{ grounded: false, frozen: true }]);
     const hung = objectById(world, box).transform;
 
     drawPost(world, { x: 400, y: 400 });
 
-    expect(lineById(world, shelf)).toMatchObject({ grounded: true });
+    expect(lineById(world, shelf).runs).toMatchObject([{ grounded: true }]);
     expect(world.bonds.map((bond) => bond.object)).toEqual([box]);
     runFor(world, 2);
     expect(world.bonds.map((bond) => bond.object)).toEqual([box]);

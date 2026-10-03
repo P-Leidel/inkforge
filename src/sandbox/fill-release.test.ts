@@ -210,7 +210,7 @@ describe('Fill release: Rubble', () => {
     expect(world.objects).toHaveLength(0);
     const line = world.lines.find((l) => l.id === shelf)!;
     const whole = DEFAULT_MATERIAL_TABLE.colours.grey.line.durability;
-    expect(line.pieces.some((p) => p.durability < whole)).toBe(true);
+    expect(line.runs[0]!.pieces.some((p) => p.durability < whole)).toBe(true);
   });
 
   it('a pebble does not wake a Frozen black Object that a same-mass hit would', () => {

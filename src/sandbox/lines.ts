@@ -34,17 +34,14 @@ export interface PieceView {
 }
 
 /**
- * A Line. Its segments are in its own coordinates; place them with
- * `transform`. A Grounded Line never moves, so its own coordinates are the
+ * A Run of a Line. Its segments are in its own coordinates; place them with
+ * `transform`. A Grounded Run never moves, so its own coordinates are the
  * world's; one that isn't Grounded moves as one body.
  */
-export interface LineView extends Poses {
-  readonly id: StrokeId;
-  readonly colour: Colour;
-  /** Capsule centre lines of the Pieces still there. */
+export interface RunView extends Poses {
+  /** Capsule centre lines of its Pieces. */
   readonly segments: readonly Segment[];
-  readonly thickness: number;
-  /** The Pieces still there, in order along the Line. */
+  /** Its Pieces, in order along the Line. */
   readonly pieces: readonly PieceView[];
   /** Whether it is Grounded: fixed where it was drawn. */
   readonly grounded: boolean;
@@ -55,24 +52,36 @@ export interface LineView extends Poses {
 }
 
 /**
- * One Piece of a Line, with its own damage: a Grounded Line's is its own
- * fixed body; one that isn't Grounded is some of its Line's body.
+ * A Line: its Runs, each standing, hanging or falling as one. A Line drawn
+ * whole is one Run until a Collapse cuts it.
+ */
+export interface LineView {
+  readonly id: StrokeId;
+  readonly colour: Colour;
+  readonly thickness: number;
+  /** In order along the Line, by their first Piece. */
+  readonly runs: readonly RunView[];
+}
+
+/**
+ * One Piece of a Line, with its own damage: a Grounded Run's is its own
+ * fixed body; one that isn't Grounded is some of its Run's body.
  */
 export interface Piece extends Breakable {
   readonly kind: 'piece';
   readonly lineId: StrokeId;
   readonly index: number;
-  /** In its Line's own coordinates: the world's, for a Grounded Line. */
+  /** In its Run's own coordinates: the world's, for a Grounded Run. */
   readonly segments: readonly Segment[];
   /** Its Party id, the same after a rebuild. */
   readonly party: PartyId;
   readonly body: BodyId;
-  /** True if its Line isn't Grounded. */
+  /** True if its Run isn't Grounded. */
   readonly loose: boolean;
 }
 
 /**
- * How a Line stands, its form: Grounded, each of its Pieces a fixed body of
+ * How a Run stands, its form: Grounded, each of its Pieces a fixed body of
  * its own; or not, one body that hangs Frozen until it falls.
  */
 type Form =
@@ -80,29 +89,43 @@ type Form =
   | {
       readonly kind: 'loose';
       readonly body: BodyId;
+      /** Its body's Party id, which its Pieces' Parties carry as their Stroke. */
+      readonly party: PartyId;
       /**
-       * Whether it has fallen: it was Released, hit or blasted loose. It
-       * stays loose, and never becomes Grounded again.
+       * Whether it has fallen: it was Released, hit, blasted loose or cut
+       * off. It stays loose, and never becomes Grounded again.
        */
       fell: boolean;
     };
 
-interface Line {
-  readonly id: StrokeId;
-  /**
-   * Its Party id. A Grounded Line has no body, but each of its Pieces'
-   * Parties carries it as their Stroke; one that isn't Grounded has one body,
-   * whose Parties its Pieces are.
-   */
-  readonly party: PartyId;
-  readonly colour: Colour;
-  readonly thickness: number;
-  /** The Pieces still there, in order; broken ones are gone. */
+/**
+ * A stretch of a Line's Pieces that stand, hang or fall as one. A Line has
+ * at most one Grounded Run, all of its Pieces that stand.
+ */
+interface Run {
+  /** Its Pieces, in order; broken ones are gone. Never none. */
   pieces: Piece[];
   form: Form;
 }
 
-/** A Line's that isn't Grounded, when a snapshot is taken: its pose, motion and mass. */
+/** A Run that isn't Grounded. */
+type LooseRun = Run & { readonly form: Extract<Form, { kind: 'loose' }> };
+
+interface Line {
+  readonly id: StrokeId;
+  /**
+   * Its Party id. A Grounded Run has no body, but each of its Pieces'
+   * Parties carries it as their Stroke; the Run it was drawn as, if it
+   * wasn't Grounded, has it for its body.
+   */
+  readonly party: PartyId;
+  readonly colour: Colour;
+  readonly thickness: number;
+  /** In order along it, by their first Piece; never none. */
+  runs: Run[];
+}
+
+/** A Run's that isn't Grounded, when a snapshot is taken: its pose, motion and mass. */
 export interface LineMotion extends Motion {
   readonly frozen: boolean;
   readonly mass: number;
@@ -110,17 +133,29 @@ export interface LineMotion extends Motion {
 
 type SavedPiece = Omit<Piece, 'body'>;
 
-/** What a Line is, apart from its Pieces and its form. */
-type LineBase = Omit<Line, 'pieces' | 'form'>;
+/** What a Line is, apart from its Runs. */
+type LineBase = Omit<Line, 'runs'>;
+
+/** A Run's form in a snapshot. */
+type SavedForm =
+  | { readonly kind: 'grounded' }
+  | {
+      readonly kind: 'loose';
+      readonly party: PartyId;
+      readonly fell: boolean;
+      readonly motion: LineMotion;
+    };
+
+/** A Run in a snapshot. */
+export interface SavedRun {
+  readonly pieces: readonly SavedPiece[];
+  readonly form: SavedForm;
+}
 
 /** A Line in a snapshot. */
 export interface SavedLine extends LineBase {
   readonly kind: 'line';
-  /** Whether it has fallen; never for a Grounded Line. */
-  readonly fell: boolean;
-  readonly pieces: readonly SavedPiece[];
-  /** Null for a Grounded Line. */
-  readonly motion: LineMotion | null;
+  readonly runs: readonly SavedRun[];
 }
 
 /** What a Line that was taken away left: its Colour and the Ink of its Pieces still there. */
@@ -135,9 +170,19 @@ function middleOf(segments: readonly Segment[]): Vec2 {
   return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
 }
 
-/** A Line's capsules, one per segment of each Piece still there, in order. */
-function capsulesOf(line: Line): Capsule[] {
-  return line.pieces.flatMap((piece) => pieceCapsules(piece, line.thickness));
+/** A Run's capsules, one per segment of each of its Pieces, in order. */
+function capsulesOf(run: Run, thickness: number): Capsule[] {
+  return run.pieces.flatMap((piece) => pieceCapsules(piece, thickness));
+}
+
+/** Runs in order along their Line, by their first Piece. */
+function inOrder(runs: Run[]): Run[] {
+  return runs.sort((p, q) => p.pieces[0]!.index - q.pieces[0]!.index);
+}
+
+/** Every Piece of a Line still there, Run by Run. */
+function piecesOf(line: Line): Piece[] {
+  return line.runs.flatMap((run) => run.pieces);
 }
 
 /** A Piece's capsules, one per segment, in its Line's own coordinates. */
@@ -166,18 +211,16 @@ export interface LinesDeps {
    * them again under the same Parties, keeping what is stuck to them.
    */
   readonly rehost: (parties: ReadonlySet<PartyId>, act: () => void) => void;
-  /** A new Stroke id, for a Line that Line `of` splits into, after the Strokes there are. */
-  readonly split: (of: StrokeId) => StrokeId;
 }
 
 /**
- * The Lines, and how each stands: Grounded, hanging Frozen or fallen. It
- * changes a Line's form, keeping its Pieces, their Parties and what is
- * stuck to them, and says `reformed`: when a Grounded Line drawn to touch a
- * Frozen one grounds it, and in a Collapse, when what a Piece that went
- * held up falls. A Collapse waits until whatever took Pieces away is done
- * (`together`), or until the end of the step, and is never left for anyone
- * else to start.
+ * The Lines, and how each of their Runs stands: Grounded, hanging Frozen or
+ * fallen. It changes a Line's form, keeping its id, its Pieces, their
+ * Parties and what is stuck to them, and says `reformed`: when a Grounded
+ * Line drawn to touch a Frozen one grounds it, and in a Collapse, when what
+ * a Piece that went held up falls as Runs of their own. A Collapse waits
+ * until whatever took Pieces away is done (`together`), or until the end of
+ * the step, and is never left for anyone else to start.
  */
 export class Lines {
   /** By id, in the order they were drawn. */
@@ -193,28 +236,31 @@ export class Lines {
   constructor(private readonly deps: LinesDeps) {}
 
   get views(): LineView[] {
+    return [...this.lines.values()].map((line) => ({
+      id: line.id,
+      colour: line.colour,
+      thickness: line.thickness,
+      runs: line.runs.map((run) => this.viewRun(run)),
+    }));
+  }
+
+  private viewRun({ pieces, form }: Run): RunView {
     const { physics, numbers, poses } = this.deps;
-    return [...this.lines.values()].map((line) => {
-      const { form } = line;
-      return {
-        id: line.id,
-        colour: line.colour,
-        thickness: line.thickness,
-        segments: line.pieces.flatMap((piece) => piece.segments),
-        pieces: line.pieces.map((piece) => ({
-          index: piece.index,
-          segments: piece.segments,
-          durability: numbers.durabilityLeft(piece),
-          wear: numbers.wear(piece),
-        })),
-        grounded: form.kind === 'grounded',
-        ...(form.kind === 'grounded'
-          ? { transform: AT_ORIGIN, previousTransform: AT_ORIGIN }
-          : poses.of(form.body)),
-        frozen: form.kind === 'loose' && physics.isFrozen(form.body),
-        velocity: form.kind === 'grounded' ? { x: 0, y: 0 } : physics.getVelocity(form.body),
-      };
-    });
+    return {
+      segments: pieces.flatMap((piece) => piece.segments),
+      pieces: pieces.map((piece) => ({
+        index: piece.index,
+        segments: piece.segments,
+        durability: numbers.durabilityLeft(piece),
+        wear: numbers.wear(piece),
+      })),
+      grounded: form.kind === 'grounded',
+      ...(form.kind === 'grounded'
+        ? { transform: AT_ORIGIN, previousTransform: AT_ORIGIN }
+        : poses.of(form.body)),
+      frozen: form.kind === 'loose' && physics.isFrozen(form.body),
+      velocity: form.kind === 'grounded' ? { x: 0, y: 0 } : physics.getVelocity(form.body),
+    };
   }
 
   /** Whether there is a Line `id`. */
@@ -258,40 +304,41 @@ export class Lines {
       impacts: 0,
       loose: !touches.grounded,
     }));
-    const base = { id, party, colour, thickness };
-    const line = touches.grounded
-      ? this.addGrounded(base, saved)
-      : this.addLoose(base, saved, false, {
+    const line: LineBase = { id, party, colour, thickness };
+    const run = touches.grounded
+      ? this.addGrounded(line, saved)
+      : this.addLoose(line, saved, party, false, {
           transform: origin,
           velocity: { x: 0, y: 0 },
           angularVelocity: 0,
           frozen: true,
           mass: lineMass(segments, thickness, colour, materials),
         });
-    this.lines.set(id, line);
+    this.lines.set(id, { ...line, runs: [run] });
     if (touches.grounded) this.groundTouched(touches.loose);
   }
 
-  /** Adds a Grounded Line: each of its Pieces a fixed body of its own. */
-  private addGrounded(line: LineBase, pieces: readonly SavedPiece[]): Line {
+  /** Adds a Grounded Run of `line`: each of its Pieces a fixed body of its own. */
+  private addGrounded(line: LineBase, pieces: readonly SavedPiece[]): Run {
     return {
-      ...line,
       form: { kind: 'grounded' },
       pieces: pieces.map((piece) => this.addPiece(piece, line.thickness, line.party)),
     };
   }
 
   /**
-   * Adds a Line that isn't Grounded: one moving body, as `motion` has it,
-   * each of its Pieces some of its capsules and a Party of its own.
+   * Adds a Run of `line` that isn't Grounded: one moving body, Party
+   * `party`, as `motion` has it, each of its Pieces some of its capsules and
+   * a Party of its own.
    */
   private addLoose(
     line: LineBase,
     saved: readonly SavedPiece[],
+    party: PartyId,
     fell: boolean,
     motion: LineMotion,
-  ): Line {
-    const { colour, thickness, party, id } = line;
+  ): Run {
+    const { colour, thickness, id } = line;
     const type = { kind: 'piece', colour, loose: true } as const;
     const { transform, velocity, angularVelocity, frozen, mass } = motion;
     const pieces = this.deps.bodies.addLooseLine(
@@ -319,8 +366,7 @@ export class Lines {
       })),
     );
     return {
-      ...line,
-      form: { kind: 'loose', body: pieces[0]!.body, fell },
+      form: { kind: 'loose', body: pieces[0]!.body, party, fell },
       pieces: pieces.map((p) => p.target),
     };
   }
@@ -339,55 +385,70 @@ export class Lines {
   }
 
   /**
-   * Grounds the Lines with these ids, if they are Frozen and haven't fallen,
-   * and the Frozen ones they touch in turn: a Grounded Line drawn to touch
-   * them holds them. Each becomes fixed where it hangs, its Pieces' damage
-   * and all, with what is stuck to it, and is `reformed`.
+   * Grounds the Runs of the Lines with these ids that are Frozen and haven't
+   * fallen, and those of the Lines they touch in turn: a Grounded Line drawn
+   * to touch them holds them. Each becomes fixed where it hangs, its Pieces'
+   * damage and all, with what is stuck to it, and its Line is `reformed`.
    */
   private groundTouched(ids: readonly StrokeId[]): void {
     const queue = [...ids];
     for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
       const line = this.lines.get(id);
-      if (!line || line.form.kind === 'grounded' || this.hasFallen(line)) continue;
-      const { body } = line.form;
-      const transform = this.deps.physics.getTransform(body);
-      const saved = line.pieces.map(({ body: _body, segments, ...piece }) => ({
-        ...piece,
-        segments: segments.map(({ a, b }) => ({
-          a: applyTransform(a, transform),
-          b: applyTransform(b, transform),
-        })),
-        loose: false,
-      }));
-      this.reform(line, () => {
-        // Quietly, so no one hears why: its Pieces come straight back.
-        this.deps.bodies.removeBody(body, 'undone');
-        const { form, pieces } = this.addGrounded(line, saved);
-        line.form = form;
-        line.pieces = pieces;
+      const hanging = line?.runs.filter((run) => this.hangs(run)) ?? [];
+      if (!line || hanging.length === 0) continue;
+      const saved = hanging.flatMap(({ pieces, form }) => {
+        const transform = this.deps.physics.getTransform(form.body);
+        return pieces.map(({ body: _body, segments, ...piece }) => ({
+          ...piece,
+          segments: segments.map(({ a, b }) => ({
+            a: applyTransform(a, transform),
+            b: applyTransform(b, transform),
+          })),
+          loose: false,
+        }));
       });
+      this.reform(
+        line,
+        hanging.flatMap((run) => run.pieces),
+        () => {
+          // Quietly, so no one hears why: their Pieces come straight back.
+          for (const { form } of hanging) this.deps.bodies.removeBody(form.body, 'undone');
+          // What of it stands already and what it grounds stand as one Run.
+          const standing = line.runs.find((run) => run.form.kind === 'grounded');
+          const { form, pieces } = this.addGrounded(line, saved);
+          const gone = new Set<Run>(hanging);
+          const others = line.runs.filter((run) => run !== standing && !gone.has(run));
+          const all = [...(standing?.pieces ?? []), ...pieces].sort((p, q) => p.index - q.index);
+          line.runs = inOrder([...others, { form, pieces: all }]);
+        },
+      );
       const segments = saved.flatMap((piece) => piece.segments);
       queue.push(...this.touches(segments, line.thickness).loose);
     }
   }
 
   /**
-   * Runs `act`, which takes away the bodies of `line`'s Pieces and adds them
-   * again in another form, under the same Parties: quietly, keeping what is
-   * stuck to them. Then says it `reformed`.
+   * Runs `act`, which takes away the bodies of `pieces`, Pieces of `line`,
+   * and adds them again in another form, under the same Parties: quietly,
+   * keeping what is stuck to them. Then says `line` `reformed`.
    */
-  private reform(line: Line, act: () => void): void {
-    const parties = new Set(line.pieces.map((piece) => piece.party));
+  private reform(line: Line, pieces: readonly Piece[], act: () => void): void {
+    const parties = new Set(pieces.map((piece) => piece.party));
     this.deps.rehost(parties, () => this.deps.quietly(act));
     this.deps.say({ kind: 'reformed', id: line.id });
   }
 
+  /** Whether a Run hangs where it was drawn: it isn't Grounded, and hasn't fallen. */
+  private hangs(run: Run): run is LooseRun {
+    return run.form.kind === 'loose' && !this.hasFallen(run);
+  }
+
   /**
-   * Whether a Line that isn't Grounded has fallen: it has moved since it was
+   * Whether a Run that isn't Grounded has fallen: it has moved since it was
    * drawn, even if it is Frozen again now.
    */
-  private hasFallen(line: Line): boolean {
-    const { form } = line;
+  private hasFallen(run: Run): boolean {
+    const { form } = run;
     if (form.kind === 'grounded') return false;
     if (!form.fell && !this.deps.physics.isFrozen(form.body)) form.fell = true;
     return form.fell;
@@ -395,42 +456,46 @@ export class Lines {
 
   /** Every Piece still there, Line by Line in drawing order: what may glue. */
   *pieces(): Iterable<Piece> {
-    for (const line of this.lines.values()) yield* line.pieces;
+    for (const line of this.lines.values()) yield* piecesOf(line);
   }
 
   /** The capsules of Line `id`, or of every Line, where they are now, in world coordinates. */
   worldCapsules(id?: StrokeId): Capsule[] {
     const lines = id === undefined ? [...this.lines.values()] : [this.lines.get(id)!];
-    return lines.flatMap((line) => {
-      const capsules = capsulesOf(line);
-      if (line.form.kind === 'grounded') return capsules;
-      const transform = this.deps.physics.getTransform(line.form.body);
-      return capsules.map(({ segment: { a, b }, radius }) => ({
-        segment: { a: applyTransform(a, transform), b: applyTransform(b, transform) },
-        radius,
-      }));
-    });
-  }
-
-  /** Whether Line `id` hangs Frozen. */
-  isFrozen(id: StrokeId): boolean {
-    const form = this.lines.get(id)?.form;
-    return form?.kind === 'loose' && this.deps.physics.isFrozen(form.body);
+    return lines.flatMap((line) =>
+      line.runs.flatMap((run) => {
+        const capsules = capsulesOf(run, line.thickness);
+        if (run.form.kind === 'grounded') return capsules;
+        const transform = this.deps.physics.getTransform(run.form.body);
+        return capsules.map(({ segment: { a, b }, radius }) => ({
+          segment: { a: applyTransform(a, transform), b: applyTransform(b, transform) },
+          radius,
+        }));
+      }),
+    );
   }
 
   /**
-   * Releases Line `id`, if it hangs Frozen, optionally setting it moving:
-   * it has fallen.
+   * Releases every Run of Line `id` that hangs Frozen, optionally setting
+   * each moving: they have fallen. Says whether one was Released.
    */
   release(id: StrokeId, velocity?: Vec2): boolean {
-    const line = this.lines.get(id);
-    if (!line || line.form.kind === 'grounded') return false;
+    const runs = this.lines.get(id)?.runs ?? [];
+    return runs.filter((run) => this.releaseRun(run, velocity)).length > 0;
+  }
+
+  /** Releases the Run with Piece `index` of Line `id`, if it hangs Frozen. */
+  releasePiece(id: StrokeId, index: number): boolean {
+    const run = this.lines.get(id)?.runs.find((r) => r.pieces.some((p) => p.index === index));
+    return run !== undefined && this.releaseRun(run);
+  }
+
+  private releaseRun({ form }: Run, velocity?: Vec2): boolean {
     const { physics } = this.deps;
-    const { body } = line.form;
-    if (!physics.isFrozen(body)) return false;
-    physics.release(body);
-    line.form.fell = true;
-    if (velocity) physics.setVelocity(body, velocity);
+    if (form.kind === 'grounded' || !physics.isFrozen(form.body)) return false;
+    physics.release(form.body);
+    form.fell = true;
+    if (velocity) physics.setVelocity(form.body, velocity);
     return true;
   }
 
@@ -449,8 +514,8 @@ export class Lines {
   }
 
   /**
-   * Takes Line `id` away, for `why`: what a Grounded one held up falls at
-   * the end of the `together` this runs in. Says what it left, or null if
+   * Takes Line `id` away, for `why`: what a Grounded Run of it held up falls
+   * at the end of the `together` this runs in. Says what it left, or null if
    * it was gone already.
    */
   remove(id: StrokeId, why: Why): TakenLine | null {
@@ -458,54 +523,64 @@ export class Lines {
     if (!line) return null;
     return this.together(() => {
       this.lines.delete(id);
-      const { form } = line;
-      if (form.kind === 'grounded') {
-        this.cut.push(...capsulesOf(line));
-        for (const piece of line.pieces) this.deps.bodies.removeBody(piece.body, why);
-      } else {
-        this.deps.bodies.removeBody(form.body, why);
-      }
-      const segments = line.pieces.flatMap((piece) => piece.segments);
+      for (const run of line.runs) this.removeRun(line, run, why);
+      const segments = piecesOf(line).flatMap((piece) => piece.segments);
       return { colour: line.colour, ink: lineInk(segments, line.thickness) };
     });
   }
 
+  /** Removes the bodies of Run `run` of `line`, for `why`. */
+  private removeRun(line: Line, { form, pieces }: Run, why: Why): void {
+    if (form.kind === 'loose') {
+      this.deps.bodies.removeBody(form.body, why);
+      return;
+    }
+    this.cut.push(...capsulesOf({ form, pieces }, line.thickness));
+    for (const piece of pieces) this.deps.bodies.removeBody(piece.body, why);
+  }
+
   /**
-   * Removes Piece `index` of Line `id`, for `why`; the rest of the Line
-   * stays where it is, fixed or as one body, and the Line goes with its last
-   * Piece. What a fixed one held up falls at the end of the `together` this
-   * runs in.
+   * Removes Piece `index` of Line `id`, for `why`; the rest of its Run stays
+   * where it is, fixed or as one body. A Run goes with its last Piece, and
+   * the Line with its last Run. What a fixed one held up falls at the end of
+   * the `together` this runs in.
    */
   removePiece(id: StrokeId, index: number, why: Why): void {
     const line = this.lines.get(id);
-    const piece = line?.pieces.find((p) => p.index === index);
+    const piece = line && piecesOf(line).find((p) => p.index === index);
     if (line && piece) this.together(() => this.dropPiece(line, piece, why));
   }
 
   private dropPiece(line: Line, piece: Piece, why: Why): void {
-    if (line.pieces.length === 1) {
-      this.remove(line.id, why);
+    const run = line.runs.find((r) => r.pieces.includes(piece))!;
+    if (run.pieces.length === 1) {
+      line.runs = line.runs.filter((r) => r !== run);
+      if (line.runs.length === 0) this.lines.delete(line.id);
+      this.removeRun(line, run, why);
       return;
     }
-    if (line.form.kind === 'grounded') {
+    if (run.form.kind === 'grounded') {
       this.cut.push(...pieceCapsules(piece, line.thickness));
       this.deps.bodies.removeBody(piece.body, why);
     } else {
       this.deps.bodies.removePart(piece.party, why);
     }
-    line.pieces = line.pieces.filter((p) => p !== piece);
+    run.pieces = run.pieces.filter((p) => p !== piece);
+    // A Run is in order by its first Piece.
+    line.runs = inOrder(line.runs);
   }
 
   /**
    * Breaks a Piece that the Material rules broke, and reports what comes out
-   * of it: its body is removed, and the rest of its Line stays where it is
+   * of it: its body is removed, and the rest of its Run stays where it is
    * until the step's `collapse`; the Line goes with its last Piece.
    */
   breakPiece(piece: Piece): Broken | null {
     const line = this.lines.get(piece.lineId);
-    if (!line) return null;
+    const run = line?.runs.find((r) => r.pieces.includes(piece));
+    if (!line || !run) return null;
     const { physics } = this.deps;
-    const { form } = line;
+    const { form } = run;
     const transform = form.kind === 'grounded' ? AT_ORIGIN : physics.getTransform(form.body);
     const velocity = form.kind === 'grounded' ? { x: 0, y: 0 } : physics.getVelocity(form.body);
     const segments = piece.segments.map(({ a, b }) => ({
@@ -527,15 +602,22 @@ export class Lines {
 
   /** Line `id` as a snapshot keeps it. */
   save(id: StrokeId): SavedLine {
-    const line = this.lines.get(id)!;
-    const { pieces, form, ...base } = line;
-    const fell = this.hasFallen(line);
+    const { runs, ...base } = this.lines.get(id)!;
     return {
       kind: 'line',
       ...base,
-      fell,
-      pieces: pieces.map(({ body: _body, ...piece }) => piece),
-      motion: form.kind === 'grounded' ? null : this.lineMotion(form.body),
+      runs: runs.map((run) => ({
+        pieces: run.pieces.map(({ body: _body, ...piece }) => piece),
+        form:
+          run.form.kind === 'grounded'
+            ? run.form
+            : {
+                kind: 'loose',
+                party: run.form.party,
+                fell: this.hasFallen(run),
+                motion: this.lineMotion(run.form.body),
+              },
+      })),
     };
   }
 
@@ -549,11 +631,15 @@ export class Lines {
   }
 
   /** Adds a Line again as it was saved, after the Lines there are. */
-  restore({ kind: _kind, pieces, motion, fell, ...base }: SavedLine): void {
-    this.lines.set(
-      base.id,
-      motion === null ? this.addGrounded(base, pieces) : this.addLoose(base, pieces, fell, motion),
-    );
+  restore({ kind: _kind, runs, ...line }: SavedLine): void {
+    this.lines.set(line.id, {
+      ...line,
+      runs: runs.map(({ pieces, form }) =>
+        form.kind === 'grounded'
+          ? this.addGrounded(line, pieces)
+          : this.addLoose(line, pieces, form.party, form.fell, form.motion),
+      ),
+    });
   }
 
   clear(): void {
@@ -575,12 +661,10 @@ export class Lines {
    * once. So it only looks at the Pieces connected to what went, and stops
    * as soon as a run is found to stand.
    *
-   * Of a cut-off run, each Line's Pieces that touch each other fall as one
-   * body, as a fallen Line: several Lines cut off together fall as several
-   * bodies, and a Line cut in two keeps its id for what still stands, or
-   * else for its first run, which is `reformed`; each other run falls as a
-   * Line of its own, said as `split`. Each keeps its Pieces, their places
-   * along the Line and their damage.
+   * Of what is cut off, each Line's Pieces that touch each other fall as one
+   * body, a Run of that Line: several Lines cut off together fall as several
+   * bodies, and a Line cut in two keeps its id, its Pieces, their places
+   * along it and their damage, and is `reformed`.
    */
   private collapse(): void {
     if (this.cut.length === 0) return;
@@ -633,8 +717,9 @@ export class Lines {
   }
 
   /**
-   * Lets the Pieces of Grounded Line `id` that are `falling` fall, each run
-   * of them that touch each other (`links`) as one body.
+   * Lets the Pieces of the Grounded Run of Line `id` that are `falling`
+   * fall, each run of them that touch each other (`links`) as a Run of its
+   * own, one body.
    */
   private cutOff(
     id: StrokeId,
@@ -642,8 +727,9 @@ export class Lines {
     links: ReadonlyMap<string, readonly string[]>,
   ): void {
     const line = this.lines.get(id)!;
+    const standing = line.runs.find((run) => run.form.kind === 'grounded')!;
     const keyOf = (piece: Piece) => pieceKey({ thing: 'piece', id, index: piece.index });
-    const mine = line.pieces.filter((piece) => falling.has(keyOf(piece)));
+    const mine = standing.pieces.filter((piece) => falling.has(keyOf(piece)));
     // Runs of its falling Pieces that touch each other, in order along it.
     const runs: Piece[][] = [];
     const placed = new Set<string>();
@@ -661,50 +747,30 @@ export class Lines {
       }
       runs.push(run.sort((p, q) => p.index - q.index));
     }
-    const stays = line.pieces.filter((piece) => !falling.has(keyOf(piece)));
-    // The run that keeps the Line's id, if none of it still stands.
-    const kept = stays.length === 0 ? runs[0]! : [];
-    const { bodies } = this.deps;
-    this.deps.rehost(new Set(mine.map((piece) => piece.party)), () => {
-      // Quietly, so no one hears why: the kept run's Pieces come straight back.
-      this.deps.quietly(() => {
-        for (const piece of kept) bodies.removeBody(piece.body, 'undone');
-      });
-      for (const piece of mine) if (!kept.includes(piece)) bodies.removeBody(piece.body, 'cut-off');
-      for (const run of runs) {
-        if (run === kept) {
-          this.deps.quietly(() => {
-            const { form, pieces } = this.fall(line, run);
-            line.form = form;
-            line.pieces = pieces;
-          });
-          continue;
-        }
-        const into = this.deps.split(id);
-        this.deps.say({ kind: 'split', id, into });
-        const party = bodies.newId();
-        const base = { id: into, party, colour: line.colour, thickness: line.thickness };
-        this.lines.set(into, this.fall(base, run));
-      }
+    const stays = standing.pieces.filter((piece) => !falling.has(keyOf(piece)));
+    const fallen = line.runs.filter((run) => run !== standing);
+    this.reform(line, mine, () => {
+      // Quietly, so no one hears why: their Pieces come straight back.
+      for (const piece of mine) this.deps.bodies.removeBody(piece.body, 'undone');
+      const cut = runs.map((run) => this.fall(line, run));
+      const kept = stays.length > 0 ? [{ form: standing.form, pieces: stays }] : [];
+      line.runs = inOrder([...kept, ...fallen, ...cut]);
     });
-    if (stays.length > 0) line.pieces = stays;
-    else this.deps.say({ kind: 'reformed', id });
   }
 
   /**
-   * Adds Line `line` falling from where `pieces`, fixed ones that were cut
-   * off, stood: one moving body, as a fallen Line.
+   * A Run of `line` falling from where `pieces`, fixed ones that were cut
+   * off, stood: one moving body, Party a new one.
    */
-  private fall(line: LineBase, pieces: readonly Piece[]): Line {
+  private fall(line: LineBase, pieces: readonly Piece[]): Run {
     const segments = pieces.flatMap((piece) => piece.segments);
     const origin = { ...middleOf(segments), angle: 0 };
     const saved = pieces.map(({ body: _body, segments, ...piece }) => ({
       ...piece,
-      lineId: line.id,
       segments: segments.map(({ a, b }) => ({ a: sub(a, origin), b: sub(b, origin) })),
       loose: true,
     }));
-    return this.addLoose(line, saved, true, {
+    return this.addLoose(line, saved, this.deps.bodies.newId(), true, {
       transform: origin,
       velocity: { x: 0, y: 0 },
       angularVelocity: 0,
@@ -713,11 +779,10 @@ export class Lines {
     });
   }
 
-  /** The fixed Piece a query found, if its Line is still Grounded. */
+  /** The fixed Piece a query found, if it is in its Line's Grounded Run. */
   private fixedPiece({ id, index }: FoundPiece): Piece | undefined {
-    const line = this.lines.get(id);
-    if (!line || line.form.kind !== 'grounded') return undefined;
-    return line.pieces.find((piece) => piece.index === index);
+    const standing = this.lines.get(id)?.runs.find((run) => run.form.kind === 'grounded');
+    return standing?.pieces.find((piece) => piece.index === index);
   }
 }
 

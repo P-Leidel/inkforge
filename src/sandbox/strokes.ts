@@ -16,7 +16,14 @@ import type { ArenaQuery, Capsule } from './arena-query';
 import type { PartyId } from './contact-ledger';
 import type { Happening, Why } from './happenings';
 import type { Broken } from './material-rules';
-import { Lines, type LineView, type Piece, type SavedLine, type TakenLine } from './lines';
+import {
+  Lines,
+  type LineView,
+  type Piece,
+  type SavedLine,
+  type SavedRun,
+  type TakenLine,
+} from './lines';
 import type { Breakable, Numbers } from './numbers';
 import type { PreviousPoses } from './previous-poses';
 import { WAITING, type StickState } from './sticking';
@@ -40,7 +47,7 @@ const RELEASE_REACH = 4;
 
 export type StrokeId = number;
 
-export type { LineView, PieceView, Piece } from './lines';
+export type { LineView, RunView, PieceView, Piece } from './lines';
 
 export interface ObjectView extends Poses {
   readonly id: StrokeId;
@@ -201,8 +208,8 @@ function resting({ velocity, angularVelocity }: Motion): boolean {
 }
 
 /**
- * `saved` with every Object, and every Line that isn't Grounded, at rest
- * Frozen again, where it is: one moving slower than `REST_SPEED` and
+ * `saved` with every Object, and every Run of a Line that isn't Grounded, at
+ * rest Frozen again, where it is: one moving slower than `REST_SPEED` and
  * turning slower than `REST_SPIN`, and not sliding off a Line. The
  * Aftermath of a Wave.
  */
@@ -211,9 +218,12 @@ export function freezeResting(saved: SavedStrokes): SavedStrokes {
   return {
     strokes: saved.strokes.map((stroke): SavedStroke => {
       if (stroke.kind === 'line') {
-        const { motion } = stroke;
-        if (!motion || motion.frozen || !resting(motion)) return stroke;
-        return { ...stroke, motion: { ...motion, ...still } };
+        const runs = stroke.runs.map((run): SavedRun => {
+          const { form } = run;
+          if (form.kind === 'grounded' || form.motion.frozen || !resting(form.motion)) return run;
+          return { ...run, form: { ...form, motion: { ...form.motion, ...still } } };
+        });
+        return { ...stroke, runs };
       }
       const { motion } = stroke;
       if (motion.frozen || !resting(motion) || motion.slide !== null) return stroke;
@@ -272,11 +282,6 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
       say,
       quietly,
       rehost,
-      split: () => {
-        const id = this.nextId++;
-        this.strokes.push({ kind: 'line', id });
-        return id;
-      },
     });
   }
 
@@ -486,16 +491,20 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   }
 
   /**
-   * Releases the Frozen Object under `point`, if any, or else the Frozen
-   * Line that isn't Grounded there, the most recently drawn first. Returns
-   * whether one was Released.
+   * Releases the Frozen Object under `point`, if any, or else the Frozen Run
+   * of a Line there, the most recently drawn Line's first: only that Run,
+   * not the rest of its Line. Returns whether one was Released.
    */
   releaseAt(point: Vec2): boolean {
     const object = this.objectAt(point, (s) => this.physics.isFrozen(s.body));
     if (object) return this.release(object.id);
     const near = this.query.touchedBy({ path: [point], radius: RELEASE_REACH });
-    const ids = near.flatMap((thing) => (thing.thing === 'piece' ? [thing.id] : []));
-    for (const id of [...new Set(ids)].sort((p, q) => q - p)) if (this.release(id)) return true;
+    const pieces = near.flatMap((thing) => (thing.thing === 'piece' ? [thing] : []));
+    for (const { id, index } of pieces.sort((p, q) => q.id - p.id || p.index - q.index)) {
+      if (!this.lineForms.releasePiece(id, index)) continue;
+      this.say({ kind: 'released', id });
+      return true;
+    }
     return false;
   }
 
@@ -526,8 +535,8 @@ export class Strokes implements Kind<'strokes', SavedStrokes, StrokeViews> {
   }
 
   /**
-   * Releases a Frozen Object, or a Frozen Line that isn't Grounded,
-   * optionally setting it moving.
+   * Releases a Frozen Object, or every Frozen Run of a Line, optionally
+   * setting it moving.
    */
   release(id: StrokeId, velocity?: Vec2): boolean {
     const object = this.objectById(id);

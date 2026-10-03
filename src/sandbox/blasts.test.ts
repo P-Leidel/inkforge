@@ -117,7 +117,7 @@ describe('Blasts in the Sandbox world', () => {
     for (let k = 1; k < steps.length; k++) expect(steps[k]!).toBeGreaterThan(steps[k - 1]!);
     expect(objectById(world, beyond).durability).toBe(TABLE.colours.red.outline.durability);
     expect(objectById(world, beyond).frozen).toBe(true);
-    expect(world.lines[0]!.pieces.length).toBeGreaterThan(0);
+    expect(world.lines[0]!.runs[0]!.pieces.length).toBeGreaterThan(0);
     expect(world.blasts).toHaveLength(0);
   });
 

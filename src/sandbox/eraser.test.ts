@@ -44,7 +44,7 @@ const boxOnGround = (world: SandboxWorld, x: number, colour: 'grey' | 'red' = 'g
 function contents(world: SandboxWorld) {
   return {
     objects: world.objects.map((o) => ({ id: o.id, transform: o.transform, fill: o.fill })),
-    lines: world.lines.map((l) => ({ id: l.id, pieces: l.pieces.map((p) => p.index) })),
+    lines: world.lines.map((l) => ({ id: l.id, pieces: l.runs[0]!.pieces.map((p) => p.index) })),
   };
 }
 
@@ -74,14 +74,14 @@ describe('Eraser', () => {
   it('erases only the Pieces it touches; the rest of the Line stays fixed, and a red one sets off nothing', () => {
     const world = createWorld();
     const line = shelf(world, 'red');
-    const before = world.lines[0]!.pieces;
+    const before = world.lines[0]!.runs[0]!.pieces;
     runFor(world, 0.2);
     const heard = hear(world);
 
     eraseAt(world, onPiece(4));
     runFor(world, 1);
 
-    const pieces = world.lines.find((l) => l.id === line)!.pieces;
+    const pieces = world.lines.find((l) => l.id === line)!.runs[0]!.pieces;
     expect(pieces.map((p) => p.index)).toEqual([0, 1, 2, 3, 5, 6, 7, 8, 9]);
     expect(pieces).toEqual(before.filter((p) => p.index !== 4));
     expect(world.blasts).toEqual([]);
@@ -93,7 +93,7 @@ describe('Eraser', () => {
     const world = createWorld();
     const line = shelf(world);
     world.eraseAlong([onPiece(0), onPiece(2)], RADIUS);
-    expect(world.lines[0]!.pieces.map((p) => p.index)).toEqual([3, 4, 5, 6, 7, 8, 9]);
+    expect(world.lines[0]!.runs[0]!.pieces.map((p) => p.index)).toEqual([3, 4, 5, 6, 7, 8, 9]);
 
     world.eraseAlong([onPiece(3), onPiece(9)], RADIUS);
     expect(world.lines.some((l) => l.id === line)).toBe(false);
@@ -222,6 +222,6 @@ describe('Eraser', () => {
 
     expect(contents(world)).toEqual(erased);
     expect(world.objects).toEqual([]);
-    expect(world.lines[0]!.pieces).toHaveLength(9);
+    expect(world.lines[0]!.runs[0]!.pieces).toHaveLength(9);
   });
 });

@@ -205,7 +205,7 @@ describe('Squeezing', () => {
   function overlapsAnyLine(world: SandboxWorld, id: number): boolean {
     const object = objectById(world, id);
     return world.lines.some((line) =>
-      line.segments.some((s) =>
+      line.runs[0]!.segments.some((s) =>
         object.parts.some((part) =>
           capsuleOverlapsPolygon(
             s.a,

@@ -76,7 +76,7 @@ function brokenShelf(game: Game) {
   game.world.release(rock);
   runFor(game, 1.5);
   game.world.remove(rock);
-  const standing = game.world.lines.find((line) => line.id === shelf.id)!.pieces;
+  const standing = game.world.lines.find((line) => line.id === shelf.id)!.runs[0]!.pieces;
   expect(standing.length).toBeLessThan(10);
   expect(standing.length).toBeGreaterThan(0);
   return { shelf, standing: standing.map((piece) => piece.index) };
@@ -588,7 +588,7 @@ describe('Undo refunds exactly what was paid, with Ink costs on', () => {
     );
     const box = drawBox(game, 1200, 300, 40);
     const red = drawLine(game, 700, 420, 40, 'red'); // one Piece, which breaks at once
-    expect(game.world.lines.find((line) => line.id === red.id)!.grounded).toBe(true);
+    expect(game.world.lines.find((line) => line.id === red.id)!.runs[0]!.grounded).toBe(true);
     const rock = boulder(game, 440, 250);
     runFor(game, 0);
     game.world.release(rock);
@@ -620,7 +620,7 @@ describe('A Line Grounded after it was drawn', () => {
       'grey',
     );
     expect(post.kind).toBe('line');
-    expect(game.world.lines.find((line) => line.id === shelf.id)!.grounded).toBe(true);
+    expect(game.world.lines.find((line) => line.id === shelf.id)!.runs[0]!.grounded).toBe(true);
 
     game.undo(); // the post
     game.undo(); // the shelf
@@ -651,7 +651,8 @@ describe('A Line cut off where it stood', () => {
     const wall = blueWall(game);
 
     game.eraseAlong([{ x: 400, y: 880 - 2.5 * 48 }], 4); // Piece 2: the top two fall
-    expect(game.world.lines).toHaveLength(2);
+    expect(game.world.lines.map((line) => line.id)).toEqual([wall.id]);
+    expect(game.world.lines[0]!.runs).toHaveLength(2);
     expect(game.tanks.blue.maximum - game.tanks.blue.spendable).toBeCloseTo(
       wall.ink - wall.pieces[2]!,
       6,
@@ -668,7 +669,6 @@ describe('A Line cut off where it stood', () => {
     const game = createGame(true);
     const wall = blueWall(game);
     game.eraseAlong([{ x: 400, y: 880 - 2.5 * 48 }], 4);
-    const top = game.world.lines.find((line) => line.id !== wall.id)!;
 
     game.eraseAlong(
       [
@@ -678,7 +678,7 @@ describe('A Line cut off where it stood', () => {
       4,
     );
 
-    expect(game.world.lines.some((line) => line.id === top.id)).toBe(false);
+    expect(game.world.lines[0]!.runs).toMatchObject([{ grounded: true }]);
     expect(game.tanks.blue.maximum - game.tanks.blue.spendable).toBeCloseTo(
       wall.pieces[0]! + wall.pieces[1]!,
       6,
@@ -699,8 +699,8 @@ describe('A Line cut off where it stood', () => {
       ],
       4,
     );
-    expect(game.world.lines.some((line) => line.id === wall.id)).toBe(false);
-    expect(game.world.lines).toHaveLength(1);
+    expect(game.world.lines.map((line) => line.id)).toEqual([wall.id]);
+    expect(game.world.lines[0]!.runs).toMatchObject([{ grounded: false }]);
 
     game.undo();
 
@@ -717,7 +717,7 @@ describe('A Line cut off where it stood', () => {
 
     game.reset();
     expect(game.world.lines).toHaveLength(1);
-    expect(game.world.lines[0]!.pieces).toHaveLength(5);
+    expect(game.world.lines[0]!.runs[0]!.pieces).toHaveLength(5);
     game.undo();
     expect(game.tanks.blue.spendable).toBeCloseTo(game.tanks.blue.maximum, 6);
   });

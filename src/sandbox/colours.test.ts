@@ -207,7 +207,7 @@ describe('Colours: drawing rules', () => {
       return outcome.kind === 'rejected' ? `rejected: ${outcome.reason}` : outcome.kind;
     });
     const shapes = {
-      lines: world.lines.map((line) => line.segments),
+      lines: world.lines.map((line) => line.runs[0]!.segments),
       objects: world.objects.map((object) => object.outline),
     };
     return { results, shapes };

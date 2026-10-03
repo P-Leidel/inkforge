@@ -247,8 +247,8 @@ describe('Sandbox world: Lines', () => {
 
     expect(outcome.kind).toBe('line');
     expect(world.lines).toHaveLength(1);
-    expect(world.lines[0]!.grounded).toBe(true);
-    expect(world.bodyCount).toBe(FIXED_BODIES + world.lines[0]!.pieces.length); // a body per Piece
+    expect(world.lines[0]!.runs[0]!.grounded).toBe(true);
+    expect(world.bodyCount).toBe(FIXED_BODIES + world.lines[0]!.runs[0]!.pieces.length); // a body per Piece
   });
 
   it('turns an open Stroke in mid-air into a Frozen Line of one body', () => {
@@ -256,8 +256,8 @@ describe('Sandbox world: Lines', () => {
 
     world.submitStroke(horizontal, 'grey');
 
-    expect(world.lines[0]).toMatchObject({ grounded: false, frozen: true });
-    expect(world.lines[0]!.pieces.length).toBeGreaterThan(1);
+    expect(world.lines[0]!.runs).toMatchObject([{ grounded: false, frozen: true }]);
+    expect(world.lines[0]!.runs[0]!.pieces.length).toBeGreaterThan(1);
     expect(world.bodyCount).toBe(FIXED_BODIES + 1);
   });
 
@@ -415,7 +415,7 @@ describe('Sandbox world: Objects', () => {
       ]),
       'grey',
     );
-    const line = world.lines[1]!.segments;
+    const line = world.lines[1]!.runs[0]!.segments;
     const id = drawObject(world, dragBox(380, 400, 40, 40));
     world.togglePause();
     world.releaseAt({ x: 400, y: 420 });
@@ -425,7 +425,7 @@ describe('Sandbox world: Objects', () => {
     const box = objectById(world, id);
     // The box's bottom rests on the Line's top surface (y = 500 - 4).
     expect(box.transform.y + 20).toBeCloseTo(496, 0);
-    expect(world.lines[1]!.segments).toEqual(line);
+    expect(world.lines[1]!.runs[0]!.segments).toEqual(line);
   });
 
   it('collides as a solid shape: a ball rests on a drawn square outline, not inside it', () => {
@@ -553,7 +553,7 @@ describe('Sandbox world: overlap rules', () => {
   function overlapsAnyLine(world: SandboxWorld, id: number): boolean {
     const object = objectById(world, id);
     return world.lines.some((line) =>
-      line.segments.some((s) =>
+      line.runs[0]!.segments.some((s) =>
         object.parts.some((part) =>
           capsuleOverlapsPolygon(
             s.a,

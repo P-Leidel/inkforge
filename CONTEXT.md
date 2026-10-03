@@ -39,7 +39,7 @@ What the Intermission shows of the next Wave: each Enemy type it sends and how m
 _Avoid_: Preview, scouting
 
 **Aftermath**:
-What happens to the Arena when a Wave ends: every Ink Tank refills to its maximum and every Object, and every Line that isn't Grounded, at rest is Frozen again. Nothing else changes.
+What happens to the Arena when a Wave ends: every Ink Tank refills to its maximum and every Object, and every Run of a Line that isn't Grounded, at rest is Frozen again. Nothing else changes.
 _Avoid_: Cleanup, reset
 
 **Defence loop**:
@@ -72,11 +72,15 @@ One continuous drag of the pointer in one Colour. Becomes either a Line or an Ob
 _Avoid_: Drawing, path
 
 **Line**:
-A Stroke whose end does not return to its start. A Grounded Line stays fixed exactly where it was drawn until its Pieces break, and what a Collapse cuts off falls; one that isn't hangs Frozen where it was drawn, and once freed falls as one rigid body in its drawn shape. Once it has fallen it stays loose, like an Object, and never becomes Grounded again.
+A Stroke whose end does not return to its start, made of one or more Runs: drawn, it is one, and a Collapse can cut it into several. A Grounded Line stays fixed exactly where it was drawn until its Pieces break, and what a Collapse cuts off falls; one that isn't hangs Frozen where it was drawn, and once freed falls as one rigid body in its drawn shape. However many Runs it has, it is one Stroke, paid for, refunded and undone whole.
 _Avoid_: Wall, platform, segment chain
 
+**Run**:
+A stretch of a Line's Pieces that stand, hang or fall as one: all of a Line's Pieces that still stand are one Grounded Run, and each Run that isn't Grounded is one rigid body. Grounded, Frozen and fallen are a Run's. Once a Run has fallen it stays loose, like an Object, and never becomes Grounded again. Not to be confused with a run of the game.
+_Avoid_: Part, section, split-off Line
+
 **Grounded**:
-The state of a Line that touches the Terrain, or a Grounded Line, transitively, within a small tolerance (about half a Line's thickness), so one drawn to end at the ground counts. Objects, Rubble and Enemies never ground a Line. A Frozen Line a Grounded one is drawn to touch becomes Grounded where it hangs, unless it has fallen.
+The state of a Line, or a Run of one, that touches the Terrain, or a Grounded Line, transitively, within a small tolerance (about half a Line's thickness), so one drawn to end at the ground counts. Objects, Rubble and Enemies never ground a Line. A Frozen Line a Grounded one is drawn to touch becomes Grounded where it hangs, unless it has fallen, keeping what is stuck to it.
 _Avoid_: Anchored, supported, pinned
 
 **Object**:
@@ -92,11 +96,11 @@ Ink added inside an Object's Outline. Its Colour decides the Object's weight or 
 _Avoid_: Core, content
 
 **Frozen**:
-The state of an Object, or of a Line that isn't Grounded, that hangs where it was drawn, ignoring gravity, until a hard hit, a strong enough Blast or the player's Release frees it.
+The state of an Object, or of a Run of a Line that isn't Grounded, that hangs where it was drawn, ignoring gravity, until a hard hit, a strong enough Blast or the player's Release frees it.
 _Avoid_: Pinned, asleep, static
 
 **Release**:
-The player's action of unfreezing a Frozen Object or Line during a Wave.
+The player's action of unfreezing a Frozen Object, or the Frozen Run of a Line under the pointer, during a Wave.
 _Avoid_: Activate, trigger, drop
 
 **Squeeze**:
@@ -114,7 +118,7 @@ One short section of a Line, about one enemy wide, that has its own durability a
 _Avoid_: Segment, chunk
 
 **Collapse**:
-What happens when a Piece of a Grounded Line breaks, is erased or is undone with its Line: grounding is checked again over connected runs of Pieces, and each run no longer connected to the Terrain, directly or through Grounded Lines, falls at once. Each Line's run is a rigid body of its own, a fallen Line; a Line cut in two keeps standing where it still reaches the ground.
+What happens when a Piece of a Grounded Line breaks, is erased or is undone with its Line: grounding is checked again over connected stretches of Pieces, and each stretch no longer connected to the Terrain, directly or through Grounded Lines, falls at once. Each Line's stretch falls as a Run of it, a rigid body of its own; a Line cut in two keeps standing where it still reaches the ground, and stays one Line, keeping what is stuck to it.
 _Avoid_: Cave-in, structural failure
 
 **Debris**:
@@ -207,7 +211,7 @@ Two things already touching when physics starts, or when a Squeeze ends. Their c
 _Avoid_: Resting contact
 
 **Bond**:
-What holds a green Object to the first new thing it touched after it started moving: a rigid joint where they touched. It lasts until either side breaks, is undone or is removed by a cap; the green Object then falls free and never sticks again.
+What holds a green Object to the first new thing it touched after it started moving: a rigid joint where they touched. It lasts until either side breaks, is undone or is removed by a cap; the green Object then falls free and never sticks again. A Line it is stuck to changing form (Grounded, or cut off in a Collapse) doesn't break it.
 _Avoid_: Weld, glue joint
 
 ## Retired terms

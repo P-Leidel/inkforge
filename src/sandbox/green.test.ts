@@ -65,14 +65,14 @@ describe('Glue drag', () => {
     world.materials.colours.green.line.durability = 250;
     const green = floor(world, 700, 100, 900, 'green');
     const grey = floor(world, 700, 1000, 1752, 'grey');
-    const count = world.lines.map((line) => line.pieces.length);
+    const count = world.lines.map((line) => line.runs[0]!.pieces.length);
     const onGreen = ballOnFloor(world, 200, 'black');
     ballOnFloor(world, 1100, 'black');
     for (const ball of world.objects) launch(world, ball.id, { x: 400, y: 0 });
 
     const heard = hear(world);
     runFor(world, 0.2);
-    const pieces = (id: number) => world.lines.find((l) => l.id === id)?.pieces ?? [];
+    const pieces = (id: number) => world.lines.find((l) => l.id === id)?.runs[0]!.pieces ?? [];
     // Rolling starts no impact: the grey Line under the other ball is untouched.
     expect(pieces(grey).every((p) => p.wear === 0)).toBe(true);
     expect(pieces(green).some((p) => p.wear > 0.25)).toBe(true);
@@ -95,7 +95,7 @@ describe('Glue drag', () => {
     for (const object of world.objects) launch(world, object.id, { x: 0, y: 0 });
 
     runFor(world, 3); // the balls rock onto a flat of their outline and settle
-    const worn = () => world.lines[0]!.pieces.map((p) => p.durability);
+    const worn = () => world.lines[0]!.runs[0]!.pieces.map((p) => p.durability);
     const before = worn();
     runFor(world, 20);
 

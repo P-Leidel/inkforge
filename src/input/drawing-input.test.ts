@@ -179,7 +179,7 @@ describe('Drawing input', () => {
     /** How far the world's only Line spreads across and up, in its own frame. */
     function lineSpread(world: SandboxWorld): { across: number; up: number } {
       expect(world.lines).toHaveLength(1);
-      const points = world.lines[0]!.segments.flatMap(({ a, b }) => [a, b]);
+      const points = world.lines[0]!.runs[0]!.segments.flatMap(({ a, b }) => [a, b]);
       const spread = (values: number[]) => Math.max(...values) - Math.min(...values);
       return { across: spread(points.map(({ x }) => x)), up: spread(points.map(({ y }) => y)) };
     }
@@ -787,7 +787,7 @@ describe('Drawing input', () => {
       ]);
     /** The middle of Piece `k` of the shelf. */
     const onPiece = (k: number) => ({ x: 200 + 48 * k + 24, y: 700 });
-    const piecesLeft = (world: SandboxWorld) => world.lines[0]!.pieces.map((p) => p.index);
+    const piecesLeft = (world: SandboxWorld) => world.lines[0]!.runs[0]!.pieces.map((p) => p.index);
 
     it('shows its brush at the pointer', () => {
       const game = createGame(false);
