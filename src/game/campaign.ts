@@ -71,6 +71,11 @@ export class Campaign {
     return Number.isInteger(index) && index >= 0 && index < this.count;
   }
 
+  /** The name of the Level at `index`: its own, or failing that "Level n", by its place. */
+  name(index: number): string {
+    return this.levels[index]?.name ?? `Level ${index + 1}`;
+  }
+
   /** Whether a Level comes after the one at `index`. */
   hasNext(index: number): boolean {
     return index + 1 < this.levels.length;

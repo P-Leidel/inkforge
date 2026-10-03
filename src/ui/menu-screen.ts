@@ -20,9 +20,9 @@ export interface LevelEntry {
 
 /** The Level list: every Level of `campaign`, in order, the locked ones marked so. */
 export function levelEntries(campaign: Campaign): LevelEntry[] {
-  return campaign.levels.map((level, index) => {
+  return campaign.levels.map((_level, index) => {
     const locked = !campaign.isUnlocked(index);
-    const name = level.name ?? `Level ${index + 1}`;
+    const name = campaign.name(index);
     return { index, label: locked ? `${name}    locked` : name, locked };
   });
 }

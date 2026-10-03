@@ -53,7 +53,7 @@ describe('A Session', () => {
     const session = new Session(createGame(true));
 
     expect(session.playing).toBe(SANDBOX_LEVEL);
-    expect(session.reading).toEqual({ name: 'Sandbox', status: null, campaign: null });
+    expect(session.reading).toEqual({ name: 'Sandbox', status: null, campaign: null, offer: null });
   });
 
   it('play loads a Level and remembers it', () => {
@@ -64,7 +64,12 @@ describe('A Session', () => {
 
     expect(session.playing).toBe(LINE_LEVEL);
     expect(game.world.lines).toHaveLength(1);
-    expect(session.reading).toEqual({ name: 'One Line', status: null, campaign: null });
+    expect(session.reading).toEqual({
+      name: 'One Line',
+      status: null,
+      campaign: null,
+      offer: null,
+    });
   });
 
   it('clear loads the same Level again', () => {
@@ -160,6 +165,42 @@ describe('A Session', () => {
     expect(recorder!.updates).toHaveLength(2);
   });
 
+  it("retry (R) takes the world back to the last start's checkpoint, in Free play too", () => {
+    const game = createGame(true);
+    const session = new Session(game);
+    session.play({ waves: [EMPTY_WAVE, EMPTY_WAVE] });
+    game.togglePause();
+    game.submitStroke(
+      dragAlong([
+        { x: 300, y: 300 },
+        { x: 500, y: 300 },
+      ]),
+      'grey',
+    );
+    expect(game.world.lines).toHaveLength(1);
+
+    expect(session.retry()).toBe('reset');
+
+    expect(game.world.lines).toEqual([]);
+    expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1 });
+    expect(session.reading.offer).toBeNull();
+  });
+
+  it('offers nothing outside the Campaign, and refuses every choice there', () => {
+    const game = createGame(true);
+    const session = new Session(game);
+    session.play({ waves: [EMPTY_WAVE] });
+    game.togglePause();
+    session.advance(STEP_SECONDS);
+    expect(game.defence.reading.phase).toBe('cleared');
+
+    expect(session.reading.offer).toBeNull();
+    for (const choice of ['next-level', 'retry-wave', 'restart-level', 'level-list'] as const) {
+      expect(session.act(choice)).toBe('refused');
+    }
+    expect(game.defence.reading.phase).toBe('cleared');
+  });
+
   it("clear starts a stress test's measurements over", () => {
     const game = createGame(true);
     const session = new Session(game);
@@ -224,7 +265,8 @@ describe('A Session in the Campaign', () => {
     expect(session.reading).toEqual({
       name: 'First',
       status: null,
-      campaign: { index: 0, levels: 3, hasNext: true, hints: [] },
+      campaign: { index: 0, levels: 3, hints: [] },
+      offer: null,
     });
   });
 
@@ -271,39 +313,79 @@ describe('A Session in the Campaign', () => {
     expect(campaign.isUnlocked(1)).toBe(true);
     expect(new Campaign(LEVELS, store).isUnlocked(1)).toBe(true);
 
-    expect(session.playNext()).toBe(true);
+    expect(session.act('next-level')).toBe('started');
 
     expect(session.playing).toBe(LEVELS[1]);
     expect(game.world.lines).toHaveLength(1);
     expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1, rewards: null });
-    expect(session.reading.campaign).toEqual({ index: 1, levels: 3, hasNext: true, hints: [] });
+    expect(session.reading.campaign).toEqual({ index: 1, levels: 3, hints: [] });
+    expect(session.reading.offer).toBeNull();
   });
 
-  it('Next Level does nothing until the Level is cleared, nor outside the Campaign', () => {
-    const { session } = campaignSession();
+  it('offers Next Level, naming the Level it unlocked, and the Level list once a Level is cleared', () => {
+    const { game, session } = campaignSession();
     session.playCampaign(0);
+    playWave(game, session);
+    playWave(game, session);
 
-    expect(session.playNext()).toBe(false);
-    expect(session.playing).toBe(LEVELS[0]);
-
-    session.play(LINE_LEVEL);
-    expect(session.reading.campaign).toBeNull();
-    expect(session.playNext()).toBe(false);
+    expect(session.reading.offer).toEqual({
+      choices: ['next-level', 'level-list'],
+      next: { name: 'Second' },
+    });
   });
 
-  it('after the last Level, nothing comes next', () => {
+  it("names a next Level that doesn't name itself by its place in the Campaign", () => {
+    const game = createGame(true);
+    const levels: readonly Level[] = [
+      { name: 'Named', waves: [EMPTY_WAVE] },
+      { waves: [EMPTY_WAVE] },
+    ];
+    const session = new Session(game, new Campaign(levels, new FakeStore()));
+    session.playCampaign(0);
+    playWave(game, session);
+
+    expect(session.reading.offer?.next).toEqual({ name: 'Level 2' });
+  });
+
+  it('offers nothing while the Level goes on, and refuses every choice then', () => {
+    const { game, session } = campaignSession();
+    session.playCampaign(0);
+    expect(session.reading.offer).toBeNull();
+    game.togglePause();
+    expect(session.reading.offer).toBeNull();
+
+    for (const choice of ['next-level', 'retry-wave', 'restart-level', 'level-list'] as const) {
+      expect(session.act(choice)).toBe('refused');
+    }
+    expect(session.playing).toBe(LEVELS[0]);
+    expect(game.defence.reading.phase).toBe('wave');
+  });
+
+  it('after the last Level, offers only the Level list, and nothing comes next', () => {
     const store = new FakeStore();
     store.record = '{"unlocked":3}';
     const { game, session } = campaignSession(store);
     session.playCampaign(2);
-    expect(session.reading.campaign!.hasNext).toBe(false);
 
     playWave(game, session);
     playWave(game, session);
 
     expect(game.defence.reading.phase).toBe('cleared');
-    expect(session.playNext()).toBe(false);
+    expect(session.reading.offer).toEqual({ choices: ['level-list'], next: null });
+    expect(session.act('next-level')).toBe('refused');
     expect(session.playing).toBe(LEVELS[2]);
+  });
+
+  it('the Level list leaves the Level as it is, for the scene to open the list over', () => {
+    const { game, session } = campaignSession();
+    session.playCampaign(0);
+    playWave(game, session);
+    playWave(game, session);
+
+    expect(session.act('level-list')).toBe('left');
+
+    expect(session.playing).toBe(LEVELS[0]);
+    expect(game.defence.reading.phase).toBe('cleared');
   });
 
   describe('a lost Level', () => {
@@ -333,13 +415,22 @@ describe('A Session in the Campaign', () => {
 
       expect(campaign.unlocked).toBe(1);
       expect(store.record).toBeNull();
-      expect(session.playNext()).toBe(false);
+      expect(session.act('next-level')).toBe('refused');
+    });
+
+    it('offers Retry Wave, Restart Level and the Level list', () => {
+      const { session } = lostSession();
+
+      expect(session.reading.offer).toEqual({
+        choices: ['retry-wave', 'restart-level', 'level-list'],
+        next: null,
+      });
     });
 
     it("Retry Wave goes back to R's checkpoint: the Intermission before the lost Wave", () => {
       const { game, session } = lostSession();
 
-      game.reset();
+      expect(session.act('retry-wave')).toBe('reset');
 
       expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
       expect(session.reading.campaign!.index).toBe(0);
@@ -348,7 +439,7 @@ describe('A Session in the Campaign', () => {
     it('Restart Level loads the Level again from Wave 1', () => {
       const { game, session } = lostSession();
 
-      session.clear();
+      expect(session.act('restart-level')).toBe('started');
 
       expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1, rewards: null });
       expect(game.world.inkCore.hp).toBeGreaterThan(0);
@@ -366,7 +457,7 @@ describe('A Session in the Campaign', () => {
       session.playCampaign(0);
       playWave(game, session);
       playWave(game, session);
-      expect(session.playNext()).toBe(true);
+      expect(session.act('next-level')).toBe('started');
       expect(game.world.lines).toHaveLength(1);
 
       for (const again of [false, true]) {

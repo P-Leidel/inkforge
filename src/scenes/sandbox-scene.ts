@@ -4,7 +4,7 @@ import { GALLERY } from '../gallery/gallery';
 import { browserStore, Campaign } from '../game/campaign';
 import { Game } from '../game/game';
 import { SANDBOX_LEVEL, type Level } from '../game/level';
-import { Session } from '../game/session';
+import { Session, type Acted } from '../game/session';
 import { Tutorial, TUTORIAL_KEY } from '../game/tutorial';
 import { DrawingInput, type Flash } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
@@ -13,7 +13,7 @@ import { DebugOverlay } from '../debug/debug-overlay';
 import { FrameRecorder } from '../debug/frame-times';
 import { flashRejection } from '../rendering/rejection-flash';
 import { Hud } from '../ui/hud';
-import { RewardsScreen, type PanelAction } from '../ui/rewards-screen';
+import { RewardsScreen } from '../ui/rewards-screen';
 import type { Menu } from '../ui/menu';
 import { levelEntries, MenuScreen } from '../ui/menu-screen';
 import { PaletteBar } from '../ui/palette-bar';
@@ -111,7 +111,7 @@ export class SandboxScene extends Phaser.Scene {
     this.campaign = new Campaign(CAMPAIGN_LEVELS, browserStore());
     this.session = new Session(this.gameLayer, this.campaign);
     this.hud = new Hud(this, this.gameLayer);
-    this.rewards = new RewardsScreen(this, (action) => this.onPanel(action));
+    this.rewards = new RewardsScreen(this, (choice) => this.follow(this.session.act(choice)));
     this.palette = new PaletteBar(this, (tool) => this.drawing.pick(tool));
     // Clear and Title at the right end, on hand everywhere; Free play's own
     // buttons beside them, hidden in the Campaign.
@@ -175,18 +175,22 @@ export class SandboxScene extends Phaser.Scene {
     this.screen.show(title, items);
   }
 
-  /** A button on the rewards screen, once a Campaign Level is cleared or lost. */
-  private onPanel(action: PanelAction): void {
-    switch (action) {
-      case 'next-level':
-        if (this.session.playNext()) this.started();
-        return;
-      case 'retry-wave':
-        return this.reset();
-      case 'restart-level':
-        return this.clear();
-      case 'level-list':
+  /**
+   * Follows what the Session did with a choice on the rewards screen, or R:
+   * a Level loaded, the world taken back to the last start, or the Level
+   * left for the Level list.
+   */
+  private follow(acted: Acted): void {
+    switch (acted) {
+      case 'started':
+        return this.started();
+      case 'reset':
+        // The replay is timed on its own.
+        return this.frames.sinceStart.restart();
+      case 'left':
         return this.showLevelList();
+      case 'refused':
+        return;
     }
   }
 
@@ -239,12 +243,6 @@ export class SandboxScene extends Phaser.Scene {
     this.tutorial.open();
   }
 
-  /** Takes the world and the Tanks back to the last start; the replay is timed on its own. */
-  private reset(): void {
-    this.gameLayer.reset();
-    this.frames.sinceStart.restart();
-  }
-
   private bindKeys(): void {
     const keyboard = this.input.keyboard!;
     keyboard.on('keydown', (event: KeyboardEvent) => {
@@ -275,7 +273,7 @@ export class SandboxScene extends Phaser.Scene {
       .on('down', () => void this.overlay.copyReadings());
     keyboard
       .addKey(Phaser.Input.Keyboard.KeyCodes.R)
-      .on('down', () => !this.blocked && this.reset());
+      .on('down', () => !this.blocked && this.follow(this.session.retry()));
     // Ctrl (Cmd on a Mac) held draws straight; pressed or let go with the
     // pointer still, the preview follows at once.
     const straighten = (event: KeyboardEvent) => this.drawing.straighten(straightKey(event));
@@ -339,7 +337,7 @@ export class SandboxScene extends Phaser.Scene {
     this.frames.physics(performance.now() - start, steps);
     const drawStart = performance.now();
     this.tuning.draw();
-    this.rewards.draw(this.gameLayer.defence.reading, this.session.reading.campaign);
+    this.rewards.draw(this.gameLayer.defence.reading, this.session.reading);
     this.tutorialScreen.draw(this.tutorial);
     this.worldView.draw(deltaMs / 1000);
     const preview = this.drawing.preview();
