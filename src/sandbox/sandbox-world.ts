@@ -281,6 +281,7 @@ export class SandboxWorld {
       query,
       poses,
       say,
+      (act) => this.happenings.quietly(act),
       (parties, act) => this.rehost(parties, act),
     );
     this.rubbleKind = new Rubble(physics, materials, bodies, poses);
@@ -623,7 +624,10 @@ export class SandboxWorld {
     return this.running && this.strokes.release(id, velocity);
   }
 
-  /** Removes one Stroke with its Fill, e.g. a spent stress-test ball. */
+  /**
+   * Removes one Stroke with its Fill, e.g. a spent stress-test ball. What a
+   * Grounded Line held up falls.
+   */
   remove(id: StrokeId): void {
     this.strokes.remove(id, 'removed');
   }
@@ -644,11 +648,12 @@ export class SandboxWorld {
     const touched = this.query.touchedBy({ path, radius });
     const rank = (thing: Thing) => ERASE_ORDER[thing.thing];
     // What went with a host erased before it is already gone, and stays so.
-    for (const thing of touched.sort((p, q) => rank(p) - rank(q))) {
-      this.removeThing(thing, 'erased');
-    }
     // What the erased Pieces held up falls, once they have all gone.
-    this.strokes.collapse();
+    this.strokes.together(() => {
+      for (const thing of touched.sort((p, q) => rank(p) - rank(q))) {
+        this.removeThing(thing, 'erased');
+      }
+    });
     return touched.length;
   }
 

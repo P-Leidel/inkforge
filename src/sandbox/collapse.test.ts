@@ -54,15 +54,28 @@ describe('Collapse: what a Piece that goes held up falls', () => {
     const line = lineById(world, id);
     expect(line).toMatchObject({ grounded: false, frozen: false });
     expect(line.pieces.map((p) => p.index)).toEqual([1, 2, 3, 4]);
-    expect(wentOf(heard())).toEqual([
-      `piece ${id}.0 erased`,
-      ...[1, 2, 3, 4].map((index) => `piece ${id}.${index} cut-off`),
-    ]);
-    // It came back at once, where it stood, as one falling body.
-    expect(entriesOf(heard(), 'added').map(({ what }) => what)).toHaveLength(4);
+    // Its other Pieces stay: it changed form at once, where it stood, to one falling body.
+    const entries = heard();
+    expect(wentOf(entries)).toEqual([`piece ${id}.0 erased`]);
+    expect(entriesOf(entries, 'added')).toEqual([]);
+    expect(entriesOf(entries, 'reformed').map((entry) => entry.id)).toEqual([id]);
     expect(bottomOf(line)).toBeCloseTo(GROUND - PIECE, 6);
     runFor(world, 1);
     expect(bottomOf(lineById(world, id))).toBeGreaterThan(GROUND - 10);
+  });
+
+  it('lets what a removed Line held up fall', () => {
+    const world = createWorld();
+    const post = wall(world, 400);
+    const shelf = drawLine(world, [
+      { x: 400, y: GROUND - 5 * PIECE },
+      { x: 600, y: GROUND - 5 * PIECE },
+    ]);
+    expect(lineById(world, shelf).grounded).toBe(true);
+
+    world.remove(post);
+
+    expect(lineById(world, shelf)).toMatchObject({ grounded: false, frozen: false });
   });
 
   it('leaves a wall standing when a Piece above its foot goes, and what was above it falls', () => {

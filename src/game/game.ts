@@ -924,9 +924,9 @@ export class Game {
       case 'went':
         // An Enemy that reached the Ink Core is gone for the Wave, as a kill is.
         if (entry.what.thing === 'enemy' && entry.why === 'reached') this.defence.killed();
-        // Undo told the Game already; a Line Grounded where it hangs, or cut
-        // off where it stood, comes straight back.
-        if (entry.why !== 'undone' && entry.why !== 'grounded' && entry.why !== 'cut-off')
+        // Undo told the Game already; a Line's Pieces cut off where they
+        // stood come straight back, under the Line they split into.
+        if (entry.why !== 'undone' && entry.why !== 'cut-off')
           this.heardWent(entry.what, entry.why === 'erased');
         return;
       case 'split':
@@ -948,6 +948,7 @@ export class Game {
       case 'dropped':
         return this.pickUp(entry.ink);
       case 'released':
+      case 'reformed':
       case 'burst':
       case 'popped':
       case 'exploded':

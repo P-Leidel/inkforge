@@ -64,11 +64,6 @@ export type Why =
   /** A Patch went with its host's body. */
   | 'with-host'
   /**
-   * A Frozen Line that wasn't Grounded became Grounded: its Pieces come
-   * back at once as fixed ones, where they hung.
-   */
-  | 'grounded'
-  /**
    * A Grounded Line's Pieces were cut off from the Terrain: they come back
    * at once as a Line that falls, where they stood.
    */
@@ -93,6 +88,12 @@ export type Happening =
    * they are `added` under `into`.
    */
   | { readonly kind: 'split'; readonly id: number; readonly into: number }
+  /**
+   * Line `id` changed form, keeping its Pieces and what is stuck to them:
+   * Grounded where it hung Frozen, or cut off and falling where it stood.
+   * Its Pieces neither went nor came.
+   */
+  | { readonly kind: 'reformed'; readonly id: number }
   /** The player Released a Frozen Object. */
   | { readonly kind: 'released'; readonly id: number }
   /** Debris bursts from a broken Outline or band, in world coordinates. */
