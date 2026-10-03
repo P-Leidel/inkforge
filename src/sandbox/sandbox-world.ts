@@ -25,7 +25,7 @@ import {
 import { SANDBOX_ARENA, type Arena } from './arena';
 import { ArenaBodies } from './arena-bodies';
 import type { Kind } from './arena-contents';
-import { ArenaQuery } from './arena-query';
+import { ArenaQuery, type Erasable } from './arena-query';
 import { rollBelly } from './belly';
 import { Blasts, type BlastView } from './blasts';
 import { Bonds, type BondView } from './bonds';
@@ -141,16 +141,14 @@ type Kinds = readonly [
 
 /**
  * The order the Eraser removes what it touches in, by rank: kind order, an
- * Object before a Piece, each oldest first. Every Thing has a rank, though
- * the Eraser never touches an Enemy.
+ * Object before a Piece, each oldest first.
  */
-const ERASE_ORDER: Readonly<Record<Thing['thing'], number>> = {
+const ERASE_ORDER: Readonly<Record<Erasable['thing'], number>> = {
   object: 0,
   piece: 1,
   rubble: 2,
-  enemy: 3,
-  droplet: 4,
-  patch: 5,
+  droplet: 3,
+  patch: 4,
 };
 
 /** A kind as the Sandbox world runs it, over every kind alike. */
@@ -652,7 +650,7 @@ export class SandboxWorld {
   eraseAlong(path: readonly Vec2[], radius: number): number {
     if (path.length === 0) return 0;
     const touched = this.query.touchedBy({ path, radius });
-    const rank = (thing: Thing) => ERASE_ORDER[thing.thing];
+    const rank = (thing: Erasable) => ERASE_ORDER[thing.thing];
     // What went with a host erased before it is already gone, and stays so.
     // What the erased Pieces held up falls, once they have all gone.
     this.strokes.together(() => {
@@ -787,10 +785,11 @@ export class SandboxWorld {
   }
 
   /**
-   * Freezes again every Object at rest where it is, as a Wave ends (the
-   * Aftermath); moving ones are left as they are. Only while paused: it
-   * rebuilds the world from a snapshot of now, as a start does, so nothing
-   * comes or goes, and R still goes back to the last start.
+   * Freezes again every Object at rest, and every Run at rest of a Line
+   * that isn't Grounded, where it is, as a Wave ends (the Aftermath); moving
+   * ones are left as they are. Only while paused: it rebuilds the world from
+   * a snapshot of now, as a start does, so nothing comes or goes, and R
+   * still goes back to the last start.
    */
   freezeResting(): void {
     if (this.running) return;

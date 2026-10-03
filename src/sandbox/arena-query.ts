@@ -52,6 +52,9 @@ export type QueryPhysics = Pick<
 >;
 
 /** An Object, as a query names it. */
+/** Whatever the Eraser's brush can touch: every Thing but an Enemy. */
+export type Erasable = Exclude<Thing, { readonly thing: 'enemy' }>;
+
 export type FoundObject = Extract<Thing, { readonly thing: 'object' }>;
 
 type ObjectForm = Extract<Form, { readonly kind: 'object' }>;
@@ -557,16 +560,16 @@ export class ArenaQuery {
    * their Outline, Pieces, Rubble, Droplets and Patches. Never the Terrain,
    * the Ink Core or an Enemy.
    */
-  touchedBy(brush: Brush): Thing[] {
+  touchedBy(brush: Brush): Erasable[] {
     const bounds = polygonBounds(brush.path);
-    const touched: Thing[] = [];
-    for (const figure of this.near(bounds, brush.radius)) {
-      if (figure.what && this.touches(brush, figure)) touched.push(figure.what);
+    const touched: Erasable[] = [];
+    for (const { what, ...figure } of this.near(bounds, brush.radius)) {
+      if (what && what.thing !== 'enemy' && this.touches(brush, figure)) touched.push(what);
     }
     return touched;
   }
 
-  private touches(brush: Brush, { body, form }: Figure): boolean {
+  private touches(brush: Brush, { body, form }: Pick<Figure, 'body' | 'form'>): boolean {
     switch (form.kind) {
       case 'terrain':
       case 'enemy':

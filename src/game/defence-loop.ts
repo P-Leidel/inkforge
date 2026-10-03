@@ -15,7 +15,10 @@ export interface LoopWorld {
   /** Whether an Enemy of `type` sent in now would stand at the lane's far end with nothing in its way. */
   spawnClear(type: EnemyType): boolean;
   spawn(type: EnemyType): unknown;
-  /** Freezes again every Object at rest, while paused: the Aftermath. */
+  /**
+   * Freezes again every Object at rest, and every Run at rest of a Line that
+   * isn't Grounded, while paused: the Aftermath.
+   */
   freezeResting(): void;
 }
 
@@ -163,10 +166,11 @@ interface Wave {
  * its list: Space in an Intermission starts the next Wave, which sends in
  * its Wave table's Enemies from the Spawn and ends when none is left to come
  * and none is alive. Physics then pauses and the Intermission begins: its
- * rewards, then every Tank refilled, and every Object at rest Frozen again.
- * After the last Wave the Level is cleared. Waves on or off, once the Ink
- * Core is destroyed physics stops and Space starts nothing until R or Clear
- * bring it back whole.
+ * rewards, then every Tank refilled, and every Object at rest and every Run
+ * at rest of a Line that isn't Grounded Frozen again. After the last Wave
+ * the Level is cleared. Waves on or off, once the Ink Core is destroyed
+ * physics stops and Space starts nothing until R or Clear bring it back
+ * whole.
  *
  * It lives in the Game (ADR 0009) and reaches the Sandbox world through
  * `LoopWorld`, so it knows nothing of Box2D. The Game runs its hooks around
@@ -379,8 +383,9 @@ export class DefenceLoop {
 
   /**
    * Ends a Wave the Ink Core survived: its rewards, then every Tank refilled
-   * and every Object at rest Frozen again (the Aftermath). Everything else
-   * stays as it ended, damage included. The loop moves on to the next Wave's
+   * and every Object at rest and every Run at rest of a Line that isn't
+   * Grounded Frozen again (the Aftermath). Everything else stays as it
+   * ended, damage included. The loop moves on to the next Wave's
    * Intermission, or after the last, the Level is cleared.
    */
   private endWave(wave: Wave): void {
