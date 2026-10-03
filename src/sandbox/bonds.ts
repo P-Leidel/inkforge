@@ -39,8 +39,6 @@ type SavedBond = Omit<BondRecord, 'body' | 'bond'> & { readonly anchors: BondAnc
 
 /** A bond lifted off its host while the host's body is rebuilt (`Bonds.lift`). */
 export interface LiftedBond {
-  /** Its place among the bonds, oldest first. */
-  readonly place: number;
   readonly saved: SavedBond;
   /** Where it holds the host, in the world, and the host's angle, as it was lifted. */
   readonly onHost: Vec2;
@@ -129,20 +127,18 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
    */
   lift(hosts: ReadonlySet<PartyId>): LiftedBond[] {
     const lifted: LiftedBond[] = [];
-    this.bonds.forEach(({ body: _body, bond, ...saved }, place) => {
+    this.bonds.forEach(({ body: _body, bond, ...saved }) => {
       if (!hosts.has(saved.host)) return;
       const anchors = this.physics.getBond(bond)!;
       const host = this.physics.getTransform(this.body(saved.host)!);
       lifted.push({
-        place,
         saved: { ...saved, anchors },
         onHost: applyTransform(anchors.onB, host),
         hostAngle: host.angle,
       });
       this.physics.removeBond(bond);
     });
-    const gone = new Set(lifted.map(({ place }) => place));
-    this.bonds = this.bonds.filter((_, place) => !gone.has(place));
+    this.bonds = this.bonds.filter(({ host }) => !hosts.has(host));
     return lifted;
   }
 
@@ -152,7 +148,8 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
    * gone is gone.
    */
   land(lifted: readonly LiftedBond[]): void {
-    for (const { place, saved, onHost, hostAngle } of lifted) {
+    if (lifted.length === 0) return;
+    for (const { saved, onHost, hostAngle } of lifted) {
       const host = this.body(saved.host);
       const stuck = this.body(saved.stuck);
       if (host === null || stuck === null) continue;
@@ -163,8 +160,10 @@ export class Bonds implements Kind<'bonds', readonly SavedBond[], readonly BondV
         angle: saved.anchors.angle + pb.angle - hostAngle,
       };
       const bond = this.physics.addBond(stuck, host, anchors);
-      this.bonds.splice(place, 0, { ...saved, body: stuck, bond });
+      this.bonds.push({ ...saved, body: stuck, bond });
     }
+    // Oldest first: bond ids are given out in order.
+    this.bonds.sort((p, q) => p.id - q.id);
   }
 
   save(): readonly SavedBond[] {

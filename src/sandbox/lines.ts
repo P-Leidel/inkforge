@@ -654,12 +654,12 @@ export class Lines {
 
   /**
    * Collapse: checks grounding again where fixed Pieces went since it last
-   * checked, over connected runs of Pieces, not whole Lines. The fixed
+   * checked, over connected stretches of Pieces, not whole Lines. The fixed
    * Pieces that touched one that went are followed through the fixed Pieces
-   * they touch, within the ground tolerance; a run that reaches the Terrain
+   * they touch, within the ground tolerance; a stretch that reaches the Terrain
    * or the Ink Core stays, and one that doesn't is cut off and falls at
    * once. So it only looks at the Pieces connected to what went, and stops
-   * as soon as a run is found to stand.
+   * as soon as a stretch is found to stand.
    *
    * Of what is cut off, each Line's Pieces that touch each other fall as one
    * body, a Run of that Line: several Lines cut off together fall as several
@@ -681,7 +681,7 @@ export class Lines {
       if (standing.has(startKey) || falling.has(startKey)) continue;
       const first = this.fixedPiece(start);
       if (!first) continue;
-      const run = new Map<string, Piece>([[startKey, first]]);
+      const stretch = new Map<string, Piece>([[startKey, first]]);
       const touching = new Map<string, string[]>();
       const queue = [first];
       let stands = false;
@@ -697,18 +697,18 @@ export class Lines {
           if (otherKey === key) continue;
           if (standing.has(otherKey)) stands = true;
           touched.push(otherKey);
-          if (run.has(otherKey)) continue;
+          if (stretch.has(otherKey)) continue;
           const found = this.fixedPiece(other);
           if (!found) continue;
-          run.set(otherKey, found);
+          stretch.set(otherKey, found);
           queue.push(found);
         }
         touching.set(key, touched);
       }
       if (stands) {
-        for (const key of run.keys()) standing.add(key);
+        for (const key of stretch.keys()) standing.add(key);
       } else {
-        for (const [key, piece] of run) falling.set(key, piece);
+        for (const [key, piece] of stretch) falling.set(key, piece);
         for (const [key, touched] of touching) links.set(key, touched);
       }
     }
@@ -718,7 +718,7 @@ export class Lines {
 
   /**
    * Lets the Pieces of the Grounded Run of Line `id` that are `falling`
-   * fall, each run of them that touch each other (`links`) as a Run of its
+   * fall, each stretch of them that touch each other (`links`) as a Run of its
    * own, one body.
    */
   private cutOff(
@@ -730,29 +730,29 @@ export class Lines {
     const standing = line.runs.find((run) => run.form.kind === 'grounded')!;
     const keyOf = (piece: Piece) => pieceKey({ thing: 'piece', id, index: piece.index });
     const mine = standing.pieces.filter((piece) => falling.has(keyOf(piece)));
-    // Runs of its falling Pieces that touch each other, in order along it.
-    const runs: Piece[][] = [];
+    // Stretches of its falling Pieces that touch each other, in order along it.
+    const stretches: Piece[][] = [];
     const placed = new Set<string>();
     for (const piece of mine) {
       if (placed.has(keyOf(piece))) continue;
-      const run = [piece];
+      const stretch = [piece];
       placed.add(keyOf(piece));
-      for (let k = 0; k < run.length; k++) {
-        for (const key of links.get(keyOf(run[k]!)) ?? []) {
+      for (let k = 0; k < stretch.length; k++) {
+        for (const key of links.get(keyOf(stretch[k]!)) ?? []) {
           const other = falling.get(key);
           if (!other || other.lineId !== id || placed.has(key)) continue;
           placed.add(key);
-          run.push(other);
+          stretch.push(other);
         }
       }
-      runs.push(run.sort((p, q) => p.index - q.index));
+      stretches.push(stretch.sort((p, q) => p.index - q.index));
     }
     const stays = standing.pieces.filter((piece) => !falling.has(keyOf(piece)));
     const fallen = line.runs.filter((run) => run !== standing);
     this.reform(line, mine, () => {
       // Quietly, so no one hears why: their Pieces come straight back.
       for (const piece of mine) this.deps.bodies.removeBody(piece.body, 'undone');
-      const cut = runs.map((run) => this.fall(line, run));
+      const cut = stretches.map((stretch) => this.fall(line, stretch));
       const kept = stays.length > 0 ? [{ form: standing.form, pieces: stays }] : [];
       line.runs = inOrder([...kept, ...fallen, ...cut]);
     });

@@ -725,15 +725,16 @@ export class SandboxWorld {
 
   /**
    * Runs `act`, which takes away the bodies of Parties `parties` and adds
-   * them again under the same Parties: a Line changing form. What is stuck
-   * to them comes along, where it was in the world.
+   * them again under the same Parties: a Line changing form. No kind hears
+   * that they went (`ArenaBodies.rehost`), and what is stuck to them comes
+   * along, where it was in the world.
    */
   private rehost(parties: ReadonlySet<PartyId>, act: () => void): void {
     // Lifted and laid again quietly: the same Patches, under the same ids.
     let patches: LiftedPatch[] = [];
     this.happenings.quietly(() => (patches = this.patchesKind.lift(parties)));
     const bonds = this.bondsKind.lift(parties);
-    act();
+    this.bodies.rehost(parties, act);
     this.bondsKind.land(bonds);
     this.happenings.quietly(() => this.patchesKind.land(patches));
   }

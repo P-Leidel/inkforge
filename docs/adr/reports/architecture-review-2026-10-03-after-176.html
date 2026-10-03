@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inkforge Architecture Review 10</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f1f2f4;
+    --surface: #ffffff;
+    --ink: #15171c;
+    --muted: #5b616e;
+    --rule: #d7dae0;
+    --strong: #1d7f36;
+    --strong-bg: #e1f3e5;
+    --explore: #8c5f0e;
+    --explore-bg: #fbefd6;
+    --spec: #4e5563;
+    --spec-bg: #e6e8ec;
+    --tag-bg: #eceef2;
+    --note-bg: #eef0f4;
+    --leak: #b8322a;
+    --leak-bg: #fbe6e3;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1d2027;
+      --surface: #252933;
+      --ink: #e8e2d0;
+      --muted: #9aa0ad;
+      --rule: #3a404d;
+      --strong: #62d98b;
+      --strong-bg: #1d3a28;
+      --explore: #f0c05a;
+      --explore-bg: #3b321d;
+      --spec: #c0c5cf;
+      --spec-bg: #333845;
+      --tag-bg: #2f3440;
+      --note-bg: #2c313c;
+      --leak: #f07a6e;
+      --leak-bg: #3d2524;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1d2027;
+    --surface: #252933;
+    --ink: #e8e2d0;
+    --muted: #9aa0ad;
+    --rule: #3a404d;
+    --strong: #62d98b;
+    --strong-bg: #1d3a28;
+    --explore: #f0c05a;
+    --explore-bg: #3b321d;
+    --spec: #c0c5cf;
+    --spec-bg: #333845;
+    --tag-bg: #2f3440;
+    --note-bg: #2c313c;
+    --leak: #f07a6e;
+    --leak-bg: #3d2524;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif; text-wrap: balance; margin: 0; letter-spacing: -0.015em; }
+  h1 { font-size: 1.9rem; line-height: 1.15; }
+  h2 { font-size: 1.45rem; line-height: 1.2; }
+  p { margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace; }
+  code { font-size: .9em; }
+  a { color: inherit; text-underline-offset: 3px; }
+  a:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+  .label { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+
+  .page { max-width: 72rem; margin: 0 auto; padding-inline: 16px; padding-block: 40px 64px; display: flex; flex-direction: column; gap: 48px; }
+  .head { display: flex; flex-direction: column; gap: 16px; }
+  .titlerow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+  .meta { font-size: 13px; color: var(--muted); }
+  .scope { font-size: 14px; color: var(--muted); max-width: 52rem; }
+  .legend { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; font-size: 14px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; }
+  .swatch { display: inline-block; width: 24px; height: 16px; }
+  .swatch-seam { display: inline-block; width: 32px; border-top: 1.5px dashed var(--muted); }
+
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .points { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 60rem; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 8px; }
+  .tile { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: 0 6px; font-size: 13px; line-height: 1.35; }
+  .tile .n { font-family: "IBM Plex Mono", ui-monospace, monospace; font-weight: 600; color: var(--muted); }
+  .tile .st { grid-column: 2; font-size: 12px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tile.done { background: var(--note-bg); border-color: transparent; }
+  .tile.done .st { color: var(--muted); }
+  .tile.keep .st { color: var(--strong); }
+  .tile.park .st { color: var(--explore); }
+
+  .candidates { display: flex; flex-direction: column; gap: 36px; }
+  .cand { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 16px; }
+  .cand-head { display: flex; flex-direction: column; gap: 8px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; }
+  .b-strong { background: var(--strong-bg); color: var(--strong); }
+  .b-explore { background: var(--explore-bg); color: var(--explore); }
+  .b-tag { background: var(--tag-bg); color: var(--muted); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
+  .files { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+  .files .note { opacity: .75; }
+
+  .ba { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .prose3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .prose3 > div { display: flex; flex-direction: column; gap: 4px; }
+  .wins { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wins li::before { content: "▪"; color: var(--strong); margin-right: 8px; }
+  .callout { background: var(--explore-bg); border-left: 3px solid var(--explore); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+  .evidence { background: var(--note-bg); border-left: 3px solid var(--muted); border-radius: 4px; padding: 8px 12px; font-size: 14px; }
+
+  .also ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 6px; font-size: 14px; max-width: 64rem; }
+
+  .top { background: var(--surface); border: 3px solid var(--strong); border-radius: 10px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .top .label { color: var(--strong); }
+  .top p { max-width: 52rem; }
+
+  @media (min-width: 640px) {
+    .page { padding-inline: 24px; padding-block: 56px 80px; }
+    h1 { font-size: 2.3rem; }
+    h2 { font-size: 1.6rem; }
+    .cand { padding: 28px; }
+    .panel { padding: 20px; }
+    .top { padding: 32px; }
+  }
+  @media (min-width: 768px) { .prose3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 1024px) { .ba { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  /* Diagram sheets are drafting paper in both themes, so the hand-drawn diagrams read the same. */
+  .sheet { background: #fbfbfa; color: #16181d; border: 1px solid var(--rule); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-x: auto; min-width: 0; }
+  /* Mermaid sheets follow the viewer's theme, as the Mermaid rendering does. */
+  .sheet.themed { background: var(--surface); color: var(--ink); }
+  .sheet.themed .s-muted { color: var(--muted); }
+  .s-muted { color: #6a707c; }
+  .s-label { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .tiny { font-size: 11px; }
+  .small { font-size: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 3px 8px; font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .pad { padding: 8px 10px; }
+  .pad-lg { padding: 14px 16px; }
+  .mod { border: 1.5px solid #5b616e; background: #ffffff; border-radius: 4px; }
+  .plan { border: 1.5px dashed #7a808c; background: #ffffff; border-radius: 4px; color: #4a505b; }
+  .leakbox { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; border-radius: 4px; }
+  .okbox { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; border-radius: 4px; }
+  /* A deep module is drawn like the game's black ink: a heavy dark core in a pale rim. */
+  .deep { background: #050506; color: #eef0f3; border: 3px solid #8a909e; border-radius: 5px; }
+  .deep .faded { color: #8f96a3; }
+  .deep .chip { border: 1px solid #3c414c; color: #d6d9df; border-radius: 3px; }
+  .deep .chip.if { border-color: #eef0f3; color: #ffffff; font-weight: 600; }
+  .mod .chip, .plan .chip { border: 1px solid #c9cdd4; border-radius: 3px; background: #ffffff; color: #2c3038; }
+  .chip.red { border: 1px solid #e3a39c; background: #fde8e5; color: #8f1f16; border-radius: 3px; }
+  .chip.dash { border: 1px dashed #7a808c; background: #ffffff; color: #4a505b; border-radius: 3px; }
+  .seam { border-top: 1.5px dashed #7a808c; }
+  .arrow { text-align: center; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; color: #6a707c; }
+  .stack { display: flex; flex-direction: column; gap: 12px; min-width: 330px; }
+  .row { display: grid; gap: 8px; }
+  .row-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .frame { border: 1.5px dashed #7a808c; border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .frame.solid { border-style: solid; border-color: #5b616e; background: #ffffff; }
+  .strong-t { font-weight: 600; font-size: 12.5px; }
+  .newtag { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; background: #d23a2e; color: #ffffff; border-radius: 2px; padding: 0 4px; margin-left: 6px; vertical-align: 1px; }
+  .newtag.grey { background: #6a707c; }
+
+  /* Questions and bands */
+  .qrows { display: flex; flex-direction: column; gap: 6px; min-width: 330px; }
+  .qrow { padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .qrow b { font-size: 12.5px; font-weight: 600; }
+  .qrow span { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .band { border-left: 4px solid #7a808c; background: #ffffff; padding: 6px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; color: #2c3038; }
+  .band .t { color: #6a707c; white-space: nowrap; }
+  .band.leak { border-left-color: #d23a2e; background: #fde8e5; color: #8f1f16; }
+  .band.leak .t { color: #8f1f16; }
+  .band.planned { border-left-style: dashed; background: #f6f7f8; color: #4a505b; }
+  .band.thick { border-left: 6px solid #050506; background: #050506; color: #eef0f3; padding: 14px 12px; }
+  .band.thick .t { color: #8f96a3; }
+
+  /* C3: what a thing's numbers come from */
+  .things { display: grid; grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11.5px; min-width: 360px; align-items: baseline; }
+  .things .h { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: #6a707c; font-weight: 600; }
+  .things .k { color: #16181d; font-weight: 600; }
+  .things .v { color: #2c3038; }
+  .things .bad { color: #8f1f16; }
+  .things .q { color: #6a707c; font-style: italic; }
+
+  /* C6: a kind across the World renderer */
+  .grid9 { display: grid; grid-template-columns: minmax(5.6rem, auto) repeat(9, 2.35rem) 2.4rem; gap: 5px 2px; align-items: center; min-width: 470px; }
+  .colhead { font-size: 9.5px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; line-height: 1.15; color: #4a505b; }
+  .rowhead { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; color: #2c3038; line-height: 1.25; }
+  .cell { width: 13px; height: 13px; border-radius: 999px; justify-self: center; display: inline-block; }
+  .c-on { background: #16181d; }
+  .c-off { border: 1.5px solid #d7dae0; }
+  .c-plan { border: 1.5px dashed #d23a2e; }
+  .tot { font-size: 11px; font-family: "IBM Plex Mono", ui-monospace, monospace; text-align: center; font-weight: 600; color: #8f1f16; font-variant-numeric: tabular-nums; }
+  .key { display: flex; flex-wrap: wrap; gap: 16px; font-size: 11px; color: #6a707c; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  .key span { display: flex; align-items: center; gap: 6px; }
+  .kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .kinds .chip { text-align: center; }
+
+  pre.mermaid { background: transparent; margin: 0; font-size: 13px; }
+  pre.mermaid .label { text-transform: none; letter-spacing: normal; font-size: inherit; font-weight: inherit; color: inherit; }
+
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral', securityLevel: 'loose' });
+</script>
+</head>
+<body>
+<style>
+  .split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  @media (min-width: 768px) { .split { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .when { font-size: 13px; color: var(--muted); }
+  .states { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; }
+  .states .st { padding: 4px 8px; border: 1.5px solid #5b616e; border-radius: 3px; background: #ffffff; color: #2c3038; }
+  .states .st.red { border: 1.5px dashed #d23a2e; background: #fde8e5; color: #8f1f16; }
+  .states .st.new { border: 1.5px solid #1d7f36; background: #e9f6ec; color: #155c27; }
+  .states .st.plan { border: 1.5px dashed #7a808c; color: #4a505b; }
+  .mass { display: flex; align-items: flex-end; gap: 18px; min-width: 330px; }
+  .mass .col { display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; color: #4a505b; }
+  .mass .bars { display: flex; align-items: flex-end; gap: 3px; }
+  .mass .bi { width: 26px; background: #d7dae0; border: 1px solid #9aa0ad; }
+  .mass .bm { width: 26px; background: #5b616e; }
+  .mass .bi.red { background: #fde8e5; border-color: #d23a2e; }
+</style>
+
+<main class="page">
+
+  <header class="head">
+    <div class="titlerow">
+      <h1>Inkforge architecture review</h1>
+      <span class="mono meta">P-Leidel/inkforge · 602a1b1 (#176) · 2026-10-03</span>
+    </div>
+    <p class="scope">Scope: <code>src/</code> since the review after #170 (926d132): #171–#176, 42 files, +1968 / −1037 lines. That is the Lines module and its Runs (ADR 0017), the preview pin, the Session's end-of-Level offer and the tidy-ups. It also checks whether anything should be fixed before milestone 6: the Siege Walker and its boss arena. All 1169 tests in 81 files pass on 602a1b1, and typecheck, lint and format are clean.</p>
+    <div class="legend">
+      <span class="label">Legend</span>
+      <span class="item"><span class="swatch mod"></span>module</span>
+      <span class="item"><span class="swatch plan"></span>milestone 6 or later</span>
+      <span class="item"><span class="swatch-seam"></span>seam</span>
+      <span class="item"><svg width="30" height="10" aria-hidden="true"><line x1="0" y1="5" x2="22" y2="5" stroke="#d23a2e" stroke-width="2" stroke-dasharray="4 3"/><path d="M22 1 L29 5 L22 9 Z" fill="#d23a2e"/></svg>leakage</span>
+      <span class="item"><span class="swatch deep"></span>deep module, drawn like black ink</span>
+    </div>
+  </header>
+
+  <section class="panel" aria-labelledby="queue-h">
+    <span id="queue-h" class="label">The queue from the review after #170, today</span>
+    <div class="tiles">
+      <div class="tile done"><span class="n">C1</span><span>Give a Line one form, and change it in place</span><span class="st">done · #171–#174 · gaps in C3, C4 here</span></div>
+      <div class="tile park"><span class="n">C2</span><span>Give the Enemy's body a seam</span><span class="st">open · C1 here</span></div>
+      <div class="tile park"><span class="n">C3</span><span>One entry per Enemy type</span><span class="st">open · C2 here</span></div>
+      <div class="tile park"><span class="n">C4</span><span>Give the start and end of a Level one owner</span><span class="st">end done · #175 · start open (C6 here)</span></div>
+      <div class="tile park"><span class="n">C5</span><span>Hand the scene one reading a frame</span><span class="st">open · C7 here</span></div>
+    </div>
+    <ul class="points">
+      <li>C1 paid off. A Line's form is one value in <code>lines.ts</code>. Bonds and Patches survive a change of form. Collapse runs at the end of every <code>together</code>. The Game's <code>splits</code> map is gone, and the preview pin asks the Stroke pipeline. The code reviews of #171–#176 found no removed term left in code or docs.</li>
+      <li>Two parts of C1 aren't finished. A form change still goes through <code>ArenaBodies.removeBody</code>, so every kind hears <code>gone</code>, and only Bonds and Patches are shielded from it. And only the Grounded Run is split by connectivity.</li>
+      <li>One correction: the last review said Levels list <code>'siege-walker': 0</code>. They don't. <code>ENEMY_TYPES</code> is still <code>crawler · runner · heavy</code> (<code>enemy-table.ts:10</code>). Adding the boss is what puts a zero in every Wave.</li>
+    </ul>
+  </section>
+
+  <section class="panel" aria-labelledby="fix-h">
+    <span id="fix-h" class="label">Fix before milestone 6: from the code review of #171–#176</span>
+    <ul class="points">
+      <li><b>Bug: a Run's tiles can be drawn with another Run's pose.</b> In <code>lines-drawing.ts:110–129</code>, baked tiles are matched to Runs by their position in <code>line.runs</code>, and thrown away only when the number of Runs changes. But <code>Lines.dropPiece</code> re-sorts the Runs by their first Piece (<code>lines.ts:569</code>).
+        <ul>
+          <li>Example: a Line has a Grounded Run [0,4,5,6] and a fallen Run [2]. When Piece 0 goes, the Grounded Run becomes [4,5,6] and moves behind [2]. There are still two Runs, so nothing is unbaked.</li>
+          <li>The fallen Run then gets the Grounded Run's world-space tiles, and the Grounded tiles move with the fallen body.</li>
+          <li>Fix: key tiles by each Run's first Piece, or unbake when the order changes.</li>
+        </ul>
+      </li>
+      <li><b>Bug, likely: a Blast can hit a Line twice when it collapses.</b> <code>reform</code> rebuilds bodies through <code>removeBody(…, 'undone')</code>, and <code>ArenaBodies.removeBody</code> calls <code>gone(parties)</code> (<code>arena-bodies.ts:481</code>). <code>Blasts.gone</code> (<code>blasts.ts:186</code>) is not lifted the way Bonds and Patches are, so it forgets <code>acted</code> for Parties that are kept.
+        <ul>
+          <li>Example: a Blast breaks a shelf's foot. The step's Collapse reforms the rest, and the ring, still spreading, damages those Pieces again.</li>
+          <li>The contact ledger's <code>unregister</code> resets their contact history the same way.</li>
+          <li><a href="#c4">C4</a> fixes this whole class at once.</li>
+        </ul>
+      </li>
+      <li><b>Bug, minor: Bonds can land in the wrong order.</b> <code>Bonds.land</code> splices each Bond back at its place from before the lift (<code>bonds.ts:166</code>). If one lifted Bond is skipped because its host is gone, the ones after it land one slot off. A cap's "oldest first" then removes the wrong Bond.</li>
+      <li><b>Glossary: lowercase "run".</b> <code>lines.ts</code> uses lowercase <em>run</em> for a connected group of Pieces: <code>collapse</code>'s doc and its local <code>run</code> at 655–709, and <code>cutOff</code>'s <code>runs: Piece[][]</code> at 720–746. CONTEXT.md reserves <b>Run</b>, and its Collapse entry says "connected stretches of Pieces" for exactly this reason. Use <em>stretch</em> in the code too.</li>
+      <li><b>Doc slip.</b> In <code>arena-query.ts:54–57</code>, <code>Erasable</code> was inserted under the comment <code>/** An Object, as a query names it. */</code>. That leaves two doc comments stacked, and <code>FoundObject</code> without its own.</li>
+    </ul>
+  </section>
+
+  <section id="candidates" class="candidates" aria-label="Candidates">
+
+    <!-- C1 -->
+    <article id="c1" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 1 · gate for milestone 6 (carried over)</span>
+        <h2>Give the Enemy's body a seam: a box today, the Siege Walker next</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process · two adapters</span><span class="badge b-tag">milestone 6</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/enemies.ts <span class="note">(enemyOutline 47–60 · Walker width/height 93–95, 107–108 · viewOf 162–169 · spawnClear/spawn 209–234 · atSpawn 247–253 · addBody 256–262 · walk/climb 274–309)</span></li>
+        <li>src/sandbox/enemy-rules.ts <span class="note">(feet/step 219–221 · room ahead 246–251 · top 265 · contacts on <code>walker.body</code> 221, 315, 365 · crush 391 · bellyOf 429–434 · reach the Ink Core 448)</span></li>
+        <li>src/sandbox/arena-bodies.ts <span class="note">(Form 'enemy' is one polygon 176–177 · addEnemy <code>upright: true</code> 394–405)</span> · src/sandbox/arena-query.ts <span class="note">(nine <code>case 'enemy'</code>)</span></li>
+        <li>src/sandbox/material-rules.ts <span class="note">(blastReached 449–475: hurt once per Party)</span> · src/sandbox/sandbox-world.ts <span class="note">(kill 494–508)</span> · src/rendering/kinds/enemies-drawing.ts <span class="note">(HP bar from width/height 112–124)</span></li>
+      </ul>
+      <div class="ba">
+        <div class="sheet themed">
+          <span class="s-label s-muted">Before: the rules read the box</span>
+<pre class="mermaid">
+flowchart TB
+  R[Enemy rules] -.feet = y + height/2.-> B[(one upright box)]
+  R -.room ahead: width.-> B
+  Q[Arena query x9] -.case enemy.-> B
+  M[Material rules] -.hurt per Party.-> B
+  D[HP bar] -.width/height.-> B
+  classDef leak stroke:#d23a2e,stroke-width:2px;
+  class R,Q,M,D leak
+</pre>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: the rules ask, the body answers</span>
+          <div class="stack">
+            <div class="row row-2">
+              <div class="mod pad tiny"><b>Enemy rules</b><br>walk, climb, wear, reach</div>
+              <div class="mod pad tiny"><b>Material rules</b><br>one damage intake per Enemy</div>
+            </div>
+            <div class="arrow">↓ feet · ahead · touching · outline · parties ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg"><span class="s-label">Enemy body</span></div>
+            <div class="row row-2">
+              <div class="mod pad tiny"><b>Box adapter</b><br>Crawler, Runner, Heavy</div>
+              <div class="plan pad tiny"><b>Siege Walker adapter</b><br>legs as Parties on one body, can tip</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>About 30 places in 7 files assume an Enemy is one upright box. The Siege Walker has legs and has to be tripped, and it has nothing to plug into. A Blast would hurt it once for each leg.</p></div>
+        <div><span class="label">Solution</span><p>Put the body behind a small interface that the Enemy rules ask: where its feet are, what is ahead of it and touching it, its outline, its Parties. Today's box is one adapter. The Siege Walker is the second, built on the one-body-many-Parties path that loose Runs already use.</p></div>
+        <div><span class="label">Benefits</span><ul class="wins"><li>two adapters: a real seam</li><li>leverage: the rules stay as they are for the boss</li><li>damage once per Enemy</li><li>tests: one fake body</li></ul></div>
+      </div>
+      <p class="when">This keeps ADRs 0010, 0011 and 0013 as they are. Take it into the milestone 6 spec rather than doing it before.</p>
+    </article>
+
+    <!-- C2 -->
+    <article id="c2" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 2 · pairs with C1 (carried over)</span>
+        <h2>One entry per Enemy type, and Waves that name only what they send</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">milestone 6</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/materials/enemy-table.ts <span class="note">(ENEMY_TYPES 10)</span> · src/game/wave-table.ts <span class="note">(<code>counts: Record&lt;EnemyType, number&gt;</code> 12 · arrivals in ENEMY_TYPES order 42–48)</span></li>
+        <li>src/levels/level-1.ts 75–77 · level-2.ts 79–82 · level-3.ts 102–103 <span class="note">(every Wave lists every type)</span> · level-3.test.ts:55 <span class="note">(every type above 0 in every Wave)</span></li>
+        <li>rewards-screen.ts:11 · enemies-drawing.ts:43, 50 · sandbox-scene.ts:37 · hud.ts:23 · analysis.ts:43 · defence-loop.ts:238–244 · tuning-panel.ts:45, 189</li>
+      </ul>
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: adding the Siege Walker</span>
+          <div class="stack">
+            <div class="row row-3">
+              <div class="qrow leakbox"><b>~10 tables</b><span>one row each</span></div>
+              <div class="qrow leakbox"><b>every Wave</b><span>'siege-walker': 0</span></div>
+              <div class="qrow leakbox"><b>arrival order</b><span>boss always last</span></div>
+            </div>
+            <div class="qrow leakbox"><b>level-3.test.ts:55 breaks · Shift+4 sends the boss into the sandbox</b></div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one catalogue entry, Waves partial</span>
+          <div class="stack">
+            <div class="deep pad-lg"><span class="s-label">Enemy catalogue</span><div class="chips faded tiny" style="margin-top:8px"><span class="chip">numbers</span><span class="chip">name, plural</span><span class="chip">look, pop hue</span><span class="chip">body adapter (C1)</span><span class="chip">sandbox key?</span></div></div>
+            <div class="arrow">↓ read by ↓</div>
+            <div class="row row-3">
+              <div class="mod pad tiny"><b>Wave</b><br>{ heavy: 2 }</div>
+              <div class="mod pad tiny"><b>Renderer · HUD</b></div>
+              <div class="mod pad tiny"><b>Rewards · Analysis</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>An Enemy type is a closed union that about 10 tables repeat. Every Wave has to count every type. The order of <code>ENEMY_TYPES</code> decides the order they arrive in.</p></div>
+        <div><span class="label">Solution</span><p>One catalogue entry for each type, holding everything that varies by type. A Wave names only what it sends, and when, if that matters.</p></div>
+        <div><span class="label">Benefits</span><ul class="wins"><li>locality: one type, one entry</li><li>Levels stop listing zeros</li><li>when the boss arrives is the Wave's call</li></ul></div>
+      </div>
+    </article>
+
+    <!-- C3 -->
+    <article id="c3" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 3 · new, confirmed behaviour</span>
+        <h2>Let every Run hold together by connectivity, not only the Grounded one</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">glossary question</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/lines.ts <span class="note">(dropPiece's loose branch 565–567 only calls <code>removePart</code> · collapse/cutOff 655–759 walk connectivity only for the Grounded Run · groundTouched 393 walks grounding outward, collapse inward)</span></li>
+        <li>CONTEXT.md <span class="note">(Run, 78–80: "a stretch of a Line's Pieces that stand, hang or fall as one … each Run that isn't Grounded is one rigid body")</span></li>
+      </ul>
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: erase the middle Piece of a Line</span>
+          <div class="stack">
+            <div class="states"><span class="st">Grounded [0–4]</span>→ erase 2 →<span class="st new">Grounded [3,4] + fallen [0,1]</span></div>
+            <div class="states"><span class="st">Frozen [0–4]</span>→ erase 2 →<span class="st red">one Frozen Run [0,1,3,4]</span></div>
+            <p class="tiny s-muted">Confirmed with a scratch run through SandboxWorld. The two halves stay rigidly joined across the gap: they hang together, are Released together and fall together.</p>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one walk answers "what holds together?"</span>
+          <div class="stack">
+            <div class="deep pad-lg"><span class="s-label">Lines · after any Piece goes</span><div class="chips faded tiny" style="margin-top:8px"><span class="chip">split each Run into connected stretches</span><span class="chip">the Grounded stretch stays fixed</span><span class="chip">others keep their form: Frozen stays Frozen, fallen stays fallen</span><span class="chip">reuses reform: Parties, Bonds, Patches kept</span></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>Only the Grounded Run is ever split. A Frozen or fallen Run that loses a middle Piece stays one rigid body, made of two pieces held together across empty space. The two forms behave differently for no reason a player can see.</p></div>
+        <div><span class="label">Solution</span><p>After a Piece goes, Lines splits any Run with a gap into its connected stretches, through the <code>reform</code> path it already has. The grounding walk and the connectivity walk become one.</p></div>
+        <div><span class="label">Benefits</span><ul class="wins"><li>locality: "what holds together" answered once</li><li>Runs behave alike in every form</li><li>tests: a few cases in collapse.test.ts</li></ul></div>
+      </div>
+      <p class="callout">For the grilling: is the gap intended? "One rigid body" could allow it, but "a stretch" suggests not. Should a Frozen stretch cut off its Frozen Line stay Frozen, or fall? Either answer needs the Run entry in CONTEXT.md to say it.</p>
+    </article>
+
+    <!-- C4 -->
+    <article id="c4" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 4 · finishes C1, and fixes a class of bug</span>
+        <h2>Make a change of form something no kind hears as "gone"</h2>
+        <div class="badges"><span class="badge b-strong"><span class="dot"></span>Strong</span><span class="badge b-tag">in-process</span><span class="badge b-tag">small</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/lines.ts <span class="note">(reform 435–439 · removeBody 'undone' at 415, 754)</span></li>
+        <li>src/sandbox/arena-bodies.ts <span class="note">(removeBody 460–482: unregisters contacts, calls <code>gone(parties)</code>)</span></li>
+        <li>src/sandbox/sandbox-world.ts <span class="note">(rehost 731–750)</span> · bonds.ts <span class="note">(lift/land 124–169)</span> · patches.ts <span class="note">(lift/land)</span> · blasts.ts <span class="note">(gone 186)</span> · contact-ledger.ts <span class="note">(unregister 233)</span></li>
+      </ul>
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: a form change is still a removal underneath</span>
+          <div class="stack">
+            <div class="states"><span class="st">reform</span>→<span class="st">rehost: lift Bonds, Patches</span>→<span class="st red">removeBody 'undone' → gone(parties)</span>→<span class="st">land</span></div>
+            <div class="row row-3">
+              <div class="qrow okbox"><b>Bonds · Patches</b><span>lifted first: survive</span></div>
+              <div class="qrow leakbox"><b>Blasts</b><span>forget acted: hit twice</span></div>
+              <div class="qrow leakbox"><b>Contact ledger</b><span>history reset</span></div>
+            </div>
+            <p class="tiny s-muted">Any kind added for the boss that keeps state per Party has to know to be lifted, or it is wrong the same way.</p>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: Arena bodies rebuilds under the same Parties</span>
+          <div class="stack">
+            <div class="mod pad tiny"><b>Lines</b> · reform</div>
+            <div class="arrow">↓ rebuild(parties, new form) ↓</div>
+            <div class="seam"></div>
+            <div class="deep pad-lg"><span class="s-label">Arena bodies</span><div class="chips faded tiny" style="margin-top:8px"><span class="chip">new bodies, same Parties</span><span class="chip">contacts carried over</span><span class="chip">kinds told "moved", never "gone"</span></div></div>
+            <div class="row row-3">
+              <div class="mod pad tiny">Bonds: re-attach</div>
+              <div class="mod pad tiny">Patches: re-attach</div>
+              <div class="mod pad tiny">Blasts: nothing</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>C1 asked for a change of form to keep the Parties and run quietly. Today it keeps the Parties, but every kind still hears them as gone. Only the two kinds that <code>rehost</code> knows to lift are shielded. The Blast double hit is one consequence. The next kind with per-Party state will be another.</p></div>
+        <div><span class="label">Solution</span><p>Arena bodies gets one way to rebuild a body under the same Parties that no kind hears as a removal. A kind that holds something on the body hears that it moved. Lift and land in Bonds and Patches shrink to re-attaching.</p></div>
+        <div><span class="label">Benefits</span><ul class="wins"><li>locality: "Parties kept" means kept, everywhere</li><li>the double hit and the Bond-order slip go</li><li>deletion test: <code>rehost</code> and two lift/land pairs collapse into one rebuild</li><li>tests: a Blast plus Collapse case in collapse.test.ts</li></ul></div>
+      </div>
+    </article>
+
+    <!-- C5 -->
+    <article id="c5" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 5 · new, follows from C1</span>
+        <h2>Let Strokes stop forwarding to Lines</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/sandbox/strokes.ts <span class="note">(forwards: lines 292, grounds 337, pieces 401, remove 556, together 587, step 708 · 9 constructor deps passed on 249–286 · <code>LineRef</code> list 176–181, 245, re-synced by hand at 579 and 636–637 · <code>save</code> uses <code>lineForms.save(id)!</code> 662 · <code>'kind' in taken</code> 600)</span></li>
+        <li>src/sandbox/lines.ts:20 <span class="note">(imports types from strokes.ts, which imports Lines: a type cycle)</span></li>
+      </ul>
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: two lists say whether a Line exists</span>
+          <div class="stack">
+            <div class="mod pad tiny"><b>Strokes</b> · Objects, ids, drawing order, <span style="color:#8f1f16">LineRef list</span>, forwarding</div>
+            <div class="arrow">↓ 9 deps passed on · re-sync by hand ↓</div>
+            <div class="deep pad-lg"><span class="s-label">Lines</span></div>
+            <p class="tiny s-muted">If the two lists drift, <code>save</code> crashes on the <code>!</code>.</p>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: siblings under one ordering</span>
+          <div class="stack">
+            <div class="mod pad tiny"><b>Strokes</b> · ids and drawing order (replay needs them)</div>
+            <div class="seam"></div>
+            <div class="row row-2">
+              <div class="deep pad-lg"><span class="s-label">Lines</span></div>
+              <div class="deep pad-lg"><span class="s-label">Objects</span><div class="tiny faded">fill · squeeze · break</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>After C1, half of Strokes forwards to Lines. It keeps a second list of the Lines that exist and keeps it in step by hand. Its real depth is Objects.</p></div>
+        <div><span class="label">Solution</span><p>Make Objects a sibling of Lines. Strokes keeps only ids and drawing order, and learns that a Line went from Lines instead of checking. Move <code>StrokeId</code> somewhere neutral to break the cycle.</p></div>
+        <div><span class="label">Benefits</span><ul class="wins"><li>one source of truth for a Line's existence</li><li>Objects testable on their own</li><li>worth doing before the boss touches Objects</li></ul></div>
+      </div>
+    </article>
+
+    <!-- C6 -->
+    <article id="c6" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 6 · the start half of the last review's C4</span>
+        <h2>Give the start of a Level the owner its end now has</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span><span class="badge b-tag">partly milestone 6</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/scenes/sandbox-scene.ts <span class="note">(started 222–230: Free play controls from <code>reading.campaign === null</code>, <code>tutorial.offer(index)</code>, three <code>session.reading</code>s · showTutorial 238–244 pauses through <code>world.isRunning</code>)</span></li>
+        <li>src/game/session.ts <span class="note">(SessionReading 44–53: name, status, campaign, offer · advance polls <code>phase === 'cleared'</code> 163–172)</span></li>
+        <li>src/game/tutorial.ts:20 <span class="note">("from the left … on the right")</span> · src/game/analysis.ts 39–44 vs defence-loop.ts 238–244 <span class="note">(hint mismatch)</span></li>
+      </ul>
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before: the end has an owner, the start doesn't</span>
+          <div class="stack">
+            <div class="row row-2">
+              <div class="qrow leakbox"><b>start: scene (untested)</b><span>controls · Tutorial due · pause</span></div>
+              <div class="qrow okbox"><b>end: Session</b><span>offer · act(choice) · told once</span></div>
+            </div>
+            <div class="qrow leakbox"><b>Tutorial card</b><span>spawn side hard-coded</span></div>
+          </div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After: one reading says both ends</span>
+          <div class="stack">
+            <div class="deep pad-lg"><span class="s-label">Session reading</span><div class="chips faded tiny" style="margin-top:8px"><span class="chip if">start: tutorial due · controls · spawn side</span><span class="chip if">offer</span><span class="chip">campaign cleared (milestone 6)</span></div></div>
+            <div class="arrow">↑ scene forwards ↑</div>
+          </div>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>#175 moved the end of a Level into the Session. The start is still decided in the scene, which has no tests. The boss Level needs its own start, with a spawn side its Tutorial can read, and an end that unlocks Roguelite.</p></div>
+        <div><span class="label">Solution</span><p>The reading carries what a start needs, and the scene only forwards. While at it, have the Analysis take its first-appearance lines and its counts from the same table.</p></div>
+        <div><span class="label">Benefits</span><ul class="wins"><li>tests: session.test.ts, no Phaser</li><li>the boss Level's start and end have a home</li></ul></div>
+      </div>
+    </article>
+
+    <!-- C7 -->
+    <article id="c7" class="cand">
+      <div class="cand-head">
+        <span class="label">Candidate 7 · carried over</span>
+        <h2>Hand the scene one reading a frame</h2>
+        <div class="badges"><span class="badge b-explore"><span class="dot"></span>Worth exploring</span><span class="badge b-tag">in-process</span></div>
+      </div>
+      <ul class="files mono">
+        <li>src/scenes/sandbox-scene.ts <span class="note">(update 329–354)</span> · src/ui/hud.ts <span class="note">(78: <code>Pick&lt;Game, 'world' | 'defence' | 'allowed'&gt;</code> · SPAWN_COUNT_RISE 56 copies world-renderer.ts:43)</span> · tuning-panel.ts <span class="note">(130, 245–247: notices a load by object identity)</span></li>
+        <li>game.ts 424–426 vs palette-bar.ts:63 <span class="note">("Colours here" twice)</span> · enemies-drawing.ts 112–124 vs ink-core-drawing.ts <span class="note">(HP bar twice)</span></li>
+      </ul>
+      <div class="ba">
+        <div class="sheet">
+          <span class="s-label s-muted">Before</span>
+          <div class="stack"><div class="qrow leakbox"><b>≈ 6 Defence readings · 2 hintLines runs a frame</b><span>Game exposes world and defence (11 outside reads)</span></div></div>
+        </div>
+        <div class="sheet">
+          <span class="s-label s-muted">After</span>
+          <div class="stack"><div class="deep pad-lg"><span class="s-label">Session.frame()</span><div class="tiny faded">phase · place · offer · tools · Colours here · Tanks</div></div><div class="arrow">↓ HUD · palette · F2 · one HP bar (Enemy, Ink Core, boss) ↓</div></div>
+        </div>
+      </div>
+      <div class="prose3">
+        <div><span class="label">Problem</span><p>The HUD and F2 still reach past the Game. The boss HP bar would be the third copy.</p></div>
+        <div><span class="label">Solution</span><p>One reading a frame, built in the Session, passed to everything that draws. One shared HP bar.</p></div>
+        <div><span class="label">Benefits</span><ul class="wins"><li>leverage: one reading, six readers</li><li>the Game can hide world and defence</li></ul></div>
+      </div>
+    </article>
+
+  </section>
+
+  <section class="panel also" aria-labelledby="also-h">
+    <span id="also-h" class="label">Also noticed, not candidates</span>
+    <ul>
+      <li><b><code>hasFallen</code> still writes while it asks</b> (<code>lines.ts:450–455</code>). <code>save</code> relies on it to latch <code>fell</code>. C3's single walk is a natural place to latch it instead.</li>
+      <li><b>The Ink Core grounds Lines.</b> It is tracked as a <code>'terrain'</code> form (<code>arena-bodies.ts:297</code>, <code>arena-query.ts:511–523</code>), so a Line touching it is Grounded. CONTEXT.md's Grounded says only "Terrain". Either the glossary or the code should change. This matters if the boss arena puts the Ink Core somewhere new.</li>
+      <li><b>Strokes' constructor takes 9 positional deps</b> and repacks them into <code>LinesDeps</code> (<code>strokes.ts:249–286</code>). The field <code>lineForms: Lines</code> holds Lines, not forms. Both go with C5.</li>
+      <li><b><code>groundsSamples</code></b> falls back to <code>LINE_THICKNESS</code> and ignores the <code>lineThickness</code> option when there are too few samples (<code>sandbox-world.ts:599–600</code>). It's harmless today.</li>
+      <li><b>The preview pin runs the whole Stroke pipeline on every pointer move</b> (<code>sandbox-world.ts:596–601</code>). Watch it in the performance pass, though it isn't a problem yet.</li>
+      <li><b>The draw-call budget is now 2,500</b>, against a real peak of 2,003 (<code>world-renderer.test.ts</code>, #176). That's fine, but the boss and its arena should be measured against it.</li>
+    </ul>
+  </section>
+
+  <section id="top-recommendation" class="top" aria-labelledby="top-h">
+    <span class="label">Top recommendation</span>
+    <h2 id="top-h"><a href="#c4">Make a change of form something no kind hears as "gone"</a></h2>
+    <p>It finishes the last thing C1 asked for. It removes a class of bug, the Blast double hit and the Bond-order slip, before the boss adds more kinds that keep state per Party. It is small and in-process, and <code>collapse.test.ts</code> already drives it through <code>SandboxWorld</code>. Do it together with the two code-review fixes: the Lines renderer's tile order, and <em>stretch</em> for <em>run</em>. Settle <a href="#c3">C3</a> in a short grilling, since it is a glossary question first. Then take <a href="#c1">C1</a> and <a href="#c2">C2</a> into the milestone 6 spec, with the Siege Walker as the second body adapter, and <a href="#c6">C6</a> with the boss Level's start and end.</p>
+  </section>
+
+</main>
+</body>
+</html>
