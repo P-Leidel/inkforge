@@ -1,8 +1,8 @@
 import { bandPolygon } from '../geometry/separation';
-import { polygonBounds } from '../geometry/polygon';
-import type { Segment } from '../geometry/segment';
+import { boundsOverlap, polygonBounds, type Bounds } from '../geometry/polygon';
+import { distanceSegmentToSegment, type Segment } from '../geometry/segment';
 import { applyTransform, type Transform } from '../geometry/transform';
-import { sub, type Vec2 } from '../geometry/vec2';
+import { add, sub, type Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { lineInk } from '../materials/ink';
 import { lineMass } from '../materials/mass';
@@ -34,9 +34,10 @@ export interface PieceView {
 }
 
 /**
- * A Run of a Line. Its segments are in its own coordinates; place them with
- * `transform`. A Grounded Run never moves, so its own coordinates are the
- * world's; one that isn't Grounded moves as one body.
+ * A Run of a Line: a connected stretch of its Pieces. Its segments are in
+ * its own coordinates; place them with `transform`. A Grounded Run never
+ * moves, so its own coordinates are the world's; one that isn't Grounded
+ * moves as one body.
  */
 export interface RunView extends Poses {
   /** Capsule centre lines of its Pieces. */
@@ -53,7 +54,8 @@ export interface RunView extends Poses {
 
 /**
  * A Line: its Runs, each standing, hanging or falling as one. A Line drawn
- * whole is one Run until a Collapse cuts it.
+ * whole is one Run until a Collapse cuts it, or a Piece that goes leaves
+ * it in parts that don't touch.
  */
 export interface LineView {
   readonly id: StrokeId;
@@ -99,8 +101,10 @@ type Form =
     };
 
 /**
- * A stretch of a Line's Pieces that stand, hang or fall as one. A Line has
- * at most one Grounded Run, all of its Pieces that stand.
+ * A connected stretch of a Line's Pieces, touching each other within the
+ * ground tolerance, that stand, hang or fall as one. A Line has at most one
+ * Grounded Run, all of its Pieces that stand; each of its other Runs holds
+ * together by touching alone.
  */
 interface Run {
   /** Its Pieces, in order; broken ones are gone. Never none. */
@@ -175,6 +179,61 @@ function capsulesOf(run: Run, thickness: number): Capsule[] {
   return run.pieces.flatMap((piece) => pieceCapsules(piece, thickness));
 }
 
+/** A Piece's segments' bounds. */
+const boundsOf = ({ segments }: Piece): Bounds =>
+  polygonBounds(segments.flatMap(({ a, b }) => [a, b]));
+
+/**
+ * `pieces`, all in the same coordinates, as stretches that touch each other
+ * within `tolerance`: their capsules, `thickness` across, come that near.
+ * Each stretch is in order along its Line, and the stretches are in order
+ * by their first Piece.
+ */
+function stretchesOf(pieces: readonly Piece[], thickness: number, tolerance: number): Piece[][] {
+  const reach = thickness + tolerance;
+  const sorted = [...pieces].sort((p, q) => p.index - q.index);
+  const bounds = new Map(sorted.map((piece) => [piece, boundsOf(piece)]));
+  const touch = (p: Piece, q: Piece) =>
+    boundsOverlap(bounds.get(p)!, bounds.get(q)!, reach) &&
+    p.segments.some(({ a, b }) =>
+      q.segments.some((s) => distanceSegmentToSegment(a, b, s.a, s.b) <= reach),
+    );
+  const placed = new Set<Piece>();
+  const stretches: Piece[][] = [];
+  for (const piece of sorted) {
+    if (placed.has(piece)) continue;
+    const stretch = [piece];
+    placed.add(piece);
+    for (let k = 0; k < stretch.length; k++) {
+      for (const other of sorted) {
+        if (placed.has(other) || !touch(stretch[k]!, other)) continue;
+        placed.add(other);
+        stretch.push(other);
+      }
+    }
+    stretches.push(stretch.sort((p, q) => p.index - q.index));
+  }
+  return stretches;
+}
+
+/**
+ * The centre of mass of capsules along `segments`, `thickness` across, all
+ * of one density: each weighs its area, about its middle.
+ */
+function centreOfMass(segments: readonly Segment[], thickness: number): Vec2 {
+  const radius = thickness / 2;
+  let total = 0;
+  let x = 0;
+  let y = 0;
+  for (const { a, b } of segments) {
+    const area = Math.hypot(b.x - a.x, b.y - a.y) * thickness + Math.PI * radius * radius;
+    total += area;
+    x += ((a.x + b.x) / 2) * area;
+    y += ((a.y + b.y) / 2) * area;
+  }
+  return { x: x / total, y: y / total };
+}
+
 /** Runs in order along their Line, by their first Piece. */
 function inOrder(runs: Run[]): Run[] {
   return runs.sort((p, q) => p.pieces[0]!.index - q.pieces[0]!.index);
@@ -218,9 +277,10 @@ export interface LinesDeps {
  * fallen. It changes a Line's form, keeping its id, its Pieces, their
  * Parties and what is stuck to them, and says `reformed`: when a Grounded
  * Line drawn to touch a Frozen one grounds it, and in a Collapse, when what
- * a Piece that went held up falls as Runs of their own. A Collapse waits
- * until whatever took Pieces away is done (`together`), or until the end of
- * the step, and is never left for anyone else to start.
+ * a Piece that went held up falls as Runs of their own, or a Run that isn't
+ * Grounded comes apart where a Piece of it went. A Collapse waits until
+ * whatever took Pieces away is done (`together`), or until the end of the
+ * step, and is never left for anyone else to start.
  */
 export class Lines {
   /** By id, in the order they were drawn. */
@@ -230,6 +290,11 @@ export class Lines {
    * grounding was last checked again (`collapse`).
    */
   private cut: Capsule[] = [];
+  /**
+   * The Runs that aren't Grounded that lost a Piece since they were last
+   * checked for coming apart (`collapse`).
+   */
+  private split = new Set<Run>();
   /** How many `together`s are running. */
   private batching = 0;
 
@@ -445,13 +510,19 @@ export class Lines {
 
   /**
    * Whether a Run that isn't Grounded has fallen: it has moved since it was
-   * drawn, even if it is Frozen again now.
+   * drawn, even if it is Frozen again now. Each step notes it (`noteFalls`).
    */
-  private hasFallen(run: Run): boolean {
-    const { form } = run;
-    if (form.kind === 'grounded') return false;
-    if (!form.fell && !this.deps.physics.isFrozen(form.body)) form.fell = true;
-    return form.fell;
+  private hasFallen({ form }: Run): boolean {
+    return form.kind === 'loose' && form.fell;
+  }
+
+  /** Notes that each Run that isn't Frozen has fallen: it moved this step. */
+  private noteFalls(): void {
+    for (const line of this.lines.values()) {
+      for (const { form } of line.runs) {
+        if (form.kind === 'loose' && !this.deps.physics.isFrozen(form.body)) form.fell = true;
+      }
+    }
   }
 
   /** Every Piece still there, Line by Line in drawing order: what may glue. */
@@ -542,8 +613,9 @@ export class Lines {
   /**
    * Removes Piece `index` of Line `id`, for `why`; the rest of its Run stays
    * where it is, fixed or as one body. A Run goes with its last Piece, and
-   * the Line with its last Run. What a fixed one held up falls at the end of
-   * the `together` this runs in.
+   * the Line with its last Run. What a fixed one held up falls, and a Run
+   * that isn't Grounded comes apart where it no longer touches, at the end
+   * of the `together` this runs in.
    */
   removePiece(id: StrokeId, index: number, why: Why): void {
     const line = this.lines.get(id);
@@ -564,6 +636,7 @@ export class Lines {
       this.deps.bodies.removeBody(piece.body, why);
     } else {
       this.deps.bodies.removePart(piece.party, why);
+      this.split.add(run);
     }
     run.pieces = run.pieces.filter((p) => p !== piece);
     // A Run is in order by its first Piece.
@@ -572,8 +645,8 @@ export class Lines {
 
   /**
    * Breaks a Piece that the Material rules broke, and reports what comes out
-   * of it: its body is removed, and the rest of its Run stays where it is
-   * until the step's `collapse`; the Line goes with its last Piece.
+   * of it: its body is removed, and the rest of its Run stays where it is,
+   * as one, until the step's `collapse`; the Line goes with its last Piece.
    */
   breakPiece(piece: Piece): Broken | null {
     const line = this.lines.get(piece.lineId);
@@ -645,10 +718,15 @@ export class Lines {
   clear(): void {
     this.lines = new Map();
     this.cut = [];
+    this.split = new Set();
   }
 
-  /** What a fixed Piece that broke this step held up falls. */
+  /**
+   * Notes which Runs moved this step, then lets what a fixed Piece that
+   * broke this step held up fall, and Runs that lost a Piece come apart.
+   */
   step(): void {
+    this.noteFalls();
     this.collapse();
   }
 
@@ -665,8 +743,19 @@ export class Lines {
    * body, a Run of that Line: several Lines cut off together fall as several
    * bodies, and a Line cut in two keeps its id, its Pieces, their places
    * along it and their damage, and is `reformed`.
+   *
+   * Then each Run that isn't Grounded and lost a Piece comes apart into the
+   * stretches of it that still touch each other, the same way (`comeApart`).
    */
   private collapse(): void {
+    this.cutOffWhatFell();
+    const split = [...this.split];
+    this.split = new Set();
+    for (const run of split) this.comeApart(run);
+  }
+
+  /** Lets what the fixed Pieces that went held up fall (`collapse`). */
+  private cutOffWhatFell(): void {
     if (this.cut.length === 0) return;
     const { query, materials } = this.deps;
     const tolerance = materials.groundTolerance;
@@ -674,15 +763,12 @@ export class Lines {
     this.cut = [];
     const standing = new Set<string>();
     const falling = new Map<string, Piece>();
-    /** The fixed Pieces each falling one touches, by key. */
-    const links = new Map<string, string[]>();
     for (const start of [...starts].sort(byPlace)) {
       const startKey = pieceKey(start);
       if (standing.has(startKey) || falling.has(startKey)) continue;
       const first = this.fixedPiece(start);
       if (!first) continue;
       const stretch = new Map<string, Piece>([[startKey, first]]);
-      const touching = new Map<string, string[]>();
       const queue = [first];
       let stands = false;
       for (let k = 0; k < queue.length && !stands; k++) {
@@ -691,62 +777,38 @@ export class Lines {
         const { thickness } = this.lines.get(piece.lineId)!;
         const held = query.holding(pieceCapsules(piece, thickness), tolerance);
         if (held.ground) stands = true;
-        const touched: string[] = [];
         for (const other of [...held.pieces].sort(byPlace)) {
           const otherKey = pieceKey(other);
           if (otherKey === key) continue;
           if (standing.has(otherKey)) stands = true;
-          touched.push(otherKey);
           if (stretch.has(otherKey)) continue;
           const found = this.fixedPiece(other);
           if (!found) continue;
           stretch.set(otherKey, found);
           queue.push(found);
         }
-        touching.set(key, touched);
       }
       if (stands) {
         for (const key of stretch.keys()) standing.add(key);
       } else {
         for (const [key, piece] of stretch) falling.set(key, piece);
-        for (const [key, touched] of touching) links.set(key, touched);
       }
     }
     const lineIds = [...new Set([...falling.values()].map((piece) => piece.lineId))];
-    for (const id of lineIds.sort((p, q) => p - q)) this.cutOff(id, falling, links);
+    for (const id of lineIds.sort((p, q) => p - q)) this.cutOff(id, falling);
   }
 
   /**
    * Lets the Pieces of the Grounded Run of Line `id` that are `falling`
-   * fall, each stretch of them that touch each other (`links`) as a Run of its
-   * own, one body.
+   * fall, each stretch of them that touch each other (`stretchesOf`) as a
+   * Run of its own, one body.
    */
-  private cutOff(
-    id: StrokeId,
-    falling: ReadonlyMap<string, Piece>,
-    links: ReadonlyMap<string, readonly string[]>,
-  ): void {
+  private cutOff(id: StrokeId, falling: ReadonlyMap<string, Piece>): void {
     const line = this.lines.get(id)!;
     const standing = line.runs.find((run) => run.form.kind === 'grounded')!;
     const keyOf = (piece: Piece) => pieceKey({ thing: 'piece', id, index: piece.index });
     const mine = standing.pieces.filter((piece) => falling.has(keyOf(piece)));
-    // Stretches of its falling Pieces that touch each other, in order along it.
-    const stretches: Piece[][] = [];
-    const placed = new Set<string>();
-    for (const piece of mine) {
-      if (placed.has(keyOf(piece))) continue;
-      const stretch = [piece];
-      placed.add(keyOf(piece));
-      for (let k = 0; k < stretch.length; k++) {
-        for (const key of links.get(keyOf(stretch[k]!)) ?? []) {
-          const other = falling.get(key);
-          if (!other || other.lineId !== id || placed.has(key)) continue;
-          placed.add(key);
-          stretch.push(other);
-        }
-      }
-      stretches.push(stretch.sort((p, q) => p.index - q.index));
-    }
+    const stretches = stretchesOf(mine, line.thickness, this.deps.materials.groundTolerance);
     const stays = standing.pieces.filter((piece) => !falling.has(keyOf(piece)));
     const fallen = line.runs.filter((run) => run !== standing);
     this.reform(line, mine, () => {
@@ -776,6 +838,54 @@ export class Lines {
       angularVelocity: 0,
       frozen: false,
       mass: lineMass(segments, line.thickness, line.colour, this.deps.materials),
+    });
+  }
+
+  /**
+   * Lets `run`, a Run that isn't Grounded that lost a Piece, come apart into
+   * the stretches of it that still touch each other (`stretchesOf`), each a
+   * Run of its own, one body. Each hangs Frozen, or moves on, as `run` did:
+   * where it is, with the velocity `run` had at its centre of mass and the
+   * same spin; each weighs its own Ink, and has fallen if `run` had.
+   */
+  private comeApart(run: Run): void {
+    const line = [...this.lines.values()].find((l) => l.runs.includes(run));
+    if (!line || run.form.kind !== 'loose') return;
+    const { physics, materials } = this.deps;
+    const stretches = stretchesOf(run.pieces, line.thickness, materials.groundTolerance);
+    if (stretches.length < 2) return;
+    const { body, fell } = run.form;
+    const { transform, velocity, angularVelocity } = motionOf(physics, body);
+    const frozen = physics.isFrozen(body);
+    const centre = centreOfMass(
+      run.pieces.flatMap((piece) => piece.segments),
+      line.thickness,
+    );
+    this.reform(line, run.pieces, () => {
+      // Quietly, so no one hears why: their Pieces come straight back.
+      this.deps.bodies.removeBody(body, 'undone');
+      const parts = stretches.map((pieces) => {
+        const segments = pieces.flatMap((piece) => piece.segments);
+        const middle = middleOf(segments);
+        const saved = pieces.map(({ body: _body, segments, ...piece }) => ({
+          ...piece,
+          segments: segments.map(({ a, b }) => ({ a: sub(a, middle), b: sub(b, middle) })),
+        }));
+        // Its centre of mass moved as that point of `run`'s body did.
+        const r = sub(
+          applyTransform(centreOfMass(segments, line.thickness), transform),
+          applyTransform(centre, transform),
+        );
+        const spun = { x: -angularVelocity * r.y, y: angularVelocity * r.x };
+        return this.addLoose(line, saved, this.deps.bodies.newId(), fell, {
+          transform: { ...applyTransform(middle, transform), angle: transform.angle },
+          velocity: frozen ? { x: 0, y: 0 } : add(velocity, spun),
+          angularVelocity: frozen ? 0 : angularVelocity,
+          frozen,
+          mass: lineMass(segments, line.thickness, line.colour, materials),
+        });
+      });
+      line.runs = inOrder([...line.runs.filter((r) => r !== run), ...parts]);
     });
   }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { applyTransform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import type { LineView, SandboxWorld } from './sandbox-world';
@@ -241,16 +242,98 @@ describe('Collapse: what a Piece that goes held up falls', () => {
     expect(piecesOf(lineById(world, id)).map((p) => p.durability)).toEqual(before.slice(1));
   });
 
-  it('leaves a Line that isn’t Grounded one body when a Piece in its middle goes', () => {
+  it('splits a Frozen Line where a Piece in its middle goes: each side hangs on, and Releases alone', () => {
     const world = createWorld();
     const id = drawLine(world, [
       { x: 300, y: 500 },
       { x: 600, y: 500 },
     ]);
+    const where = (line: LineView) =>
+      line.runs.flatMap((run) =>
+        run.pieces.map((piece) => ({
+          index: piece.index,
+          ends: piece.segments.flatMap(({ a, b }) =>
+            [a, b].map((p) => applyTransform(p, run.transform)),
+          ),
+        })),
+      );
+    const before = where(lineById(world, id));
+    const heard = hear(world);
 
     eraseAt(world, { x: 300 + 2.5 * PIECE, y: 500 });
 
-    expect(world.lines.map((l) => l.id)).toEqual([id]);
+    const line = lineById(world, id);
+    expect(line.runs).toMatchObject([
+      { grounded: false, frozen: true },
+      { grounded: false, frozen: true },
+    ]);
+    expect(line.runs.map((run) => run.pieces.map((p) => p.index))).toEqual([
+      [0, 1],
+      [3, 4, 5],
+    ]);
+    // Each hangs where it was.
+    for (const { index, ends } of where(line)) {
+      const was = before.find((piece) => piece.index === index)!.ends;
+      ends.forEach((end, k) => {
+        expect(end.x).toBeCloseTo(was[k]!.x, 3);
+        expect(end.y).toBeCloseTo(was[k]!.y, 3);
+      });
+    }
+    expect(entriesOf(heard(), 'reformed')).toMatchObject([{ kind: 'reformed', id }]);
+
+    world.togglePause();
+    expect(world.releaseAt({ x: 300 + 0.5 * PIECE, y: 500 })).toBe(true);
+    runFor(world, 0.5);
+
+    const [left, right] = lineById(world, id).runs;
+    expect(left).toMatchObject({ frozen: false });
+    expect(left!.transform.y).toBeGreaterThan(500);
+    expect(right).toMatchObject({ frozen: true });
+  });
+
+  it('splits a falling Line where a Piece in its middle goes: each side falls on as it fell', () => {
+    const world = createWorld();
+    const id = drawLine(world, [
+      { x: 300, y: 300 },
+      { x: 600, y: 300 },
+    ]);
+    world.togglePause();
+    world.release(id, { x: 120, y: 0 });
+    world.togglePause();
+    const velocity = lineById(world, id).runs[0]!.velocity;
+
+    eraseAt(world, { x: 300 + 2.5 * PIECE, y: 300 });
+
+    const runs = lineById(world, id).runs;
+    expect(runs).toMatchObject([
+      { grounded: false, frozen: false },
+      { grounded: false, frozen: false },
+    ]);
+    for (const run of runs) {
+      expect(run.velocity.x).toBeCloseTo(velocity.x, 3);
+      expect(run.velocity.y).toBeCloseTo(velocity.y, 3);
+    }
+
+    runFor(world, 2);
+
+    // Fallen, they never stand again: not even on the ground.
+    expect(lineById(world, id).runs).toMatchObject([{ grounded: false }, { grounded: false }]);
+  });
+
+  it('keeps a Frozen Line one body when a Piece of it goes, if what is left still touches', () => {
+    const world = createWorld();
+    // A hook: its end comes back to rest against its first Piece.
+    const id = drawLine(world, [
+      { x: 300, y: 300 },
+      { x: 492, y: 300 },
+      { x: 492, y: 492 },
+      { x: 396, y: 492 },
+      { x: 396, y: 310 },
+    ]);
+    expect(lineById(world, id).runs).toHaveLength(1);
+
+    eraseAt(world, { x: 492, y: 300 + 2.5 * PIECE });
+
     expect(lineById(world, id).runs).toMatchObject([{ grounded: false, frozen: true }]);
   });
 

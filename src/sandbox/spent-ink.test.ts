@@ -9,6 +9,7 @@ import {
   FIXED_BODIES,
   hear,
   objectById,
+  piecesOf,
   runFor,
   sandboxWorlds,
 } from './test-support';
@@ -219,7 +220,7 @@ describe('What taking back a Stroke or a Fill gives back', () => {
     const ink = lineInk(drawn.runs[0]!.segments, drawn.thickness);
     world.eraseAlong([{ x: 200 + 48 * 4 + 24, y: 700 }], 12); // Piece 4
     const left = lineById(world, line);
-    expect(left.runs[0]!.pieces).toHaveLength(9);
+    expect(piecesOf(left)).toHaveLength(9);
 
     const taken = world.removeStroke(line);
 
@@ -227,7 +228,10 @@ describe('What taking back a Stroke or a Fill gives back', () => {
       kind: 'line',
       id: line,
       colour: 'grey',
-      ink: lineInk(left.runs[0]!.segments, left.thickness),
+      ink: lineInk(
+        left.runs.flatMap((run) => run.segments),
+        left.thickness,
+      ),
     });
     if (taken.kind === 'line') expect(taken.ink).toBeCloseTo((ink * 9) / 10, 6);
   });
@@ -243,11 +247,8 @@ describe('What taking back a Stroke or a Fill gives back', () => {
     runFor(world, 1.5);
     world.remove(rock);
     const left = lineById(world, drawn.id);
-    expect(left.runs[0]!.pieces.length).toBeLessThan(10);
-    const standing = left.runs[0]!.pieces.reduce(
-      (sum, piece) => sum + drawn.pieces[piece.index]!,
-      0,
-    );
+    expect(piecesOf(left).length).toBeLessThan(10);
+    const standing = piecesOf(left).reduce((sum, piece) => sum + drawn.pieces[piece.index]!, 0);
 
     const taken = world.removeStroke(drawn.id);
 
