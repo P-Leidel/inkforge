@@ -1,5 +1,5 @@
-import type { Polygon } from '../geometry/polygon';
-import { transformPoints } from '../geometry/transform';
+import { polygonBounds, type Polygon } from '../geometry/polygon';
+import { transformPoints, type Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-table';
@@ -10,14 +10,15 @@ import { inward, type Arena } from './arena';
 import type { ArenaBodies } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
 import type { ArenaQuery } from './arena-query';
+import { boxShape, type EnemyShape } from './enemy-shape';
 import type { PartyId } from './contact-ledger';
 import type { Why } from './happenings';
 import type { Numbers } from './numbers';
 import type { PreviousPoses } from './previous-poses';
 
 /**
- * Enemies: upright bodies that walk toward the Ink Core, pushed by a capped
- * force (ADR 0010). This kind holds their bodies and pushes them; whether
+ * Enemies: bodies that walk toward the Ink Core, pushed by a capped force
+ * (ADR 0010), each of the shape its type has (`EnemyShape`, ADR 0019). This kind holds their bodies and pushes them; whether
  * one stands on something it can walk on, and what follows from what it
  * touches, the Material rules decide.
  */
@@ -25,48 +26,10 @@ import type { PreviousPoses } from './previous-poses';
 /** How far (px) a new Enemy starts clear of the Terrain at the Spawn, and of one below it. */
 const SPAWN_GAP = 0.5;
 /**
- * Height (px) of the bevel at each bottom corner of an Enemy's body, at
- * most: taller than a Line is thick, so it can ride up onto one lying on
- * the ground.
- */
-const BEVEL_HEIGHT = 12;
-/**
- * The bevel's slope: 3 up in 4 across, about 37°, gentle enough that a
- * push of one weight climbs it without friction.
- */
-const BEVEL_RUN = 4 / 3;
-/** Size (px) of the cut at each top corner. */
-const TOP_CUT = 4;
-/**
  * An Enemy walking toward the Ink Core slower than this share of its
  * walking speed isn't getting past what is in its way: it presses it.
  */
 const STALLED_SPEED = 0.1;
-
-/**
- * An Enemy's body, `width` × `height` about its centre: an upright box with
- * its top corners cut and its bottom corners bevelled, so that it rides up
- * onto a Line lying on the ground, and over the seams of the Terrain, as a
- * rounded box would. One convex polygon.
- */
-export function enemyOutline(width: number, height: number): Polygon {
-  const w = width / 2;
-  const h = height / 2;
-  // A narrow body keeps a flat bottom: the bevels together take at most 80% of its width.
-  const rise = Math.min(BEVEL_HEIGHT, height / 4, (0.4 * width) / BEVEL_RUN);
-  const run = rise * BEVEL_RUN;
-  const cut = Math.min(TOP_CUT, w / 4, h / 4);
-  return [
-    { x: -w + cut, y: -h },
-    { x: w - cut, y: -h },
-    { x: w, y: -h + cut },
-    { x: w, y: h - rise },
-    { x: w - run, y: h },
-    { x: -w + run, y: h },
-    { x: -w, y: h - rise },
-    { x: -w, y: -h + cut },
-  ];
-}
 
 /**
  * The walking force (mass × px/s²) along x: what would take the body from
@@ -90,9 +53,8 @@ export interface Walker {
   readonly id: number;
   readonly body: BodyId;
   readonly type: EnemyType;
-  /** Width and height (px) of its body, from the enemy table when it was sent in. */
-  readonly width: number;
-  readonly height: number;
+  /** Its body's shape, from the enemy table when it was sent in. */
+  readonly shape: EnemyShape;
   /** Its Belly: the Colour of ink it carries, rolled when it was sent in. */
   readonly belly: Colour;
   /** Damage taken so far: it dies once this reaches its type's HP. */
@@ -104,6 +66,7 @@ export interface EnemyView extends Poses {
   readonly type: EnemyType;
   /** Its body's outline about its centre; place it with `transform`. */
   readonly outline: Polygon;
+  /** Width and height (px) of its outline. */
   readonly width: number;
   readonly height: number;
   /** Its Belly: the Colour of ink it carries and lets out where it dies. */
@@ -159,14 +122,15 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     return this.enemies.map((enemy) => this.viewOf(enemy));
   }
 
-  private viewOf({ id, type, width, height, belly, body, damage }: EnemyRecord): EnemyView {
+  private viewOf({ id, type, shape, belly, body, damage }: EnemyRecord): EnemyView {
     const fullHp = this.numbers.enemy(type).hp;
+    const { minX, minY, maxX, maxY } = polygonBounds(shape.outline);
     return {
       id,
       type,
-      outline: enemyOutline(width, height),
-      width,
-      height,
+      outline: shape.outline,
+      width: maxX - minX,
+      height: maxY - minY,
       belly,
       ...this.poses.of(body),
       velocity: this.physics.getVelocity(body),
@@ -207,10 +171,19 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
    * end, its back to the wall, with nothing there in its way.
    */
   spawnClear(type: EnemyType): boolean {
+    const shape = this.shapeOf(type);
+    return !this.blocked(shape, this.atSpawn(shape));
+  }
+
+  /** The shape an Enemy of `type` sent in now has. */
+  private shapeOf(type: EnemyType): EnemyShape {
     const { width, height } = this.numbers.enemy(type);
-    const { x, y } = this.atSpawn(width, height);
-    const outline = transformPoints(enemyOutline(width, height), { x, y, angle: 0 });
-    return !this.query.blocksEnemy(outline);
+    return boxShape(width, height);
+  }
+
+  /** Whether something is in the way of an Enemy of `shape` posed at `at`. */
+  private blocked(shape: EnemyShape, at: Transform): boolean {
+    return shape.parts.some((part) => this.query.blocksEnemy(transformPoints(part, at)));
   }
 
   /**
@@ -221,17 +194,19 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
    */
   spawn(type: EnemyType, belly: Colour, at?: Vec2): number {
     const numbers = this.numbers.enemy(type);
-    const { width, height } = numbers;
-    const outline = enemyOutline(width, height);
-    const standing = this.atSpawn(width, height);
+    const shape = this.shapeOf(type);
+    const standing = this.atSpawn(shape);
     const x = at?.x ?? standing.x;
     let y = at?.y ?? standing.y;
-    const blocked = () => this.query.blocksEnemy(transformPoints(outline, { x, y, angle: 0 }));
-    while (!at && y - height > 0 && blocked()) y -= height + SPAWN_GAP;
+    // Stacked over what stands at the Spawn already, while there is room above.
+    const { minY, maxY } = shape.bounds({ x: 0, y: 0, angle: 0 });
+    const height = maxY - minY;
+    while (!at && y - height > 0 && this.blocked(shape, { x, y, angle: 0 }))
+      y -= height + SPAWN_GAP;
     const id = this.nextId++;
     const mass = enemyMass(numbers, this.materials);
     const party = this.bodies.newId();
-    const enemy = { id, party, type, width, height, belly, mass, damage: 0 };
+    const enemy = { id, party, type, shape, belly, mass, damage: 0 };
     this.addBody(enemy, {
       transform: { x, y, angle: 0 },
       velocity: { x: 0, y: 0 },
@@ -241,26 +216,32 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
   }
 
   /**
-   * Where a new Enemy `width` by `height` stands at the Spawn: on the lane's
+   * Where a new Enemy of `shape` stands at the Spawn, upright: on the lane's
    * floor, its back to the wall, in from the Spawn's side.
    */
-  private atSpawn(width: number, height: number): Vec2 {
+  private atSpawn(shape: EnemyShape): Transform {
     const arena = this.arena();
     const { spawn } = arena;
+    const { minX, maxX, maxY } = shape.bounds({ x: 0, y: 0, angle: 0 });
+    const toward = inward(arena);
+    const back = toward > 0 ? -minX : maxX;
     return {
-      x: spawn.x + inward(arena) * (width / 2 + SPAWN_GAP),
-      y: spawn.y - height / 2 - SPAWN_GAP,
+      x: spawn.x + toward * (back + SPAWN_GAP),
+      y: spawn.y - maxY - SPAWN_GAP,
+      angle: 0,
     };
   }
 
   private addBody(enemy: Omit<EnemyRecord, 'body'>, motion: Motion): void {
-    const { id, party, type, width, height, mass } = enemy;
+    const { id, party, type, shape, mass } = enemy;
     const { body } = this.bodies.addEnemy(
       {
         position: { x: motion.transform.x, y: motion.transform.y },
-        outline: enemyOutline(width, height),
+        angle: motion.transform.angle,
+        shape,
         mass,
         velocity: motion.velocity,
+        angularVelocity: motion.angularVelocity,
       },
       { kind: 'enemy', type },
       { thing: 'enemy', id },

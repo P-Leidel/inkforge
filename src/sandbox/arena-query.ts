@@ -202,9 +202,15 @@ export class ArenaQuery {
     return { x, y };
   }
 
-  /** An Enemy's outline where it is now: it never rotates. */
+  /** An Enemy's outline where it is now. */
   private enemyOutline(body: BodyId, { outline }: EnemyForm): Polygon {
     return transformPoints(outline, this.physics.getTransform(body));
+  }
+
+  /** The convex parts an Enemy collides with, where they are now. */
+  private enemyParts(body: BodyId, { parts }: EnemyForm): Polygon[] {
+    const transform = this.physics.getTransform(body);
+    return parts.map((part) => transformPoints(part, transform));
   }
 
   /**
@@ -296,7 +302,7 @@ export class ArenaQuery {
         case 'terrain':
           return form.polygons;
         case 'enemy':
-          return [this.enemyOutline(body, form)];
+          return this.enemyParts(body, form);
         case 'object':
         case 'capsules':
         case 'circle':
@@ -326,7 +332,7 @@ export class ArenaQuery {
           if (what?.thing !== 'rubble') return false;
           return circleOverlapsPolygon({ centre: this.centre(body), radius: form.radius }, part);
         case 'enemy':
-          return convexPolygonsOverlap(part, this.enemyOutline(body, form));
+          return this.enemyParts(body, form).some((solid) => convexPolygonsOverlap(part, solid));
         case 'capsules':
         case 'capsule':
           // Lines and Patches aren't solid.
@@ -336,23 +342,23 @@ export class ArenaQuery {
   }
 
   /**
-   * Room for an Enemy: whether its body, a convex polygon in world
+   * Room for an Enemy: whether a convex part of its body, in world
    * coordinates, would overlap by more than `TOUCH_TOLERANCE` the Terrain,
    * the Ink Core, an Object's collider parts, Rubble or another Enemy.
    * Lines, Droplets and Patches don't count.
    */
-  blocksEnemy(outline: Polygon): boolean {
-    return this.near(polygonBounds(outline), 0).some(({ what, body, form }) => {
+  blocksEnemy(part: Polygon): boolean {
+    return this.near(polygonBounds(part), 0).some(({ what, body, form }) => {
       switch (form.kind) {
         case 'terrain':
-          return form.polygons.some((solid) => convexPolygonsOverlap(outline, solid));
+          return form.polygons.some((solid) => convexPolygonsOverlap(part, solid));
         case 'object':
-          return this.parts(body, form).some((solid) => convexPolygonsOverlap(outline, solid));
+          return this.parts(body, form).some((solid) => convexPolygonsOverlap(part, solid));
         case 'enemy':
-          return convexPolygonsOverlap(outline, this.enemyOutline(body, form));
+          return this.enemyParts(body, form).some((solid) => convexPolygonsOverlap(part, solid));
         case 'circle':
           if (what?.thing !== 'rubble') return false;
-          return circleOverlapsPolygon({ centre: this.centre(body), radius: form.radius }, outline);
+          return circleOverlapsPolygon({ centre: this.centre(body), radius: form.radius }, part);
         case 'capsules':
         case 'capsule':
           return false;
@@ -549,9 +555,10 @@ export class ArenaQuery {
         : samples.slice(1).map((b, k) => ({ a: samples[k]!, b }));
     return this.near(polygonBounds(samples), widest).some(({ body, form }) => {
       if (form.kind !== 'enemy') return false;
-      const outline = this.enemyOutline(body, form);
-      const { minX, maxX } = polygonBounds(outline);
-      return path.some(({ a, b }) => capsuleOverlapsPolygon(a, b, maxX - minX, outline, 0));
+      const { minX, maxX } = polygonBounds(this.enemyOutline(body, form));
+      return this.enemyParts(body, form).some((part) =>
+        path.some(({ a, b }) => capsuleOverlapsPolygon(a, b, maxX - minX, part, 0)),
+      );
     });
   }
 

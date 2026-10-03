@@ -10,7 +10,8 @@ import {
 import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import { SANDBOX_ARENA, sandboxTerrainWithPit, type Arena } from './arena';
-import { enemyOutline, walkingForce } from './enemies';
+import { walkingForce } from './enemies';
+import { boxOutline } from './enemy-shape';
 import type { EnemyView, PatchView, SandboxWorld } from './sandbox-world';
 import {
   drawLine,
@@ -80,7 +81,7 @@ describe('The walking force', () => {
   });
 
   it('shapes an Enemy as an upright box with bevelled feet, gentler than 45°', () => {
-    const outline = enemyOutline(40, 40);
+    const outline = boxOutline(40, 40);
     const xs = outline.map((p) => p.x);
     const ys = outline.map((p) => p.y);
     expect([Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]).toEqual([
