@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { DefenceReading } from '../game/defence-loop';
 import { fromLineLength } from '../game/ink-table';
-import { panelActions, rewardsLines } from './rewards-screen';
+import type { CampaignPlace, Offer } from '../game/session';
+import { rewardsLines } from './rewards-screen';
 
 const summary = {
   wave: 1,
@@ -73,8 +74,8 @@ describe('The rewards screen', () => {
 });
 
 describe('The rewards screen in the Campaign', () => {
-  const second = { index: 1, levels: 3, hasNext: true, hints: [] };
-  const last = { index: 2, levels: 3, hasNext: false, hints: [] };
+  const second: CampaignPlace = { index: 1, levels: 3, hints: [] };
+  const last: CampaignPlace = { index: 2, levels: 3, hints: [] };
   const cleared = reading({
     phase: 'cleared',
     wave: 3,
@@ -82,9 +83,15 @@ describe('The rewards screen in the Campaign', () => {
     next: null,
   });
   const lost = reading({ phase: 'lost', coreDestroyed: true, next: null });
+  const unlocked: Offer = { choices: ['next-level', 'level-list'], next: { name: 'The Quarry' } };
+  const lastCleared: Offer = { choices: ['level-list'], next: null };
+  const retry: Offer = { choices: ['retry-wave', 'restart-level', 'level-list'], next: null };
 
   it('gives a line for each Colour and Enemy type new in the next Wave, below it', () => {
-    const hinted = { ...second, hints: ['New: blue bounces', 'New: Heavies'] };
+    const hinted = {
+      campaign: { ...second, hints: ['New: blue bounces', 'New: Heavies'] },
+      offer: null,
+    };
 
     expect(rewardsLines(reading({ wave: 1, rewards: null }), hinted)).toEqual([
       'Next: Wave 1 of 3    4 Crawlers   2 Runners   1 Heavy',
@@ -102,25 +109,23 @@ describe('The rewards screen in the Campaign', () => {
     ]);
   });
 
-  it('offers Next Level and the Level list once a Level is cleared', () => {
-    expect(rewardsLines(cleared, second)!.at(-1)).toBe('Level 3 unlocked');
-    expect(panelActions(cleared, second)).toEqual(['next-level', 'level-list']);
+  it('names the Level a cleared one unlocked', () => {
+    expect(rewardsLines(cleared, { campaign: second, offer: unlocked })!.at(-1)).toBe(
+      'The Quarry unlocked',
+    );
   });
 
-  it('says the Campaign is cleared after the last Level, and offers the Level list', () => {
-    expect(rewardsLines(cleared, last)!.at(-1)).toBe('Campaign cleared');
-    expect(panelActions(cleared, last)).toEqual(['level-list']);
+  it('says the Campaign is cleared after the last Level', () => {
+    expect(rewardsLines(cleared, { campaign: last, offer: lastCleared })!.at(-1)).toBe(
+      'Campaign cleared',
+    );
   });
 
-  it('offers Retry Wave, Restart Level and the Level list once a Level is lost', () => {
-    expect(rewardsLines(lost, second)![0]).toBe('WAVE 2 OF 3 LOST');
-    expect(panelActions(lost, second)).toEqual(['retry-wave', 'restart-level', 'level-list']);
-  });
-
-  it('offers nothing while the Level goes on, nor outside the Campaign', () => {
-    expect(panelActions(reading(), second)).toEqual([]);
-    expect(panelActions(reading({ phase: 'wave' }), second)).toEqual([]);
-    expect(panelActions(cleared, null)).toEqual([]);
-    expect(panelActions(lost, null)).toEqual([]);
+  it('says a Level is lost', () => {
+    expect(rewardsLines(lost, { campaign: second, offer: retry })).toEqual([
+      'WAVE 2 OF 3 LOST',
+      '',
+      'The Ink Core is destroyed',
+    ]);
   });
 });
