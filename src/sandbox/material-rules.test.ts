@@ -3,7 +3,7 @@ import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { fillInk, outlineInk } from '../materials/ink';
-import { createEnemyTable, type EnemyTable } from '../materials/enemy-table';
+import { createEnemyTable, DEFAULT_ENEMY_TABLE, type EnemyTable } from '../materials/enemy-table';
 import {
   createMaterialTable,
   DEFAULT_MATERIAL_TABLE,
@@ -1783,5 +1783,136 @@ describe('Material rules: pressing wear', () => {
 
     expect(arena.done).toEqual(['break', 'burst', 'blast']);
     expect(arena.handed('break')).toEqual([red]);
+  });
+});
+
+describe('Material rules: the Push', () => {
+  /** A step's wear of a Crawler's pressing rate. */
+  const RATE = DEFAULT_ENEMY_TABLE.types.crawler.pressing * STEP;
+  const WALL = { x: -1, y: 0 }; // from what is ahead of an Enemy walking right, back towards it
+  const FLOOR = { x: 0, y: -1 };
+  let nextBody = 1000;
+
+  const enemy = (id: number, type: Walker['type'] = 'crawler', tipped = false): Walker => ({
+    id,
+    body: (100 + id) as BodyId,
+    type,
+    shape:
+      type === 'siegeWalker'
+        ? { ...siegeWalkerShape(220, 200), upright: () => !tipped }
+        : boxShape(40, 40),
+    belly: 'grey',
+    damage: 0,
+  });
+
+  /** Fake rules with `walkers`, each standing on the Terrain. */
+  function arenaOf(walkers: Walker[]) {
+    const fake = fakeRules<Breakable>(createMaterialTable());
+    for (const walker of walkers) {
+      fake.physics.add(walker.body);
+      fake.arena.enemyParties.set(walker.id, walker);
+      touch(fake.contacts, walker, { id: TERRAIN_PARTY, body: 0, target: null }, FLOOR);
+    }
+    fake.arena.walking = walkers;
+    return fake;
+  }
+
+  /** Makes `walker` touch `other`, with the normal towards `walker` as given, and `other` touch it back. */
+  function touch(
+    contacts: ReturnType<typeof fakeRules<Breakable>>['contacts'],
+    walker: Walker,
+    other: Walker | { id: number; body: number; target: Breakable | null },
+    normal: Vec2,
+  ): void {
+    const isWalker = 'type' in other;
+    const otherBody = isWalker ? other.body : ((other.body || nextBody++) as BodyId);
+    const contact = {
+      bodyA: otherBody as BodyId,
+      bodyB: walker.body,
+      shapeA: otherBody as number as ShapeId,
+      shapeB: walker.body as number as ShapeId,
+    };
+    contacts.normals.set(contact, normal);
+    const add = (body: BodyId, party: Party<Breakable>) =>
+      contacts.touches.set(body, [
+        ...(contacts.touches.get(body) ?? []),
+        { party, pairs: [contact] },
+      ]);
+    const partyOf = (w: Walker): Party<Breakable> => ({
+      id: w.id,
+      stroke: w.id,
+      body: w.body,
+      target: null,
+    });
+    add(
+      walker.body,
+      isWalker
+        ? partyOf(other)
+        : { id: other.id, stroke: other.id, body: otherBody as BodyId, target: other.target },
+    );
+    if (isWalker) add(other.body, partyOf(walker));
+  }
+
+  const pieceOf = (): Breakable => ({ kind: 'piece', colour: 'grey', damage: 0, impacts: 0 });
+
+  it('wears what the front Enemy presses faster by the push of each Enemy pressing into it, and so on', () => {
+    const [front, second, third] = [enemy(1), enemy(2), enemy(3)];
+    const { rules, contacts } = arenaOf([front, second, third]);
+    const wall = pieceOf();
+    touch(contacts, front, { id: 50, body: 0, target: wall }, WALL);
+    touch(contacts, second, front, WALL);
+    touch(contacts, third, second, WALL);
+
+    rules.walk(STEP);
+    rules.step(STEP);
+
+    expect(wall.damage / RATE).toBeCloseTo(1 + 2 * 0.2, 9);
+  });
+
+  it('leaves floor wear as it is: the Push wears only what the front Enemy presses', () => {
+    const [front, behind] = [enemy(1), enemy(2)];
+    const { rules, contacts } = arenaOf([front, behind]);
+    const [wall, floor] = [pieceOf(), pieceOf()];
+    touch(contacts, front, { id: 50, body: 0, target: wall }, WALL);
+    touch(contacts, front, { id: 51, body: 0, target: floor }, FLOOR);
+    touch(contacts, behind, front, WALL);
+
+    rules.walk(STEP);
+    rules.step(STEP);
+
+    expect(wall.damage / RATE).toBeCloseTo(1.2, 9);
+    expect(floor.damage / RATE).toBeCloseTo(DEFAULT_ENEMY_TABLE.floorWear, 9);
+  });
+
+  it('lets a Siege Walker push hard, and a Tipped one, nor what presses only into it, not at all', () => {
+    const wearWith = (tipped: boolean) => {
+      const [front, walker, crawler] = [enemy(1), enemy(2, 'siegeWalker', tipped), enemy(3)];
+      const { rules, contacts } = arenaOf([front, walker, crawler]);
+      const wall = pieceOf();
+      touch(contacts, front, { id: 50, body: 0, target: wall }, WALL);
+      touch(contacts, walker, front, WALL);
+      touch(contacts, crawler, walker, WALL);
+
+      rules.walk(STEP);
+      rules.step(STEP);
+      return wall.damage / RATE;
+    };
+
+    expect(wearWith(false)).toBeCloseTo(1 + 4 + 0.2, 9);
+    expect(wearWith(true)).toBeCloseTo(1, 9);
+  });
+
+  it('counts none that presses into the front from ahead or only touches it from behind it', () => {
+    const [front, ahead] = [enemy(1), enemy(2)];
+    const { rules, contacts } = arenaOf([front, ahead]);
+    const wall = pieceOf();
+    touch(contacts, front, { id: 50, body: 0, target: wall }, WALL);
+    // `ahead` touches the front behind itself: it walks away from it.
+    touch(contacts, ahead, front, { x: 1, y: 0 });
+
+    rules.walk(STEP);
+    rules.step(STEP);
+
+    expect(wall.damage / RATE).toBeCloseTo(1, 9);
   });
 });

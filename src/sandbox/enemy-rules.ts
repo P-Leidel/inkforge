@@ -10,6 +10,7 @@ import { drawDrop, type DropInk } from './drops';
 import type { Walker } from './enemies';
 import type { Thing, Why } from './happenings';
 import type { Numbers } from './numbers';
+import { frontWear, pushBehind } from './push';
 import type { Random } from './random';
 import {
   impactDamage,
@@ -169,6 +170,8 @@ export class EnemyRules<W extends Walker> {
   private readonly arena: EnemyArena<W>;
   /** The Enemies stalled in their walking this step, by id: they press an Object in their way. */
   private readonly stalled = new Set<number>();
+  /** The Enemies that walked this step, by id: standing or climbing, upright. Only they push. */
+  private readonly walking = new Set<number>();
 
   constructor({ materials, numbers, random, physics, contacts, arena }: EnemyRulesOptions<W>) {
     this.materials = materials;
@@ -188,11 +191,13 @@ export class EnemyRules<W extends Walker> {
    */
   walk(seconds: number): void {
     this.stalled.clear();
+    this.walking.clear();
     for (const walker of this.arena.walkers()) {
       if (!walker.shape.upright(this.physics.getTransform(walker.body))) continue;
       const climbs = this.climbs(walker);
-      if ((climbs || this.stands(walker)) && this.arena.walk(walker, seconds))
-        this.stalled.add(walker.id);
+      if (!climbs && !this.stands(walker)) continue;
+      this.walking.add(walker.id);
+      if (this.arena.walk(walker, seconds)) this.stalled.add(walker.id);
       if (climbs) this.arena.climb(walker, seconds);
     }
   }
@@ -312,6 +317,41 @@ export class EnemyRules<W extends Walker> {
     return found;
   }
 
+  /**
+   * The Enemies pressing into each Enemy now: those that walked this step
+   * (so not Tipped, nor in the air) and touch it ahead of them (`isAhead`).
+   */
+  private pressingInto(): Map<W, W[]> {
+    const into = new Map<W, W[]>();
+    for (const pusher of this.arena.walkers()) {
+      if (!this.walking.has(pusher.id)) continue;
+      const heading = this.arena.heading(pusher);
+      for (const { party, pairs } of this.contacts.touching(pusher.body)) {
+        const other = this.arena.walkerOf(party);
+        if (!other || other === pusher) continue;
+        const ahead = pairs.some((pair) => {
+          const normal = this.contacts.normal(pusher.body, pair);
+          return normal !== null && isAhead(normal, heading);
+        });
+        if (!ahead) continue;
+        const pushers = into.get(other) ?? [];
+        if (!pushers.includes(pusher)) pushers.push(pusher);
+        into.set(other, pushers);
+      }
+    }
+    return into;
+  }
+
+  /** The `push` of every Enemy in the Push behind `front` (ADR 0021). */
+  private pushOn(front: W, into: Map<W, W[]>): number[] {
+    const pushers = pushBehind(
+      front,
+      (walker) => into.get(walker) ?? [],
+      (walker) => this.walking.has(walker.id),
+    );
+    return pushers.map((pusher) => this.numbers.enemy(pusher.type).push);
+  }
+
   /** Whether an Enemy touches, now, a surface it stands on (`isFloor`). */
   private stands({ body }: W): boolean {
     for (const { pairs } of this.contacts.touching(body)) {
@@ -327,8 +367,9 @@ export class EnemyRules<W extends Walker> {
    * Pressing and floor wear over a step of `seconds`, Enemy by Enemy, oldest
    * first: every Piece or Object an Enemy presses loses durability at its
    * type's pressing rate per second, times 1 plus `stackWear` for each other
-   * Enemy in its stack, and what it stands on at `floorWear` times its
-   * pressing rate. A Piece is pressed when it is in the Enemy's way
+   * Enemy in its stack plus the `push` of each Enemy in its Push (the
+   * Enemies pressing into it, into those and so on: ADR 0021), and what it
+   * stands on at `floorWear` times its pressing rate. A Piece is pressed when it is in the Enemy's way
    * (`isPressed`); an Object only when the Enemy is also stalled, since one
    * it can shove is pushed, not pressed. A stalled Enemy also presses
    * whatever touches it and isn't its floor, from any side and however
@@ -344,9 +385,15 @@ export class EnemyRules<W extends Walker> {
     const wear: Wear<T>[] = [];
     const { floorWear, stackWear } = this.numbers;
     const stacks = this.stacks();
+    const into = this.pressingInto();
     for (const walker of this.arena.walkers()) {
-      const rate = this.numbers.enemy(walker.type).pressing * seconds;
-      const stacked = 1 + stackWear * (stacks.get(walker) ?? 0);
+      const { pressing } = this.numbers.enemy(walker.type);
+      const rate = pressing * seconds;
+      let pressingRate: number | null = null;
+      const front = () =>
+        (pressingRate ??=
+          frontWear(pressing, stackWear, stacks.get(walker) ?? 0, this.pushOn(walker, into)) *
+          seconds);
       const heading = this.arena.heading(walker);
       const stalled = this.stalled.has(walker.id);
       for (const { party, pairs } of this.contacts.touching(walker.body)) {
@@ -361,7 +408,7 @@ export class EnemyRules<W extends Walker> {
           else if (stalled || isPressed(normal, heading)) pressed = true;
         }
         if (pressed && !fixed(target) && !stalled) pressed = false;
-        const amount = pressed ? stacked * rate : floor ? floorWear * rate : 0;
+        const amount = pressed ? front() : floor ? floorWear * rate : 0;
         if (amount > 0) wear.push({ target, amount });
       }
     }

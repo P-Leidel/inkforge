@@ -190,12 +190,16 @@ An Enemy pressing a step whose top is at most 1.2 of its own heights above its f
 _Avoid_: Jumping, hopping, stacking (as a scripted move)
 
 **Pressing**:
-An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate, half again for each other Enemy in its **Stack**; what it stands on wears at the floor wear times its rate. A stalled Enemy presses whatever touches it from any side but below, however slightly, such as a corner catching its head or a Piece left hanging over it on a slope. Wear goes by time in contact, not force, and never wakes a Frozen Object.
+An Enemy pushing against a Piece or an Object it cannot move past: a surface steeper than about 45°, or an Object too heavy, Frozen or wedged to shove. Whatever an Enemy presses wears at its type's rate, half again for each other Enemy in its **Stack**, and more for each Enemy in its **Push**; what it stands on wears at the floor wear times its rate. A stalled Enemy presses whatever touches it from any side but below, however slightly, such as a corner catching its head or a Piece left hanging over it on a slope. Wear goes by time in contact, not force, and never wakes a Frozen Object.
 _Avoid_: Attacking, wall (a Line is never called a wall)
 
 **Stack**:
 Enemies standing on one another: one, those standing on it, those it stands on, and so on. A Stack presses harder: each Enemy in it wears what it presses faster for every other one.
 _Avoid_: Pile, tower, pyramid
+
+**Push**:
+The Enemies lined up behind one that presses a Piece or an Object, each pressing into the next as it walks toward the Ink Core; the one at the front need not be stalled. Each Enemy in it, counted once however many lines reach it, adds its type's push to the wear the front one deals what it presses: a Crawler a little, a Heavy more, a Siege Walker a great deal. Enemies themselves never wear, and a Tipped Siege Walker pushes nothing, nor passes on the push of those behind it.
+_Avoid_: Queue, crowd, shove (an Object an Enemy moves is shoved, not pushed in this sense), walking force (that is `walkForce`)
 
 **Siege Walker**:
 The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with physics rather than raw damage.
