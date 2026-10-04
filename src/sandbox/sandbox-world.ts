@@ -37,21 +37,18 @@ import { Patches, type LiftedPatch, type PatchView } from './patches';
 import { PreviousPoses } from './previous-poses';
 import { Random } from './random';
 import { Rubble, type RubbleView } from './rubble';
+import { freezeRestingLines, Lines, type LineView } from './lines';
 import {
-  freezeResting,
-  Strokes,
-  type AddedStroke,
+  freezeRestingObjects,
+  Objects,
   type FillOutcome,
-  type LineView,
   type MadeFill,
-  type MadeStroke,
   type ObjectStroke,
   type ObjectView,
   type RemovedFill,
-  type RemovedStroke,
-  type StrokeId,
-  type StrokeTarget,
-} from './strokes';
+} from './objects';
+import type { StrokeId, StrokeTarget } from './stroke-id';
+import { Strokes, type AddedStroke, type MadeStroke, type RemovedStroke } from './strokes';
 
 export type { BlastView } from './blasts';
 export type { Poses } from './arena-contents';
@@ -63,20 +60,16 @@ export type { Entry, Happening, Reader, Thing, Why } from './happenings';
 export type { InkCoreView } from './ink-core';
 export type { PatchView } from './patches';
 export type { RubbleView } from './rubble';
+export type { LineView, PieceView, RunView } from './lines';
 export {
   SLIDE_OUT_SPEED,
-  type AddedStroke,
   type FillOutcome,
-  type LineView,
   type MadeFill,
-  type MadeStroke,
   type ObjectView,
-  type PieceView,
-  type RunView,
   type RemovedFill,
-  type RemovedStroke,
-  type StrokeId,
-} from './strokes';
+} from './objects';
+export type { StrokeId } from './stroke-id';
+export type { AddedStroke, MadeStroke, RemovedStroke } from './strokes';
 
 /** Fixed physics step: 60 Hz. */
 export const STEP_SECONDS = 1 / 60;
@@ -121,12 +114,16 @@ export interface FillOptions {
 
 /**
  * Every kind of Arena contents, in the fixed order they are rebuilt in: the
- * Ink Core, Strokes, Rubble, Enemies, Bonds, Droplets, Patches, then
+ * Ink Core, Objects, Lines, Rubble, Enemies, Bonds, Droplets, Patches, then
  * Blasts. A kind that lives on another, or acts on it, comes after it.
+ * Objects come before Lines: the order bodies are built in shifts the
+ * engine's contact impulses a little, and this one keeps every tested scene
+ * playing out as it did when they were rebuilt in drawing order.
  */
 type Kinds = readonly [
   InkCore,
-  Strokes,
+  Objects,
+  Lines,
   Rubble,
   Enemies,
   Bonds,
@@ -180,9 +177,10 @@ export interface SandboxWorldOptions {
 /**
  * The headless sandbox: the Arena and its contents, the pause state, and
  * Reset. It has no rendering dependency, so it is the main testing seam.
- * Each kind of Arena contents is a module of its own (`InkCore`, `Strokes`,
- * `Rubble`, `Enemies`, `Bonds`, `Droplets`, `Patches`, `Blasts`); the world
- * runs them all, in a fixed order. They add and remove bodies through Arena bodies, which tells
+ * Each kind of Arena contents is a module of its own (`InkCore`, `Objects`,
+ * `Lines`, `Rubble`, `Enemies`, `Bonds`, `Droplets`, `Patches`, `Blasts`);
+ * the world runs them all, in a fixed order, and `Strokes` holds what goes
+ * for Lines and Objects alike. They add and remove bodies through Arena bodies, which tells
  * every kind what went as it goes, and the Arena query answers what is
  * where from them. The Contact ledger decides which contacts count, and the
  * Material rules read it and decide every consequence, in their own order:
@@ -214,6 +212,8 @@ export class SandboxWorld {
   /** Each body's pose as the latest step began, for drawing: the simulation never reads it. */
   private readonly poses: PreviousPoses;
   private readonly inkCoreKind: InkCore;
+  private readonly linesKind: Lines;
+  private readonly objectsKind: Objects;
   private readonly strokes: Strokes;
   private readonly rubbleKind: Rubble;
   private readonly enemiesKind: Enemies;
@@ -268,7 +268,7 @@ export class SandboxWorld {
     const { physics, materials, numbers, bodies, query, poses } = this;
     const arena = () => this.current;
     this.inkCoreKind = new InkCore(arena, this.enemyTable, bodies);
-    this.strokes = new Strokes(
+    this.linesKind = new Lines({
       physics,
       materials,
       numbers,
@@ -276,9 +276,11 @@ export class SandboxWorld {
       query,
       poses,
       say,
-      (act) => this.happenings.quietly(act),
-      (parties, act) => this.rehost(parties, act),
-    );
+      quietly: (act) => this.happenings.quietly(act),
+      rehost: (parties, act) => this.rehost(parties, act),
+    });
+    this.objectsKind = new Objects(physics, materials, numbers, bodies, query, poses, say);
+    this.strokes = new Strokes(this.linesKind, this.objectsKind, query, say);
     this.rubbleKind = new Rubble(physics, materials, bodies, poses);
     this.enemiesKind = new Enemies(
       physics,
@@ -296,7 +298,8 @@ export class SandboxWorld {
     this.blastsKind = new Blasts(query, this.materials, this.contacts);
     const kinds: Kinds = [
       this.inkCoreKind,
-      this.strokes,
+      this.objectsKind,
+      this.linesKind,
       this.rubbleKind,
       this.enemiesKind,
       this.bondsKind,
@@ -329,8 +332,8 @@ export class SandboxWorld {
         patchOf: (shape) => this.patchesKind.patchOf(shape),
         usePatch: (patch, amount) => this.patchesKind.use(patch, amount),
         removeUsedUpPatches: () => this.patchesKind.removeUsedUp(),
-        stickers: () => this.strokes.objectRecords(),
-        gluers: () => [...this.strokes.pieces(), ...this.patchesKind.gluers()],
+        stickers: () => this.objectsKind.records(),
+        gluers: () => [...this.linesKind.pieces(), ...this.patchesKind.gluers()],
         spreadBlasts: (seconds, act) => this.blastsKind.spread(seconds, act),
         belowScreen: () => this.query.below(this.arena.height),
         beyondSpawnEdge: () => this.query.beyondSpawnEdge(),
@@ -400,17 +403,17 @@ export class SandboxWorld {
     return this.physics.bodyCount;
   }
 
-  /** Every kind's views by its name, e.g. `contents.strokes.lines` and `contents.rubble`. */
+  /** Every kind's views by its name, e.g. `contents.lines` and `contents.rubble`. */
   get contents(): ArenaContents {
     return Object.fromEntries(this.kinds.map((kind) => [kind.name, kind.views])) as ArenaContents;
   }
 
   get lines(): readonly LineView[] {
-    return this.strokes.lines;
+    return this.linesKind.views;
   }
 
   get objects(): readonly ObjectView[] {
-    return this.strokes.objects;
+    return this.objectsKind.views;
   }
 
   /** Rubble, oldest first. */
@@ -565,7 +568,7 @@ export class SandboxWorld {
    * nothing, or over an Object that is already filled.
    */
   fillInkAt(point: Vec2): number | null {
-    return this.strokes.fillInkAt(point);
+    return this.objectsKind.fillInkAt(point);
   }
 
   /**
@@ -591,9 +594,9 @@ export class SandboxWorld {
    */
   groundsSamples(samples: readonly Vec2[]): boolean {
     const result = processStroke(samples, this.strokeContext({}));
-    if (result.kind === 'line') return this.strokes.grounds(result.segments, result.thickness);
+    if (result.kind === 'line') return this.linesKind.grounds(result.segments, result.thickness);
     const segments = cutPolylineOutside(samples, this.query.lineCutters(samples));
-    return segments.length > 0 && this.strokes.grounds(segments, LINE_THICKNESS);
+    return segments.length > 0 && this.linesKind.grounds(segments, LINE_THICKNESS);
   }
 
   /**
@@ -612,7 +615,7 @@ export class SandboxWorld {
    * that is added carries its Colour and the Ink it took.
    */
   fillAt(point: Vec2, colour: Colour, options: FillOptions = {}): FillOutcome {
-    return this.strokes.fillAt(point, colour, options.accept);
+    return this.objectsKind.fillAt(point, colour, options.accept);
   }
 
   /**
@@ -649,7 +652,7 @@ export class SandboxWorld {
     const rank = (thing: Erasable) => ERASE_ORDER[thing.thing];
     // What went with a host erased before it is already gone, and stays so.
     // What the erased Pieces held up falls, once they have all gone.
-    this.strokes.together(() => {
+    this.linesKind.together(() => {
       for (const thing of touched.sort((p, q) => rank(p) - rank(q))) {
         this.removeThing(thing, 'erased');
       }
@@ -664,9 +667,10 @@ export class SandboxWorld {
   private removeThing(thing: Thing, why: Why): void {
     switch (thing.thing) {
       case 'object':
-        return this.strokes.remove(thing.id, why);
+        this.objectsKind.remove(thing.id, why);
+        return;
       case 'piece':
-        return this.strokes.removePiece(thing.id, thing.index, why);
+        return this.linesKind.removePiece(thing.id, thing.index, why);
       case 'rubble':
         return this.rubbleKind.remove(thing.id, why);
       case 'enemy':
@@ -692,7 +696,7 @@ export class SandboxWorld {
    * what it took back and its Ink, or that there was no Fill to take.
    */
   removeFill(id: StrokeId): RemovedFill {
-    return this.strokes.removeFill(id);
+    return this.objectsKind.removeFill(id);
   }
 
   /**
@@ -793,7 +797,11 @@ export class SandboxWorld {
     const now = this.takeSnapshot();
     const snapshot = {
       ...now,
-      contents: { ...now.contents, strokes: freezeResting(now.contents.strokes) },
+      contents: {
+        ...now.contents,
+        lines: freezeRestingLines(now.contents.lines),
+        objects: freezeRestingObjects(now.contents.objects),
+      },
     };
     this.happenings.quietly(() => this.rebuild(snapshot));
   }

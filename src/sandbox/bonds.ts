@@ -4,7 +4,7 @@ import type { BodyId, BondAnchors, BondId, PhysicsWorld } from '../physics';
 import type { Kind, Poses } from './arena-contents';
 import type { ContactLedger, PartyId } from './contact-ledger';
 import type { PreviousPoses } from './previous-poses';
-import type { StrokeId } from './strokes';
+import type { StrokeId } from './stroke-id';
 
 /**
  * Bonds: green Objects stuck to what they touched, each held by a rigid

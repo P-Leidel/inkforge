@@ -8,8 +8,7 @@ export interface ContentCount {
 
 /**
  * How many views each list of `world.contents` holds, in kind order, found
- * by walking it: a kind's views are one list, or lists by name (the
- * Strokes' `lines` and `objects`). A kind added to the world shows here
+ * by walking it: a kind's views are one list, or lists by name. A kind added to the world shows here
  * without a change.
  */
 export function contentCounts(contents: ArenaContents): ContentCount[] {
