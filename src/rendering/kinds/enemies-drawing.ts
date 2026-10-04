@@ -1,10 +1,11 @@
 import type Phaser from 'phaser';
 import { polygonBounds } from '../../geometry/polygon';
-import { transformPoints, type Transform } from '../../geometry/transform';
+import { transformPoints } from '../../geometry/transform';
 import type { EnemyType } from '../../materials/enemy-types';
 import type { EnemyView } from '../../sandbox/sandbox-world';
 import { fillPolygon, strokePolygon } from '../draw';
 import { INK_HUES } from '../ink';
+import { drawHpBar } from '../hp-bar';
 import { PALETTE } from '../palette';
 import { drawn, type DrawnKind } from './drawn-kind';
 
@@ -16,12 +17,6 @@ const EDGE_WIDTH = 2;
 const EYE_SIZE = 4;
 const EYE_IN = 7;
 const EYE_DOWN = 9;
-/** The HP bar: its height, how far (px) above the Enemy it floats, and its border. */
-const BAR_HEIGHT = 4;
-const BAR_GAP = 6;
-const BAR_BORDER = 1;
-/** Below this share of its HP left, the bar shows red. */
-const LOW_HP = 0.3;
 /**
  * The Belly's window: its width and height as shares of the Enemy's, how far
  * below its centre it sits (a share of its height), and its rim, light
@@ -104,28 +99,11 @@ export class EnemiesDrawing implements DrawnKind {
       g.fillStyle(PALETTE.enemyEye, 1);
       g.fillRect(front - EYE_SIZE, top, EYE_SIZE, EYE_SIZE);
       g.fillRect(front - 3 * EYE_SIZE, top, EYE_SIZE, EYE_SIZE);
-      if (enemy.hp < enemy.fullHp) this.drawHpBar(g, enemy, transform);
+      if (enemy.hp < enemy.fullHp) {
+        const over = polygonBounds(transformPoints(enemy.outline, transform));
+        drawHpBar(g, over, enemy.hp, enemy.fullHp, 'small');
+      }
     }
-  }
-
-  /**
-   * A thin bar above the Enemy, as wide as its outline where it is drawn:
-   * the share of its HP left.
-   */
-  private drawHpBar(g: Phaser.GameObjects.Graphics, enemy: EnemyView, at: Transform): void {
-    const left = enemy.fullHp > 0 ? Math.min(1, Math.max(0, enemy.hp / enemy.fullHp)) : 0;
-    const { minX, minY, maxX } = polygonBounds(transformPoints(enemy.outline, at));
-    const width = maxX - minX;
-    const top = minY - BAR_GAP - BAR_HEIGHT;
-    g.fillStyle(PALETTE.hpEmpty, 1);
-    g.fillRect(
-      minX - BAR_BORDER,
-      top - BAR_BORDER,
-      width + 2 * BAR_BORDER,
-      BAR_HEIGHT + 2 * BAR_BORDER,
-    );
-    g.fillStyle(left < LOW_HP ? PALETTE.hpLow : PALETTE.hpFull, 1);
-    g.fillRect(minX, top, width * left, BAR_HEIGHT);
   }
 }
 

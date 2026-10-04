@@ -84,7 +84,7 @@ A connected stretch of a Line's Pieces, touching each other within the ground to
 _Avoid_: Part, section, split-off Line
 
 **Grounded**:
-The state of a Line, or a Run of one, that touches the Terrain, or a Grounded Line, transitively, within a small tolerance (about half a Line's thickness), so one drawn to end at the ground counts. Objects, Rubble and Enemies never ground a Line. A Frozen Line a Grounded one is drawn to touch becomes Grounded where it hangs, unless it has fallen, keeping what is stuck to it.
+The state of a Line, or a Run of one, that touches the Terrain or the Ink Core, or a Grounded Line, transitively, within a small tolerance (about half a Line's thickness), so one drawn to end at the ground counts. Objects, Rubble and Enemies never ground a Line; the Ink Core does, so a wall can be built against it. A Frozen Line a Grounded one is drawn to touch becomes Grounded where it hangs, unless it has fallen, keeping what is stuck to it.
 _Avoid_: Anchored, supported, pinned
 
 **Object**:

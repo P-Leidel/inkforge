@@ -771,3 +771,35 @@ describe('The Tutorial', () => {
     expect(alone.cards.isOpen).toBe(false);
   });
 });
+
+describe("A Session's frame", () => {
+  it('holds what the screen shows, worked out once: the Defence and Session readings, running, the tools and the Tanks', () => {
+    const game = createGame(true);
+    const session = new Session(game);
+    session.play(THREE_WAVES_DEMO);
+    game.togglePause();
+
+    const frame = session.frame();
+
+    expect(frame).toMatchObject({
+      defence: game.defence.reading,
+      session: session.reading,
+      running: true,
+      allowed: game.allowed,
+      inkCosts: true,
+      tanks: game.tanks,
+      arena: game.world.arena,
+    });
+  });
+
+  it("has the Level's Colours as the Game decides them, and every Colour while Ink costs nothing", () => {
+    const game = createGame(true);
+    const session = new Session(game);
+    session.play({ tanks: { grey: 100, blue: 0, green: 0, black: 50, red: 0 } });
+
+    expect(session.frame().colours).toEqual(['grey', 'black']);
+
+    game.inkCosts = false;
+    expect(session.frame().colours).toEqual(COLOURS);
+  });
+});

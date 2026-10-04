@@ -1,8 +1,12 @@
+import { COLOURS, type Colour } from '../materials/colour';
+import type { Arena } from '../sandbox/arena';
 import type { StressTest } from '../stress-tests/stress-test';
 import { hintLines } from './analysis';
 import type { Campaign } from './campaign';
 import { CardViewer } from './cards';
-import type { Game } from './game';
+import type { DefenceReading } from './defence-loop';
+import type { Allowed, Game } from './game';
+import type { TankReadings } from './ink-tanks';
 import { SANDBOX_LEVEL, type Level } from './level';
 
 /** Which Campaign Level is being played, and what comes after it. */
@@ -65,6 +69,30 @@ export interface SessionReading {
 }
 
 /**
+ * Everything the screen shows of the game in one frame, worked out once:
+ * the HUD, the palette and the rewards screen draw from it, and none of
+ * them holds the Game.
+ */
+export interface Frame {
+  /** Where the Defence loop is. */
+  readonly defence: DefenceReading;
+  /** What is being played. */
+  readonly session: SessionReading;
+  /** Whether physics is running. */
+  readonly running: boolean;
+  /** What is on hand now: the tools, and what refuses building. */
+  readonly allowed: Allowed;
+  /** The Colours the Level has, in palette order: every Colour while Ink costs nothing. */
+  readonly colours: readonly Colour[];
+  /** Whether Strokes and Fills cost Ink. */
+  readonly inkCosts: boolean;
+  /** Each Ink Tank as the player reads it. */
+  readonly tanks: TankReadings;
+  /** Where the Enemies come in: the HUD counts them there. */
+  readonly arena: Pick<Arena, 'spawn' | 'spawnSide' | 'width'>;
+}
+
+/**
  * What is being played, over the Game it is handed, from its start to its
  * end: the Level, for a stress test its `StressTest`, for a Campaign Level
  * which one, and its Cards. `play` loads a Level as Free play and remembers
@@ -111,6 +139,21 @@ export class Session {
   /** The stress test being played, or null. */
   get stressTest(): StressTest | null {
     return this.test;
+  }
+
+  /** Everything the screen shows of this frame, worked out once: read it after `advance`. */
+  frame(): Frame {
+    const game = this.game;
+    return {
+      defence: game.defence.reading,
+      session: this.reading,
+      running: game.isRunning,
+      allowed: game.allowed,
+      colours: COLOURS.filter((colour) => game.has(colour)),
+      inkCosts: game.inkCosts,
+      tanks: game.tanks,
+      arena: game.world.arena,
+    };
   }
 
   get reading(): SessionReading {

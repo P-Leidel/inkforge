@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import type { InkCoreView } from '../../sandbox/sandbox-world';
+import { drawHpBar } from '../hp-bar';
 import { PALETTE } from '../palette';
 import type { DrawnKind } from './drawn-kind';
 import { ENEMY_DEPTH } from './enemies-drawing';
@@ -11,12 +12,6 @@ const GLOW = [
 ] as const;
 /** Width of the Ink Core's bright edge. */
 const EDGE_WIDTH = 3;
-/** The HP bar: its height, how far (px) above the Ink Core it floats, and its border. */
-const BAR_HEIGHT = 8;
-const BAR_GAP = 12;
-const BAR_BORDER = 2;
-/** Below this share of its HP left, the bar shows red. */
-const LOW_HP = 0.3;
 
 /**
  * The Ink Core: a glowing block with its HP bar above it, redrawn every
@@ -52,16 +47,6 @@ export class InkCoreDrawing implements DrawnKind {
     g.lineStyle(EDGE_WIDTH, PALETTE.coreEdge, 1);
     g.strokeRect(minX, minY, width, maxY - minY);
 
-    const left = fullHp > 0 ? Math.min(1, Math.max(0, hp / fullHp)) : 0;
-    const top = minY - BAR_GAP - BAR_HEIGHT;
-    g.fillStyle(PALETTE.hpEmpty, 1);
-    g.fillRect(
-      minX - BAR_BORDER,
-      top - BAR_BORDER,
-      width + 2 * BAR_BORDER,
-      BAR_HEIGHT + 2 * BAR_BORDER,
-    );
-    g.fillStyle(left < LOW_HP ? PALETTE.hpLow : PALETTE.hpFull, 1);
-    g.fillRect(minX, top, width * left, BAR_HEIGHT);
+    drawHpBar(g, bounds, hp, fullHp, 'large');
   }
 }
