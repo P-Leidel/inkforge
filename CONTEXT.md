@@ -27,7 +27,7 @@ The arena's own, hand-built ground and walls. Not drawn by the player and never 
 _Avoid_: Ground (when drawn strokes are meant)
 
 **Wave**:
-The phase in which physics runs, enemies walk toward the Ink Core, and the player builds: drawing anywhere but near an Enemy, paid from the Ink Tanks. Pausing does not end it; it ends when no Enemy is left to spawn or alive. If the Ink Core is destroyed first, the Wave is lost and only R or Clear go on.
+The phase in which physics runs, enemies walk toward the Ink Core, and the player builds: drawing anywhere but near an Enemy, paid from the Ink Tanks. It sends its Enemies in the order its Level lists them, each after a gap. Pausing does not end it; it ends when no Enemy is left to spawn or alive. If the Ink Core is destroyed first, the Wave is lost and only R or Clear go on.
 _Avoid_: Round, combat phase
 
 **Intermission**:

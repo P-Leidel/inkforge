@@ -27,4 +27,4 @@ So the rules no longer read a box. Each Enemy carries an **`EnemyShape`** (`src/
 
 `boxShape(width, height)` is the Crawler's, the Runner's and the Heavy's shape, unchanged; the Siege Walker's is milestone 6's. Contacts, normals, the walking force and the time a Tipped Enemy stays down stay with the Enemy rules: the shape answers questions of geometry only. The seam was built before milestone 6 as a refactor that changes no behaviour, with the rules tested through a fake legged shape as the second adapter until the Siege Walker arrives.
 
-The **Push** (Enemies lined up behind one that presses a wall add to the wear it deals) was decided with this and is part of the [milestone 6 spec](../specs/m6-siege-walker.md); it gets its own ADR when it is built.
+The **Push** (Enemies lined up behind one that presses a wall add to the wear it deals) was decided with this and is part of the [milestone 6 spec](../specs/m6-siege-walker.md); it gets its own ADR, 0021, when it is built.

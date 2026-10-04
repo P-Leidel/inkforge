@@ -10,7 +10,7 @@
 - [ ] Tipped, and getting back up.
 - [ ] The Push.
 - [ ] The boss arena.
-- [ ] One entry per Enemy type, and Waves that name only what they send (candidate 2 of the [architecture review after #176](../adr/reports/architecture-review-2026-10-03-after-176.html)).
+- [x] **Waves that list what they send, in order, and Enemy types named once** ([ADR 0020](../adr/0020-a-wave-lists-what-it-sends-in-order.md)), candidate 2 of the [architecture review after #176](../adr/reports/architecture-review-2026-10-03-after-176.html). Built before this milestone as a refactor that changes no behaviour.
 - [ ] The exit playtest.
 
 ## Decided
@@ -31,7 +31,16 @@ Enemies lined up behind one that presses a wall push it on, and it wears the wal
 - A **Push**: the Enemies behind one that presses a Piece or an Object, each pressing into the next (an `isAhead` contact while it walks toward the Ink Core). It doesn't have to be stalled.
 - Each Enemy in it adds its type's `push` number (a new column of the enemy table) to the wear dealt at the front: `pressing × (1 + stackWear × Stack + Σ push)`. A Crawler adds a little, a Heavy more, the Siege Walker a great deal: a blocked Siege Walker behind a line of Crawlers makes the front one chew through a wall.
 - The wear lands only on what the front Enemy presses; Enemies never wear. An Enemy counts once, however many chains reach it.
-- Today's types get `push` too, tuned in the same pass as the boss. It gets its own ADR, and **Push** and **Tipped** go into `CONTEXT.md`, when it is built.
+- Today's types get `push` too, tuned in the same pass as the boss. It gets its own ADR (0021), and **Push** and **Tipped** go into `CONTEXT.md`, when it is built.
+
+### Adding the Siege Walker as a type
+
+- A row in `ENEMY_TYPES` and its name (`src/materials/enemy-types.ts`), and a row in each record by type the compiler then asks for: the enemy table, the renderer's looks and pop colours, and the sandbox's shapes. It gets a Shift+N key in the sandbox like every type.
+- The boss arena's Waves name it where it arrives, with a gap of its own before it if it needs one ([ADR 0020](../adr/0020-a-wave-lists-what-it-sends-in-order.md)). No other Level changes.
+
+### Later: Roguelite Mode
+
+Endless Waves of Enemies in random order use the same Wave format, groups of one. The Defence loop then asks a `WaveSource` for each Wave instead of holding a list (ADR 0020). Not part of this milestone.
 
 ## Still to decide
 
