@@ -135,7 +135,7 @@ Every Enemy is full of one Colour of ink, its **Belly**, shown as a window in it
 - **Release:** when it dies in the Arena (hits, falls, Blasts, wear and so on), its Belly comes out where it died exactly as a broken Object's Fill: grey pebbles, black stones, a blue or green Spill, or a red Blast. How much is set per type: a Runner a little, a Crawler more, a Heavy a lot. Falling below the screen spills nothing, and reaching the Ink Core is not a death.
 - **On top of the Drop:** the Drop into the Ink Tanks is unchanged.
 - **Chains:** a red Belly's Blast can kill nearby Enemies, whose Bellies come out in turn; the ring's travel time spaces the chain out.
-- The Campaign brings it in with the first Enemy: an Analysis line and a Tutorial card. The Analysis doesn't list the Bellies of a Wave, since they are rolled.
+- The Campaign brings it in with the first Enemy: an Analysis line. The Tutorial's Card before its second Wave shows it too. The Analysis doesn't list the Bellies of a Wave, since they are rolled.
 
 ## 10. Ink economy
 

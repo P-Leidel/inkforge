@@ -31,7 +31,7 @@ The phase in which physics runs, enemies walk toward the Ink Core, and the playe
 _Avoid_: Round, combat phase
 
 **Intermission**:
-The paused phase between two Waves, and before the first. The player can't draw (provisionally, while testing, they can). When a Wave ends, it shows that Wave's rewards (for now a summary: kills, which count the Enemies that reached the Ink Core too, the Ink Core's HP, the Ink picked up), every Ink Tank refills to its maximum and every Object at rest is Frozen again; the Arena otherwise stays as the Wave left it, damage included. Before each Wave it shows the Analysis. Space starts the next Wave.
+The paused phase between two Waves, and before the first. The player can't draw (provisionally, while testing, they can). When a Wave ends, it shows that Wave's rewards (for now a summary: kills, which count the Enemies that reached the Ink Core too, the Ink Core's HP, the Ink picked up), every Ink Tank refills to its maximum and every Object at rest is Frozen again; the Arena otherwise stays as the Wave left it, damage included. Before each Wave it shows the Analysis, and the first time, that Wave's Cards if its Level has any. Space starts the next Wave.
 _Avoid_: Build Phase, break, shop
 
 **Analysis**:
@@ -47,19 +47,23 @@ The cycle of phases the player goes through: an Intermission, then a Wave, then 
 _Avoid_: Game loop, phase machine, round
 
 **Level**:
-Everything an Arena starts with: the Arena itself (its Terrain, Spawn and Ink Core), its Waves in order, its Ink Tank maximums, and whatever is already built there, for free. Loading a Level clears the Arena and sets it up at its first Wave. What a Level leaves out, it starts with as in Free play, never as the last Level left it. The gallery demos, the stress tests and the sandbox are Levels too.
+Everything an Arena starts with: the Arena itself (its Terrain, Spawn and Ink Core), its Waves in order, its Ink Tank maximums, and whatever is already built there, for free. Loading a Level clears the Arena and sets it up at its first Wave. What a Level leaves out, it starts with as in Free play, never as the last Level left it. It may bring Cards for its Waves. The gallery demos, the stress tests, the sandbox and the Tutorial are Levels too.
 _Avoid_: Stage, map, arena description, scenario
 
 **Campaign**:
 The first mode: a fixed sequence of handmade Levels, each unlocked by clearing the one before. Ink Tanks reset to the Level's maximums every Wave; a Colour whose maximum is 0 is not in the Level, and is not shown. With Ink costs off, every Colour is in every Level, unlimited.
 
 **Free play**:
-Playing any Level outside the Campaign: the Sandbox, a Gallery demo or a stress test. The sandbox tool, sending in Enemies by hand, is on hand, and what the Level leaves out, its Ink Tank maximums or its Waves, is as tuned, never as the last Level left it.
+Playing any Level outside the Campaign and the Tutorial: the Sandbox, a Gallery demo or a stress test. The sandbox tool, sending in Enemies by hand, is on hand, and what the Level leaves out, its Ink Tank maximums or its Waves, is as tuned, never as the last Level left it.
 _Avoid_: Sandbox mode (the Sandbox is a Level)
 
 **Tutorial**:
-The cards shown the first time Campaign Level 1 starts: the goal, the controls (drawing a Line, closing an Object, Fill and Release), how to kill an Enemy, what an Enemy's Belly spills, and grey (pebble) vs black (stone). Shown once, reopened with H.
+The Level that teaches the game, opened from the title screen: its Cards come before each Wave, the goal and the controls (drawing a Line, closing an Object, Fill and Release) first, then how to kill an Enemy and what its Belly spills, then grey (pebble) vs black (stone). It locks nothing in the Campaign. H opens all its Cards anywhere.
 _Avoid_: Help screen, onboarding
+
+**Card**:
+A page of teaching text a Level shows in an Intermission, before the Wave it teaches: once each time the Level starts, not again after R.
+_Avoid_: Tutorial card, popup, tip
 
 **Roguelite Mode**:
 The mode unlocked by beating the Campaign's final boss. Ink carries over between Waves, and the player picks upgrades.
