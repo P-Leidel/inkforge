@@ -12,6 +12,7 @@ import type { Thing, Why } from './happenings';
 import type { Numbers } from './numbers';
 import { frontWear, pushBehind } from './push';
 import type { Random } from './random';
+import { rightingCap, tippedAfter } from './tipping';
 import {
   impactDamage,
   type ReleasedFill,
@@ -120,6 +121,14 @@ export interface EnemyArena<W> {
    * than its type's climb: it climbs.
    */
   climb(walker: W, seconds: number): void;
+  /**
+   * Turns a Tipped Enemy through the next step of `seconds` toward upright,
+   * never harder than `cap` times its weight times its height: it tries to
+   * get up.
+   */
+  getUp(walker: W, cap: number, seconds: number): void;
+  /** Holds a Tipped Enemy back along x through the next step of `seconds`: it lies where it fell. */
+  lie(walker: W, seconds: number): void;
   /** Which way along x an Enemy walks: +1 or -1, toward the Ink Core's side of it. */
   heading(walker: W): number;
   /**
@@ -184,22 +193,45 @@ export class EnemyRules<W extends Walker> {
 
   /**
    * Before each physics step of `seconds`: every Enemy standing upright on
-   * something it can walk on walks, oldest first. One in the air, only on
-   * what is too steep, or Tipped (not `upright`), doesn't push. Each says whether it is stalled,
+   * something it can walk on walks, oldest first. One in the air, or only on
+   * what is too steep, doesn't push. Each says whether it is stalled,
    * for pressing after the step. One that climbs (`climbs`) walks too,
-   * standing or not, and climbs as well.
+   * standing or not, and climbs as well. One that is Tipped (`tip`) doesn't
+   * walk, but tries to get up when its time comes.
    */
   walk(seconds: number): void {
     this.stalled.clear();
     this.walking.clear();
     for (const walker of this.arena.walkers()) {
-      if (!walker.shape.upright(this.physics.getTransform(walker.body))) continue;
+      if (this.tip(walker, seconds)) continue;
       const climbs = this.climbs(walker);
       if (!climbs && !this.stands(walker)) continue;
       this.walking.add(walker.id);
       if (this.arena.walk(walker, seconds)) this.stalled.add(walker.id);
       if (climbs) this.arena.climb(walker, seconds);
     }
+  }
+
+  /**
+   * Whether an Enemy is Tipped through the next step of `seconds`, and if it
+   * is trying to get up, its try (ADR 0023). One whose shape stays upright
+   * never is. One that can tip is Tipped once it tilts past the tip angle,
+   * either way, standing or not: in the air but level, it isn't. Tipped, it
+   * lies through the getting-up delay, then tries for a while at a torque
+   * whose cap grows with each failed try, until it is up again. Lying on
+   * something, it is held where it fell rather than sliding on its
+   * frictionless body.
+   */
+  private tip(walker: W, seconds: number): boolean {
+    if (walker.shape.staysUpright) return false;
+    const { angle } = this.physics.getTransform(walker.body);
+    const gettingUp = this.numbers.gettingUp;
+    walker.tipped = tippedAfter(walker.tipped, angle, seconds, this.numbers.tipAngle, gettingUp);
+    if (!walker.tipped) return false;
+    if (this.stands(walker)) this.arena.lie(walker, seconds);
+    if (walker.tipped.trying)
+      this.arena.getUp(walker, rightingCap(gettingUp, walker.tipped.tries), seconds);
+    return true;
   }
 
   /** The Enemy whose Party this is, if any. */
@@ -379,7 +411,8 @@ export class EnemyRules<W extends Walker> {
    * contact alone, and never wakes a Frozen Object. The Terrain, Rubble, the
    * Ink Core and other Enemies take no damage, so they never wear. Returns
    * the wear, in the order it is dealt; `fixed` says whether a target is a
-   * Piece rather than an Object.
+   * Piece rather than an Object. A Tipped Enemy presses nothing: what it lies
+   * on wears only by `floorWear`.
    */
   wear<T>(seconds: number, fixed: (target: T) => boolean): Wear<T>[] {
     const wear: Wear<T>[] = [];
@@ -407,7 +440,7 @@ export class EnemyRules<W extends Walker> {
           if (isFloor(normal)) floor = true;
           else if (stalled || isPressed(normal, heading)) pressed = true;
         }
-        if (pressed && !fixed(target) && !stalled) pressed = false;
+        if (pressed && ((!fixed(target) && !stalled) || walker.tipped)) pressed = false;
         const amount = pressed ? front() : floor ? floorWear * rate : 0;
         if (amount > 0) wear.push({ target, amount });
       }

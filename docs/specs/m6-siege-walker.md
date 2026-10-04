@@ -1,6 +1,6 @@
 # Spec: Milestone 6, the Siege Walker
 
-**In progress**: the Siege Walker is a type that walks, presses and dies, and Enemies queued behind one at a wall push it on, and the boss Level ends the Campaign; Tipped and its gait are to come. Roadmap step 6 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 5 spec](m5-defence-loop.md), whose exit playtest ([#138](https://github.com/P-Leidel/inkforge/issues/138)) is still under way; this milestone assumes it passes.
+**In progress**: the Siege Walker is a type that walks, presses, dies, tips and gets back up, and Enemies queued behind one at a wall push it on, and the boss Level ends the Campaign; its gait is to come. Roadmap step 6 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 5 spec](m5-defence-loop.md), whose exit playtest ([#138](https://github.com/P-Leidel/inkforge/issues/138)) is still under way; this milestone assumes it passes.
 
 ## Progress
 
@@ -12,7 +12,7 @@
 - [x] **One reading a frame, and one HP bar**, candidate 7 of the same review: the Session builds a `Frame` once a frame and the HUD, the palette and the rewards screen draw from it; every HP bar, the boss's included, is drawn by `drawHpBar` (`src/rendering/hp-bar.ts`), `small` or `large`. Built before this milestone as a refactor that changes no behaviour.
 - [x] 0. Rename the walking-force cap `push` to `walkForce` ([#184](https://github.com/P-Leidel/inkforge/issues/184)).
 - [x] 1. The Siege Walker as a type ([#185](https://github.com/P-Leidel/inkforge/issues/185)).
-- [ ] 2. Tipped, and getting back up ([#186](https://github.com/P-Leidel/inkforge/issues/186)).
+- [x] 2. Tipped, and getting back up ([#186](https://github.com/P-Leidel/inkforge/issues/186)).
 - [x] 3. The Push ([#187](https://github.com/P-Leidel/inkforge/issues/187)).
 - [ ] 4. The gait and the boss bar ([#188](https://github.com/P-Leidel/inkforge/issues/188)).
 - [x] 5. The boss Level ([#189](https://github.com/P-Leidel/inkforge/issues/189)).

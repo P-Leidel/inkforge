@@ -244,6 +244,8 @@ declare module 'phaser-box2d/dist/PhaserBox2D.js' {
   ): void;
   /** Applied through the next step; the step clears it. */
   export function b2Body_ApplyForceToCenter(bodyId: b2BodyId, force: b2Vec2, wake: boolean): void;
+  /** Applied through the next step; the step clears it. */
+  export function b2Body_ApplyTorque(bodyId: b2BodyId, torque: number, wake: boolean): void;
   export function b2Body_ApplyAngularImpulse(
     bodyId: b2BodyId,
     impulse: number,

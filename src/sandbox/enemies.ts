@@ -16,6 +16,7 @@ import type { PartyId } from './contact-ledger';
 import type { Why } from './happenings';
 import type { Numbers } from './numbers';
 import type { PreviousPoses } from './previous-poses';
+import { rightingTorque, type Tipped } from './tipping';
 
 /**
  * Enemies: bodies that walk toward the Ink Core, pushed by a capped force
@@ -41,6 +42,13 @@ const SHAPES: Readonly<Record<EnemyType, (numbers: EnemyMaterial) => EnemyShape>
 };
 
 /**
+ * The most (in its own weights) what a Tipped Enemy lies on holds it back
+ * along x: it walks on frictionless feet (ADR 0010), but lying it stays
+ * about where it fell rather than sliding on.
+ */
+const LYING_GRIP = 1;
+
+/**
  * An Enemy walking toward the Ink Core slower than this share of its
  * walking speed isn't getting past what is in its way: it presses it.
  */
@@ -63,6 +71,9 @@ export function walkingForce(
   return Math.max(-most, Math.min(most, force));
 }
 
+/** Where an Enemy sent in for a test or demo appears: its centre, and how far it is turned (radians). */
+export type SpawnAt = Vec2 & { readonly angle?: number };
+
 /** An Enemy as the Material rules see it. */
 export interface Walker {
   readonly id: number;
@@ -74,6 +85,8 @@ export interface Walker {
   readonly belly: Colour;
   /** Damage taken so far: it dies once this reaches its type's HP. */
   damage: number;
+  /** How far it is from getting back up while it is Tipped; null while it isn't. */
+  tipped: Tipped | null;
 }
 
 export interface EnemyView extends Poses {
@@ -92,6 +105,8 @@ export interface EnemyView extends Poses {
   readonly hp: number;
   /** HP when whole, from the enemy table as it is now. */
   readonly fullHp: number;
+  /** Whether it is Tipped: it lies helpless until it gets back up. */
+  readonly tipped: boolean;
 }
 
 /** An Enemy's record. */
@@ -120,7 +135,12 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
   constructor(
     private readonly physics: Pick<
       PhysicsWorld,
-      'getTransform' | 'getVelocity' | 'getAngularVelocity' | 'applyForce'
+      | 'getTransform'
+      | 'getVelocity'
+      | 'getAngularVelocity'
+      | 'getInertia'
+      | 'applyForce'
+      | 'applyTorque'
     >,
     private readonly materials: MaterialTable,
     private readonly numbers: Numbers,
@@ -137,7 +157,7 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     return this.enemies.map((enemy) => this.viewOf(enemy));
   }
 
-  private viewOf({ id, type, shape, belly, body, damage }: EnemyRecord): EnemyView {
+  private viewOf({ id, type, shape, belly, body, damage, tipped }: EnemyRecord): EnemyView {
     const fullHp = this.numbers.enemy(type).hp;
     const { minX, minY, maxX, maxY } = polygonBounds(shape.outline);
     return {
@@ -151,6 +171,7 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
       velocity: this.physics.getVelocity(body),
       hp: Math.max(0, fullHp - damage),
       fullHp,
+      tipped: tipped !== null,
     };
   }
 
@@ -203,10 +224,11 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
   /**
    * Sends in an Enemy of `type`, carrying `belly`, from the Spawn: it stands at the lane's far
    * end, its back to the wall, or on top of what already stands there. Or,
-   * given `at`, it appears with its centre there, whatever is in the way
-   * (for tests and demos). Returns its id.
+   * given `at`, it appears with its centre there, turned by its `angle`
+   * (radians) if it can turn, whatever is in the way (for tests and demos).
+   * Returns its id.
    */
-  spawn(type: EnemyType, belly: Colour, at?: Vec2): number {
+  spawn(type: EnemyType, belly: Colour, at?: SpawnAt): number {
     const numbers = this.numbers.enemy(type);
     const shape = this.shapeOf(type);
     const standing = this.atSpawn(shape);
@@ -220,9 +242,9 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     const id = this.nextId++;
     const mass = enemyMass(numbers, shape.area, this.materials);
     const party = this.bodies.newId();
-    const enemy = { id, party, type, shape, belly, mass, damage: 0 };
+    const enemy = { id, party, type, shape, belly, mass, damage: 0, tipped: null };
     this.addBody(enemy, {
-      transform: { x, y, angle: 0 },
+      transform: { x, y, angle: shape.staysUpright ? 0 : (at?.angle ?? 0) },
       velocity: { x: 0, y: 0 },
       angularVelocity: 0,
     });
@@ -302,6 +324,33 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     const wanted = enemy.mass * ((walkingSpeed - rising) / seconds + this.gravity);
     const force = Math.max(0, Math.min(most, wanted));
     this.physics.applyForce(enemy.body, { x: 0, y: -force });
+  }
+
+  /**
+   * Turns a Tipped Enemy through the next step toward upright, the short way
+   * round, never harder than `cap` times its weight times its height: its
+   * try at getting up (ADR 0023). The Enemy rules call it for each one
+   * trying.
+   */
+  getUp(enemy: EnemyRecord, cap: number, seconds: number): void {
+    const { height } = this.numbers.enemy(enemy.type);
+    const { angle } = this.physics.getTransform(enemy.body);
+    const spin = this.physics.getAngularVelocity(enemy.body);
+    const inertia = this.physics.getInertia(enemy.body);
+    const most = cap * enemy.mass * this.gravity * height;
+    this.physics.applyTorque(enemy.body, rightingTorque(angle, spin, inertia, most, seconds));
+  }
+
+  /**
+   * Holds a Tipped Enemy back along x through the next step, never harder
+   * than `LYING_GRIP` times its weight: it lies where it fell. The Enemy
+   * rules call it for each Tipped one touching what it lies on.
+   */
+  lie(enemy: EnemyRecord, seconds: number): void {
+    const velocity = this.physics.getVelocity(enemy.body).x;
+    const most = LYING_GRIP * enemy.mass * this.gravity;
+    const force = walkingForce(velocity, 0, most, enemy.mass, seconds);
+    this.physics.applyForce(enemy.body, { x: force, y: 0 });
   }
 
   /** Removes Enemy `id` at once, for `why`. */

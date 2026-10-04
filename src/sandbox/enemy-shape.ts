@@ -15,14 +15,12 @@ export interface EnemyShape {
   readonly outline: Polygon;
   /** The area (px²) it weighs, as ink of its type's density. */
   readonly area: number;
-  /** Whether the engine keeps it upright: it never turns. */
+  /** Whether the engine keeps it upright: it never turns, so it is never Tipped. */
   readonly staysUpright: boolean;
   /** What it covers posed at `at`, in world coordinates. */
   bounds(at: Transform): Bounds;
   /** Where its feet are posed at `at`: the lowest y of its parts. */
   feet(at: Transform): number;
-  /** Whether it stands upright posed at `at`: it walks only then; otherwise it is Tipped. */
-  upright(at: Transform): boolean;
   /** How it climbs and is climbed, if it does: none for a shape that never climbs. */
   readonly climb?: ClimbShape;
 }
@@ -104,7 +102,6 @@ function newBoxShape(width: number, height: number): EnemyShape {
     staysUpright: true,
     bounds: (at) => polygonBounds(transformPoints(outline, at)),
     feet: (at) => at.y + height / 2,
-    upright: () => true,
     climb: {
       height,
       top: (at) => at.y - height / 2,
@@ -142,23 +139,19 @@ const LEGS = 4;
  */
 const FOOT_RUN = 0.35;
 const FOOT_RISE = 12;
-/** How far (radians) it tilts, either way, before it is Tipped. */
-export const TIP_ANGLE = (40 * Math.PI) / 180;
-
-/** `angle` (radians) brought into -π to π. */
-function wrapped(angle: number): number {
-  return angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI));
-}
+/** How far (px) above the ground its middle legs stop colliding: higher than the top of a slope rises under them. */
+const MIDDLE_LIFT = 20;
 
 /** Siege Walker shapes made so far, by size. */
 const walkers = new Map<string, EnemyShape>();
 
 /**
  * The Siege Walker's shape, `width` × `height` all told: a hull on four
- * legs, each a convex part of one rigid body that can tip (ADR 0019),
- * about the centre of its box. Its weight is high, on a footprint narrower
- * than it is tall. It is upright while it is tilted less than `TIP_ANGLE`
- * either way. It never climbs, and is never a step.
+ * legs, one rigid body that can tip (ADR 0019), about the centre of its box.
+ * The hull and the legs are its convex parts, but the middle legs collide
+ * only down to `MIDDLE_LIFT` above the ground (ADR 0023). Its weight is high, on a footprint narrower
+ * than it is tall, so it can be tipped. It never climbs, and is never a
+ * step.
  */
 export function siegeWalkerShape(width: number, height: number): EnemyShape {
   const key = `${width}x${height}`;
@@ -206,15 +199,24 @@ function newSiegeWalkerShape(width: number, height: number): EnemyShape {
     ...[...legs].reverse().flatMap((leg) => [1, 2, 3, 4, 5, 0].map((k) => leg[k]!)),
     ...hull.slice(4),
   ];
-  const parts = [hull, ...legs];
+  // Its middle legs collide only down to a little above the ground: reaching
+  // it, they would catch the corner at the top of a slope as a bar under
+  // them and trip it (ADR 0023). It still weighs them whole.
+  const lift = (MIDDLE_LIFT * height) / WALKER_HEIGHT;
+  const lifted = (leg: Polygon): Polygon => [
+    leg[0]!,
+    leg[1]!,
+    { x: leg[1]!.x, y: h - lift },
+    { x: leg[0]!.x, y: h - lift },
+  ];
+  const parts = [hull, ...legs.map((leg, k) => (k === 0 || k === LEGS - 1 ? leg : lifted(leg)))];
   const posed = (at: Transform) => parts.flatMap((part) => transformPoints(part, at));
   return {
     parts,
     outline,
-    area: parts.reduce((sum, part) => sum + polygonArea(part), 0),
+    area: [hull, ...legs].reduce((sum, part) => sum + polygonArea(part), 0),
     staysUpright: false,
     bounds: (at) => polygonBounds(posed(at)),
     feet: (at) => polygonBounds(posed(at)).maxY,
-    upright: (at) => Math.abs(wrapped(at.angle)) < TIP_ANGLE,
   };
 }

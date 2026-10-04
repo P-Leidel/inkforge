@@ -19,11 +19,12 @@ So the rules no longer read a box. Each Enemy carries an **`EnemyShape`** (`src/
 | Asks | Who asks |
 |---|---|
 | `parts`, `outline` | The Arena query (`Form 'enemy'`, posed with the body's full transform, rotation included), the drawing, the pop |
-| `staysUpright` | Arena bodies, which keep a box from turning |
+| `staysUpright` | Arena bodies, which keep a box from turning; the Enemy rules, for whether it can be Tipped |
 | `bounds(at)` | Spawning, the HP bar, below the screen |
 | `feet(at)` | Standing and climbing |
-| `upright(at)` | Walking: a Tipped Enemy doesn't walk |
 | `climb` (`height`, `top(at)`, `roomAhead(at, heading, feet)`) | Climbing, only for a shape that climbs |
+
+The shape first also answered `upright(at)`; [ADR 0023](0023-tipped-gets-up-with-growing-torque.md) moved the tip angle into the enemy table, so the Enemy rules decide Tipped from the body's angle.
 
 `boxShape(width, height)` is the Crawler's, the Runner's and the Heavy's shape, unchanged; the Siege Walker's is milestone 6's. Contacts, normals, the walking force and the time a Tipped Enemy stays down stay with the Enemy rules: the shape answers questions of geometry only. The seam was built before milestone 6 as a refactor that changes no behaviour, with the rules tested through a fake legged shape as the second adapter until the Siege Walker arrives.
 

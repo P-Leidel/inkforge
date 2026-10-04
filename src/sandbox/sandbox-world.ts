@@ -27,7 +27,7 @@ import { Blasts, type BlastView } from './blasts';
 import { Bonds, type BondView } from './bonds';
 import { ContactLedger, type PartyId, type SavedContacts } from './contact-ledger';
 import { Droplets, type DropletView } from './droplets';
-import { Enemies, type EnemyRecord, type EnemyView } from './enemies';
+import { Enemies, type EnemyRecord, type EnemyView, type SpawnAt } from './enemies';
 import { Happenings, type Thing, type Why } from './happenings';
 import { InkCore, type InkCoreView } from './ink-core';
 import { EnemyRules, type Killed } from './enemy-rules';
@@ -349,6 +349,8 @@ export class SandboxWorld {
           walkers: () => this.enemiesKind.walkers(),
           walk: (enemy, seconds) => this.enemiesKind.walk(enemy, seconds),
           climb: (enemy, seconds) => this.enemiesKind.climb(enemy, seconds),
+          getUp: (enemy, cap, seconds) => this.enemiesKind.getUp(enemy, cap, seconds),
+          lie: (enemy, seconds) => this.enemiesKind.lie(enemy, seconds),
           heading: (enemy) => this.enemiesKind.heading(enemy),
           blocksClimb: (room) => this.query.blocksClimb(room),
           walkerOf: (party) => this.enemiesKind.byParty(party.id),
@@ -454,11 +456,11 @@ export class SandboxWorld {
   /**
    * Sends in an Enemy of `type` from the Spawn, out of view,
    * paused or running. Given `at`, it appears with its centre there instead,
-   * for tests and demos. Its Belly is rolled from the generator by its
+   * turned by its `angle` if it can turn, for tests and demos. Its Belly is rolled from the generator by its
    * type's weights, among the Colours the Level has (`bellyColours`), or
    * is `belly`, if given. Returns its id.
    */
-  spawn(type: EnemyType, at?: Vec2, belly?: Colour): number {
+  spawn(type: EnemyType, at?: SpawnAt, belly?: Colour): number {
     const colour =
       belly ?? rollBelly(this.numbers.enemy(type).belly.weights, this.hasColour, this.random);
     return this.enemiesKind.spawn(type, colour, at);

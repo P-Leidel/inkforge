@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { DEFAULT_ENEMY_TABLE, editEnemies } from '../materials/enemy-table';
@@ -6,6 +7,7 @@ import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox } from '../stroke/pointer-paths';
 import { ARENA_HEIGHT, SANDBOX_ARENA, sandboxTerrainWithPit, type Arena } from './arena';
 import type { EnemyView, SandboxWorld } from './sandbox-world';
+import { TRY_SECONDS } from './tipping';
 import {
   drawLine,
   drawObject,
@@ -19,8 +21,9 @@ import {
 
 /**
  * The Siege Walker in the headless Sandbox world: each of its numbers'
- * reference cases (the milestone 6 spec's **Numbers**), and the usual rules
- * at the Ink Core and below the screen. Tipped and getting up are to come.
+ * reference cases (the milestone 6 spec's **Numbers**), the usual rules at
+ * the Ink Core and below the screen, and Tipped and getting back up
+ * (ADR 0023).
  */
 
 const createWorld = sandboxWorlds();
@@ -29,6 +32,23 @@ const GROUND_Y = SANDBOX_ARENA.spawn.y;
 
 /** Where a Siege Walker stands on the ground at `x`, its centre half its height up. */
 const standingAt = (x: number): Vec2 => ({ x, y: GROUND_Y - WALKER.height / 2 - 0.5 });
+
+/** An Arena like the sandbox's with `polygons` added to its Terrain. */
+const withTerrain = (...polygons: Polygon[]): Arena => ({
+  ...SANDBOX_ARENA,
+  terrain: [...SANDBOX_ARENA.terrain, ...polygons],
+});
+
+/** A Terrain box from `left` to `right`, `height` px high off the ground. */
+const bar = (left: number, right: number, height: number): Polygon => [
+  { x: left, y: GROUND_Y - height },
+  { x: right, y: GROUND_Y - height },
+  { x: right, y: GROUND_Y },
+  { x: left, y: GROUND_Y },
+];
+
+/** Where a Siege Walker lies on its side on the ground at `x`, its front down. */
+const lyingAt = (x: number) => ({ x, y: GROUND_Y - WALKER.width / 2 - 1, angle: Math.PI / 2 });
 
 /** The one Enemy in the Arena. */
 function onlyWalker(world: SandboxWorld): EnemyView {
@@ -261,5 +281,141 @@ describe('The Siege Walker', () => {
     expect(entriesOf(entries, 'dropped')).toHaveLength(1);
     expect(world.rubble.length).toBeGreaterThan(0);
     expect(world.rubble.every(({ colour }) => colour === 'black')).toBe(true);
+  });
+
+  describe('Tipped, and getting back up', () => {
+    const { gettingUpDelay } = DEFAULT_ENEMY_TABLE;
+    /** How long (s) it stays Tipped once it is, at most `seconds`; Infinity if it never gets up. */
+    const timeDown = (world: SandboxWorld, seconds: number): number => {
+      expect(stepUntil(world, seconds, () => onlyWalker(world).tipped)).toBe(true);
+      const from = world.time;
+      return stepUntil(world, seconds, () => !onlyWalker(world).tipped)
+        ? world.time - from
+        : Infinity;
+    };
+
+    it('tips, unhurt, walking into a shin-high bar under its front legs, its hull pushed on over it', () => {
+      const world = createWorld({ arena: withTerrain(bar(600, 640, 30)) });
+      world.spawn('siegeWalker', standingAt(450));
+
+      const tipped = stepUntil(world, 10, () => onlyWalker(world).tipped);
+
+      expect(tipped).toBe(true);
+      runFor(world, 1);
+      const walker = onlyWalker(world);
+      expect(walker.tipped).toBe(true);
+      expect(Math.abs(walker.transform.angle)).toBeGreaterThan(
+        (DEFAULT_ENEMY_TABLE.tipAngle * Math.PI) / 180,
+      );
+      expect(walker.hp).toBe(WALKER.hp);
+    });
+
+    it('walks over a 10° bump without tipping', () => {
+      const rise = 100 * Math.tan((10 * Math.PI) / 180);
+      const bump = [
+        { x: 600, y: GROUND_Y },
+        { x: 700, y: GROUND_Y - rise },
+        { x: 800, y: GROUND_Y },
+      ];
+      const world = createWorld({ arena: withTerrain(bump) });
+      world.spawn('siegeWalker', standingAt(450));
+
+      const tipped = stepUntil(world, 15, () => onlyWalker(world).tipped);
+
+      expect(tipped).toBe(false);
+      expect(onlyWalker(world).transform.x).toBeGreaterThan(850);
+    });
+
+    it('tips walking off a steep drop, and the fall hurts it', () => {
+      const top = GROUND_Y - 250;
+      const crest = [
+        { x: 200, y: top },
+        { x: 700, y: top },
+        { x: 700 + 250 / Math.tan(Math.PI / 3), y: GROUND_Y },
+        { x: 200, y: GROUND_Y },
+      ];
+      const world = createWorld({ arena: withTerrain(crest) });
+      world.spawn('siegeWalker', { x: 500, y: top - WALKER.height / 2 - 0.5 });
+
+      expect(stepUntil(world, 15, () => onlyWalker(world).tipped)).toBe(true);
+      runFor(world, gettingUpDelay);
+
+      expect(onlyWalker(world).hp).toBeLessThan(WALKER.hp);
+    });
+
+    it('lying on flat ground, lies through the delay, gets up and walks on, either side or upside down', () => {
+      for (const angle of [Math.PI / 2, -Math.PI / 2, Math.PI]) {
+        const world = createWorld();
+        world.spawn('siegeWalker', { ...lyingAt(500), angle });
+
+        const down = timeDown(world, 30);
+
+        expect(down, `${angle}`).toBeGreaterThan(gettingUpDelay);
+        expect(down, `${angle}`).toBeLessThan(gettingUpDelay + TRY_SECONDS);
+        runFor(world, 4);
+        const walker = onlyWalker(world);
+        expect(walker.tipped).toBe(false);
+        expect(walker.transform.angle).toBeCloseTo(0, 1);
+        expect(walker.velocity.x).toBeCloseTo(WALKER.walkingSpeed, 0);
+      }
+    });
+
+    it('with a black box resting on it, gets up later, but gets up', () => {
+      // The box rests on its side by a wall, so it can't just slide off the walker as it turns.
+      const lieDown = (box: boolean) => {
+        const world = createWorld({ arena: withTerrain(bar(604, 664, 420)) });
+        world.spawn('siegeWalker', lyingAt(500));
+        runFor(world, 0.5);
+        if (box) {
+          const top = GROUND_Y - WALKER.width - 1;
+          const outline = drawObject(world, dragBox(502, top - 106, 100, 100), 'black');
+          world.fillAt({ x: 552, y: top - 56 }, 'black');
+          world.release(outline);
+        }
+        return timeDown(world, 60);
+      };
+
+      const bare = lieDown(false);
+      const loaded = lieDown(true);
+
+      expect(bare).toBeLessThan(gettingUpDelay + TRY_SECONDS);
+      expect(loaded).toBeGreaterThan(bare + 0.5);
+      expect(loaded).toBeLessThan(60);
+    });
+
+    it('in the air but level is not Tipped', () => {
+      const world = createWorld();
+      world.spawn('siegeWalker', { x: 500, y: GROUND_Y - 400 });
+
+      const tipped = stepUntil(world, 3, () => onlyWalker(world).tipped);
+
+      expect(tipped).toBe(false);
+    });
+
+    it('presses nothing while Tipped', () => {
+      const world = createWorld();
+      const wall = drawLine(
+        world,
+        [
+          { x: 600, y: GROUND_Y - 4 },
+          { x: 600, y: GROUND_Y - 250 },
+        ],
+        'black',
+      );
+      // Lying on its side, its front against the Line.
+      world.spawn('siegeWalker', {
+        x: 600 - WALKER.height / 2 - 6,
+        y: GROUND_Y - WALKER.width / 2 - 1,
+        angle: -Math.PI / 2,
+      });
+      const durability = () =>
+        Math.min(...piecesOf(world.lines.find(({ id }) => id === wall)!).map((p) => p.durability));
+      const full = durability();
+
+      runFor(world, gettingUpDelay - 0.5);
+
+      expect(onlyWalker(world).tipped).toBe(true);
+      expect(durability()).toBe(full);
+    });
   });
 });
