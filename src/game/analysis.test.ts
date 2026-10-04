@@ -74,6 +74,7 @@ describe("The Campaign's Levels", () => {
       { l: 1, w: 0, newcomers: ['blue', 'green'] },
       { l: 1, w: 2, newcomers: ['heavy'] },
       { l: 2, w: 0, newcomers: ['red'] },
+      { l: 3, w: 2, newcomers: ['siegeWalker'] },
     ]);
   });
 

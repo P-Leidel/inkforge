@@ -15,7 +15,7 @@
 - [ ] 2. Tipped, and getting back up ([#186](https://github.com/P-Leidel/inkforge/issues/186)).
 - [ ] 3. The Push ([#187](https://github.com/P-Leidel/inkforge/issues/187)).
 - [ ] 4. The gait and the boss bar ([#188](https://github.com/P-Leidel/inkforge/issues/188)).
-- [ ] 5. The boss Level ([#189](https://github.com/P-Leidel/inkforge/issues/189)).
+- [x] 5. The boss Level ([#189](https://github.com/P-Leidel/inkforge/issues/189)).
 - [ ] 6. The exit playtest: the go/no-go ([#190](https://github.com/P-Leidel/inkforge/issues/190)).
 
 ## Problem Statement
