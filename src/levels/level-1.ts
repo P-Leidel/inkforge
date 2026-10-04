@@ -72,9 +72,21 @@ export const LEVEL_1: Level = {
   arena: ARENA,
   tanks: { grey, blue: 0, green: 0, black, red: 0 },
   waves: [
-    { counts: { crawler: 4, runner: 0, heavy: 0 }, gap: 2.5 },
-    { counts: { crawler: 4, runner: 2, heavy: 0 }, gap: 2 },
-    { counts: { crawler: 3, runner: 3, heavy: 0 }, gap: 1.5 },
+    { sends: [{ type: 'crawler', count: 4 }], gap: 2.5 },
+    {
+      sends: [
+        { type: 'crawler', count: 4 },
+        { type: 'runner', count: 2 },
+      ],
+      gap: 2,
+    },
+    {
+      sends: [
+        { type: 'crawler', count: 3 },
+        { type: 'runner', count: 3 },
+      ],
+      gap: 1.5,
+    },
   ],
   hints: {
     grey: 'New: grey is cheap. Draw walls and ramps, or drop rocks of it',

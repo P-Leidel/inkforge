@@ -1,7 +1,7 @@
 import type Phaser from 'phaser';
 import { polygonBounds } from '../../geometry/polygon';
 import { transformPoints, type Transform } from '../../geometry/transform';
-import type { EnemyType } from '../../materials/enemy-table';
+import type { EnemyType } from '../../materials/enemy-types';
 import type { EnemyView } from '../../sandbox/sandbox-world';
 import { fillPolygon, strokePolygon } from '../draw';
 import { INK_HUES } from '../ink';

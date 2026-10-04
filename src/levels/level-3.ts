@@ -99,11 +99,46 @@ export const LEVEL_3: Level = {
   arena: ARENA,
   tanks: DEFAULT_INK_TABLE.tanks,
   waves: [
-    { counts: { crawler: 3, runner: 2, heavy: 1 }, gap: 2 },
-    { counts: { crawler: 4, runner: 2, heavy: 2 }, gap: 1.75 },
-    { counts: { crawler: 5, runner: 3, heavy: 2 }, gap: 1.5 },
-    { counts: { crawler: 4, runner: 3, heavy: 3 }, gap: 1.5 },
-    { counts: { crawler: 5, runner: 4, heavy: 3 }, gap: 1.25 },
+    {
+      sends: [
+        { type: 'crawler', count: 3 },
+        { type: 'runner', count: 2 },
+        { type: 'heavy', count: 1 },
+      ],
+      gap: 2,
+    },
+    {
+      sends: [
+        { type: 'crawler', count: 4 },
+        { type: 'runner', count: 2 },
+        { type: 'heavy', count: 2 },
+      ],
+      gap: 1.75,
+    },
+    {
+      sends: [
+        { type: 'crawler', count: 5 },
+        { type: 'runner', count: 3 },
+        { type: 'heavy', count: 2 },
+      ],
+      gap: 1.5,
+    },
+    {
+      sends: [
+        { type: 'crawler', count: 4 },
+        { type: 'runner', count: 3 },
+        { type: 'heavy', count: 3 },
+      ],
+      gap: 1.5,
+    },
+    {
+      sends: [
+        { type: 'crawler', count: 5 },
+        { type: 'runner', count: 4 },
+        { type: 'heavy', count: 3 },
+      ],
+      gap: 1.25,
+    },
   ],
   // Red is the one Colour new to the Campaign here, and no Enemy type is.
   hints: {

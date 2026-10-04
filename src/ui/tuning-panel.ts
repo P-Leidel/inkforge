@@ -3,12 +3,8 @@ import type { Game } from '../game/game';
 import { DEFAULT_INK_TABLE } from '../game/ink-table';
 import { DEFAULT_WAVE_TABLE } from '../game/wave-table';
 import { COLOURS } from '../materials/colour';
-import {
-  DEFAULT_ENEMY_TABLE,
-  editEnemies,
-  ENEMY_TYPES,
-  type EnemyTable,
-} from '../materials/enemy-table';
+import { DEFAULT_ENEMY_TABLE, editEnemies, type EnemyTable } from '../materials/enemy-table';
+import { ENEMY_TYPES } from '../materials/enemy-types';
 import {
   DEFAULT_MATERIAL_TABLE,
   editMaterials,
@@ -63,9 +59,10 @@ const RULE_SWITCHES: readonly { readonly rule: keyof Rules; readonly label: stri
  * a Level with its own Tanks are this play's copy of them (lost on Clear or
  * the next load; Copy as JSON copies them), and otherwise Free play's. Its
  * Wave section holds the **Waves** switch in force (in a Level with its own
- * Waves, this play's) and the current Wave's table: a count per
- * Enemy type and the gap between arrivals; `draw` shows another Wave's once
- * the Level moves on to it. Its Rules section holds the provisional rules
+ * Waves, this play's) and the current Wave's table: a row for each group
+ * it sends, in order, with its count and its own gap (empty: the Wave's),
+ * then the Wave's gap; `draw` shows another Wave's once the Level moves on
+ * to it. Groups are added, removed or reordered in the Level's code. Its Rules section holds the provisional rules
  * switches, all on by default. Below them is every number of the material
  * table, and then of the enemy table. All are editable while the sandbox
  * runs. "Copy as JSON" copies the four tables to paste back over their
@@ -86,6 +83,8 @@ export class TuningPanel {
   private readonly enemies: Tuned;
   private readonly wave: Tuned;
   private readonly inputs: { tuned: Tuned; path: string[]; input: HTMLInputElement }[] = [];
+  /** The current Wave's groups, a row each: made again whenever the tables are shown again. */
+  private readonly groups = element('table', 'tuning-grid');
   /** The switches' checkboxes, each with how to read its switch. */
   private readonly switches: { box: HTMLInputElement; read: () => boolean }[] = [];
   /** The tables shown last, to show them again once one is replaced: see `draw`. */
@@ -162,8 +161,8 @@ export class TuningPanel {
         () => this.game.waves,
         (on) => (this.game.waves = on),
       ),
-      this.grid(this.wave, ENEMY_COLUMNS, [{ label: 'count', path: (type) => ['counts', type] }]),
-      this.sharedValues(this.wave, (path) => path[0] !== 'counts'),
+      this.groups,
+      this.sharedValues(this.wave, (path) => path[0] !== 'sends'),
       element('div', 'tuning-section', 'Rules (provisional)'),
       ...RULE_SWITCHES.map(({ rule, label }) =>
         this.switch(
@@ -251,6 +250,7 @@ export class TuningPanel {
 
   /** Shows every value as its table holds it now: a Level may have set its own Wave and Tanks. */
   private refresh(): void {
+    this.showGroups();
     for (const { tuned, path, input } of this.inputs) {
       input.value = String(readPath(tuned.table, path));
       input.classList.remove('invalid');
@@ -276,6 +276,54 @@ export class TuningPanel {
       grid.append(tr);
     }
     return grid;
+  }
+
+  /**
+   * Makes the current Wave's group rows again: its type, its count, and its
+   * own gap, empty for the Wave's.
+   */
+  private showGroups(): void {
+    const kept = this.inputs.filter(
+      ({ tuned, path }) => tuned !== this.wave || path[0] !== 'sends',
+    );
+    this.inputs.splice(0, this.inputs.length, ...kept);
+    const head = element('tr');
+    for (const label of ['', 'count', 'gap']) head.append(element('th', '', label));
+    this.groups.replaceChildren(head);
+    this.game.defence.table.sends.forEach((group, k) => {
+      const tr = element('tr');
+      tr.append(element('th', 'tuning-enemy', `${k + 1}. ${group.type}`));
+      const count = element('td');
+      count.append(this.input(this.wave, ['sends', String(k), 'count']));
+      const gap = element('td');
+      gap.append(this.gapInput(k));
+      tr.append(count, gap);
+      this.groups.append(tr);
+    });
+  }
+
+  /** Group `k`'s own gap: empty for the Wave's, and emptying it gives the Wave's back. */
+  private gapInput(k: number): HTMLInputElement {
+    const input = element('input');
+    input.type = 'number';
+    input.step = 'any';
+    input.placeholder = 'Wave';
+    input.value = String(this.game.defence.table.sends[k]?.gap ?? '');
+    input.title = `sends.${k}.gap`;
+    input.addEventListener('input', () => {
+      const value = Number(input.value);
+      const empty = input.value.trim() === '';
+      const valid = empty || Number.isFinite(value);
+      input.classList.toggle('invalid', !valid);
+      if (!valid) return;
+      this.game.defence.edit((table) => {
+        const group = table.sends[k];
+        if (!group) return;
+        if (empty) delete group.gap;
+        else group.gap = value;
+      });
+    });
+    return input;
   }
 
   /** The values of `tuned` that `shown` picks, one per row. */
@@ -321,7 +369,11 @@ export class TuningPanel {
     for (const tuned of [this.materials, this.ink, this.wave, this.enemies]) {
       const paths = this.inputs.filter((entry) => entry.tuned === tuned).map(({ path }) => path);
       tuned.edit((table) => {
-        for (const path of paths) writePath(table, path, readPath(tuned.defaults, path));
+        for (const path of paths) {
+          // A Wave may have more groups than the default one.
+          const value = readPath(tuned.defaults, path);
+          if (value !== undefined) writePath(table, path, value);
+        }
       });
     }
     Object.assign(this.game.rules, DEFAULT_RULES);

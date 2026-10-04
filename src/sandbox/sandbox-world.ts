@@ -2,12 +2,8 @@ import { cutPolylineOutside } from '../geometry/clip';
 import { transformPoints } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import {
-  createEnemyTable,
-  enemiesRevision,
-  type EnemyTable,
-  type EnemyType,
-} from '../materials/enemy-table';
+import { createEnemyTable, enemiesRevision, type EnemyTable } from '../materials/enemy-table';
+import { type EnemyType } from '../materials/enemy-types';
 import { samplesInk, type SamplesInk } from '../materials/ink';
 import {
   createMaterialTable,

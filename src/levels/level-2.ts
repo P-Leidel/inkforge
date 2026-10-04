@@ -76,10 +76,30 @@ export const LEVEL_2: Level = {
   // Today's maximums; no red until Level 3.
   tanks: { grey, blue, green, black, red: 0 },
   waves: [
-    { counts: { crawler: 5, runner: 0, heavy: 0 }, gap: 2 },
-    { counts: { crawler: 4, runner: 2, heavy: 0 }, gap: 1.5 },
-    { counts: { crawler: 5, runner: 2, heavy: 1 }, gap: 1.5 },
-    { counts: { crawler: 4, runner: 2, heavy: 2 }, gap: 1.5 },
+    { sends: [{ type: 'crawler', count: 5 }], gap: 2 },
+    {
+      sends: [
+        { type: 'crawler', count: 4 },
+        { type: 'runner', count: 2 },
+      ],
+      gap: 1.5,
+    },
+    {
+      sends: [
+        { type: 'crawler', count: 5 },
+        { type: 'runner', count: 2 },
+        { type: 'heavy', count: 1 },
+      ],
+      gap: 1.5,
+    },
+    {
+      sends: [
+        { type: 'crawler', count: 4 },
+        { type: 'runner', count: 2 },
+        { type: 'heavy', count: 2 },
+      ],
+      gap: 1.5,
+    },
   ],
   hints: {
     blue: 'New: blue bounces whatever hits it, harder the faster it comes',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS, type Colour } from '../materials/colour';
-import { DEFAULT_ENEMY_TABLE, ENEMY_TYPES } from '../materials/enemy-table';
+import { DEFAULT_ENEMY_TABLE } from '../materials/enemy-table';
+import { ENEMY_TYPES } from '../materials/enemy-types';
 import { rollBelly } from './belly';
 import { Random } from './random';
 

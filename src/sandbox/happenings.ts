@@ -3,7 +3,7 @@ import type { Segment } from '../geometry/segment';
 import type { Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import type { EnemyType } from '../materials/enemy-table';
+import type { EnemyType } from '../materials/enemy-types';
 import type { BlastSize } from './blasts';
 import type { DropInk } from './drops';
 

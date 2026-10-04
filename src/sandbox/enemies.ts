@@ -2,7 +2,8 @@ import { polygonBounds, type Polygon } from '../geometry/polygon';
 import { transformPoints, type Transform } from '../geometry/transform';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import type { EnemyType } from '../materials/enemy-table';
+import type { EnemyMaterial } from '../materials/enemy-table';
+import type { EnemyType } from '../materials/enemy-types';
 import { enemyMass } from '../materials/mass';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
@@ -25,6 +26,19 @@ import type { PreviousPoses } from './previous-poses';
 
 /** How far (px) a new Enemy starts clear of the Terrain at the Spawn, and of one below it. */
 const SPAWN_GAP = 0.5;
+/** A box as wide and tall as its type's numbers say. */
+const box = ({ width, height }: EnemyMaterial) => boxShape(width, height);
+
+/**
+ * Each Enemy type's shape, from its numbers: a row for each type, so a new
+ * type is a row asked for here.
+ */
+const SHAPES: Readonly<Record<EnemyType, (numbers: EnemyMaterial) => EnemyShape>> = {
+  crawler: box,
+  runner: box,
+  heavy: box,
+};
+
 /**
  * An Enemy walking toward the Ink Core slower than this share of its
  * walking speed isn't getting past what is in its way: it presses it.
@@ -175,10 +189,9 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     return !this.blocked(shape, this.atSpawn(shape));
   }
 
-  /** The shape an Enemy of `type` sent in now has. */
+  /** The shape an Enemy of `type` sent in now has, from its numbers as they are now. */
   private shapeOf(type: EnemyType): EnemyShape {
-    const { width, height } = this.numbers.enemy(type);
-    return boxShape(width, height);
+    return SHAPES[type](this.numbers.enemy(type));
   }
 
   /** Whether something is in the way of an Enemy of `shape` posed at `at`. */

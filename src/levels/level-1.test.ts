@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { Game } from '../game/game';
 import { games } from '../game/test-support';
 import { COLOURS } from '../materials/colour';
-import { ENEMY_TYPES } from '../materials/enemy-table';
+import { ENEMY_TYPES } from '../materials/enemy-types';
 import { ARENA_HEIGHT, ARENA_WIDTH } from '../sandbox/arena';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import { LEVEL_1 } from './level-1';
+import { sentCounts } from '../game/wave-table';
 
 const createGame = games();
 
@@ -38,13 +39,15 @@ describe('Level 1', () => {
 
   it('sends Waves of 4, 6 and 6, only Crawlers and Runners, Crawlers first', () => {
     const waves = LEVEL_1.waves!;
-    const total = ({ counts }: (typeof waves)[number]) =>
-      ENEMY_TYPES.reduce((sum, type) => sum + counts[type], 0);
+    const counts = waves.map((wave) => sentCounts(wave));
+    const total = (sent: (typeof counts)[number]) =>
+      ENEMY_TYPES.reduce((sum, type) => sum + (sent[type] ?? 0), 0);
 
-    expect(waves.map(total)).toEqual([4, 6, 6]);
-    expect(waves.every(({ counts }) => counts.heavy === 0)).toBe(true);
-    expect(waves[0]!.counts).toMatchObject({ crawler: 4, runner: 0 });
-    expect(waves.slice(1).every(({ counts }) => counts.runner > 0)).toBe(true);
+    expect(counts.map(total)).toEqual([4, 6, 6]);
+    expect(counts.every((sent) => sent.heavy === undefined)).toBe(true);
+    expect(counts[0]).toEqual({ crawler: 4 });
+    expect(counts.slice(1).every((sent) => (sent.runner ?? 0) > 0)).toBe(true);
+    expect(waves.every((wave) => wave.sends[0]!.type === 'crawler')).toBe(true);
   });
 
   it('has a hint for grey, black, the Crawler and the Runner, and nothing else', () => {

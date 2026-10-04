@@ -1,7 +1,7 @@
 import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import { COLOURS, type Colour } from '../materials/colour';
-import type { EnemyType } from '../materials/enemy-table';
+import type { EnemyType } from '../materials/enemy-types';
 import {
   SandboxWorld,
   type AddedStroke,

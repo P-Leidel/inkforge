@@ -7,7 +7,7 @@ import { DEFAULT_RULES } from './defence-loop';
 import type { Game } from './game';
 import { inLineLength } from './ink-table';
 import { SANDBOX_LEVEL } from './level';
-import { games } from './test-support';
+import { byType, games } from './test-support';
 
 const createGame = games();
 
@@ -15,7 +15,7 @@ const createGame = games();
 function wavesGame(inkCosts: boolean): Game {
   const game = createGame(inkCosts, { waves: true });
   game.defence.edit((table) => {
-    table.counts = { crawler: 1, runner: 0, heavy: 0 };
+    table.sends = byType({ crawler: 1 });
     table.gap = 100;
   });
   return game;

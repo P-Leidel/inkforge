@@ -2,15 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { checkArenaSize } from '../game/level';
 import { games } from '../game/test-support';
 import { COLOURS } from '../materials/colour';
-import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
+import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-types';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import { LEVEL_2 } from './level-2';
+import { sentCounts } from '../game/wave-table';
 
 const createGame = games();
 
 /** The Enemy types a Wave sends any of. */
 const sent = (wave: (typeof LEVEL_2.waves & {})[number]) =>
-  ENEMY_TYPES.filter((type) => wave.counts[type] > 0);
+  ENEMY_TYPES.filter((type) => sentCounts(wave)[type] !== undefined);
 
 describe('Level 2', () => {
   const waves = LEVEL_2.waves!;
@@ -23,9 +24,9 @@ describe('Level 2', () => {
     expect(() => checkArenaSize(LEVEL_2.arena!)).not.toThrow();
     expect(game.world.arena).toBe(LEVEL_2.arena);
     expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1, waves: 4 });
-    expect(waves.map((wave) => sent(wave).reduce((n, type) => n + wave.counts[type], 0))).toEqual([
-      5, 6, 8, 8,
-    ]);
+    expect(
+      waves.map((wave) => sent(wave).reduce((n, type) => n + sentCounts(wave)[type]!, 0)),
+    ).toEqual([5, 6, 8, 8]);
   });
 
   it('has every Colour but red, at their default maximums, and builds nothing', () => {
@@ -62,8 +63,7 @@ describe('Level 2', () => {
     'lets a %s sent in with no defence cross the valley and reach the Ink Core',
     (type: EnemyType) => {
       const game = createGame(true);
-      const counts = { crawler: 0, runner: 0, heavy: 0, [type]: 1 };
-      game.load({ ...LEVEL_2, waves: [{ counts, gap: 1 }] });
+      game.load({ ...LEVEL_2, waves: [{ sends: [{ type, count: 1 }], gap: 1 }] });
       game.togglePause();
 
       const steps = Math.round(90 / STEP_SECONDS);

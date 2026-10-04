@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { checkArenaSize } from '../game/level';
 import { games } from '../game/test-support';
 import { COLOURS } from '../materials/colour';
-import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
+import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-types';
 import { LEVEL_3, LEVEL_3_GROUND_Y, LEVEL_3_OVERHANG, LEVEL_3_VALLEY } from './level-3';
+import { sentCounts } from '../game/wave-table';
 
 const createGame = games();
 
@@ -48,11 +49,11 @@ describe('Level 3', () => {
   it('sends five Waves of 6, 8, 10, 10 and 12, every Enemy type in each', () => {
     const waves = LEVEL_3.waves!;
 
-    expect(waves.map((wave) => ENEMY_TYPES.reduce((n, t) => n + wave.counts[t], 0))).toEqual([
-      6, 8, 10, 10, 12,
-    ]);
+    expect(
+      waves.map((wave) => ENEMY_TYPES.reduce((n, t) => n + (sentCounts(wave)[t] ?? 0), 0)),
+    ).toEqual([6, 8, 10, 10, 12]);
     for (const wave of waves)
-      for (const type of ENEMY_TYPES) expect(wave.counts[type]).toBeGreaterThan(0);
+      for (const type of ENEMY_TYPES) expect(sentCounts(wave)[type]).toBeGreaterThan(0);
   });
 
   it('loads at its first Wave of five', () => {

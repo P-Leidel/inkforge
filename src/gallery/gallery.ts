@@ -580,9 +580,22 @@ export const STAIRCASE_DEMO: Demo = {
 export const THREE_WAVES_DEMO: Demo = {
   name: 'Three Waves',
   waves: [
-    { counts: { crawler: 3, runner: 0, heavy: 0 }, gap: 2 },
-    { counts: { crawler: 4, runner: 2, heavy: 0 }, gap: 1.5 },
-    { counts: { crawler: 4, runner: 3, heavy: 2 }, gap: 1.5 },
+    { sends: [{ type: 'crawler', count: 3 }], gap: 2 },
+    {
+      sends: [
+        { type: 'crawler', count: 4 },
+        { type: 'runner', count: 2 },
+      ],
+      gap: 1.5,
+    },
+    {
+      sends: [
+        { type: 'crawler', count: 4 },
+        { type: 'runner', count: 3 },
+        { type: 'heavy', count: 2 },
+      ],
+      gap: 1.5,
+    },
   ],
   build(world) {
     const ground = SANDBOX_ARENA.spawn.y;

@@ -1,12 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
-import {
-  createEnemyTable,
-  DEFAULT_ENEMY_TABLE,
-  editEnemies,
-  type EnemyType,
-} from '../materials/enemy-table';
+import { createEnemyTable, DEFAULT_ENEMY_TABLE, editEnemies } from '../materials/enemy-table';
+import { type EnemyType } from '../materials/enemy-types';
 import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
 import { dragBox, dragCircle } from '../stroke/pointer-paths';
 import { SANDBOX_ARENA, sandboxTerrainWithPit, type Arena } from './arena';

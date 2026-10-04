@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS } from './colour';
 import { enemyMass } from './mass';
-import { createEnemyTable, DEFAULT_ENEMY_TABLE, ENEMY_TYPES } from './enemy-table';
+import { createEnemyTable, DEFAULT_ENEMY_TABLE } from './enemy-table';
+import { ENEMY_TYPES } from './enemy-types';
 import { DEFAULT_MATERIAL_TABLE } from './material-table';
 
 describe('Enemy table', () => {

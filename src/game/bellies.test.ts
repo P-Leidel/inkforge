@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS, type Colour } from '../materials/colour';
-import { ENEMY_TYPES } from '../materials/enemy-table';
+import { ENEMY_TYPES } from '../materials/enemy-types';
 import type { Level } from './level';
 import { games } from './test-support';
 

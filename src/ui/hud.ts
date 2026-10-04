@@ -1,7 +1,7 @@
 import type Phaser from 'phaser';
 import type { DefenceReading } from '../game/defence-loop';
 import type { Allowed, Game } from '../game/game';
-import { ENEMY_TYPES } from '../materials/enemy-table';
+import { ENEMY_TYPES } from '../materials/enemy-types';
 import { FONT_FAMILY, PALETTE } from '../rendering/palette';
 import { inward, spawnEdgeX } from '../sandbox/arena';
 
