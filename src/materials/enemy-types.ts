@@ -24,3 +24,11 @@ export function enemyName(type: EnemyType, count: number): string {
   const [one, more] = NAMES[type];
   return count === 1 ? one : more;
 }
+
+/** The bosses: each has its HP bar at the top of the screen, labelled with its name, and none over its body. */
+const BOSSES: ReadonlySet<EnemyType> = new Set(['siegeWalker']);
+
+/** Whether `type` is a boss. */
+export function isBoss(type: EnemyType): boolean {
+  return BOSSES.has(type);
+}

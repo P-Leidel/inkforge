@@ -11,6 +11,7 @@ import { ENEMY_TYPES } from '../materials/enemy-types';
 import { DebugOverlay } from '../debug/debug-overlay';
 import { FrameRecorder } from '../debug/frame-times';
 import { flashRejection } from '../rendering/rejection-flash';
+import { BossBar } from '../ui/boss-bar';
 import { Hud } from '../ui/hud';
 import { RewardsScreen } from '../ui/rewards-screen';
 import type { Menu } from '../ui/menu';
@@ -62,6 +63,7 @@ export class SandboxScene extends Phaser.Scene {
   private rewards!: RewardsScreen;
   private overlay!: DebugOverlay;
   private hud!: Hud;
+  private bossBar!: BossBar;
   private preview!: StrokePreview;
   private palette!: PaletteBar;
   private tuning!: TuningPanel;
@@ -110,6 +112,7 @@ export class SandboxScene extends Phaser.Scene {
     this.campaign = new Campaign(CAMPAIGN_LEVELS, browserStore());
     this.session = new Session(this.gameLayer, this.campaign, TUTORIAL_LEVEL);
     this.hud = new Hud(this);
+    this.bossBar = new BossBar(this);
     this.rewards = new RewardsScreen(this, (choice) => this.follow(this.session.act(choice)));
     this.palette = new PaletteBar(this, (tool) => this.drawing.pick(tool));
     // Clear and Title at the right end, on hand everywhere; Free play's own
@@ -349,6 +352,7 @@ export class SandboxScene extends Phaser.Scene {
     this.palette.show(this.drawing.tool, frame, cost);
     this.overlay.draw();
     this.hud.draw(frame);
+    this.bossBar.draw(frame);
     this.frames.draw(performance.now() - drawStart);
   }
 }

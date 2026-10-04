@@ -11,7 +11,7 @@ import { inward, type Arena } from './arena';
 import type { ArenaBodies } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
 import type { ArenaQuery } from './arena-query';
-import { boxShape, siegeWalkerShape, type EnemyShape } from './enemy-shape';
+import { boxShape, siegeWalkerShape, type EnemyShape, type Limbs } from './enemy-shape';
 import type { PartyId } from './contact-ledger';
 import type { Why } from './happenings';
 import type { Numbers } from './numbers';
@@ -94,6 +94,8 @@ export interface EnemyView extends Poses {
   readonly type: EnemyType;
   /** Its body's outline about its centre; place it with `transform`. */
   readonly outline: Polygon;
+  /** Its body and legs apart, standing, if its legs are drawn walking; null for a box. */
+  readonly limbs: Limbs | null;
   /** Width and height (px) of its outline. */
   readonly width: number;
   readonly height: number;
@@ -164,6 +166,7 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
       id,
       type,
       outline: shape.outline,
+      limbs: shape.limbs ?? null,
       width: maxX - minX,
       height: maxY - minY,
       belly,

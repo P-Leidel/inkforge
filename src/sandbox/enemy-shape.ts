@@ -23,6 +23,19 @@ export interface EnemyShape {
   feet(at: Transform): number;
   /** How it climbs and is climbed, if it does: none for a shape that never climbs. */
   readonly climb?: ClimbShape;
+  /** Its body and legs apart, for a shape whose legs are drawn walking; none for a box. */
+  readonly limbs?: Limbs;
+}
+
+/**
+ * A legged shape's body and legs apart, about its centre, standing: only
+ * the drawing swings the legs (the gait), its parts stay as they stand.
+ */
+export interface Limbs {
+  /** Its body, without its legs. */
+  readonly hull: Polygon;
+  /** Each leg, from the back (left) to the front, from its top left corner round; it swings about its top. */
+  readonly legs: readonly Polygon[];
 }
 
 /** What climbing asks of an Enemy's shape (ADR 0011, ADR 0013). */
@@ -218,5 +231,6 @@ function newSiegeWalkerShape(width: number, height: number): EnemyShape {
     staysUpright: false,
     bounds: (at) => polygonBounds(posed(at)),
     feet: (at) => polygonBounds(posed(at)).maxY,
+    limbs: { hull, legs },
   };
 }
