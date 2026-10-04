@@ -1,6 +1,6 @@
 # Spec: Milestone 6, the Siege Walker
 
-**In progress**: the Siege Walker is a type that walks, presses and dies, and Enemies queued behind one at a wall push it on; Tipped, its gait and the boss Level are to come. Roadmap step 6 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 5 spec](m5-defence-loop.md), whose exit playtest ([#138](https://github.com/P-Leidel/inkforge/issues/138)) is still under way; this milestone assumes it passes.
+**In progress**: the Siege Walker is a type that walks, presses and dies, and Enemies queued behind one at a wall push it on, and the boss Level ends the Campaign; Tipped and its gait are to come. Roadmap step 6 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 5 spec](m5-defence-loop.md), whose exit playtest ([#138](https://github.com/P-Leidel/inkforge/issues/138)) is still under way; this milestone assumes it passes.
 
 ## Progress
 
