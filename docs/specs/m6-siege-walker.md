@@ -10,13 +10,13 @@
 - [x] **The Session owns the start of a Level, and the Tutorial is a Level** ([ADR 0022](../adr/0022-the-tutorial-is-a-level.md)), candidate 6 of the same review. The boss Level's start and end have a home: a Level can bring Cards before the Wave they teach, and its end offers what comes next.
 - [x] **Objects are a sibling of Lines**, candidate 5 of the same review: `Objects` and `Lines` are each a kind of Arena contents and the only record of what they hold, and `Strokes` keeps only what goes for both. Built before this milestone as a refactor that changes no behaviour, so dropping things on the boss lands on Objects testable on their own.
 - [x] **One reading a frame, and one HP bar**, candidate 7 of the same review: the Session builds a `Frame` once a frame and the HUD, the palette and the rewards screen draw from it; every HP bar, the boss's included, is drawn by `drawHpBar` (`src/rendering/hp-bar.ts`), `small` or `large`. Built before this milestone as a refactor that changes no behaviour.
-- [ ] 0. Rename the walking-force cap `push` to `walkForce`.
-- [ ] 1. The Siege Walker as a type.
-- [ ] 2. Tipped, and getting back up.
-- [ ] 3. The Push.
-- [ ] 4. The gait and the boss bar.
-- [ ] 5. The boss Level.
-- [ ] 6. The exit playtest: the go/no-go.
+- [ ] 0. Rename the walking-force cap `push` to `walkForce` ([#184](https://github.com/P-Leidel/inkforge/issues/184)).
+- [ ] 1. The Siege Walker as a type ([#185](https://github.com/P-Leidel/inkforge/issues/185)).
+- [ ] 2. Tipped, and getting back up ([#186](https://github.com/P-Leidel/inkforge/issues/186)).
+- [ ] 3. The Push ([#187](https://github.com/P-Leidel/inkforge/issues/187)).
+- [ ] 4. The gait and the boss bar ([#188](https://github.com/P-Leidel/inkforge/issues/188)).
+- [ ] 5. The boss Level ([#189](https://github.com/P-Leidel/inkforge/issues/189)).
+- [ ] 6. The exit playtest: the go/no-go ([#190](https://github.com/P-Leidel/inkforge/issues/190)).
 
 ## Problem Statement
 
