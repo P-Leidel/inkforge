@@ -3,12 +3,13 @@ import type { EnemyType } from '../materials/enemy-types';
 import { ARENA_HEIGHT, ARENA_WIDTH, type Arena } from '../sandbox/arena';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import type { StressTest } from '../stress-tests/stress-test';
+import type { Card } from './cards';
 import type { ReadonlyWaveTable } from './wave-table';
 
 /**
  * A Level (CONTEXT.md): everything an Arena starts with. `Game.load` clears
  * the Arena and sets it up from one. The gallery demos, the stress tests,
- * the sandbox and the Campaign's Levels are all Levels.
+ * the sandbox, the Tutorial and the Campaign's Levels are all Levels.
  *
  * What a Level leaves out comes from Free play, never from the last Level:
  * without an Arena it is the sandbox Arena; without Waves, it has one Wave,
@@ -38,6 +39,11 @@ export interface Level {
    * Enemy, shown when it first appears.
    */
   readonly hints?: Readonly<Partial<Record<Colour | EnemyType | 'belly', string>>>;
+  /**
+   * Its Cards, one list per Wave, in the same order: a Wave's list opens the
+   * first time its Intermission is reached since the Level started.
+   */
+  readonly cards?: readonly (readonly Card[])[];
   /**
    * What is already built there, for free (ADR 0009): it runs on the Sandbox
    * world below the Game, and what it makes joins the undo history at price

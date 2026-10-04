@@ -1,6 +1,7 @@
 import type { StressTest } from '../stress-tests/stress-test';
 import { hintLines } from './analysis';
 import type { Campaign } from './campaign';
+import { CardViewer } from './cards';
 import type { Game } from './game';
 import { SANDBOX_LEVEL, type Level } from './level';
 
@@ -17,13 +18,22 @@ export interface CampaignPlace {
   readonly hints: readonly string[];
 }
 
-/** A choice the end of a Campaign Level offers. */
-export type Choice = 'next-level' | 'retry-wave' | 'restart-level' | 'level-list';
+/**
+ * What kind of play a Level is being played as: Free play, with the sandbox
+ * tool on hand, a Campaign Level, or the Tutorial.
+ */
+export type Play = 'free-play' | 'campaign' | 'tutorial';
+
+/** A choice the end of a Campaign Level, or of the Tutorial, offers. */
+export type Choice =
+  'next-level' | 'start-campaign' | 'retry-wave' | 'restart-level' | 'level-list' | 'title';
 
 /**
- * What the end of a Campaign Level offers: once it is cleared, Next Level
- * (unless it was the last) and the Level list; once it is lost, Retry Wave,
- * Restart Level and the Level list.
+ * What the end of a Campaign Level or the Tutorial offers. A Campaign Level
+ * once cleared: Next Level (unless it was the last) and the Level list;
+ * once lost, Retry Wave, Restart Level and the Level list. The Tutorial once
+ * cleared: Start Campaign and the title screen; once lost, Retry Wave,
+ * Restart Level and the title screen.
  */
 export interface Offer {
   /** The choices, in the order they stand. */
@@ -33,12 +43,12 @@ export interface Offer {
 }
 
 /**
- * What a choice, or R, did, for the scene to follow: a Level was loaded
+ * What a command did, for the scene to follow: a Level was loaded
  * (`started`), the world was taken back to the last start (`reset`), the
- * Level was left for the Level list (`left`), or the choice wasn't on
- * offer and nothing happened (`refused`).
+ * Level was left for the Level list (`left`) or for the title screen
+ * (`title`), or it couldn't be done and nothing happened (`refused`).
  */
-export type Acted = 'started' | 'reset' | 'left' | 'refused';
+export type Acted = 'started' | 'reset' | 'left' | 'title' | 'refused';
 
 /** What the scene shows of what is being played. */
 export interface SessionReading {
@@ -46,37 +56,51 @@ export interface SessionReading {
   readonly name: string;
   /** The stress test's one-line status, if a stress test is being played. */
   readonly status: string | null;
+  /** What kind of play it is: Free play's toolbar buttons show in Free play only. */
+  readonly play: Play;
   /** Where in the Campaign, if a Campaign Level is being played; null otherwise. */
   readonly campaign: CampaignPlace | null;
-  /** What the end of a Campaign Level offers; null outside the Campaign, and while it goes on. */
+  /** What the end of a Campaign Level or the Tutorial offers; null in Free play, and while it goes on. */
   readonly offer: Offer | null;
 }
 
 /**
- * What is being played, over the Game it is handed: the Level, for a stress
- * test its `StressTest`, and for a Campaign Level, which one. `play` loads a
- * Level and remembers it, `playCampaign` a Campaign Level, `clear` loads it
- * again (Clear), `retry` takes the world back to the last start (R), and
- * `advance` advances the Game and then the stress test, in that order. As a
- * Campaign Level is cleared, it tells the Campaign once, which unlocks the
- * next. Once a Campaign Level is cleared or lost, its reading offers what
- * comes next, and `act` carries out a choice on offer. It puts the sandbox
- * tool (sending in Enemies) away for a Campaign Level and back for Free
- * play; the Eraser stays on hand. Until told otherwise, it plays the
- * sandbox, as a new Game is.
+ * What is being played, over the Game it is handed, from its start to its
+ * end: the Level, for a stress test its `StressTest`, for a Campaign Level
+ * which one, and its Cards. `play` loads a Level as Free play and remembers
+ * it, `playCampaign` a Campaign Level, `playTutorial` the Tutorial, `clear`
+ * loads it again (Clear), `retry` takes the world back to the last start
+ * (R), and `advance` advances the Game and then the stress test, in that
+ * order. Each says what it did, for the scene to follow. As a Campaign Level
+ * is cleared, it tells the Campaign once, which unlocks the next. Once a
+ * Campaign Level or the Tutorial is cleared or lost, its reading offers what
+ * comes next, and `act` carries out a choice on offer. A Wave's Cards open
+ * the first time its Intermission is reached since the Level started: R
+ * does not open them again, Clear does; `showCards` (H) opens the
+ * Tutorial's, all of them. It puts the sandbox tool (sending in Enemies)
+ * away for a Campaign Level and the Tutorial and back for Free play; the
+ * Eraser stays on hand. Until told otherwise, it plays the sandbox, as a new
+ * Game is.
  */
 export class Session {
+  /** The Cards shown over the Arena: nothing is played or drawn behind them. */
+  readonly cards = new CardViewer();
   private level: Level = SANDBOX_LEVEL;
   private test: StressTest | null = null;
+  private kind: Play = 'free-play';
   /** The Campaign Level being played, from 0; null outside the Campaign. */
   private campaignIndex: number | null = null;
   /** Whether the Level was cleared as of the last advance, so the Campaign is told once. */
   private wasCleared = false;
+  /** The Waves, from 0, whose Cards have opened since the Level started. */
+  private readonly cardsShown = new Set<number>();
 
   constructor(
     private readonly game: Game,
     /** The Campaign whose Levels `playCampaign` plays; none by default. */
     readonly campaign: Campaign | null = null,
+    /** The Level `playTutorial` plays, and whose Cards H shows; none by default. */
+    readonly tutorial: Level | null = null,
   ) {}
 
   /** The Level being played. */
@@ -93,6 +117,7 @@ export class Session {
     return {
       name: this.level.name ?? 'Level',
       status: this.test?.status() ?? null,
+      play: this.kind,
       campaign: this.place,
       offer: this.offer,
     };
@@ -102,30 +127,37 @@ export class Session {
    * Loads `level` and remembers it, for Clear. It is not a Campaign Level,
    * even if the Campaign has it: Free play, with the sandbox tool on hand.
    */
-  play(level: Level): void {
-    this.campaignIndex = null;
-    this.game.sandboxTools = true;
-    this.load(level);
+  play(level: Level): Acted {
+    return this.load(level, 'free-play');
   }
 
   /**
    * Loads the Campaign's Level at `index`, from 0, at its first Wave, if it
-   * is unlocked; returns whether it did. A locked one can't be played. The
-   * sandbox tool, sending in Enemies, is put away.
+   * is unlocked. A locked one can't be played. The sandbox tool, sending in
+   * Enemies, is put away.
    */
-  playCampaign(index: number): boolean {
+  playCampaign(index: number): Acted {
     const campaign = this.campaign;
-    if (!campaign?.isUnlocked(index)) return false;
-    this.campaignIndex = index;
-    this.game.sandboxTools = false;
-    this.load(campaign.levels[index]!);
-    return true;
+    if (!campaign?.isUnlocked(index)) return 'refused';
+    return this.load(campaign.levels[index]!, 'campaign', index);
   }
 
-  /** Clear: loads the Level being played again, from Wave 1. A Campaign Level stays one. */
-  clear(): void {
+  /** Loads the Tutorial at its first Wave, the sandbox tool put away, if there is one. */
+  playTutorial(): Acted {
+    return this.tutorial ? this.load(this.tutorial, 'tutorial') : 'refused';
+  }
+
+  /**
+   * Clear: loads the Level being played again, from Wave 1, as the same kind
+   * of play. Its Cards open again.
+   */
+  clear(): Acted {
     this.test = this.game.load(this.level) ?? null;
     this.wasCleared = false;
+    this.cardsShown.clear();
+    this.cards.close();
+    this.openCards();
+    return 'started';
   }
 
   /** R: takes the world and the Tanks back to the last start, if there was one. */
@@ -135,30 +167,46 @@ export class Session {
   }
 
   /**
-   * Carries out `choice`, if the end of the Campaign Level offers it: Next
-   * Level loads the Level after it at its first Wave, Retry Wave is R,
-   * Restart Level is Clear, and the Level list leaves the Level as it is.
+   * H: opens the Tutorial's Cards, all of them, at the first, pausing a Wave
+   * under way; it stays paused once they close. Does nothing while Cards are
+   * open, or without a Tutorial.
+   */
+  showCards(): void {
+    if (this.cards.isOpen || !this.tutorial?.cards) return;
+    if (this.game.isRunning) this.game.togglePause();
+    this.cards.show(this.tutorial.cards.flat());
+  }
+
+  /**
+   * Carries out `choice`, if the end of the Campaign Level or the Tutorial
+   * offers it: Next Level loads the Level after it at its first Wave, Start
+   * Campaign the Campaign's first Level, Retry Wave is R, Restart Level is
+   * Clear, and the Level list and the title screen leave the Level as it is.
    * A choice not on offer does nothing.
    */
   act(choice: Choice): Acted {
     if (!this.offer?.choices.includes(choice)) return 'refused';
     switch (choice) {
       case 'next-level':
-        return this.playCampaign(this.campaignIndex! + 1) ? 'started' : 'refused';
+        return this.playCampaign(this.campaignIndex! + 1);
+      case 'start-campaign':
+        return this.playCampaign(0);
       case 'retry-wave':
         return this.retry();
       case 'restart-level':
-        this.clear();
-        return 'started';
+        return this.clear();
       case 'level-list':
         return 'left';
+      case 'title':
+        return 'title';
     }
   }
 
   /**
    * Advances the Game by real elapsed time, then updates the stress test, if
    * any, which reads the world as it now is, and tells the Campaign if its
-   * Level is now cleared. Returns the steps taken.
+   * Level is now cleared. Opens the next Wave's Cards once its Intermission
+   * is reached. Returns the steps taken.
    */
   advance(seconds: number): number {
     const steps = this.game.advance(seconds);
@@ -168,12 +216,27 @@ export class Session {
       this.campaign!.cleared(this.campaignIndex);
     }
     this.wasCleared = cleared;
+    this.openCards();
     return steps;
   }
 
-  private load(level: Level): void {
+  private load(level: Level, kind: Play, campaignIndex: number | null = null): Acted {
     this.level = level;
-    this.clear();
+    this.kind = kind;
+    this.campaignIndex = campaignIndex;
+    this.game.sandboxTools = kind === 'free-play';
+    return this.clear();
+  }
+
+  /** In an Intermission, opens the next Wave's Cards, if it has any and they haven't opened yet. */
+  private openCards(): void {
+    const { phase, wave } = this.game.defence.reading;
+    const index = wave - 1;
+    if (phase !== 'intermission' || this.cardsShown.has(index)) return;
+    const cards = this.level.cards?.[index];
+    if (!cards) return;
+    this.cardsShown.add(index);
+    this.cards.show(cards);
   }
 
   private get place(): CampaignPlace | null {
@@ -183,11 +246,26 @@ export class Session {
     return {
       index,
       levels: this.campaign.levels.length,
-      hints: phase === 'intermission' ? hintLines(this.campaign.levels, index, wave - 1) : [],
+      hints:
+        phase === 'intermission'
+          ? hintLines(this.campaign.levels, index, wave - 1, this.game.defence.list)
+          : [],
     };
   }
 
   private get offer(): Offer | null {
+    if (this.kind === 'tutorial') {
+      switch (this.game.defence.reading.phase) {
+        case 'cleared':
+          return { choices: ['start-campaign', 'title'], next: null };
+        case 'lost':
+          return { choices: ['retry-wave', 'restart-level', 'title'], next: null };
+        case 'intermission':
+        case 'wave':
+        case null:
+          return null;
+      }
+    }
     const index = this.campaignIndex;
     const campaign = this.campaign;
     if (index === null || !campaign) return null;

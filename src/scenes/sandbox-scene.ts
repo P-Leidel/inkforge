@@ -5,7 +5,6 @@ import { browserStore, Campaign } from '../game/campaign';
 import { Game } from '../game/game';
 import { SANDBOX_LEVEL, type Level } from '../game/level';
 import { Session, type Acted } from '../game/session';
-import { Tutorial, TUTORIAL_KEY } from '../game/tutorial';
 import { DrawingInput, type Flash } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
 import { ENEMY_TYPES } from '../materials/enemy-types';
@@ -20,13 +19,14 @@ import { PaletteBar } from '../ui/palette-bar';
 import { StrokePreview } from '../rendering/stroke-preview';
 import { Toolbar } from '../ui/toolbar';
 import { TuningPanel } from '../ui/tuning-panel';
-import { TutorialScreen } from '../ui/tutorial-screen';
+import { CardScreen } from '../ui/card-screen';
 import { WorldRenderer } from '../rendering/world-renderer';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { BALL_CANNON_LEVEL } from '../stress-tests/ball-cannon';
 import { BOX_TOWER_LEVEL } from '../stress-tests/box-tower';
 import { PEBBLES_LEVEL } from '../stress-tests/pebble-drop';
 import { CAMPAIGN_LEVELS } from '../levels/campaign-levels';
+import { TUTORIAL_LEVEL } from '../levels/tutorial';
 
 /** Keys 1–5 pick the Colours in palette order. */
 const COLOUR_KEYS = new Map(COLOURS.map((colour, k) => [String(k + 1), colour]));
@@ -44,11 +44,11 @@ const STRESS_TESTS = [PEBBLES_LEVEL, BOX_TOWER_LEVEL, BALL_CANNON_LEVEL];
  * state, the Ink Tanks and what drawing input says to preview and flash. The
  * rules live in the Game and the Sandbox world below it; what is being
  * played, in the Session over the Game, and which Levels are unlocked, in
- * the Campaign. It opens on the title screen (Campaign, Sandbox, Gallery);
- * while that or the Level list is open, nothing is played behind it. The
- * Tutorial opens the first time Campaign Level 1 starts, and on H; while it
- * is open, nothing is played or drawn, and Space, a click and Esc only turn
- * or close its cards.
+ * the Campaign. It opens on the title screen (Tutorial, Campaign, Sandbox,
+ * Gallery); while that or the Level list is open, nothing is played behind
+ * it. The Session opens a Level's Cards before the Waves they teach, and
+ * the Tutorial's on H; while they are open, nothing is played or drawn, and
+ * Space, a click and Esc only turn or close them.
  */
 export class SandboxScene extends Phaser.Scene {
   /** The rules layer: Phaser's own `game` is the Phaser game. */
@@ -72,8 +72,7 @@ export class SandboxScene extends Phaser.Scene {
   /** The title screen, the Level list and the Gallery's list, over everything. */
   private screen!: MenuScreen;
   private campaign!: Campaign;
-  private tutorial!: Tutorial;
-  private tutorialScreen!: TutorialScreen;
+  private cardScreen!: CardScreen;
   /** Every frame's timings, for the F1 stats. */
   private readonly frames = new FrameRecorder();
 
@@ -109,7 +108,7 @@ export class SandboxScene extends Phaser.Scene {
       this.gameLayer.dispose();
     });
     this.campaign = new Campaign(CAMPAIGN_LEVELS, browserStore());
-    this.session = new Session(this.gameLayer, this.campaign);
+    this.session = new Session(this.gameLayer, this.campaign, TUTORIAL_LEVEL);
     this.hud = new Hud(this, this.gameLayer);
     this.rewards = new RewardsScreen(this, (choice) => this.follow(this.session.act(choice)));
     this.palette = new PaletteBar(this, (tool) => this.drawing.pick(tool));
@@ -129,8 +128,7 @@ export class SandboxScene extends Phaser.Scene {
     );
     this.menus = [gallery, stressTests];
     this.freePlayControls = [gallery, sandbox, stressTests];
-    this.tutorial = new Tutorial(browserStore(TUTORIAL_KEY));
-    this.tutorialScreen = new TutorialScreen(this);
+    this.cardScreen = new CardScreen(this);
     this.screen = new MenuScreen(this);
 
     this.bindKeys();
@@ -138,9 +136,10 @@ export class SandboxScene extends Phaser.Scene {
     this.showTitle();
   }
 
-  /** The title screen: Campaign, Sandbox and Gallery. */
+  /** The title screen: Tutorial, Campaign, Sandbox and Gallery. */
   private showTitle(): void {
     this.open('INKFORGE', [
+      { label: 'Tutorial', onPick: () => this.follow(this.session.playTutorial()) },
       { label: 'Campaign', onPick: () => this.showLevelList() },
       { label: 'Sandbox', onPick: () => this.play(SANDBOX_LEVEL) },
       { label: 'Gallery', onPick: () => this.showGallery() },
@@ -170,15 +169,14 @@ export class SandboxScene extends Phaser.Scene {
   /** Opens a menu screen; a Stroke being drawn is dropped. */
   private open(title: string, items: Parameters<MenuScreen['show']>[1]): void {
     this.drawing.leave();
-    this.tutorial.hide();
+    this.session.cards.close();
     for (const menu of this.menus) menu.close();
     this.screen.show(title, items);
   }
 
   /**
-   * Follows what the Session did with a choice on the rewards screen, or R:
-   * a Level loaded, the world taken back to the last start, or the Level
-   * left for the Level list.
+   * Follows what the Session did: a Level loaded, the world taken back to
+   * the last start, or the Level left for the Level list or the title screen.
    */
   private follow(acted: Acted): void {
     switch (acted) {
@@ -189,6 +187,8 @@ export class SandboxScene extends Phaser.Scene {
         return this.frames.sinceStart.restart();
       case 'left':
         return this.showLevelList();
+      case 'title':
+        return this.showTitle();
       case 'refused':
         return;
     }
@@ -196,8 +196,7 @@ export class SandboxScene extends Phaser.Scene {
 
   /** Loads the Campaign's Level at `index`, if it is unlocked. */
   private playCampaign(index: number): void {
-    if (!this.session.playCampaign(index)) return;
-    this.started();
+    this.follow(this.session.playCampaign(index));
   }
 
   /**
@@ -205,42 +204,39 @@ export class SandboxScene extends Phaser.Scene {
    * its own Arena, Waves and Tanks if it has them. Clear does it again.
    */
   private play(level: Level): void {
-    this.session.play(level);
-    this.started();
+    this.follow(this.session.play(level));
   }
 
   /** Clear: loads the Level being played again, from Wave 1. */
   private clear(): void {
-    this.session.clear();
-    this.started();
+    this.follow(this.session.clear());
   }
 
   /**
    * A Level was loaded: closes any menu screen, shows Free play's toolbar
-   * buttons outside the Campaign only, names it for F1, and times it from now.
+   * buttons in Free play only, drops a Stroke being drawn if Cards opened,
+   * names it for F1, and times it from now.
    */
   private started(): void {
     this.screen.hide();
-    const freePlay = this.session.reading.campaign === null;
-    for (const control of this.freePlayControls) control.setVisible(freePlay);
-    this.tutorial.hide();
-    if (this.tutorial.offer(this.session.reading.campaign?.index ?? null)) this.drawing.leave();
-    this.overlay.setSceneName(this.session.reading.name);
+    const { play, name } = this.session.reading;
+    for (const control of this.freePlayControls) control.setVisible(play === 'free-play');
+    if (this.session.cards.isOpen) this.drawing.leave();
+    this.overlay.setSceneName(name);
     this.frames.sinceStart.restart();
   }
 
-  /** Whether a menu screen or the Tutorial is open: nothing is played or drawn behind either. */
+  /** Whether a menu screen or Cards are open: nothing is played or drawn behind either. */
   private get blocked(): boolean {
-    return this.screen.isOpen || this.tutorial.isOpen;
+    return this.screen.isOpen || this.session.cards.isOpen;
   }
 
-  /** H: opens the Tutorial at card 1, pausing a Wave under way; it stays paused once it closes. */
+  /** H: opens the Tutorial's Cards, pausing a Wave under way; it stays paused once they close. */
   private showTutorial(): void {
-    if (this.screen.isOpen || this.tutorial.isOpen) return;
+    if (this.blocked) return;
     this.drawing.leave();
     for (const menu of this.menus) menu.close();
-    if (this.world.isRunning) this.gameLayer.togglePause();
-    this.tutorial.open();
+    this.session.showCards();
   }
 
   private bindKeys(): void {
@@ -260,11 +256,13 @@ export class SandboxScene extends Phaser.Scene {
     });
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).on('down', () => {
       if (this.screen.isOpen) return;
-      // The Space that closes the Tutorial does not also start the Wave.
-      if (this.tutorial.isOpen) this.tutorial.next();
+      // The Space that closes the Cards does not also start the Wave.
+      if (this.session.cards.isOpen) this.session.cards.next();
       else this.gameLayer.togglePause();
     });
-    keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on('down', () => this.tutorial.skip());
+    keyboard
+      .addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
+      .on('down', () => this.session.cards.close());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.H).on('down', () => this.showTutorial());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F1).on('down', () => this.overlay.cycle());
     keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.F2).on('down', () => this.tuning.toggle());
@@ -294,8 +292,8 @@ export class SandboxScene extends Phaser.Scene {
       Phaser.Input.Events.POINTER_DOWN,
       (pointer: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
         if (over.length > 0) return; // a toolbar button
-        if (this.tutorial.isOpen) {
-          if (pointer.leftButtonDown()) this.tutorial.next();
+        if (this.session.cards.isOpen) {
+          if (pointer.leftButtonDown()) this.session.cards.next();
           return;
         }
         // A click beside an open menu only closes it.
@@ -332,13 +330,13 @@ export class SandboxScene extends Phaser.Scene {
     this.flash(this.drawing.tick());
     const start = performance.now();
     // A stress test's update is timed with physics: a few microseconds. Behind
-    // a menu screen or the Tutorial, nothing is played.
+    // a menu screen or Cards, nothing is played.
     const steps = this.blocked ? 0 : this.session.advance(deltaMs / 1000);
     this.frames.physics(performance.now() - start, steps);
     const drawStart = performance.now();
     this.tuning.draw();
     this.rewards.draw(this.gameLayer.defence.reading, this.session.reading);
-    this.tutorialScreen.draw(this.tutorial);
+    this.cardScreen.draw(this.session.cards);
     this.worldView.draw(deltaMs / 1000);
     const preview = this.drawing.preview();
     if (preview.kind === 'brush') this.preview.drawBrush(preview.pointer);

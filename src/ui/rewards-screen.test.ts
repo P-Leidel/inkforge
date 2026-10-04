@@ -129,3 +129,28 @@ describe('The rewards screen in the Campaign', () => {
     ]);
   });
 });
+
+describe('The rewards screen after the Tutorial', () => {
+  it('says the Campaign is next once it is cleared', () => {
+    const cleared = reading({
+      phase: 'cleared',
+      wave: 3,
+      rewards: { summary: { ...summary, wave: 3 } },
+      next: null,
+    });
+    const offer: Offer = { choices: ['start-campaign', 'title'], next: null };
+
+    expect(rewardsLines(cleared, { campaign: null, offer })!.at(-1)).toBe('On to the Campaign');
+  });
+
+  it('says it is lost', () => {
+    const lost = reading({ phase: 'lost', coreDestroyed: true, next: null });
+    const offer: Offer = { choices: ['retry-wave', 'restart-level', 'title'], next: null };
+
+    expect(rewardsLines(lost, { campaign: null, offer })).toEqual([
+      'WAVE 2 OF 3 LOST',
+      '',
+      'The Ink Core is destroyed',
+    ]);
+  });
+});

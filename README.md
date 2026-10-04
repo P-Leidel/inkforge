@@ -31,7 +31,7 @@ CI runs lint, format check, typecheck, tests and build on every push and pull re
 
 ## Playing
 
-The game opens on the **title screen**: **Campaign**, **Sandbox** and **Gallery**. The toolbar's **Title** button goes back to it from anywhere; while it is open, nothing plays behind it.
+The game opens on the **title screen**: **Tutorial**, **Campaign**, **Sandbox** and **Gallery**. The toolbar's **Title** button goes back to it from anywhere; while it is open, nothing plays behind it.
 
 | Action                                                   | Input                                                       |
 | -------------------------------------------------------- | ----------------------------------------------------------- |
@@ -50,7 +50,9 @@ The game opens on the **title screen**: **Campaign**, **Sandbox** and **Gallery*
 | Send in a Runner, paused or running (Free play)          | Shift+2                                                     |
 | Send in a Heavy, paused or running (Free play)           | Shift+3                                                     |
 | Tuning panel (Ink costs, Ink, Waves, the Wave, Rules)    | F2                                                          |
-| Open the Campaign's Level list, the Sandbox or a demo    | Title screen                                                |
+| Open the Tutorial, the Level list, the Sandbox or a demo | Title screen                                                |
+| Turn a Card / close them all                             | Space or click / Esc                                        |
+| Show the Tutorial's Cards (pauses a Wave)                | H                                                           |
 | Back to the title screen                                 | **Title** on the toolbar                                    |
 | Next Level, once a Campaign Level is cleared             | **Next Level** on the panel                                 |
 | Retry the lost Wave / restart a lost Level               | **Retry Wave** (R) / **Restart Level** (Clear) on the panel |
@@ -114,6 +116,8 @@ F2 opens a panel with an **Ink** section, a **Wave** section, a **Rules** sectio
 | Ink Core HP                             | next Clear                            |
 
 A price edit leaves what was already charged at its price, so undo still refunds what was paid. Lowering a Tank maximum empties the Tank down to it at once, and no refund or R fills it beyond it; raising one leaves the Tank as it is, and Clear fills it.
+
+The **Tutorial** is a Level of its own, first on the title screen, and locks nothing: one flat field, grey and black, and three small Waves of Crawlers ([ADR 0022](docs/adr/0022-the-tutorial-is-a-level.md)). Before each Wave its **Cards** open: the goal and the controls, then killing and Bellies, then pebble vs stone. Space or a click turns them, Esc closes them, and the Space that closes the last doesn't also start the Wave. They open the first time each Intermission is reached: R doesn't open them again, Clear does. H opens all of them in any Level, pausing a Wave under way. It is played like a Campaign Level; cleared, the panel offers **Start Campaign** and **Title**, and lost, **Retry Wave**, **Restart Level** and **Title**.
 
 The **Campaign** is three Levels played in order. Its **Level list** shows all three; Level 1 is always unlocked, and each other once the one before is cleared. Locked Levels show but can't be opened. A Campaign Level is played like any Level with Waves. Once its last Wave is cleared, the next Level is unlocked and the panel offers **Next Level**, which loads it at its first Wave, and **Level list**; after Level 3 it says "Campaign cleared". If the Ink Core is destroyed, the panel offers **Retry Wave** (as R), **Restart Level** (as Clear, from Wave 1) and **Level list**; the Campaign stays as it was. Which Levels are unlocked is saved in the browser's `localStorage` (key `inkforge.campaign.v1`) and nothing else; an unreadable record unlocks only Level 1. F1 and F2 work there as everywhere; the palette shows only the Level's Colours, until F2 turns Ink costs off. Sending in Enemies by hand (Shift+1/2/3) is not on hand there; the Eraser is. The toolbar shows only **Clear** and **Title**: Gallery, Sandbox and Stress tests are Free play's, and **Title** is the way out of the Campaign. The title screen's **Sandbox** opens the empty sandbox, as the toolbar's does, and its **Gallery** lists the same demos as the toolbar's.
 
