@@ -15,11 +15,11 @@ const createGame = games();
 
 /**
  * Drawing input over a real Game, with a count of the looks it took, of the
- * Stroke pipeline's runs behind them, and every path it erased along.
+ * closing Strokes the world looked at behind them, and every path it erased along.
  */
 function drawingOver(game: Game) {
   const asked = { strokeLooks: 0, fillLooks: 0, erased: [] as Vec2[][] };
-  const pipeline = vi.spyOn(game.world, 'previewStroke');
+  const looks = vi.spyOn(game.world, 'lookAtStroke');
   const commands: DrawingCommands = {
     submitStroke: (samples, colour) => game.submitStroke(samples, colour),
     fillAt: (point, colour) => game.fillAt(point, colour),
@@ -47,8 +47,8 @@ function drawingOver(game: Game) {
   return {
     input: new DrawingInput(commands),
     asked,
-    /** How many times the Stroke pipeline ran for a preview. */
-    pipelineRuns: () => pipeline.mock.calls.length,
+    /** How many times the world looked at a closing Stroke, which drawing input refuses on. */
+    objectLooks: () => looks.mock.results.filter(({ value }) => value?.kind === 'object').length,
   };
 }
 
@@ -536,17 +536,17 @@ describe('Drawing input', () => {
     it('shows a closing Stroke over an Object as refused, worked out again only on new samples', () => {
       const game = createGame(false);
       const world = game.world;
-      const { input, pipelineRuns } = drawingOver(game);
+      const { input, objectLooks } = drawingOver(game);
       box(world, input);
       const over = dragBox(390, 420, 60, 60);
       const half = over.length / 2;
-      const before = pipelineRuns();
+      const before = objectLooks();
 
       input.press(over[0]!, 'left');
       for (const sample of over.slice(1, half)) input.move(sample);
-      // Still open: nothing to refuse, and the Stroke pipeline doesn't run.
+      // Still open: nothing to refuse, and no closing Stroke is looked at.
       expect(input.preview()).toMatchObject({ kind: 'stroke', closes: false, refused: false });
-      expect(pipelineRuns()).toBe(before);
+      expect(objectLooks()).toBe(before);
 
       for (const sample of over.slice(half)) input.move(sample);
       expect(input.preview()).toMatchObject({
@@ -556,11 +556,11 @@ describe('Drawing input', () => {
         refused: true,
       });
       expect(input.preview()).toMatchObject({ refused: true });
-      expect(pipelineRuns()).toBe(before + 1);
+      expect(objectLooks()).toBe(before + 1);
 
       input.move(over[1]!);
       input.preview();
-      expect(pipelineRuns()).toBe(before + 2);
+      expect(objectLooks()).toBe(before + 2);
     });
 
     it('shows a closing Stroke in the open as not refused', () => {

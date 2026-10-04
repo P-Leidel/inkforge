@@ -4,7 +4,7 @@ import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { createEnemyTable, enemiesRevision, type EnemyTable } from '../materials/enemy-table';
 import { type EnemyType } from '../materials/enemy-types';
-import { samplesInk, type SamplesInk } from '../materials/ink';
+import { samplesInk } from '../materials/ink';
 import {
   createMaterialTable,
   materialsRevision,
@@ -89,6 +89,28 @@ export type StrokeOutcome =
   | { readonly kind: 'declined'; readonly made: MadeStroke; readonly path: readonly Vec2[] }
   | { readonly kind: 'rejected'; readonly reason: RejectionReason; readonly path: readonly Vec2[] }
   | { readonly kind: 'dropped' };
+
+/**
+ * What a Stroke would be, as the Sandbox world is when it is looked at:
+ * the Ink it would take, what it would run into, and whether its raw
+ * samples come closer to an Enemy than its width.
+ */
+export type StrokeLook =
+  /**
+   * A Stroke that doesn't close, as a Line along its raw samples, cut where
+   * a new Line is: of its Ink, the part lying on a standing Line, and
+   * whether it would be Grounded.
+   */
+  (
+    | {
+        readonly kind: 'line';
+        readonly ink: number;
+        readonly onLines: number;
+        readonly grounded: boolean;
+      }
+    /** A closing Stroke, and whether its Object would overlap the Terrain or an Object. */
+    | { readonly kind: 'object'; readonly ink: number; readonly overlaps: boolean }
+  ) & { readonly nearEnemy: boolean };
 
 export interface StrokeOptions {
   /** Overrides the Line thickness (the stress tests use a thinner Line). */
@@ -539,14 +561,6 @@ export class SandboxWorld {
     }
   }
 
-  /**
-   * What a Stroke would become if it were submitted now, without adding it.
-   * Drawing input uses this to show a refused Object in red while drawing.
-   */
-  previewStroke(samples: readonly Vec2[]): StrokeResult {
-    return processStroke(samples, this.strokeContext({}));
-  }
-
   /** The Arena as the Stroke pipeline sees it: what the Arena query says a new Stroke meets. */
   private strokeContext(options: StrokeOptions): StrokeContext {
     return {
@@ -574,28 +588,33 @@ export class SandboxWorld {
   }
 
   /**
-   * Measures a Stroke's raw pointer samples as drawn, without the Stroke
-   * pipeline or adding anything: whether they close, their Ink, and the
-   * part of it lying on a standing Line. A Line is cut where the Arena
-   * query says a new one is, as the Stroke pipeline cuts it. To estimate
-   * what a Stroke costs while it is drawn.
+   * Looks at what a Stroke with these raw pointer samples would be if it
+   * were submitted now, without adding anything; null with too few samples
+   * to be anything. Its Ink is measured on the samples as drawn, a Line's
+   * cut where the Arena query says a new one is, with the part lying on a
+   * standing Line. Whether a Line would be Grounded, and whether an Object
+   * would overlap, are asked of the Stroke pipeline, as `submitStroke` would,
+   * which runs once. Samples too few to make a Line yet are cut where a new
+   * Line is, as drawn. To show and price a Stroke while it is drawn.
    */
-  measureSamples(samples: readonly Vec2[]): SamplesInk {
-    return samplesInk(
+  lookAtStroke(samples: readonly Vec2[]): StrokeLook | null {
+    if (samples.length < 2) return null;
+    const { closes, ink, onLines } = samplesInk(
       samples,
       (path) => this.query.lyingOnLines(path),
       (points) => cutPolylineOutside(points, this.query.lineCutters(points)),
     );
+    const nearEnemy = this.nearEnemy(samples);
+    const result = processStroke(samples, this.strokeContext({}));
+    if (closes) {
+      const overlaps = result.kind === 'rejected' && result.reason === 'overlaps';
+      return { kind: 'object', ink, overlaps, nearEnemy };
+    }
+    return { kind: 'line', ink, onLines, grounded: this.grounds(samples, result), nearEnemy };
   }
 
-  /**
-   * Whether the Line a Stroke along raw `samples` would make now would be
-   * Grounded, by the Stroke pipeline, as `submitStroke` makes it: to show,
-   * while it is drawn, whether it will hang Frozen. Samples too few to make
-   * a Line yet are cut where a new Line is, as drawn.
-   */
-  groundsSamples(samples: readonly Vec2[]): boolean {
-    const result = processStroke(samples, this.strokeContext({}));
+  /** Whether the Line the Stroke pipeline made of `samples` (`result`) would be Grounded. */
+  private grounds(samples: readonly Vec2[], result: StrokeResult): boolean {
     if (result.kind === 'line') return this.linesKind.grounds(result.segments, result.thickness);
     const segments = cutPolylineOutside(samples, this.query.lineCutters(samples));
     return segments.length > 0 && this.linesKind.grounds(segments, LINE_THICKNESS);

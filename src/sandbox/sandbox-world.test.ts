@@ -194,8 +194,7 @@ describe('Sandbox world: changes', () => {
     };
     const box = dragBox(400, 300, 60, 60);
 
-    world.previewStroke(box);
-    world.measureSamples(box);
+    world.lookAtStroke(box);
     world.fillInkAt({ x: 430, y: 330 });
     world.step(); // paused: no step is taken
     expect(changed()).toBe(false);
@@ -691,9 +690,9 @@ describe('Sandbox world: overlap rules', () => {
   it('previews an Object that would overlap as refused, before it is submitted', () => {
     const world = createWorld();
 
-    const preview = world.previewStroke(dragBox(300, 850, 60, 60));
+    const look = world.lookAtStroke(dragBox(300, 850, 60, 60));
 
-    expect(preview).toEqual(expect.objectContaining({ kind: 'rejected', reason: 'overlaps' }));
+    expect(look).toMatchObject({ kind: 'object', overlaps: true });
     expect(world.objects).toHaveLength(0);
   });
 });
