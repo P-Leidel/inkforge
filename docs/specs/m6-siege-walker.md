@@ -1,6 +1,6 @@
 # Spec: Milestone 6, the Siege Walker
 
-**In progress**: the Siege Walker is a type that walks, presses, dies, tips and gets back up, and Enemies queued behind one at a wall push it on, and the boss Level ends the Campaign; its gait is to come. Roadmap step 6 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 5 spec](m5-defence-loop.md), whose exit playtest ([#138](https://github.com/P-Leidel/inkforge/issues/138)) is still under way; this milestone assumes it passes.
+**In progress**: the Siege Walker is a type that walks, presses, dies, tips and gets back up, its legs walking, standing and flailing with it under its boss bar, and Enemies queued behind one at a wall push it on, and the boss Level ends the Campaign; the exit playtest is to come. Roadmap step 6 of the [GDD](../gdd.md#15-roadmap). Terms in **bold** are defined in [`CONTEXT.md`](../../CONTEXT.md). Builds on the [milestone 5 spec](m5-defence-loop.md), whose exit playtest ([#138](https://github.com/P-Leidel/inkforge/issues/138)) is still under way; this milestone assumes it passes.
 
 ## Progress
 
@@ -14,7 +14,7 @@
 - [x] 1. The Siege Walker as a type ([#185](https://github.com/P-Leidel/inkforge/issues/185)).
 - [x] 2. Tipped, and getting back up ([#186](https://github.com/P-Leidel/inkforge/issues/186)).
 - [x] 3. The Push ([#187](https://github.com/P-Leidel/inkforge/issues/187)).
-- [ ] 4. The gait and the boss bar ([#188](https://github.com/P-Leidel/inkforge/issues/188)).
+- [x] 4. The gait and the boss bar ([#188](https://github.com/P-Leidel/inkforge/issues/188)).
 - [x] 5. The boss Level ([#189](https://github.com/P-Leidel/inkforge/issues/189)).
 - [ ] 6. The exit playtest: the go/no-go ([#190](https://github.com/P-Leidel/inkforge/issues/190)).
 

@@ -802,4 +802,20 @@ describe("A Session's frame", () => {
     game.inkCosts = false;
     expect(session.frame().colours).toEqual(COLOURS);
   });
+
+  it('reads the boss from when it is sent in until it dies, and no boss with only lesser Enemies', () => {
+    const game = createGame(true);
+    const session = new Session(game);
+    game.togglePause();
+    game.world.spawn('crawler');
+    expect(session.frame().boss).toBeNull();
+
+    editEnemies(game.world.enemyTable, (table) => (table.types.siegeWalker.hp = 1));
+    game.world.spawn('siegeWalker', { x: 700, y: 100 });
+
+    expect(session.frame().boss).toEqual({ name: 'Siege Walker', hp: 1, fullHp: 1 });
+    // Dropped from high, it dies landing.
+    for (let k = 0; k < 300 && session.frame().boss; k++) game.world.step();
+    expect(session.frame().boss).toBeNull();
+  });
 });

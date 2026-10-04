@@ -4,7 +4,7 @@ import { PALETTE } from './palette';
 
 /**
  * An HP bar's size: its height, how far (px) above what it belongs to it
- * floats, and its border. `small` over an Enemy, `large` over the Ink Core.
+ * floats, and its border. `small` over an Enemy, `large` over the Ink Core and for a boss.
  */
 const SIZES = {
   small: { height: 4, gap: 6, border: 1 },
@@ -12,6 +12,11 @@ const SIZES = {
 } as const;
 
 export type HpBarSize = keyof typeof SIZES;
+
+/** How far (px) above what it belongs to an HP bar of `size` has its top. */
+export function hpBarRise(size: HpBarSize): number {
+  return SIZES[size].gap + SIZES[size].height;
+}
 
 /** Below this share of its HP left, a bar shows red. */
 const LOW_HP = 0.3;

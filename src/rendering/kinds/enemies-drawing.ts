@@ -2,9 +2,10 @@ import type Phaser from 'phaser';
 import { polygonBounds } from '../../geometry/polygon';
 import { transformPoints, type Transform } from '../../geometry/transform';
 import type { Vec2 } from '../../geometry/vec2';
-import type { EnemyType } from '../../materials/enemy-types';
+import { isBoss, type EnemyType } from '../../materials/enemy-types';
 import type { EnemyView } from '../../sandbox/sandbox-world';
 import { fillPolygon, strokePolygon } from '../draw';
+import { gaitAfter, legAngles, STANDING, swungLeg, type Gait } from '../gait';
 import { INK_HUES } from '../ink';
 import { drawHpBar } from '../hp-bar';
 import { PALETTE } from '../palette';
@@ -75,11 +76,13 @@ export const POP_HUES: Readonly<Record<EnemyType, readonly number[]>> = {
 
 /**
  * The Enemies, each as its body's outline, redrawn every frame, with a thin
- * HP bar above it once it is hurt. Placeholder art, with two eyes on the
- * side it walks toward, the Ink Core's, which is to the right: a Crawler is
- * a low grey-brown box, a Runner a narrow one leaning forward, a Heavy a
- * big dark one, a Siege Walker a dark red hull on four legs, standing (its
- * gait is to come). Each shows its Belly, the ink it carries, as a window
+ * HP bar above it once it is hurt; a boss has its bar at the top of the
+ * screen instead (`BossBar`), so none over its body. Placeholder art, with
+ * two eyes on the side it walks toward, the Ink Core's, which is to the
+ * right: a Crawler is a low grey-brown box, a Runner a narrow one leaning
+ * forward, a Heavy a big dark one, a Siege Walker a dark red hull on four
+ * legs that walk with it, stand still when it stalls and flail while it is
+ * Tipped (its gait, drawn only: its body stays standing). Each shows its Belly, the ink it carries, as a window
  * in its body, in that Colour's hue (a plain box, to keep each Enemy a few
  * drawing calls), so the player can see what it will spill. The window and
  * the eyes turn with a body that tips. The lean is only drawn: its body
@@ -87,6 +90,10 @@ export const POP_HUES: Readonly<Record<EnemyType, readonly number[]>> = {
  */
 export class EnemiesDrawing implements DrawnKind {
   private readonly graphics: Phaser.GameObjects.Graphics;
+  /** How each legged Enemy's legs are swinging, by its id. */
+  private readonly gaits = new Map<number, Gait>();
+  /** The world's time as of the last frame drawn, s. */
+  private drawnAt: number | null = null;
 
   constructor(
     scene: Phaser.Scene,
@@ -98,17 +105,44 @@ export class EnemiesDrawing implements DrawnKind {
   /** Nothing to make or free: they are drawn afresh every frame. */
   follow(): void {}
 
-  dropAll(): void {}
+  dropAll(): void {
+    this.gaits.clear();
+    this.drawnAt = null;
+  }
 
-  draw(fraction: number): void {
+  draw(fraction: number, now = 0): void {
     const g = this.graphics;
     g.clear();
-    for (const enemy of this.views()) {
+    // The gait keeps to the world's time: paused, the legs hold still.
+    const seconds = this.drawnAt === null ? 0 : Math.max(0, now - this.drawnAt);
+    this.drawnAt = now;
+    const views = this.views();
+    this.forgetGone(views);
+    for (const enemy of views) {
       const transform = drawn(enemy, fraction);
       const { body: hue, edge, lean, belly: place } = LOOKS[enemy.type];
       // Leaning forward: each point shifts ahead by how far it is above the underside.
       const leaning = ({ x, y }: Vec2) => ({ x: x + lean * (enemy.height / 2 - y), y });
-      const body = transformPoints(enemy.outline.map(leaning), transform);
+      const posed = (polygon: readonly Vec2[]) => transformPoints(polygon.map(leaning), transform);
+      let body: Vec2[];
+      if (enemy.limbs) {
+        // Its legs, swung by its gait, behind its hull, which hides their tops.
+        const gait = gaitAfter(
+          this.gaits.get(enemy.id) ?? STANDING,
+          { speed: enemy.velocity.x, tipped: enemy.tipped },
+          seconds,
+        );
+        this.gaits.set(enemy.id, gait);
+        const angles = legAngles(gait, enemy.tipped, enemy.limbs.legs.length);
+        enemy.limbs.legs.forEach((leg, k) => {
+          const swung = posed(swungLeg(leg, angles[k]!));
+          g.fillStyle(hue, 1);
+          fillPolygon(g, swung);
+          g.lineStyle(EDGE_WIDTH, edge, 1);
+          strokePolygon(g, swung);
+        });
+        body = posed(enemy.limbs.hull);
+      } else body = posed(enemy.outline);
       g.fillStyle(hue, 1);
       fillPolygon(g, body);
       const belly = bellyWindow(enemy.width, enemy.height, place);
@@ -125,11 +159,18 @@ export class EnemiesDrawing implements DrawnKind {
       g.fillStyle(PALETTE.enemyEye, 1);
       for (const right of [front, front - 2 * EYE_SIZE])
         fillBox(g, { x: right - EYE_SIZE, y: top, width: EYE_SIZE, height: EYE_SIZE }, transform);
-      if (enemy.hp < enemy.fullHp) {
+      if (enemy.hp < enemy.fullHp && !isBoss(enemy.type)) {
         const over = polygonBounds(transformPoints(enemy.outline, transform));
         drawHpBar(g, over, enemy.hp, enemy.fullHp, 'small');
       }
     }
+  }
+
+  /** Forgets the gaits of Enemies that are gone. */
+  private forgetGone(views: readonly EnemyView[]): void {
+    if (this.gaits.size === 0) return;
+    const here = new Set(views.map((enemy) => enemy.id));
+    for (const id of this.gaits.keys()) if (!here.has(id)) this.gaits.delete(id);
   }
 }
 

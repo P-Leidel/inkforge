@@ -1,4 +1,5 @@
 import { COLOURS, type Colour } from '../materials/colour';
+import { enemyName, isBoss } from '../materials/enemy-types';
 import type { Arena } from '../sandbox/arena';
 import type { StressTest } from '../stress-tests/stress-test';
 import { hintLines } from './analysis';
@@ -68,10 +69,20 @@ export interface SessionReading {
   readonly offer: Offer | null;
 }
 
+/** A boss in the Arena, as its bar at the top of the screen shows it. */
+export interface BossReading {
+  /** What it is called: the bar's label. */
+  readonly name: string;
+  /** HP left, never below 0. */
+  readonly hp: number;
+  /** HP when whole. */
+  readonly fullHp: number;
+}
+
 /**
  * Everything the screen shows of the game in one frame, worked out once:
- * the HUD, the palette and the rewards screen draw from it, and none of
- * them holds the Game.
+ * the HUD, the palette, the rewards screen and the boss bar draw from it,
+ * and none of them holds the Game.
  */
 export interface Frame {
   /** Where the Defence loop is. */
@@ -90,6 +101,8 @@ export interface Frame {
   readonly tanks: TankReadings;
   /** Where the Enemies come in: the HUD counts them there. */
   readonly arena: Pick<Arena, 'spawn' | 'spawnSide' | 'width'>;
+  /** The boss in the Arena, from when it is sent in until it dies or goes; null with none. */
+  readonly boss: BossReading | null;
 }
 
 /**
@@ -153,7 +166,14 @@ export class Session {
       inkCosts: game.inkCosts,
       tanks: game.tanks,
       arena: game.world.arena,
+      boss: this.boss,
     };
+  }
+
+  /** The oldest boss in the Arena, if there is one. */
+  private get boss(): BossReading | null {
+    const boss = this.game.world.enemies.find((enemy) => isBoss(enemy.type));
+    return boss ? { name: enemyName(boss.type, 1), hp: boss.hp, fullHp: boss.fullHp } : null;
   }
 
   get reading(): SessionReading {
