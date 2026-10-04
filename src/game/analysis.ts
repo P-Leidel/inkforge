@@ -1,7 +1,7 @@
 import { COLOURS, type Colour } from '../materials/colour';
-import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
+import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-types';
 import type { Level } from './level';
-import { arrivals } from './wave-table';
+import { sentCounts } from './wave-table';
 
 /**
  * What a first-appearance hint is about: a Colour, an Enemy type, or
@@ -39,8 +39,8 @@ export function newcomers(levels: readonly Level[], level: number, wave: number)
 function arrivingIn(level: Level, wave: number): Newcomer[] {
   const colours = wave === 0 ? COLOURS.filter((colour) => (level.tanks?.[colour] ?? 0) > 0) : [];
   const table = level.waves?.[wave];
-  const sent = new Set(table ? arrivals(table) : []);
-  const types = ENEMY_TYPES.filter((type) => sent.has(type));
+  const sent = table ? sentCounts(table) : {};
+  const types = ENEMY_TYPES.filter((type) => sent[type] !== undefined);
   return [...colours, ...types, ...(types.length > 0 ? (['belly'] as const) : [])];
 }
 

@@ -3,16 +3,9 @@ import type { DefenceReading, WaveSummary } from '../game/defence-loop';
 import { inLineLength } from '../game/ink-table';
 import type { Choice, SessionReading } from '../game/session';
 import { COLOURS } from '../materials/colour';
-import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
+import { ENEMY_TYPES, enemyName } from '../materials/enemy-types';
 import { FONT_FAMILY, PALETTE } from '../rendering/palette';
 import { textButton } from './text-button';
-
-/** What the panel calls each Enemy type: one of it, and more. */
-const ENEMY_NAMES: Readonly<Record<EnemyType, readonly [string, string]>> = {
-  crawler: ['Crawler', 'Crawlers'],
-  runner: ['Runner', 'Runners'],
-  heavy: ['Heavy', 'Heavies'],
-};
 
 /** What the rewards screen reads of the Session: where in the Campaign, and what its end offers. */
 export type SessionShown = Pick<SessionReading, 'campaign' | 'offer'>;
@@ -75,8 +68,8 @@ function summaryLines(summary: WaveSummary, waves: number): string[] {
 /** The Analysis: which Wave comes next, and each Enemy type it sends with how many. */
 function analysisLines({ wave, waves, next }: DefenceReading): string[] {
   const sent = ENEMY_TYPES.filter((type) => (next?.[type] ?? 0) > 0).map((type) => {
-    const count = next![type];
-    return `${count} ${ENEMY_NAMES[type][count === 1 ? 0 : 1]}`;
+    const count = next![type]!;
+    return `${count} ${enemyName(type, count)}`;
   });
   return [`Next: Wave ${wave} of ${waves}    ${sent.length > 0 ? sent.join('   ') : 'no Enemies'}`];
 }

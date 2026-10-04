@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS, type Colour } from '../materials/colour';
-import { DEFAULT_ENEMY_TABLE, type EnemyType } from '../materials/enemy-table';
+import { DEFAULT_ENEMY_TABLE } from '../materials/enemy-table';
+import { type EnemyType } from '../materials/enemy-types';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import { dragAlong } from '../stroke/pointer-paths';
 import type { Game } from './game';
 import { inLineLength } from './ink-table';
-import { games } from './test-support';
+import { byType, games } from './test-support';
 
 /** A Game over a new Sandbox world; Ink costs on unless said otherwise. */
 const createGame = games();
@@ -17,7 +18,7 @@ function wavesGame(options: { inkCosts?: boolean; seed?: number } = {}): Game {
     worldOptions: { seed: options.seed ?? 1 },
   });
   game.defence.edit((table) => {
-    table.counts = { crawler: 2, runner: 0, heavy: 0 };
+    table.sends = byType({ crawler: 2 });
     table.gap = 100;
   });
   return game;
@@ -105,7 +106,7 @@ describe('Drops', () => {
 
   it('come from a Pit kill; an Enemy reaching the Ink Core drops nothing, though it counts as a kill', () => {
     const game = createGame(true, { waves: true });
-    game.defence.edit((table) => (table.counts = { crawler: 0, runner: 1, heavy: 0 }));
+    game.defence.edit((table) => (table.sends = byType({ runner: 1 })));
     game.togglePause();
     expect(line(game, 400).kind).toBe('line');
     const before = held(game);
@@ -125,7 +126,7 @@ describe('Drops', () => {
 
   it("count for the Wave's summary: its kills, the Ink Core's too, and the Ink the Tanks took", () => {
     const game = createGame(true, { waves: true });
-    game.defence.edit((table) => (table.counts = { crawler: 0, runner: 1, heavy: 0 }));
+    game.defence.edit((table) => (table.sends = byType({ runner: 1 })));
     game.togglePause();
     expect(line(game, 400).kind).toBe('line');
     const before = game.tanks.grey.spendable;

@@ -1,10 +1,6 @@
 import type { Colour } from '../materials/colour';
-import {
-  createEnemyTable,
-  type EnemyMaterial,
-  type EnemyTable,
-  type EnemyType,
-} from '../materials/enemy-table';
+import { createEnemyTable, type EnemyMaterial, type EnemyTable } from '../materials/enemy-table';
+import { type EnemyType } from '../materials/enemy-types';
 import type { MaterialTable, SurfaceMaterial } from '../materials/material-table';
 
 /**

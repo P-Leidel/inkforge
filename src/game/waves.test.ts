@@ -3,21 +3,28 @@ import { createEnemyTable, editEnemies } from '../materials/enemy-table';
 import { STEP_SECONDS, type SandboxWorld } from '../sandbox/sandbox-world';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
 import type { Game } from './game';
-import { SANDBOX_LEVEL } from './level';
+import { SANDBOX_LEVEL, type Level } from './level';
 import { Session } from './session';
-import { games } from './test-support';
-import { arrivals, DEFAULT_WAVE_TABLE, type ReadonlyWaveTable } from './wave-table';
+import type { EnemyType } from '../materials/enemy-types';
+import { byType, games } from './test-support';
+import {
+  arrivals,
+  DEFAULT_WAVE_TABLE,
+  gapBefore,
+  sentCounts,
+  type ReadonlyWaveTable,
+} from './wave-table';
 
 /** A Game over a new Sandbox world, Ink costs on. */
 const createGame = games();
 
 /** A Game with Waves on, and `wave` as its Wave's list, if given. */
-function wavesGame(wave?: Partial<ReadonlyWaveTable['counts']> & { gap?: number }): Game {
+function wavesGame(wave?: Partial<Record<EnemyType, number>> & { gap?: number }): Game {
   const game = createGame(true, { waves: true });
   if (wave) {
     game.defence.edit((table) => {
       const { gap, ...counts } = wave;
-      table.counts = { crawler: 0, runner: 0, heavy: 0, ...counts };
+      table.sends = byType(counts);
       if (gap !== undefined) table.gap = gap;
     });
   }
@@ -56,19 +63,68 @@ function positions(world: SandboxWorld) {
 describe('The Wave table', () => {
   it('starts with 6 Crawlers, 3 Runners and 2 Heavies, 2 s apart', () => {
     expect(DEFAULT_WAVE_TABLE).toEqual({
-      counts: { crawler: 6, runner: 3, heavy: 2 },
+      sends: [
+        { type: 'crawler', count: 6 },
+        { type: 'runner', count: 3 },
+        { type: 'heavy', count: 2 },
+      ],
       gap: 2,
     });
   });
 
-  it('sends in Crawlers, then Runners, then Heavies, counts taken whole', () => {
-    expect(arrivals({ counts: { heavy: 1, runner: 2.7, crawler: 1 } })).toEqual([
-      'crawler',
-      'runner',
-      'runner',
-      'heavy',
+  it('sends in each group in turn, in the order the Wave lists them, counts taken whole', () => {
+    expect(
+      arrivals({
+        sends: [
+          { type: 'heavy', count: 1 },
+          { type: 'runner', count: 2.7 },
+          { type: 'crawler', count: 1 },
+          { type: 'heavy', count: 1 },
+        ],
+      }),
+    ).toEqual([
+      { type: 'heavy', group: 0 },
+      { type: 'runner', group: 1 },
+      { type: 'runner', group: 1 },
+      { type: 'crawler', group: 2 },
+      { type: 'heavy', group: 3 },
     ]);
-    expect(arrivals({ counts: { crawler: -2, runner: 0, heavy: 0 } })).toEqual([]);
+    expect(arrivals({ sends: [{ type: 'crawler', count: -2 }] })).toEqual([]);
+  });
+
+  it('waits before each arrival its group’s gap, or the Wave’s', () => {
+    const table: ReadonlyWaveTable = {
+      sends: [
+        { type: 'crawler', count: 2 },
+        { type: 'heavy', count: 1, gap: 6 },
+      ],
+      gap: 2,
+    };
+
+    expect([0, 1, 2].map((group) => gapBefore(table, group))).toEqual([2, 6, 2]);
+  });
+
+  it('counts what a Wave sends by type, in the catalogue’s order, only what it sends', () => {
+    expect(
+      sentCounts({
+        sends: [
+          { type: 'heavy', count: 1 },
+          { type: 'crawler', count: 2 },
+          { type: 'heavy', count: 2.5 },
+          { type: 'runner', count: 0 },
+        ],
+      }),
+    ).toEqual({ crawler: 2, heavy: 3 });
+    expect(
+      Object.keys(
+        sentCounts({
+          sends: [
+            { type: 'heavy', count: 1 },
+            { type: 'crawler', count: 1 },
+          ],
+        }),
+      ),
+    ).toEqual(['crawler', 'heavy']);
   });
 });
 
@@ -115,7 +171,7 @@ describe('The Waves switch', () => {
   it('is turned on by loading a Level with its own Waves', () => {
     const game = createGame(true);
 
-    game.load({ waves: [{ counts: { crawler: 1, runner: 0, heavy: 0 }, gap: 1 }] });
+    game.load({ waves: [{ sends: [{ type: 'crawler', count: 1 }], gap: 1 }] });
 
     expect(game.waves).toBe(true);
     expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1 });
@@ -253,11 +309,11 @@ function playWave(game: Game): void {
 }
 
 describe('A Level of three Waves', () => {
-  const LEVEL = {
+  const LEVEL: Level = {
     waves: [
-      { counts: { crawler: 0, runner: 1, heavy: 0 }, gap: 1 },
-      { counts: { crawler: 0, runner: 1, heavy: 0 }, gap: 1 },
-      { counts: { crawler: 0, runner: 2, heavy: 0 }, gap: 1 },
+      { sends: [{ type: 'runner', count: 1 }], gap: 1 },
+      { sends: [{ type: 'runner', count: 1 }], gap: 1 },
+      { sends: [{ type: 'runner', count: 2 }], gap: 1 },
     ],
   };
 
@@ -412,7 +468,7 @@ describe('R, with Waves on', () => {
     const game = wavesGame({ crawler: 2 });
     game.togglePause();
     stepFor(game, 1);
-    game.defence.edit((table) => (table.counts.runner = 1));
+    game.defence.edit((table) => (table.sends = byType({ ...sentCounts(table), runner: 1 })));
 
     expect(game.defence.reading.toCome).toBe(1);
     game.reset();
@@ -422,11 +478,10 @@ describe('R, with Waves on', () => {
 
   it('after a start with Waves off, goes back to that start, the Defence loop as the world', () => {
     const game = createGame(true, { waves: true });
-    const none = { crawler: 0, runner: 0, heavy: 0 };
     game.load({
       waves: [
-        { counts: none, gap: 1 },
-        { counts: { ...none, crawler: 1 }, gap: 1 },
+        { sends: [], gap: 1 },
+        { sends: [{ type: 'crawler', count: 1 }], gap: 1 },
       ],
     });
     game.togglePause();
@@ -471,7 +526,7 @@ describe('Demos, with Waves on', () => {
 
   it('can bring Waves of their own', () => {
     const game = wavesGame();
-    const wave = { counts: { crawler: 0, runner: 0, heavy: 1 }, gap: 3 };
+    const wave: ReadonlyWaveTable = { sends: [{ type: 'heavy', count: 1 }], gap: 3 };
     game.load({ waves: [wave] });
 
     expect(game.defence.table).toEqual(wave);

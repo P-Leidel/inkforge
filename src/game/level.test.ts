@@ -8,7 +8,7 @@ import type { Game } from './game';
 import { fromLineLength } from './ink-table';
 import { SANDBOX_LEVEL, type Level } from './level';
 import { games } from './test-support';
-import { DEFAULT_WAVE_TABLE } from './wave-table';
+import { DEFAULT_WAVE_TABLE, type ReadonlyWaveTable } from './wave-table';
 
 const createGame = games();
 
@@ -20,12 +20,12 @@ const ARENA: Arena = {
 };
 
 /** Its first Wave: one Heavy. */
-const FIRST_WAVE = { counts: { crawler: 0, runner: 0, heavy: 1 }, gap: 3 };
+const FIRST_WAVE: ReadonlyWaveTable = { sends: [{ type: 'heavy', count: 1 }], gap: 3 };
 
 /** A Level with everything of its own: two Waves, small Tanks, and a grey Line built. */
 const LEVEL: Level = {
   arena: ARENA,
-  waves: [FIRST_WAVE, { counts: { crawler: 2, runner: 0, heavy: 0 }, gap: 1 }],
+  waves: [FIRST_WAVE, { sends: [{ type: 'crawler', count: 2 }], gap: 1 }],
   tanks: { grey: 500, blue: 400, green: 300, black: 200, red: 100 },
   build(world) {
     world.submitStroke(

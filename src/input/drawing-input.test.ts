@@ -1,15 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
 import { DEFAULT_RULES } from '../game/defence-loop';
-import type { Game } from '../game/game';
+import { type EraseOutcome, type Game, type UndoOutcome } from '../game/game';
 import { inLineLength } from '../game/ink-table';
 import { createEnemyTable } from '../materials/enemy-table';
-import { games } from '../game/test-support';
+import { byType, games } from '../game/test-support';
 import { SANDBOX_ARENA } from '../sandbox/arena';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import { drawLine, objectById } from '../sandbox/test-support';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
-import type { EraseOutcome, UndoOutcome } from '../game/game';
 import { DrawingInput, ERASER_RADIUS, type DrawingCommands, type Flash } from './drawing-input';
 
 const createGame = games();
@@ -399,7 +398,7 @@ describe('Drawing input', () => {
     ) {
       const game = createGame(inkCosts, { waves: true });
       game.defence.edit((table) => {
-        table.counts = { crawler: 1, runner: 0, heavy: 0 };
+        table.sends = byType({ crawler: 1 });
         table.gap = 100;
       });
       const drawing = drawingOver(game);

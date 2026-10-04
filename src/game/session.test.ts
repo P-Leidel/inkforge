@@ -96,8 +96,8 @@ describe('A Session', () => {
     const session = new Session(game);
     session.play({
       waves: [
-        { counts: { crawler: 0, runner: 0, heavy: 0 }, gap: 1 },
-        { counts: { crawler: 1, runner: 0, heavy: 0 }, gap: 1 },
+        { sends: [], gap: 1 },
+        { sends: [{ type: 'crawler', count: 1 }], gap: 1 },
       ],
     });
     game.togglePause();
@@ -228,7 +228,7 @@ class FakeStore implements CampaignStore {
 }
 
 /** A Wave that sends in nothing, so it ends on its first step. */
-const EMPTY_WAVE = { counts: { crawler: 0, runner: 0, heavy: 0 }, gap: 1 };
+const EMPTY_WAVE = { sends: [], gap: 1 };
 
 /** Three Campaign Levels of two empty Waves each, the second building a Line. */
 const LEVELS: readonly Level[] = [
@@ -275,7 +275,7 @@ describe('A Session in the Campaign', () => {
     const levels: readonly Level[] = [
       {
         name: 'Hinted',
-        waves: [EMPTY_WAVE, { counts: { crawler: 1, runner: 0, heavy: 0 }, gap: 1 }],
+        waves: [EMPTY_WAVE, { sends: [{ type: 'crawler', count: 1 }], gap: 1 }],
         hints: { crawler: 'New: Crawlers' },
       },
     ];
@@ -394,7 +394,7 @@ describe('A Session in the Campaign', () => {
       const store = new FakeStore();
       const deadly: Level = {
         name: 'Deadly',
-        waves: [EMPTY_WAVE, { counts: { crawler: 0, runner: 1, heavy: 0 }, gap: 1 }],
+        waves: [EMPTY_WAVE, { sends: [{ type: 'runner', count: 1 }], gap: 1 }],
       };
       const game = createGame(true);
       editEnemies(game.world.enemyTable, (table) => (table.types.runner.coreDamage = 1000));

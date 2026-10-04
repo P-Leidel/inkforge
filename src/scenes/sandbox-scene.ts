@@ -8,7 +8,7 @@ import { Session, type Acted } from '../game/session';
 import { Tutorial, TUTORIAL_KEY } from '../game/tutorial';
 import { DrawingInput, type Flash } from '../input/drawing-input';
 import { COLOURS } from '../materials/colour';
-import { ENEMY_TYPES } from '../materials/enemy-table';
+import { ENEMY_TYPES } from '../materials/enemy-types';
 import { DebugOverlay } from '../debug/debug-overlay';
 import { FrameRecorder } from '../debug/frame-times';
 import { flashRejection } from '../rendering/rejection-flash';

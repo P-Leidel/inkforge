@@ -1,15 +1,11 @@
 import type { Colour } from './colour';
+import type { EnemyType } from './enemy-types';
 
 /**
  * The enemy table: every Enemy type's numbers, plus the values they share.
  * Pure data, next to but apart from the material table: Enemies are not
  * Colours and have no role. Every value is a starting value, tuned by feel.
  */
-
-/** The Enemy types, in the order Shift+1, Shift+2, ... send them in. */
-export const ENEMY_TYPES = ['crawler', 'runner', 'heavy'] as const;
-
-export type EnemyType = (typeof ENEMY_TYPES)[number];
 
 /** How much Ink of one Colour (in Line length, px) a Drop holds: drawn evenly from `min` to `max`. */
 export interface DropRange {

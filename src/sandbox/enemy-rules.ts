@@ -1,7 +1,7 @@
 import type { Polygon } from '../geometry/polygon';
 import type { Colour } from '../materials/colour';
 import type { Vec2 } from '../geometry/vec2';
-import type { EnemyType } from '../materials/enemy-table';
+import type { EnemyType } from '../materials/enemy-types';
 import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, ContactHit } from '../physics';
 import type { Motion } from './arena-contents';

@@ -76,7 +76,7 @@ describe("The tuning panel's Copy as JSON", () => {
   it('holds the Wave table under `wave`, in the shape of its defaults', () => {
     const game = new Game({ inkCosts: false, worldOptions: { seed: 1 } });
     game.defence.edit((wave) => {
-      wave.counts.runner = 8;
+      wave.sends[1]!.count = 8;
       wave.gap = 1.5;
     });
 
@@ -92,7 +92,11 @@ describe("The tuning panel's Copy as JSON", () => {
 
     expect(numberPaths(pasted.wave)).toEqual(numberPaths(DEFAULT_WAVE_TABLE));
     expect(pasted.wave).toEqual({
-      counts: { ...DEFAULT_WAVE_TABLE.counts, runner: 8 },
+      sends: [
+        { type: 'crawler', count: 6 },
+        { type: 'runner', count: 8 },
+        { type: 'heavy', count: 2 },
+      ],
       gap: 1.5,
     });
     game.dispose();

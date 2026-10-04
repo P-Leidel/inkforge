@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COLOURS, type Colour } from '../materials/colour';
-import type { EnemyType } from '../materials/enemy-table';
+import type { EnemyType } from '../materials/enemy-types';
 import { STEP_SECONDS } from '../sandbox/sandbox-world';
 import {
   DEFAULT_RULES,
@@ -11,7 +11,8 @@ import {
   type Refill,
   type SpaceVerb,
 } from './defence-loop';
-import { createWaveTable, type ReadonlyWaveTable } from './wave-table';
+import { createWaveTable, sentCounts } from './wave-table';
+import { byType } from './test-support';
 
 /**
  * A stand-in for the Sandbox world: Enemies are a count, the lane is clear
@@ -53,12 +54,12 @@ class FakeTanks implements Refill {
   }
 }
 
-type WaveSetup = Partial<ReadonlyWaveTable['counts']> & { gap?: number };
+type WaveSetup = Partial<Record<EnemyType, number>> & { gap?: number };
 
-/** A Wave table of `counts` and `gap`, every other count 0. */
+/** A Wave table sending `counts` of each type, one group a type, and `gap`. */
 function table({ gap, ...counts }: WaveSetup = {}) {
   const wave = createWaveTable();
-  wave.counts = { crawler: 0, runner: 0, heavy: 0, ...counts };
+  wave.sends = byType(counts);
   if (gap !== undefined) wave.gap = gap;
   return wave;
 }
@@ -190,7 +191,7 @@ describe('An Intermission', () => {
         { crawler: 2.7, runner: 1, heavy: -1 },
       ],
     });
-    expect(defence.reading.next).toEqual({ crawler: 3, runner: 0, heavy: 0 });
+    expect(defence.reading.next).toEqual({ crawler: 3 });
 
     space(defence, world);
     expect(defence.reading.next).toBeNull();
@@ -198,7 +199,7 @@ describe('An Intermission', () => {
     killAll(defence, world);
 
     expect(defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
-    expect(defence.reading.next).toEqual({ crawler: 2, runner: 1, heavy: 0 });
+    expect(defence.reading.next).toEqual({ crawler: 2, runner: 1 });
   });
 
   it('reads no next Wave with Waves off, nor once the Level is cleared', () => {
@@ -256,6 +257,42 @@ describe('Arrivals', () => {
     step(defence, world);
     expect(world.spawned).toEqual(['crawler', 'runner']);
     expect(defence.reading.toCome).toBe(0);
+  });
+
+  it('come group by group, in the order the Wave lists them, each after its own gap', () => {
+    const { defence, world } = loop({ on: true });
+    defence.edit((wave) => {
+      wave.gap = 2 * STEP_SECONDS;
+      wave.sends = [
+        { type: 'runner', count: 2 },
+        { type: 'heavy', count: 1, gap: 10 * STEP_SECONDS },
+        { type: 'crawler', count: 1 },
+      ];
+    });
+    space(defence, world);
+
+    step(defence, world, 3);
+    expect(world.spawned).toEqual(['runner', 'runner']);
+    step(defence, world, 9);
+    expect(world.spawned).toEqual(['runner', 'runner']);
+    step(defence, world);
+    expect(world.spawned).toEqual(['runner', 'runner', 'heavy']);
+    step(defence, world, 2);
+    expect(world.spawned).toEqual(['runner', 'runner', 'heavy', 'crawler']);
+  });
+
+  it('take a gap F2 edits mid-Wave from the next arrival on', () => {
+    const { defence, world } = loop({ on: true, wave: { crawler: 3, gap: 2 * STEP_SECONDS } });
+    space(defence, world);
+    step(defence, world);
+
+    defence.edit((wave) => (wave.sends[0]!.gap = 5 * STEP_SECONDS));
+    step(defence, world, 2);
+    expect(world.spawned).toEqual(['crawler', 'crawler']);
+    step(defence, world, 4);
+    expect(world.spawned).toEqual(['crawler', 'crawler']);
+    step(defence, world);
+    expect(world.spawned).toEqual(['crawler', 'crawler', 'crawler']);
   });
 
   it("wait while the lane's far end is occupied", () => {
@@ -351,13 +388,13 @@ describe('The end of a Wave', () => {
 describe("The Level's Waves", () => {
   it('each send in their own list, and F2 edits the current one', () => {
     const { defence, world } = loop({ on: true, waves: [{ crawler: 1 }, { heavy: 2 }] });
-    expect(defence.table.counts).toEqual({ crawler: 1, runner: 0, heavy: 0 });
+    expect(sentCounts(defence.table)).toEqual({ crawler: 1 });
     space(defence, world);
     step(defence, world);
     killAll(defence, world);
 
-    defence.edit((table) => (table.counts.runner = 1));
-    expect(defence.list[0]!.counts.runner).toBe(0);
+    defence.edit((table) => (table.sends = byType({ ...sentCounts(table), runner: 1 })));
+    expect(sentCounts(defence.list[0]!).runner).toBeUndefined();
     space(defence, world);
     step(defence, world, 400);
 
@@ -661,7 +698,7 @@ describe('The position, for R', () => {
   it('keeps the Wave tables as they are: F2 edits survive it', () => {
     const { defence, world } = loop({ on: true, wave: { crawler: 2 } });
     space(defence, world);
-    defence.edit((table) => (table.counts.runner = 1));
+    defence.edit((table) => (table.sends = byType({ ...sentCounts(table), runner: 1 })));
 
     retry(defence);
     world.isRunning = false;

@@ -1,5 +1,5 @@
 import type { Colour } from '../materials/colour';
-import type { EnemyType } from '../materials/enemy-table';
+import type { EnemyType } from '../materials/enemy-types';
 import { ARENA_HEIGHT, ARENA_WIDTH, type Arena } from '../sandbox/arena';
 import type { SandboxWorld } from '../sandbox/sandbox-world';
 import type { StressTest } from '../stress-tests/stress-test';

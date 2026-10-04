@@ -39,7 +39,7 @@ describe('The rewards screen', () => {
   });
 
   it('shows the next Wave alone before the first, leaving out what it does not send', () => {
-    const first = reading({ wave: 1, rewards: null, next: { crawler: 1, runner: 0, heavy: 3 } });
+    const first = reading({ wave: 1, rewards: null, next: { crawler: 1, heavy: 3 } });
 
     expect(rewardsLines(first)).toEqual([
       'Next: Wave 1 of 3    1 Crawler   3 Heavies',
@@ -49,7 +49,7 @@ describe('The rewards screen', () => {
   });
 
   it('says a Wave that sends nothing sends no Enemies', () => {
-    const empty = reading({ wave: 1, rewards: null, next: { crawler: 0, runner: 0, heavy: 0 } });
+    const empty = reading({ wave: 1, rewards: null, next: {} });
 
     expect(rewardsLines(empty)![0]).toBe('Next: Wave 1 of 3    no Enemies');
   });

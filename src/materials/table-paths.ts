@@ -16,16 +16,17 @@ export function numberPaths(table: object, prefix: Path = []): string[][] {
   return paths;
 }
 
-function parentOf(table: object, path: Path): Record<string, unknown> {
+function parentOf(table: object, path: Path): Record<string, unknown> | undefined {
   let node: unknown = table;
-  for (const key of path.slice(0, -1)) node = (node as Record<string, unknown>)[key];
-  return node as Record<string, unknown>;
+  for (const key of path.slice(0, -1)) node = (node as Record<string, unknown> | undefined)?.[key];
+  return node as Record<string, unknown> | undefined;
 }
 
-export function readPath(table: object, path: Path): number {
-  return parentOf(table, path)[path[path.length - 1]!] as number;
+/** The number at `path`, or undefined if `table` has none there (a list shorter than another's). */
+export function readPath(table: object, path: Path): number | undefined {
+  return parentOf(table, path)?.[path[path.length - 1]!] as number | undefined;
 }
 
 export function writePath(table: object, path: Path, value: number): void {
-  parentOf(table, path)[path[path.length - 1]!] = value;
+  parentOf(table, path)![path[path.length - 1]!] = value;
 }

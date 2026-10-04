@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { CAMPAIGN_LEVELS } from '../levels/campaign-levels';
 import { hintLines, newcomers } from './analysis';
 import type { Level } from './level';
+import { byType } from './test-support';
 
 const NO_TANKS = { grey: 0, blue: 0, green: 0, black: 0, red: 0 };
 
 /** A Wave table that sends `crawler`, `runner` and `heavy` of each. */
 const wave = (crawler: number, runner = 0, heavy = 0) => ({
-  counts: { crawler, runner, heavy },
+  sends: byType({ crawler, runner, heavy }),
   gap: 1,
 });
 

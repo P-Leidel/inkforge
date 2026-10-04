@@ -1,8 +1,16 @@
 import { COLOURS, type Colour } from '../materials/colour';
-import { ENEMY_TYPES, type EnemyType } from '../materials/enemy-table';
+import type { EnemyType } from '../materials/enemy-types';
 import { STEP_SECONDS, type StepHooks } from '../sandbox/sandbox-world';
 import type { Refusal } from './refusal';
-import { arrivals, createWaveTable, type ReadonlyWaveTable, type WaveTable } from './wave-table';
+import {
+  arrivals,
+  createWaveTable,
+  gapBefore,
+  sentCounts,
+  type Arrival,
+  type ReadonlyWaveTable,
+  type WaveTable,
+} from './wave-table';
 
 /** What the Defence loop needs of the Sandbox world. The Sandbox world is one. */
 export interface LoopWorld {
@@ -88,9 +96,10 @@ export interface DefenceReading {
   /**
    * The Analysis: how many of each Enemy type the next Wave sends, as its
    * table is now, in every Intermission, the first included; null outside
-   * one. Not the order they come in, nor the gaps.
+   * one. Only the types it sends, in the catalogue's order; not the order
+   * they come in, nor the gaps.
    */
-  readonly next: Readonly<Record<EnemyType, number>> | null;
+  readonly next: Readonly<Partial<Record<EnemyType, number>>> | null;
 }
 
 /**
@@ -152,7 +161,7 @@ export interface DefenceLoopOptions {
 /** A Wave under way: the Enemies still to come, when the next may, and its tally. */
 interface Wave {
   /** Still to come, in the order they arrive. */
-  readonly toCome: EnemyType[];
+  readonly toCome: Arrival[];
   /** Steps left before the next may arrive. */
   untilNext: number;
   kills: number;
@@ -230,18 +239,8 @@ export class DefenceLoop {
       toCome: this.current?.toCome.length ?? 0,
       coreDestroyed: this.coreDestroyed,
       rewards: this.ended[this.index - (this.cleared ? 0 : 1)] ?? null,
-      next: this.phase === 'intermission' ? this.nextCounts() : null,
+      next: this.phase === 'intermission' ? sentCounts(this.table) : null,
     };
-  }
-
-  /** How many of each Enemy type the current Wave's table sends, each count taken whole. */
-  private nextCounts(): Record<EnemyType, number> {
-    const counts = Object.fromEntries(ENEMY_TYPES.map((type) => [type, 0])) as Record<
-      EnemyType,
-      number
-    >;
-    for (const type of arrivals(this.table)) counts[type]++;
-    return counts;
   }
 
   /** The current Wave's table: its list and its gap. Edit it with `edit`. */
@@ -256,8 +255,9 @@ export class DefenceLoop {
 
   /**
    * Edits the current Wave's table, as the F2 tuning panel does. A Wave
-   * under way keeps its list, and takes a new gap from its next arrival; a
-   * Wave not yet started takes the table as it is when it starts.
+   * under way keeps its list, and takes each arrival's gap from its group
+   * as the table is when it comes; a Wave not yet started takes the table
+   * as it is when it starts.
    */
   edit(edit: (table: WaveTable) => void): void {
     edit(this.tables[this.index]!);
@@ -353,18 +353,21 @@ export class DefenceLoop {
 
   /**
    * Before a step of a Wave: sends in the next Enemy on its list once the
-   * gap since the last one is over and the lane's far end is free. The
-   * first comes as the Wave starts.
+   * gap before it is over and the lane's far end is free. The first comes
+   * as the Wave starts; each after it waits its group's gap (`gapBefore`)
+   * from the one before.
    */
   private arrive(): void {
     const wave = this.current;
     if (!wave) return;
     if (wave.untilNext > 0) wave.untilNext--;
     const next = wave.toCome[0];
-    if (next === undefined || wave.untilNext > 0 || !this.world.spawnClear(next)) return;
+    if (next === undefined || wave.untilNext > 0 || !this.world.spawnClear(next.type)) return;
     wave.toCome.shift();
-    this.world.spawn(next);
-    wave.untilNext = Math.max(1, Math.round(this.table.gap / STEP_SECONDS));
+    this.world.spawn(next.type);
+    const after = wave.toCome[0];
+    const gap = after ? gapBefore(this.table, after.group) : this.table.gap;
+    wave.untilNext = Math.max(1, Math.round(gap / STEP_SECONDS));
   }
 
   /**
