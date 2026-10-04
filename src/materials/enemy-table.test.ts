@@ -11,7 +11,7 @@ describe('Enemy table', () => {
       width: 40,
       height: 40,
       walkingSpeed: 60,
-      push: 1,
+      walkForce: 1,
       pressing: 300,
       hp: 3000,
       damageThreshold: 300,
@@ -31,7 +31,7 @@ describe('Enemy table', () => {
       width: 32,
       height: 44,
       walkingSpeed: 180,
-      push: 0.6,
+      walkForce: 0.6,
       pressing: 150,
       hp: 1500,
       damageThreshold: 200,
@@ -41,7 +41,7 @@ describe('Enemy table', () => {
       width: 64,
       height: 64,
       walkingSpeed: 40,
-      push: 3,
+      walkForce: 3,
       pressing: 1500,
       hp: 12000,
       damageThreshold: 1500,
@@ -73,7 +73,7 @@ describe('Enemy table', () => {
     expect(heavy.climb).toBe(0);
   });
 
-  it('never lets a bounce gain energy, and walks by its push, not its grip', () => {
+  it('never lets a bounce gain energy, and walks by its walkForce, not its grip', () => {
     for (const type of ENEMY_TYPES) {
       const { restitution, friction } = DEFAULT_ENEMY_TABLE.types[type];
       expect(restitution, type).toBeGreaterThanOrEqual(0);

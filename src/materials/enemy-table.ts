@@ -37,7 +37,7 @@ export interface EnemyMaterial {
   density: number;
   /**
    * Coulomb friction coefficient. It walks by a force, not by its grip
-   * (ADR 0010), so with none its push alone decides what it climbs: a push
+   * (ADR 0010), so with none its walkForce alone decides what it climbs: a walkForce
    * of one weight climbs up to 45°.
    */
   friction: number;
@@ -46,10 +46,10 @@ export interface EnemyMaterial {
   /** The speed (px/s) its walking force pushes it toward. */
   walkingSpeed: number;
   /** The most its walking force can be, in multiples of its own weight. */
-  push: number;
+  walkForce: number;
   /**
    * The most its climbing force can be, in multiples of its own weight: the
-   * upward push it gets while it presses another Enemy or a wall low enough
+   * upward force it gets while it presses another Enemy or a wall low enough
    * to climb (`climbStep`). Above one weight it rises; 0 never climbs.
    */
   climb: number;
@@ -101,7 +101,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
       friction: 0,
       restitution: 0,
       walkingSpeed: 60,
-      push: 1,
+      walkForce: 1,
       climb: 1.2,
       pressing: 300,
       hp: 3000,
@@ -124,7 +124,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
       friction: 0,
       restitution: 0,
       walkingSpeed: 180,
-      push: 0.6,
+      walkForce: 0.6,
       climb: 1.2,
       pressing: 150,
       hp: 1500,
@@ -147,7 +147,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
       friction: 0,
       restitution: 0,
       walkingSpeed: 40,
-      push: 3,
+      walkForce: 3,
       // Heavies never climb, though they can be climbed.
       climb: 0,
       pressing: 1500,
