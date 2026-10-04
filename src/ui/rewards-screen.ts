@@ -7,7 +7,7 @@ import { ENEMY_TYPES, enemyName } from '../materials/enemy-types';
 import { FONT_FAMILY, PALETTE } from '../rendering/palette';
 import { textButton } from './text-button';
 
-/** What the rewards screen reads of the Session: where in the Campaign, and what its end offers. */
+/** What the rewards screen reads of the Session: where in the Campaign, and what the end offers. */
 export type SessionShown = Pick<SessionReading, 'campaign' | 'offer'>;
 
 /** Free play: outside the Campaign, nothing offered. */
@@ -19,9 +19,10 @@ const FREE_PLAY: SessionShown = { campaign: null, offer: null };
  * type the next Wave sends and how many, and in the Campaign a hint for each
  * Colour and Enemy type new in it. Once the Level is cleared, the last
  * Wave's summary, and in the Campaign the Level it unlocked, or that the
- * Campaign is cleared; in the Campaign, once it is lost, that it is. Null
- * while there is nothing to show: with Waves off, during a Wave, and once
- * lost outside the Campaign, where the HUD says what to do. A choice of
+ * Campaign is cleared, and after the Tutorial that the Campaign is next;
+ * once a Level whose end offers choices is lost, that it is. Null while
+ * there is nothing to show: with Waves off, during a Wave, and once lost in
+ * Free play, where the HUD says what to do. A choice of
  * rewards would be listed below the summary.
  */
 export function rewardsLines(
@@ -29,7 +30,7 @@ export function rewardsLines(
   { campaign, offer }: SessionShown = FREE_PLAY,
 ): string[] | null {
   const { phase, rewards, wave, waves } = reading;
-  if (phase === 'lost' && campaign) {
+  if (phase === 'lost' && offer) {
     return [`WAVE ${wave} OF ${waves} LOST`, '', 'The Ink Core is destroyed'];
   }
   if (phase === 'intermission') {
@@ -46,11 +47,13 @@ export function rewardsLines(
     'LEVEL CLEARED',
     ...summaryLines(rewards.summary, waves).slice(1),
     '',
-    !campaign
+    !offer
       ? 'Clear: play the Level again'
-      : offer?.next
+      : offer.next
         ? `${offer.next.name} unlocked`
-        : 'Campaign cleared',
+        : offer.choices.includes('start-campaign')
+          ? 'On to the Campaign'
+          : 'Campaign cleared',
   ];
 }
 
@@ -77,9 +80,11 @@ function analysisLines({ wave, waves, next }: DefenceReading): string[] {
 /** Each button's label, in the order they stand. */
 const CHOICE_LABELS: Readonly<Record<Choice, string>> = {
   'next-level': 'Next Level',
+  'start-campaign': 'Start Campaign',
   'retry-wave': 'Retry Wave (R)',
   'restart-level': 'Restart Level (Clear)',
   'level-list': 'Level list',
+  title: 'Title',
 };
 
 const BUTTON_GAP = 16;
@@ -89,8 +94,8 @@ const BUTTON_ROW = 70;
 /**
  * The rewards screen: a panel in the middle of the Arena during an
  * Intermission, with the summary of the Wave that ended and the Analysis of
- * the next, and in the Campaign, once the Level is cleared or lost, a
- * button for each choice the Session offers. Everything behind it stays as
+ * the next, and in the Campaign and the Tutorial, once the Level is
+ * cleared or lost, a button for each choice the Session offers. Everything behind it stays as
  * the Wave left it. A button's click goes to `onChoice`, for the scene to
  * forward to the Session.
  */

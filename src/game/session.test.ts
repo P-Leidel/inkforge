@@ -10,6 +10,7 @@ import { PEBBLES_LEVEL } from '../stress-tests/pebble-drop';
 import type { StressTest } from '../stress-tests/stress-test';
 import { dragAlong } from '../stroke/pointer-paths';
 import { Campaign, type CampaignStore } from './campaign';
+import type { Card } from './cards';
 import type { Game } from './game';
 import { SANDBOX_LEVEL, type Level } from './level';
 import { Session } from './session';
@@ -53,20 +54,27 @@ describe('A Session', () => {
     const session = new Session(createGame(true));
 
     expect(session.playing).toBe(SANDBOX_LEVEL);
-    expect(session.reading).toEqual({ name: 'Sandbox', status: null, campaign: null, offer: null });
+    expect(session.reading).toEqual({
+      name: 'Sandbox',
+      status: null,
+      play: 'free-play',
+      campaign: null,
+      offer: null,
+    });
   });
 
   it('play loads a Level and remembers it', () => {
     const game = createGame(true);
     const session = new Session(game);
 
-    session.play(LINE_LEVEL);
+    expect(session.play(LINE_LEVEL)).toBe('started');
 
     expect(session.playing).toBe(LINE_LEVEL);
     expect(game.world.lines).toHaveLength(1);
     expect(session.reading).toEqual({
       name: 'One Line',
       status: null,
+      play: 'free-play',
       campaign: null,
       offer: null,
     });
@@ -85,7 +93,7 @@ describe('A Session', () => {
     );
     expect(game.world.lines).toHaveLength(2);
 
-    session.clear();
+    expect(session.clear()).toBe('started');
 
     expect(session.playing).toBe(LINE_LEVEL);
     expect(game.world.lines).toHaveLength(1);
@@ -195,7 +203,7 @@ describe('A Session', () => {
     expect(game.defence.reading.phase).toBe('cleared');
 
     expect(session.reading.offer).toBeNull();
-    for (const choice of ['next-level', 'retry-wave', 'restart-level', 'level-list'] as const) {
+    for (const choice of CHOICES) {
       expect(session.act(choice)).toBe('refused');
     }
     expect(game.defence.reading.phase).toBe('cleared');
@@ -213,6 +221,16 @@ describe('A Session', () => {
     expect(session.stressTest).not.toBe(first);
   });
 });
+
+/** Every choice an end can offer. */
+const CHOICES = [
+  'next-level',
+  'start-campaign',
+  'retry-wave',
+  'restart-level',
+  'level-list',
+  'title',
+] as const;
 
 /** A store in memory. */
 class FakeStore implements CampaignStore {
@@ -237,6 +255,16 @@ const LEVELS: readonly Level[] = [
   { name: 'Third', waves: [EMPTY_WAVE, EMPTY_WAVE] },
 ];
 
+/** Starts the Wave the Session's Game is in the Intermission of, and plays it out. */
+function playWave(game: Game, session: Session): void {
+  expect(game.defence.reading.phase).toBe('intermission');
+  game.togglePause();
+  for (let k = 0; k < 600 && game.defence.reading.phase === 'wave'; k++) {
+    session.advance(STEP_SECONDS);
+  }
+  expect(game.defence.reading.phase).not.toBe('wave');
+}
+
 describe('A Session in the Campaign', () => {
   /** A Session over a new Game, Ink costs on, with a Campaign of `LEVELS` over `store`. */
   function campaignSession(store: CampaignStore = new FakeStore()) {
@@ -245,26 +273,17 @@ describe('A Session in the Campaign', () => {
     return { game, campaign, session: new Session(game, campaign) };
   }
 
-  /** Starts the Wave the Session's Game is in the Intermission of, and plays it out. */
-  function playWave(game: Game, session: Session): void {
-    expect(game.defence.reading.phase).toBe('intermission');
-    game.togglePause();
-    for (let k = 0; k < 600 && game.defence.reading.phase === 'wave'; k++) {
-      session.advance(STEP_SECONDS);
-    }
-    expect(game.defence.reading.phase).not.toBe('wave');
-  }
-
   it('plays a Campaign Level at its first Wave, and says where it is', () => {
     const { game, session } = campaignSession();
 
-    expect(session.playCampaign(0)).toBe(true);
+    expect(session.playCampaign(0)).toBe('started');
 
     expect(session.playing).toBe(LEVELS[0]);
     expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 1, waves: 2 });
     expect(session.reading).toEqual({
       name: 'First',
       status: null,
+      play: 'campaign',
       campaign: { index: 0, levels: 3, hints: [] },
       offer: null,
     });
@@ -291,10 +310,36 @@ describe('A Session in the Campaign', () => {
     expect(session.reading.campaign?.hints).toEqual([]);
   });
 
+  it('gives the hints from the Waves as F2 left them: a type edited out of the next Wave gets none', () => {
+    const game = createGame(true);
+    const levels: readonly Level[] = [
+      {
+        name: 'Hinted',
+        waves: [
+          {
+            sends: [
+              { type: 'crawler', count: 1 },
+              { type: 'heavy', count: 1 },
+            ],
+            gap: 1,
+          },
+        ],
+        hints: { crawler: 'New: Crawlers', heavy: 'New: Heavies' },
+      },
+    ];
+    const session = new Session(game, new Campaign(levels, new FakeStore()));
+    session.playCampaign(0);
+    expect(session.reading.campaign?.hints).toEqual(['New: Crawlers', 'New: Heavies']);
+
+    game.defence.edit((wave) => (wave.sends[1]!.count = 0));
+
+    expect(session.reading.campaign?.hints).toEqual(['New: Crawlers']);
+  });
+
   it("can't play a locked Level", () => {
     const { session } = campaignSession();
 
-    expect(session.playCampaign(1)).toBe(false);
+    expect(session.playCampaign(1)).toBe('refused');
 
     expect(session.playing).toBe(SANDBOX_LEVEL);
     expect(session.reading.campaign).toBeNull();
@@ -354,7 +399,7 @@ describe('A Session in the Campaign', () => {
     game.togglePause();
     expect(session.reading.offer).toBeNull();
 
-    for (const choice of ['next-level', 'retry-wave', 'restart-level', 'level-list'] as const) {
+    for (const choice of CHOICES) {
       expect(session.act(choice)).toBe('refused');
     }
     expect(session.playing).toBe(LEVELS[0]);
@@ -588,5 +633,141 @@ describe('Free play after a Campaign Level', () => {
     game.waves = false;
     session.play(SANDBOX_LEVEL);
     expect(game.waves).toBe(true);
+  });
+});
+
+/** A Card titled `title`. */
+const card = (title: string): Card => ({ title, body: '', swatches: [] });
+
+/** A Tutorial of two empty Waves, a Card before each, the second Wave's two. */
+const TUTORIAL: Level = {
+  name: 'Tutorial',
+  waves: [EMPTY_WAVE, EMPTY_WAVE],
+  cards: [[card('A')], [card('B'), card('C')]],
+};
+
+/** The titles of the Cards from the one shown to the last, turning them all; closes them. */
+function readCards(session: Session): string[] {
+  const titles: string[] = [];
+  while (session.cards.shown) {
+    titles.push(session.cards.shown.card.title);
+    session.cards.next();
+  }
+  return titles;
+}
+
+describe('The Tutorial', () => {
+  /** A Session with `TUTORIAL` and a Campaign of `LEVELS`, only its first unlocked. */
+  function tutorialSession() {
+    const game = createGame(true);
+    const session = new Session(game, new Campaign(LEVELS, new FakeStore()), TUTORIAL);
+    return { game, session };
+  }
+
+  it('is played as the Tutorial, the sandbox tool put away, with no hints', () => {
+    const { game, session } = tutorialSession();
+
+    expect(session.playTutorial()).toBe('started');
+
+    expect(session.playing).toBe(TUTORIAL);
+    expect(session.reading).toMatchObject({ name: 'Tutorial', play: 'tutorial', campaign: null });
+    expect(game.allowed).toMatchObject({ eraser: true, spawning: false });
+  });
+
+  it("can't be played without one", () => {
+    expect(new Session(createGame(true)).playTutorial()).toBe('refused');
+  });
+
+  it("opens each Wave's Cards in its Intermission, the first Wave's at the start", () => {
+    const { game, session } = tutorialSession();
+    session.playTutorial();
+
+    expect(readCards(session)).toEqual(['A']);
+    playWave(game, session);
+
+    expect(game.defence.reading).toMatchObject({ phase: 'intermission', wave: 2 });
+    expect(readCards(session)).toEqual(['B', 'C']);
+  });
+
+  it('does not open them again after R, but does after Clear', () => {
+    const { game, session } = tutorialSession();
+    session.playTutorial();
+    readCards(session);
+    playWave(game, session);
+    readCards(session);
+    game.togglePause(); // Wave 2 starts: R's checkpoint is its Intermission
+
+    session.retry();
+    session.advance(STEP_SECONDS);
+    expect(session.cards.isOpen).toBe(false);
+
+    session.clear();
+    expect(readCards(session)).toEqual(['A']);
+  });
+
+  it('offers Start Campaign and the title screen once cleared; Start Campaign plays Level 1', () => {
+    const { game, session } = tutorialSession();
+    session.playTutorial();
+    playWave(game, session);
+    readCards(session);
+    playWave(game, session);
+    expect(game.defence.reading.phase).toBe('cleared');
+
+    expect(session.reading.offer).toEqual({ choices: ['start-campaign', 'title'], next: null });
+    expect(session.act('next-level')).toBe('refused');
+    expect(session.act('title')).toBe('title');
+    expect(session.playing).toBe(TUTORIAL);
+
+    expect(session.act('start-campaign')).toBe('started');
+    expect(session.playing).toBe(LEVELS[0]);
+    expect(session.reading).toMatchObject({ play: 'campaign', campaign: { index: 0 } });
+  });
+
+  it('offers Retry Wave, Restart Level and the title screen once lost', () => {
+    const game = createGame(true);
+    editEnemies(game.world.enemyTable, (table) => (table.types.runner.coreDamage = 1000));
+    const deadly: Level = {
+      ...TUTORIAL,
+      waves: [{ sends: [{ type: 'runner', count: 1 }], gap: 1 }],
+    };
+    const session = new Session(game, null, deadly);
+    session.playTutorial();
+    readCards(session);
+    game.togglePause();
+    for (let k = 0; k < 6000 && game.defence.reading.phase === 'wave'; k++) {
+      session.advance(STEP_SECONDS);
+    }
+    expect(game.defence.reading.phase).toBe('lost');
+
+    expect(session.reading.offer).toEqual({
+      choices: ['retry-wave', 'restart-level', 'title'],
+      next: null,
+    });
+    expect(session.act('restart-level')).toBe('started');
+    expect(readCards(session)).toEqual(['A']);
+  });
+
+  it("H shows all the Tutorial's Cards in any Level, pausing a Wave under way", () => {
+    const { game, session } = tutorialSession();
+    session.play({ waves: [{ sends: [{ type: 'crawler', count: 3 }], gap: 1 }] });
+    game.togglePause();
+    expect(game.isRunning).toBe(true);
+
+    session.showCards();
+
+    expect(game.isRunning).toBe(false);
+    expect(readCards(session)).toEqual(['A', 'B', 'C']);
+    expect(game.isRunning).toBe(false);
+  });
+
+  it('H does nothing while Cards are open, or without a Tutorial', () => {
+    const { session } = tutorialSession();
+    session.playTutorial();
+    session.showCards();
+    expect(readCards(session)).toEqual(['A']);
+
+    const alone = new Session(createGame(true));
+    alone.showCards();
+    expect(alone.cards.isOpen).toBe(false);
   });
 });
