@@ -40,7 +40,7 @@ const DROP_BURST_SEED = 0xd409;
 /** Where the Drop bursts fly to when the renderer is given no gauges: the top-left corner. */
 const NO_GAUGES = (): Vec2 => ({ x: 0, y: 0 });
 /** The Spawn arrow at the Spawn edge: how far above the ground it points in, and its size. */
-const SPAWN_ARROW_RISE = 60;
+export const SPAWN_ARROW_RISE = 60;
 const SPAWN_ARROW_LENGTH = 22;
 const SPAWN_ARROW_WIDTH = 24;
 /** How far in from the Spawn edge the arrow's base is (px). */

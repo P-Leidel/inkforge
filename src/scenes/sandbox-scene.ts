@@ -109,7 +109,7 @@ export class SandboxScene extends Phaser.Scene {
     });
     this.campaign = new Campaign(CAMPAIGN_LEVELS, browserStore());
     this.session = new Session(this.gameLayer, this.campaign, TUTORIAL_LEVEL);
-    this.hud = new Hud(this, this.gameLayer);
+    this.hud = new Hud(this);
     this.rewards = new RewardsScreen(this, (choice) => this.follow(this.session.act(choice)));
     this.palette = new PaletteBar(this, (tool) => this.drawing.pick(tool));
     // Clear and Title at the right end, on hand everywhere; Free play's own
@@ -334,8 +334,9 @@ export class SandboxScene extends Phaser.Scene {
     const steps = this.blocked ? 0 : this.session.advance(deltaMs / 1000);
     this.frames.physics(performance.now() - start, steps);
     const drawStart = performance.now();
+    const frame = this.session.frame();
     this.tuning.draw();
-    this.rewards.draw(this.gameLayer.defence.reading, this.session.reading);
+    this.rewards.draw(frame.defence, frame.session);
     this.cardScreen.draw(this.session.cards);
     this.worldView.draw(deltaMs / 1000);
     const preview = this.drawing.preview();
@@ -345,9 +346,9 @@ export class SandboxScene extends Phaser.Scene {
       this.preview.draw(samples, colour, closes, refused, pointer, pinned);
     }
     const cost = preview.kind === 'stroke' ? preview.cost : null;
-    this.palette.show(this.drawing.tool, this.gameLayer, cost);
+    this.palette.show(this.drawing.tool, frame, cost);
     this.overlay.draw();
-    this.hud.draw(this.session.reading.status ?? undefined);
+    this.hud.draw(frame);
     this.frames.draw(performance.now() - drawStart);
   }
 }

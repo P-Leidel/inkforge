@@ -1,8 +1,10 @@
 import type Phaser from 'phaser';
 import type { DefenceReading } from '../game/defence-loop';
-import type { Allowed, Game } from '../game/game';
+import type { Allowed } from '../game/game';
+import type { Frame } from '../game/session';
 import { ENEMY_TYPES } from '../materials/enemy-types';
 import { FONT_FAMILY, PALETTE } from '../rendering/palette';
+import { SPAWN_ARROW_RISE } from '../rendering/world-renderer';
 import { inward, spawnEdgeX } from '../sandbox/arena';
 
 /**
@@ -52,15 +54,18 @@ export function phaseLabel({ phase, wave, waves }: DefenceReading): string {
   }
 }
 
-/** How far above the ground the Spawn arrow is (see the World renderer), and in from the Spawn edge. */
-const SPAWN_COUNT_RISE = 60;
+/** How far in from the Spawn edge the count to come stands, beside the Spawn arrow. */
 const SPAWN_COUNT_X = 32;
+
+/** What the HUD reads of the frame. */
+export type HudFrame = Pick<Frame, 'defence' | 'session' | 'running' | 'allowed' | 'arena'>;
 
 /**
  * Pause / running indicator, "Ink Core destroyed" once its HP runs out,
  * the phase with Waves on, how many of the Wave's Enemies are still to
  * come beside the Spawn arrow, control hints (the sandbox tools' only
- * while the Game's `allowed` has them on hand) and the stress-test readout.
+ * while the frame's `allowed` has them on hand) and the stress-test
+ * readout, all from the frame.
  */
 export class Hud {
   private readonly status: Phaser.GameObjects.Text;
@@ -73,10 +78,7 @@ export class Hud {
   private shownPhase: string | undefined = undefined;
   private shownToCome: number | null | undefined = undefined;
 
-  constructor(
-    scene: Phaser.Scene,
-    private readonly game: Pick<Game, 'world' | 'defence' | 'allowed'>,
-  ) {
+  constructor(scene: Phaser.Scene) {
     this.status = scene.add
       .text(scene.scale.width / 2, 40, '', {
         fontFamily: FONT_FAMILY,
@@ -101,10 +103,9 @@ export class Hud {
         color: PALETTE.spawnCount,
       })
       .setDepth(50);
-    this.placeToCome();
     // Control hints along the top edge, above the palette, status and toolbar.
     this.help = scene.add
-      .text(scene.scale.width / 2, 8, helpText(game.allowed), {
+      .text(scene.scale.width / 2, 8, '', {
         fontFamily: FONT_FAMILY,
         fontSize: '20px',
         color: PALETTE.textMuted,
@@ -121,20 +122,17 @@ export class Hud {
       .setDepth(50);
   }
 
-  /** `readout`: the running stress test's measurements, if any. */
-  draw(readout = ''): void {
+  draw(frame: HudFrame): void {
     // Text re-renders its canvas and re-uploads the texture on every change
     // (setColor even when the colour is the same), so touch it only on a change.
-    this.readout.setText(readout);
-    this.help.setText(helpText(this.game.allowed));
-    this.drawStatus();
-    this.drawPhase();
+    this.readout.setText(frame.session.status ?? '');
+    this.help.setText(helpText(frame.allowed));
+    this.drawStatus(frame);
+    this.drawPhase(frame);
   }
 
-  private drawStatus(): void {
-    const { world, defence } = this.game;
-    const destroyed = defence.reading.coreDestroyed;
-    const shown = destroyed ? 'destroyed' : world.isRunning ? 'running' : 'paused';
+  private drawStatus({ defence, running }: HudFrame): void {
+    const shown = defence.coreDestroyed ? 'destroyed' : running ? 'running' : 'paused';
     if (shown === this.shown) return;
     this.shown = shown;
     this.status.setText(STATUS[shown].text);
@@ -142,29 +140,27 @@ export class Hud {
   }
 
   /** Puts the count to come beside the Spawn arrow, on the Arena's side of it. */
-  private placeToCome(): void {
-    const arena = this.game.world.arena;
+  private placeToCome(arena: HudFrame['arena']): void {
     const left = arena.spawnSide === 'left';
     this.toCome
       .setPosition(
         spawnEdgeX(arena) + inward(arena) * SPAWN_COUNT_X,
-        arena.spawn.y - SPAWN_COUNT_RISE,
+        arena.spawn.y - SPAWN_ARROW_RISE,
       )
       .setOrigin(left ? 0 : 1, 0.5);
   }
 
   /** The phase label, and the count beside the Spawn arrow during a Wave. */
-  private drawPhase(): void {
-    const reading = this.game.defence.reading;
-    const { phase, toCome: left } = reading;
-    const label = phaseLabel(reading);
+  private drawPhase({ defence, arena }: HudFrame): void {
+    const { phase, toCome: left } = defence;
+    const label = phaseLabel(defence);
     if (label !== this.shownPhase) {
       this.shownPhase = label;
       this.phase.setText(label);
       if (phase) this.phase.setColor(PALETTE[phase]);
     }
     // A Level may have brought its own Spawn.
-    this.placeToCome();
+    this.placeToCome(arena);
     const toCome = phase === 'wave' ? left : null;
     if (toCome === this.shownToCome) return;
     this.shownToCome = toCome;

@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import type { Vec2 } from '../geometry/vec2';
-import type { CostEstimate, Game } from '../game/game';
+import type { CostEstimate } from '../game/game';
+import type { Frame } from '../game/session';
 import { ERASER_RADIUS, type Tool } from '../input/drawing-input';
 import { COLOURS, type Colour } from '../materials/colour';
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
@@ -25,11 +26,11 @@ const label = (tool: Tool, k: number) => (tool === 'eraser' ? 'E eraser' : `${k 
 /** The left edge of the swatch in `slot`, from 0 at the left. */
 const slotX = (slot: number) => LEFT + slot * (WIDTH + GAP);
 
-/** What the gauges read: each Colour's Tank, and whether Ink costs anything. */
-export type Tanks = Pick<Game, 'inkCosts' | 'tanks'>;
+/** What the gauges read: each Colour's Tank, whether Ink costs anything, and the Level's Colours. */
+export type Tanks = Pick<Frame, 'inkCosts' | 'tanks' | 'colours'>;
 
-/** What the palette reads of the Game: the Tanks, and what is on hand (`allowed`). */
-export type PaletteGame = Tanks & Pick<Game, 'allowed'>;
+/** What the palette reads of the frame: the Tanks, and what is on hand (`allowed`). */
+export type PaletteFrame = Tanks & Pick<Frame, 'allowed'>;
 
 /** What one gauge draws. */
 export interface GaugeView {
@@ -60,7 +61,7 @@ export function gaugeViews(tanks: Tanks, cost: CostEstimate | null): GaugeView[]
   const readings = tanks.tanks;
   return COLOURS.map((colour) => {
     const { spendable, maximum, units } = readings[colour];
-    const inLevel = maximum > 0 || !tanks.inkCosts;
+    const inLevel = tanks.colours.includes(colour);
     if (!inLevel) return { filled: 0, pending: 0, over: false, amount: '', inLevel };
     if (!tanks.inkCosts) return { filled: 1, pending: 0, over: false, amount: '∞', inLevel };
     const filled = halfPixels(spendable, maximum);
@@ -163,12 +164,12 @@ export class PaletteBar {
    * left. Only the Colours the Level has are shown, and the Eraser's swatch
    * only while the Game's `allowed` has it on hand.
    */
-  show(picked: Tool, game: PaletteGame, cost: CostEstimate | null = null): void {
-    const gauges = gaugeViews(game, cost);
+  show(picked: Tool, frame: PaletteFrame, cost: CostEstimate | null = null): void {
+    const gauges = gaugeViews(frame, cost);
     this.showSwatches(
       picked,
       gauges.map((gauge) => gauge.inLevel),
-      game.allowed.eraser,
+      frame.allowed.eraser,
     );
     this.showGauges(gauges);
   }

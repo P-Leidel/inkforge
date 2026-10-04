@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInkTable, fromLineLength } from '../game/ink-table';
+import { COLOURS } from '../materials/colour';
 import { InkTanks } from '../game/ink-tanks';
 import { gaugeViews } from './palette-bar';
 
@@ -10,6 +11,7 @@ function gauges(inkCosts = true) {
     tanks,
     read: {
       inkCosts,
+      colours: COLOURS,
       get tanks() {
         return tanks.reading();
       },
@@ -61,11 +63,12 @@ describe("The palette's gauges", () => {
     }
   });
 
-  it("mark a Colour the Level doesn't have, with Ink costs on", () => {
+  it("mark a Colour the Level doesn't have", () => {
     const table = createInkTable();
     table.tanks.blue = 0;
     const tanks = new InkTanks(table);
-    const views = gaugeViews({ inkCosts: true, tanks: tanks.reading() }, null);
+    const colours = COLOURS.filter((colour) => colour !== 'blue');
+    const views = gaugeViews({ inkCosts: true, tanks: tanks.reading(), colours }, null);
 
     expect(views[1]).toEqual({ filled: 0, pending: 0, over: false, amount: '', inLevel: false });
     expect(views.filter((view) => view.inLevel)).toHaveLength(4);
@@ -75,7 +78,7 @@ describe("The palette's gauges", () => {
     const table = createInkTable();
     table.tanks.blue = 0;
     const tanks = new InkTanks(table);
-    const views = gaugeViews({ inkCosts: false, tanks: tanks.reading() }, null);
+    const views = gaugeViews({ inkCosts: false, tanks: tanks.reading(), colours: COLOURS }, null);
 
     expect(views[1]).toEqual({ filled: 1, pending: 0, over: false, amount: '∞', inLevel: true });
     expect(views.every((view) => view.inLevel)).toBe(true);
