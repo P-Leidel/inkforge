@@ -128,7 +128,7 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     private readonly bodies: Pick<ArenaBodies<never>, 'newId' | 'addEnemy' | 'removeBody'>,
     private readonly query: Pick<ArenaQuery, 'blocksEnemy'>,
     private readonly poses: Pick<PreviousPoses, 'of'>,
-    /** Gravity, px/s²: an Enemy's push is in multiples of its weight. */
+    /** Gravity, px/s²: an Enemy's walkForce is in multiples of its weight. */
     private readonly gravity: number,
   ) {}
 
@@ -272,16 +272,16 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
 
   /**
    * Pushes an Enemy through the next step toward its walking speed, toward
-   * the Ink Core's side, never harder than its push: its walking. The
+   * the Ink Core's side, never harder than its walkForce: its walking. The
    * Material rules call it for each one that stands on something. Returns
    * its drive state: true if it is stalled, pushing as hard as it will
    * without getting past, so it presses what is in its way (ADR 0010).
    */
   walk(enemy: EnemyRecord, seconds: number): boolean {
-    const { walkingSpeed, push } = this.numbers.enemy(enemy.type);
+    const { walkingSpeed, walkForce } = this.numbers.enemy(enemy.type);
     const toward = this.heading(enemy);
     const velocity = this.physics.getVelocity(enemy.body).x;
-    const most = push * enemy.mass * this.gravity;
+    const most = walkForce * enemy.mass * this.gravity;
     const force = walkingForce(velocity, toward * walkingSpeed, most, enemy.mass, seconds);
     this.physics.applyForce(enemy.body, { x: force, y: 0 });
     return toward * velocity < STALLED_SPEED * walkingSpeed;

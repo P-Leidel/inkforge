@@ -67,7 +67,7 @@ function ramp(world: SandboxWorld, x: number, degrees: number): void {
 }
 
 describe('The walking force', () => {
-  it('takes the body to its walking speed over one step, capped at its push either way', () => {
+  it('takes the body to its walking speed over one step, capped at its walkForce either way', () => {
     // 1 mass, 60 steps a second: 30 px/s short needs 1800.
     expect(walkingForce(30, 60, 5000, 1, 1 / 60)).toBeCloseTo(1800, 9);
     expect(walkingForce(0, 60, 1000, 1, 1 / 60)).toBe(1000);
@@ -193,7 +193,7 @@ describe('Enemies walk', () => {
     const onGrey = at('grey');
     const onGreen = at('green');
 
-    // Its walking force makes up for the drag each step, up to its push: only a little shows.
+    // Its walking force makes up for the drag each step, up to its walkForce: only a little shows.
     expect(onGreen).toBeLessThan(onGrey - 5);
   });
 
@@ -982,7 +982,7 @@ describe('Runner and Heavy', () => {
   it('lets a Heavy shove a light Object out of its way, where a Crawler presses it', () => {
     const push = (type: 'crawler' | 'heavy') => {
       const world = createWorld();
-      // A filled grey box: too heavy for a Crawler's push, light for a Heavy's.
+      // A filled grey box: too heavy for a Crawler's walkForce, light for a Heavy's.
       const box = drawObject(world, dragBox(300, GROUND_Y - 60, 50, 56), 'grey');
       world.fillAt({ x: 325, y: GROUND_Y - 32 }, 'grey');
       world.togglePause();

@@ -46,7 +46,7 @@ export interface ClimbShape {
 const BEVEL_HEIGHT = 12;
 /**
  * The bevel's slope: 3 up in 4 across, about 37°, gentle enough that a
- * push of one weight climbs it without friction.
+ * walkForce of one weight climbs it without friction.
  */
 const BEVEL_RUN = 4 / 3;
 /** Size (px) of the cut at each top corner. */
