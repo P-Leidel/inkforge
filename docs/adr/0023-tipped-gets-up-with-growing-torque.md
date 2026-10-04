@@ -1,0 +1,20 @@
+# A Tipped Siege Walker gets up with growing torque
+
+Status: Accepted.
+
+Knocking the Siege Walker over is the main answer to it ([milestone 6 spec](../specs/m6-siege-walker.md)). Once it tilts past its tip angle (40°), either way, it is **Tipped**: it doesn't walk, presses nothing and takes what lands on it as usual. In the air but level it doesn't walk either, but it isn't Tipped, so nothing starts. Tipping does no damage of its own; the impact counts by the one damage rule, so tipping over a bar on flat ground does nothing to it and tipping down a steep drop hurts it.
+
+**It gets up by a torque that grows with each failed try.** After the getting-up delay (4 s) it tries: a torque toward upright, the short way round, upside down too, capped. The first try's cap lifts its own weight from lying on its side (one weight times its height). A try that hasn't got it up after 3 s has failed; it lies through the delay again, and the next cap is 50% higher. So weight on it delays it, more weight for longer, but the cap outgrows any load in the end, and it always gets up: the Wave never locks. It is up again once it tilts less than half its tip angle, since just inside the tip angle it is still top-heavy enough to fall back. The tip angle, the delay, the first cap and its growth are in the enemy table, so F2 tunes them; the try's length is not.
+
+We rejected:
+
+- **A fixed cap.** Anything heavy enough left on it, or a Frozen Object over it, would pin it for good. The Wave can't end until it dies or reaches the Ink Core, so a pinned Siege Walker locks the Level.
+- **A death timer** (it dies if it stays down long enough). Then pinning it is a win by itself, and the answers the boss Level is built for, tripping it and then dropping things on it or blowing it up while it is down, stop mattering.
+
+**A Tipped Enemy lies where it fell.** Enemies walk on frictionless bodies ([ADR 0010](0010-enemies-walk-by-capped-force.md)), so a toppled Siege Walker would slide on along the ground for hundreds of pixels. While it is Tipped and lies on something, a capped force (one weight) holds it back along x, as friction would.
+
+**Its middle legs stop short of the ground.** It walks by a force at its centre of mass, high in its hull ([ADR 0010](0010-enemies-walk-by-capped-force.md)), so whatever holds its feet while it walks on tips it forward: a bar at shin height is meant to. But at the top of a slope its middle legs caught the corner where the slope meets the flat as such a bar, and once a Tipped Siege Walker lay for seconds each time, it tipped there again and again and never got over Level 3's valley. Its middle legs now collide only down to 20 px above the ground: it stands on its outer legs, a free black Object of 80 px still meets its middle legs and is shoved, and it gets over the top of every slope up to 30° we tried, Level 3's valley included. They are still drawn, and weighed, whole. We rejected pushing it at its feet instead: walking into a bar then only stops it, and at the top of a slope it reared back and tipped over that way.
+
+**The tip angle is a number, not geometry.** [ADR 0019](0019-enemy-bodies-behind-a-shape.md) gave `EnemyShape` an `upright(at)` question. With the tip angle in the enemy table, the Enemy rules decide Tipped themselves from the body's angle; the shape only says whether it can tip at all (`staysUpright`). The Tipped state, how many tries have failed and how long it has lain, is part of the Enemy's record, so R brings it back.
+
+**Phaser Box2D's sweep started from the wrong rotation.** Getting up turned up a bug in Phaser Box2D 1.1.0: finalizing a step sets `rotation0.x` and `.y` on a rotation that has `c` and `s`, so a body's sweep for continuous collision always started from the rotation it was created with. A Siege Walker turning fast enough for continuous collision jumped tens of degrees back toward the angle it was sent in at, in one step. `npm install` patches it (`scripts/patch-phaser-box2d.mjs`); no recorded replay changed.

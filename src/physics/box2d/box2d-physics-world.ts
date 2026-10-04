@@ -5,6 +5,7 @@ import {
   b2Body_ApplyLinearImpulse,
   b2Body_ApplyLinearImpulseToCenter,
   b2Body_ApplyMassFromShapes,
+  b2Body_ApplyTorque,
   b2Body_GetAngularDamping,
   b2Body_GetAngularVelocity,
   b2Body_GetContactData,
@@ -1423,6 +1424,13 @@ export function createBox2dPhysicsWorld(initialOptions: PhysicsWorldOptions): Ph
       if (!record(id).driven) throw new Error(`Body ${id} is not driven`);
       if (!world.isFree(id)) return;
       b2Body_ApplyForceToCenter(record(id).b2Id, toB2(force), true);
+    },
+
+    applyTorque(id, torque) {
+      const rec = record(id);
+      if (!rec.driven) throw new Error(`Body ${id} is not driven`);
+      if (!world.isFree(id) || rec.upright) return;
+      b2Body_ApplyTorque(rec.b2Id, torque / PX_PER_METRE ** 2, true);
     },
 
     addBond(a, b, anchors) {

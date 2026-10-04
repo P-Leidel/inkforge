@@ -991,6 +991,34 @@ describe('Walkers', () => {
     const world = createWorld();
     const box = walker(world, 300);
     expect(() => world.applyForce(box, { x: 100, y: 0 })).toThrow();
+    expect(() => world.applyTorque(box, 100)).toThrow();
+  });
+
+  it('are turned by a torque: inertia × angular acceleration, used up by one step', () => {
+    const world = createWorld();
+    const box = walker(world, 300, { driven: true });
+    world.setVelocity(box, { x: 0, y: 0 });
+    const inertia = world.getInertia(box);
+
+    for (let step = 0; step < 30; step++) {
+      world.applyTorque(box, inertia * 2);
+      world.step();
+    }
+    // 2 rad/s² for half a second, whichever way the angle grows.
+    expect(world.getAngularVelocity(box)).toBeCloseTo(1, 1);
+    expect(world.getTransform(box).angle).toBeGreaterThan(0);
+    for (let step = 0; step < 30; step++) world.step();
+    expect(world.getAngularVelocity(box)).toBeCloseTo(1, 1); // no torque, no change in the air
+  });
+
+  it('never turns an upright walker by a torque', () => {
+    const world = createWorld();
+    const box = walker(world, 300, { upright: true, driven: true });
+
+    world.applyTorque(box, 1e9);
+    world.step();
+
+    expect(world.getAngularVelocity(box)).toBe(0);
   });
 
   it('can tell standing on the ground from pressing against a wall, by the normal', () => {

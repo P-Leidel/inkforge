@@ -295,6 +295,14 @@ export class FakeArena<T, S, W extends Walker = Walker> implements RulesArena<T,
     this.log.push({ what: 'climb', with: walker });
   }
 
+  getUp(walker: W, cap: number): void {
+    this.log.push({ what: 'getUp', with: { walker, cap } });
+  }
+
+  lie(walker: W): void {
+    this.log.push({ what: 'lie', with: walker });
+  }
+
   heading(walker: W): number {
     return this.headings.get(walker) ?? 1;
   }

@@ -202,7 +202,11 @@ The Enemies lined up behind one that presses a Piece or an Object, each pressing
 _Avoid_: Queue, crowd, shove (an Object an Enemy moves is shoved, not pushed in this sense), walking force (that is `walkForce`)
 
 **Siege Walker**:
-The Campaign's final boss: a multi-legged heavy enemy meant to be beaten with physics rather than raw damage.
+The Campaign's final boss: a hull on four legs, one rigid body that can tip, far too heavy to wall off and too tough to wear down, meant to be beaten with physics rather than raw damage. It walks only while upright, never climbs and is never a step. Knocked over, it is **Tipped**.
+
+**Tipped**:
+A Siege Walker tilted past its tip angle, either way, until it is back up. It doesn't walk, presses nothing and lies where it fell, taking what lands on it as usual. After a delay it tries to get up with a capped torque toward upright; each failed try raises the cap, so weight on it delays it but never keeps it down. In the air but level it doesn't walk, but it isn't Tipped.
+_Avoid_: Knocked down, stunned, fallen
 
 ### Simulation
 

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isConvex, isSelfIntersecting, polygonBounds } from '../geometry/polygon';
+import { isConvex, isSelfIntersecting, polygonArea, polygonBounds } from '../geometry/polygon';
 import { DEFAULT_ENEMY_TABLE } from '../materials/enemy-table';
 import { enemyMass } from '../materials/mass';
 import { DEFAULT_MATERIAL_TABLE } from '../materials/material-table';
-import { boxOutline, boxShape, siegeWalkerShape, TIP_ANGLE } from './enemy-shape';
+import { boxOutline, boxShape, siegeWalkerShape } from './enemy-shape';
 
 describe('A box shape', () => {
   const at = { x: 100, y: 200, angle: 0 };
@@ -14,7 +14,6 @@ describe('A box shape', () => {
     expect(shape.parts).toEqual([boxOutline(40, 60)]);
     expect(shape.outline).toEqual(boxOutline(40, 60));
     expect(shape.staysUpright).toBe(true);
-    expect(shape.upright(at)).toBe(true);
   });
 
   it('is the same shape for the same size', () => {
@@ -62,11 +61,22 @@ describe("The Siege Walker's shape", () => {
     expect(hull).toMatchObject({ minX: -110, maxX: 110, minY: -100, maxY: 10 });
     for (const leg of legs) {
       expect(leg.maxX - leg.minX).toBeCloseTo(20, 9);
-      expect(leg.maxY - leg.minY).toBeCloseTo(90, 9);
+      expect(leg.minY).toBeCloseTo(10, 9);
     }
     // Outer foot to outer foot.
     expect(legs[0]!.minX).toBeCloseTo(-90, 9);
     expect(legs[3]!.maxX).toBeCloseTo(90, 9);
+  });
+
+  it('stands on its outer legs; its middle legs collide only down to 20 px above the ground', () => {
+    const [, ...legs] = shape.parts.map(polygonBounds);
+    expect(legs.map(({ maxY }) => maxY)).toEqual([100, 80, 80, 100]);
+  });
+
+  it('is drawn and weighed with four whole legs', () => {
+    expect(shape.outline.filter(({ y }) => y === 100)).toHaveLength(8);
+    const [hull, outer] = [shape.parts[0]!, shape.parts[1]!];
+    expect(shape.area).toBeCloseTo(polygonArea(hull) + 4 * polygonArea(outer), 6);
   });
 
   it('is outlined round its hull and legs, and covers its whole box upright', () => {
@@ -91,14 +101,6 @@ describe("The Siege Walker's shape", () => {
     expect(shape.feet(at)).toBe(300);
     const turned = { ...at, angle: degrees(30) };
     expect(shape.feet(turned)).toBeCloseTo(shape.bounds(turned).maxY, 9);
-  });
-
-  it('is upright while it is tilted less than its tip angle, 40°, either way', () => {
-    expect(TIP_ANGLE).toBeCloseTo(degrees(40), 9);
-    for (const angle of [0, 39, -39, 360, -360 + 30])
-      expect(shape.upright({ ...at, angle: degrees(angle) }), `${angle}°`).toBe(true);
-    for (const angle of [41, -41, 90, 180, -170, 360 + 45])
-      expect(shape.upright({ ...at, angle: degrees(angle) }), `${angle}°`).toBe(false);
   });
 
   it('never climbs and is never a step', () => {

@@ -90,6 +90,21 @@ export interface EnemyTable {
    * standing on it, those it stands on, and so on).
    */
   stackWear: number;
+  /**
+   * How far (degrees) an Enemy that can tip (the Siege Walker) tilts, either
+   * way, before it is Tipped: it lies helpless until it gets back up.
+   */
+  tipAngle: number;
+  /** How long (s) a Tipped Enemy lies before it tries to get up, and again after each failed try. */
+  gettingUpDelay: number;
+  /**
+   * The most its first try's torque toward upright can be, in its own
+   * weights times its height: enough to lift its weight from lying on its
+   * side.
+   */
+  rightingTorque: number;
+  /** What each failed try adds to that cap, as a share of it: the cap grows by this each time. */
+  rightingGrowth: number;
   /** The Ink Core's HP when it is whole. */
   coreHp: number;
 }
@@ -208,6 +223,10 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
   floorWear: 1,
   climbStep: 1.2,
   stackWear: 0.5,
+  tipAngle: 40,
+  gettingUpDelay: 4,
+  rightingTorque: 1,
+  rightingGrowth: 0.5,
   coreHp: 10,
 };
 

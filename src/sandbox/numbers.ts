@@ -89,6 +89,16 @@ export interface BreakingNumbers extends ThingNumbers {
   readonly toughness: Toughness;
 }
 
+/** How a Tipped Enemy gets back up: the enemy table's numbers for it. */
+export interface GettingUp {
+  /** How long (s) it lies before each try. */
+  readonly delay: number;
+  /** The most its first try's torque can be, in its own weights times its height. */
+  readonly torque: number;
+  /** What each failed try adds to that cap, as a share of it. */
+  readonly growth: number;
+}
+
 /** The one answer to what a thing's numbers are, from the tables it reads. */
 export class Numbers {
   constructor(
@@ -138,6 +148,17 @@ export class Numbers {
   /** What each other Enemy in a stack adds to an Enemy's pressing rate, as it is now. */
   get stackWear(): number {
     return this.enemies.stackWear;
+  }
+
+  /** How far (radians) an Enemy that can tip tilts before it is Tipped, as it is now. */
+  get tipAngle(): number {
+    return (this.enemies.tipAngle * Math.PI) / 180;
+  }
+
+  /** How a Tipped Enemy gets back up, as it is now. */
+  get gettingUp(): GettingUp {
+    const { gettingUpDelay, rightingTorque, rightingGrowth } = this.enemies;
+    return { delay: gettingUpDelay, torque: rightingTorque, growth: rightingGrowth };
   }
 
   /** A thing's surface, from the tables as they are now. */

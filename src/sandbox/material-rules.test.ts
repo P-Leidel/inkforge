@@ -25,7 +25,8 @@ import { boxOutline, boxShape, siegeWalkerShape, type EnemyShape } from './enemy
 import { fuseBurns, impactDamage, wakes, type Broken } from './material-rules';
 import { Numbers, type Breakable } from './numbers';
 import { Random } from './random';
-import { fakePatch, fakeRules } from './rules-test-support';
+import { fakePatch, fakeRules, type FakePhysics } from './rules-test-support';
+import { TRY_SECONDS } from './tipping';
 import { WAITING, type Sticker } from './sticking';
 
 describe('The damage rule', () => {
@@ -812,6 +813,7 @@ describe('Material rules: Enemies', () => {
     shape: boxShape(40, 40),
     belly: 'grey',
     damage: 0,
+    tipped: null,
   });
   const party = (id: number, body = id): Party<Breakable> => ({
     id,
@@ -853,6 +855,7 @@ describe('Material rules: Enemies', () => {
       shape: boxShape(height, height),
       belly: 'grey',
       damage: 0,
+      tipped: null,
     });
     const SIDE = { x: -1, y: 0 }; // from what is ahead of it, back towards the Enemy
     const UP = { x: 0, y: -1 }; // from what it stands on, up towards it
@@ -890,24 +893,90 @@ describe('Material rules: Enemies', () => {
       add(bodyOf(b), partyOf(a));
     }
 
-    /** The Siege Walker's shape, a hull on legs that turns and never climbs, Tipped if `tipped`. */
-    const legged = (tipped: boolean): EnemyShape => ({
-      ...siegeWalkerShape(220, 200),
-      upright: () => !tipped,
-    });
+    /** The Siege Walker's shape, a hull on legs that turns and never climbs. */
+    const legged = (): EnemyShape => siegeWalkerShape(220, 200);
+    const degrees = (d: number) => (d * Math.PI) / 180;
+    /** Tilts an Enemy's body to `d` degrees. */
+    const tilt = (physics: FakePhysics, walker: Walker, d: number) => {
+      const body = physics.body(walker.body);
+      body.transform = { ...body.transform, angle: degrees(d) };
+    };
 
     it('lets a Tipped Enemy push nowhere, standing or not', () => {
-      const walker = { ...enemy(1, 'heavy', 80), shape: legged(true) };
-      const { rules, contacts, arena } = arenaOf([[walker, GROUND]]);
+      const walker = { ...enemy(1, 'heavy', 80), shape: legged() };
+      const { rules, contacts, arena, physics } = arenaOf([[walker, GROUND]]);
       touch(contacts, walker, TERRAIN_PARTY, UP);
+      tilt(physics, walker, 60);
 
       rules.walk(STEP);
 
+      expect(walker.tipped).not.toBeNull();
       expect(arena.handed('walk')).toEqual([]);
     });
 
+    it('tips an Enemy that can tip past its tip angle either way, and never a box', () => {
+      const tips = (shape: EnemyShape, d: number) => {
+        const walker = { ...enemy(1, 'heavy', 80), shape };
+        const { rules, physics } = arenaOf([[walker, GROUND]]);
+        tilt(physics, walker, d);
+        rules.walk(STEP);
+        return walker.tipped !== null;
+      };
+
+      for (const d of [0, 39, -39, 360 + 30]) expect(tips(legged(), d), `${d}°`).toBe(false);
+      for (const d of [41, -41, 90, 180, -170, 360 + 45])
+        expect(tips(legged(), d), `${d}°`).toBe(true);
+      expect(tips(boxShape(80, 80), 90)).toBe(false);
+    });
+
+    it("starts no Tipped state for one in the air but level, though it doesn't walk", () => {
+      const walker = { ...enemy(1, 'heavy', 80), shape: legged() };
+      const { rules, arena } = arenaOf([[walker, GROUND - 200]]);
+
+      rules.walk(STEP);
+
+      expect(walker.tipped).toBeNull();
+      expect(arena.handed('walk')).toEqual([]);
+    });
+
+    it('lets a Tipped Enemy lie through the delay, then try to get up, harder after each failed try', () => {
+      const walker = { ...enemy(1, 'heavy', 80), shape: legged() };
+      const { rules, contacts, arena, physics } = arenaOf([[walker, GROUND]]);
+      touch(contacts, walker, TERRAIN_PARTY, UP);
+      tilt(physics, walker, 90);
+      const { gettingUpDelay } = createEnemyTable();
+      const steps = (seconds: number) => Math.round(seconds / STEP);
+      const caps = () => arena.handed('getUp').map((up) => (up as { cap: number }).cap);
+
+      for (let k = 0; k < steps(gettingUpDelay) - 1; k++) rules.walk(STEP);
+      expect(caps()).toEqual([]);
+      for (let k = 0; k < steps(gettingUpDelay + TRY_SECONDS + gettingUpDelay) + 2; k++)
+        rules.walk(STEP);
+
+      expect(new Set(caps())).toEqual(new Set([1, 1.5]));
+      expect(arena.handed('walk')).toEqual([]);
+    });
+
+    it('is up again, and walks, once it tilts less than half its tip angle', () => {
+      const walker = { ...enemy(1, 'heavy', 80), shape: legged() };
+      const { rules, contacts, arena, physics } = arenaOf([[walker, GROUND]]);
+      touch(contacts, walker, TERRAIN_PARTY, UP);
+      tilt(physics, walker, 90);
+      rules.walk(STEP);
+      tilt(physics, walker, 30);
+      rules.walk(STEP);
+      expect(walker.tipped).not.toBeNull();
+      expect(arena.handed('walk')).toEqual([]);
+
+      tilt(physics, walker, 15);
+      rules.walk(STEP);
+
+      expect(walker.tipped).toBeNull();
+      expect(arena.handed('walk')).toEqual([walker]);
+    });
+
     it('walks an upright Enemy of any shape on what it stands on', () => {
-      const walker = { ...enemy(1, 'heavy', 80), shape: legged(false) };
+      const walker = { ...enemy(1, 'heavy', 80), shape: legged() };
       const { rules, contacts, arena } = arenaOf([[walker, GROUND]]);
       touch(contacts, walker, TERRAIN_PARTY, UP);
 
@@ -918,7 +987,7 @@ describe('Material rules: Enemies', () => {
 
     it('never lets an Enemy climb one whose shape has no climbing: it only presses it', () => {
       const climber = enemy(1, 'crawler', 40);
-      const boss = { ...enemy(2, 'heavy', 80), shape: legged(false) };
+      const boss = { ...enemy(2, 'heavy', 80), shape: legged() };
       const { rules, contacts, arena } = arenaOf([
         [climber, GROUND],
         [boss, GROUND],
@@ -1176,6 +1245,7 @@ describe('Material rules: hurting Enemies', () => {
     shape: boxShape(40, 40),
     belly: 'grey',
     damage: 0,
+    tipped: null,
   });
   const partyOf = (id: number, body: number, target: Breakable | null = null) => ({
     id,
@@ -1317,6 +1387,7 @@ describe('Material rules: Drops', () => {
     shape: boxShape(40, 40),
     belly: 'grey',
     damage,
+    tipped: null,
   });
 
   it('lets every Enemy that died out a Drop after the kills, in the order they died', () => {
@@ -1396,6 +1467,7 @@ describe('Material rules: Bellies', () => {
     shape: boxShape(40, 40),
     belly,
     damage,
+    tipped: null,
   });
   const CRAWLER_INK = createEnemyTable().types.crawler.belly.ink;
 
@@ -1529,6 +1601,7 @@ describe('Material rules: pressing wear', () => {
     shape: boxShape(40, 40),
     belly: 'grey',
     damage: 0,
+    tipped: null,
   };
   const pieceOf = (colour: Colour = 'grey'): Breakable => ({
     kind: 'piece',
@@ -1755,6 +1828,7 @@ describe('Material rules: pressing wear', () => {
       shape: boxShape(40, 40),
       belly: 'grey',
       damage: 0,
+      tipped: null,
     };
     arena.walking = [crawler, other];
     const bridge = pieceOf();
@@ -1797,19 +1871,18 @@ describe('Material rules: the Push', () => {
     id,
     body: (100 + id) as BodyId,
     type,
-    shape:
-      type === 'siegeWalker'
-        ? { ...siegeWalkerShape(220, 200), upright: () => !tipped }
-        : boxShape(40, 40),
+    shape: type === 'siegeWalker' ? siegeWalkerShape(220, 200) : boxShape(40, 40),
     belly: 'grey',
     damage: 0,
+    tipped: tipped ? { tries: 0, trying: false, elapsed: 0 } : null,
   });
 
-  /** Fake rules with `walkers`, each standing on the Terrain. */
+  /** Fake rules with `walkers`, each standing on the Terrain, a Tipped one on its side. */
   function arenaOf(walkers: Walker[]) {
     const fake = fakeRules<Breakable>(createMaterialTable());
     for (const walker of walkers) {
-      fake.physics.add(walker.body);
+      const angle = walker.tipped ? Math.PI / 2 : 0;
+      fake.physics.add(walker.body, { transform: { x: 0, y: 0, angle } });
       fake.arena.enemyParties.set(walker.id, walker);
       touch(fake.contacts, walker, { id: TERRAIN_PARTY, body: 0, target: null }, FLOOR);
     }

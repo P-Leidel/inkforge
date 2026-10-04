@@ -337,6 +337,13 @@ export interface PhysicsWorld {
    * isn't free; throws for a body that isn't driven.
    */
   applyForce(id: BodyId, force: Vec2): void;
+  /**
+   * Turns a driven body with `torque` (mass × px²/s²) through the next step,
+   * like `applyForce`: its angular velocity gains torque over its inertia
+   * each second. Does nothing to one that isn't free or never turns; throws
+   * for a body that isn't driven.
+   */
+  applyTorque(id: BodyId, torque: number): void;
 
   /**
    * Holds two bodies together as they are, with a rigid joint at `anchors`
