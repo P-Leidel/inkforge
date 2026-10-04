@@ -291,7 +291,7 @@ describe('Rubble and the Sandbox controls', () => {
     const stone = world.rubble[0]!;
     const over = dragCircle({ x: stone.transform.x, y: stone.transform.y - 25 }, 25);
 
-    expect(world.previewStroke(over)).toMatchObject({ kind: 'rejected', reason: 'overlaps' });
+    expect(world.lookAtStroke(over)).toMatchObject({ kind: 'object', overlaps: true });
     expect(world.submitStroke(over, 'grey')).toMatchObject({
       kind: 'rejected',
       reason: 'overlaps',

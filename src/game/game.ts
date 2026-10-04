@@ -4,7 +4,6 @@ import { COLOURS, type Colour } from '../materials/colour';
 import type { EnemyType } from '../materials/enemy-types';
 import {
   SandboxWorld,
-  type AddedStroke,
   type DropInk,
   type Entry,
   type FillOutcome,
@@ -13,6 +12,7 @@ import {
   type SandboxWorldOptions,
   type StepHooks,
   type StrokeId,
+  type StrokeLook,
   type StrokeOutcome,
 } from '../sandbox/sandbox-world';
 import {
@@ -26,6 +26,7 @@ import {
 import type { StressTest } from '../stress-tests/stress-test';
 import { checkArenaSize, type Level } from './level';
 import { createInkTable, type InkTable, type ReadonlyInkTable } from './ink-table';
+import { InkLedger, type Action, type LedgerState } from './ink-ledger';
 import { InkTanks, type TankReadings, type TanksState } from './ink-tanks';
 import type { Refusal } from './refusal';
 import { createWaveTable, type WaveTable } from './wave-table';
@@ -119,25 +120,9 @@ export interface CostEstimate {
  * what was looked at stays the same.
  */
 export type Look =
-  /**
-   * A Stroke that doesn't close, as a Line along its raw samples, cut where
-   * a new Line is, and whether it would be Grounded.
-   */
-  (
-    | {
-        readonly kind: 'line';
-        readonly ink: number;
-        readonly onLines: number;
-        readonly grounded: boolean;
-      }
-    /** A closing Stroke, and whether its Object would overlap the Terrain or an Object. */
-    | { readonly kind: 'object'; readonly ink: number; readonly overlaps: boolean }
-    /** The Fill of the hollow Object under a point. */
-    | { readonly kind: 'fill'; readonly ink: number }
-  ) & {
-    /** Whether a Stroke's raw samples come closer to an Enemy than its width; never for a Fill. */
-    readonly nearEnemy: boolean;
-  };
+  | StrokeLook
+  /** The Fill of the hollow Object under a point; never near an Enemy. */
+  | { readonly kind: 'fill'; readonly ink: number; readonly nearEnemy: false };
 
 /** What a Stroke or a Fill would do if it were made now, without making it. */
 export interface Prospect {
@@ -151,41 +136,16 @@ export interface Prospect {
   readonly cost: CostEstimate | null;
 }
 
-/** One undo step: a Stroke, or the Fill of an Object. */
-export interface Action {
-  readonly kind: 'stroke' | 'fill';
-  readonly id: StrokeId;
-}
+export type { Action };
 
 /**
- * What something still there paid, and from which Tank. `colour` is null for
- * what was made below the Game (a demo, a stress test), which paid nothing.
- */
-interface Paid {
-  readonly colour: Colour | null;
-  readonly price: number;
-}
-
-/** What a Stroke in the Arena paid: an Object for its Outline, a Line Piece by Piece. */
-type Charge =
-  | { readonly kind: 'object'; readonly paid: Paid }
-  | {
-      readonly kind: 'line';
-      readonly colour: Colour | null;
-      /** What each Piece still standing paid, by its index. */
-      readonly pieces: Map<number, number>;
-    };
-
-/**
- * Everything R brings back of the Game: the Tanks, what was paid, the undo
- * history and where the Defence loop was. The Sandbox world keeps its own
- * snapshot, taken as physics starts, with this.
+ * Everything R brings back of the Game: the Tanks, what was paid and the
+ * undo history, and where the Defence loop was. The Sandbox world keeps its
+ * own snapshot, taken as physics starts, with this.
  */
 interface Checkpoint {
   readonly tanks: TanksState;
-  readonly strokes: ReadonlyMap<StrokeId, Charge>;
-  readonly fills: ReadonlyMap<StrokeId, Paid>;
-  readonly history: readonly Action[];
+  readonly ledger: LedgerState;
   readonly loop: LoopPosition;
 }
 
@@ -257,12 +217,8 @@ export class Game {
   private readonly inkTanks: InkTanks;
   private costs: boolean;
   private toolsOnHand = true;
-  /** What each Stroke still in the Arena paid, by id. */
-  private strokes = new Map<StrokeId, Charge>();
-  /** What each Fill still in the Arena paid, by its Object's id. */
-  private fills = new Map<StrokeId, Paid>();
-  /** Strokes and Fills in the order they were made, for undo. */
-  private undoHistory: Action[] = [];
+  /** What each Stroke and Fill still in the Arena paid, and the undo history. */
+  private readonly ledger: InkLedger;
   /**
    * Taken whenever physics starts, as the world takes its own snapshot: with
    * Waves on, as a Wave starts. R returns to it.
@@ -301,6 +257,7 @@ export class Game {
     this.world.bellyColours = (colour) => this.has(colour);
     this.freePlayWaves = options.waves ?? false;
     this.inkTanks = new InkTanks(this.inForce);
+    this.ledger = new InkLedger(this.inkTanks);
     this.reader = this.world.happenings.reader();
     this.hooks = {
       before: () => this.defence.hooks.before?.(),
@@ -435,21 +392,12 @@ export class Game {
    * px²: all that undo and the Eraser could still give back.
    */
   paid(colour: Colour): number {
-    let sum = 0;
-    const add = (paid: Paid | undefined) => {
-      if (paid?.colour === colour) sum += paid.price;
-    };
-    for (const charge of this.strokes.values()) {
-      if (charge.kind === 'object') add(charge.paid);
-      else for (const price of charge.pieces.values()) add({ ...charge, price });
-    }
-    for (const paid of this.fills.values()) add(paid);
-    return sum;
+    return this.ledger.paid(colour);
   }
 
   /** The undo history, oldest first: what Ctrl+Z may take back. */
   get history(): readonly Action[] {
-    return this.undoHistory;
+    return this.ledger.history;
   }
 
   get isRunning(): boolean {
@@ -482,9 +430,11 @@ export class Game {
         const reason = refusal(made)!;
         return { kind: 'refused', reason, colour: made.colour, price: this.priceOf(made), path };
       }
-      case 'line':
       case 'object':
-        this.charge(outcome);
+        this.ledger.charge({ ...outcome, price: this.priceOf(outcome) });
+        break;
+      case 'line':
+        this.ledger.charge({ ...outcome, pieces: this.piecePrices(outcome) });
         break;
       case 'rejected':
       case 'dropped':
@@ -515,13 +465,14 @@ export class Game {
         const reason = refusal(ink)!;
         return { kind: 'refused', reason, id, colour, price: this.fillPrice(ink), outline };
       }
-      case 'filled': {
-        const price = this.fillPrice(outcome.ink);
-        this.inkTanks.spend(colour, price);
-        this.fills.set(outcome.id, { colour, price });
-        this.undoHistory.push({ kind: 'fill', id: outcome.id });
+      case 'filled':
+        this.ledger.charge({
+          kind: 'fill',
+          id: outcome.id,
+          colour,
+          price: this.fillPrice(outcome.ink),
+        });
         break;
-      }
       case 'already-filled':
       case 'missed':
         // Nothing was filled, so nothing is charged.
@@ -533,22 +484,11 @@ export class Game {
 
   /**
    * Looks at what a Stroke with these raw samples would be if it were
-   * submitted now. Its Ink is measured on the samples as drawn; whether a
-   * Line would be Grounded, and whether an Object would overlap, are asked
-   * of the Stroke pipeline, as submitting would. Null with too few samples
+   * submitted now (`SandboxWorld.lookAtStroke`). Null with too few samples
    * to be anything.
    */
   lookAtStroke(samples: readonly Vec2[]): Look | null {
-    if (samples.length < 2) return null;
-    const { closes, ink, onLines } = this.world.measureSamples(samples);
-    const nearEnemy = this.nearEnemy(samples);
-    if (!closes) {
-      const grounded = this.world.groundsSamples(samples);
-      return { kind: 'line', ink, onLines, grounded, nearEnemy };
-    }
-    const result = this.world.previewStroke(samples);
-    const overlaps = result.kind === 'rejected' && result.reason === 'overlaps';
-    return { kind: 'object', ink, overlaps, nearEnemy };
+    return this.world.lookAtStroke(samples);
   }
 
   /**
@@ -674,34 +614,9 @@ export class Game {
     const bar = this.defence.bar('undo');
     if (bar) return { kind: 'refused', reason: bar };
     this.catchUp();
-    let undone: Action | null = null;
-    for (let action = this.undoHistory.pop(); action; action = this.undoHistory.pop()) {
-      if (this.takeBack(action)) {
-        undone = action;
-        break;
-      }
-    }
+    const undone = this.ledger.undo(this.world);
     this.catchUp();
     return undone ? { kind: 'undone', action: undone } : { kind: 'nothing' };
-  }
-
-  /** Takes back one undo step and refunds it; false if it was gone already. */
-  private takeBack({ kind, id }: Action): boolean {
-    if (kind === 'fill') {
-      const paid = this.fills.get(id);
-      this.fills.delete(id);
-      if (this.world.removeFill(id).kind === 'gone') return false;
-      this.refund(paid);
-      return true;
-    }
-    const charge = this.strokes.get(id);
-    if (this.world.removeStroke(id).kind === 'gone') {
-      this.forget(id);
-      return false;
-    }
-    this.refundStroke(id, charge);
-    this.forget(id);
-    return true;
   }
 
   /**
@@ -830,31 +745,6 @@ export class Game {
   }
 
   /**
-   * Charges a Stroke just made its price, Piece by Piece for a Line, and adds
-   * it to the history. What each paid is fixed now: undoing or breaking the
-   * Line under a free part later charges nothing.
-   */
-  private charge(stroke: AddedStroke): void {
-    const { id, colour } = stroke;
-    if (stroke.kind === 'object') {
-      const price = this.linePrice(stroke.ink);
-      this.inkTanks.spend(colour, price);
-      this.strokes.set(id, { kind: 'object', paid: { colour, price } });
-    } else {
-      const pieces = new Map(this.piecePrices(stroke).map((price, index) => [index, price]));
-      for (const price of pieces.values()) this.inkTanks.spend(colour, price);
-      this.strokes.set(id, { kind: 'line', colour, pieces });
-    }
-    this.undoHistory.push({ kind: 'stroke', id });
-  }
-
-  /** Gives back what was paid, never filling a Tank beyond its maximum. */
-  private refund(paid: Paid | undefined): void {
-    if (!paid?.colour || paid.price === 0) return;
-    this.inkTanks.refund(paid.colour, paid.price);
-  }
-
-  /**
    * Takes a kill's Drop straight into the Tanks: what doesn't fit is lost.
    * With Ink costs off, Ink is unlimited and a Drop changes nothing. The
    * Defence loop counts the kill, and what the Tanks took, for the Wave.
@@ -866,118 +756,52 @@ export class Game {
     this.defence.killed(taken);
   }
 
-  /** Refunds what a Stroke still there paid: an Object's Outline and Fill, a Line's Pieces. */
-  private refundStroke(id: StrokeId, charge: Charge | undefined): void {
-    if (charge?.kind === 'object') {
-      this.refund(charge.paid);
-      this.refund(this.fills.get(id));
-    } else if (charge) {
-      const { colour } = charge;
-      for (const price of charge.pieces.values()) this.refund({ colour, price });
-    }
-  }
-
-  /** Forgets a Stroke that is gone, with its Fill, and takes it out of the undo history. */
-  private forget(id: StrokeId): void {
-    this.strokes.delete(id);
-    this.fills.delete(id);
-    this.undoHistory = this.undoHistory.filter((action) => action.id !== id);
-  }
-
   /** Reads what happened since it last read. */
   private catchUp(): void {
     for (const entry of this.reader.read()) this.hear(entry);
   }
 
   /**
-   * Learns from what happened: a Stroke or a Fill made below the Game joins
-   * the history at price 0, and one that broke, was erased or removed is
-   * gone from it, the erased ones refunded. What undo took back, the Game
-   * already knows. When the world starts over, the Game forgets everything,
-   * the one place it does: every Tank filled, nothing paid, the undo history
-   * empty, no checkpoint, and the Defence loop in the first Wave's
-   * Intermission.
+   * Learns from what happened: the ledger hears every entry (a Stroke or a
+   * Fill made below the Game, or gone, erased or not); a kill's Drop goes
+   * into the Tanks, and it and an Enemy reaching the Ink Core count for the
+   * Wave. When the world starts over, the Game forgets everything, the one
+   * place it does: every Tank filled, nothing paid, the undo history empty,
+   * no checkpoint, and the Defence loop in the first Wave's Intermission.
    */
   private hear(entry: Entry): void {
+    this.ledger.hear(entry);
     switch (entry.kind) {
-      case 'added':
-        return this.heardAdded(entry.what);
-      case 'filled':
-        if (entry.fill && !this.fills.has(entry.id)) {
-          this.fills.set(entry.id, { colour: null, price: 0 });
-          this.undoHistory.push({ kind: 'fill', id: entry.id });
-        }
-        return;
       case 'went':
         // An Enemy that reached the Ink Core is gone for the Wave, as a kill is.
         if (entry.what.thing === 'enemy' && entry.why === 'reached') this.defence.killed();
-        // Undo told the Game already.
-        if (entry.why !== 'undone') this.heardWent(entry.what, entry.why === 'erased');
         return;
       case 'start-over':
         // The world was cleared (Clear, or below the Game) or reset below the
         // Game: nothing the Game knew of is left, nor anything to go back to.
         // R hears none of its own.
         this.inkTanks.fill();
-        this.strokes.clear();
-        this.fills.clear();
-        this.undoHistory = [];
         this.checkpoint = null;
         this.defence.restore(FIRST_INTERMISSION);
         return;
       case 'dropped':
         return this.pickUp(entry.ink);
+      case 'added':
+      case 'filled':
       case 'released':
       case 'reformed':
       case 'burst':
       case 'popped':
       case 'exploded':
-        // None makes or takes away a Stroke or a Fill.
+        // The ledger's alone.
         return;
-    }
-  }
-
-  private heardAdded(what: Extract<Entry, { kind: 'added' }>['what']): void {
-    if (what.thing === 'object' && !this.strokes.has(what.id)) {
-      this.strokes.set(what.id, { kind: 'object', paid: { colour: null, price: 0 } });
-      this.undoHistory.push({ kind: 'stroke', id: what.id });
-    } else if (what.thing === 'piece') {
-      const { id } = what;
-      const charge = this.strokes.get(id);
-      if (charge?.kind === 'line') {
-        if (charge.colour === null) charge.pieces.set(what.index, 0);
-        return;
-      }
-      this.strokes.set(id, {
-        kind: 'line',
-        colour: null,
-        pieces: new Map([[what.index, 0]]),
-      });
-      this.undoHistory.push({ kind: 'stroke', id });
-    }
-  }
-
-  /** A Piece or an Object went for good: broken, erased or removed. Only the erased is refunded. */
-  private heardWent(what: Extract<Entry, { kind: 'went' }>['what'], erased: boolean): void {
-    const { id } = what;
-    const charge = this.strokes.get(id);
-    if (what.thing === 'object' && charge?.kind === 'object') {
-      if (erased) this.refundStroke(id, charge);
-      this.forget(id);
-    } else if (what.thing === 'piece' && charge?.kind === 'line') {
-      const price = charge.pieces.get(what.index);
-      if (erased) this.refund({ colour: charge.colour, price: price ?? 0 });
-      charge.pieces.delete(what.index);
-      if (charge.pieces.size === 0) this.forget(id);
     }
   }
 
   private takeCheckpoint(): Checkpoint {
     return {
       tanks: this.inkTanks.snapshot(),
-      strokes: copyCharges(this.strokes),
-      fills: new Map(this.fills),
-      history: [...this.undoHistory],
+      ledger: this.ledger.snapshot(),
       loop: this.defence.snapshot(),
     };
   }
@@ -986,19 +810,7 @@ export class Game {
     // A maximum lowered since the checkpoint still holds: edits survive R, as
     // F2 edits to the Wave tables do.
     this.inkTanks.restore(checkpoint.tanks);
-    this.strokes = copyCharges(checkpoint.strokes);
-    this.fills = new Map(checkpoint.fills);
-    this.undoHistory = [...checkpoint.history];
+    this.ledger.restore(checkpoint.ledger);
     this.defence.restore(checkpoint.loop);
   }
-}
-
-/** A copy of what Strokes paid, with each Line's Pieces its own. */
-function copyCharges(charges: ReadonlyMap<StrokeId, Charge>): Map<StrokeId, Charge> {
-  return new Map(
-    [...charges].map(([id, charge]) => [
-      id,
-      charge.kind === 'line' ? { ...charge, pieces: new Map(charge.pieces) } : charge,
-    ]),
-  );
 }
