@@ -6,7 +6,7 @@ describe("The HUD's help line", () => {
     const help = helpText({ eraser: true, spawning: true });
 
     expect(help).toContain('E: eraser');
-    expect(help).toContain('Shift+1–3: Enemy');
+    expect(help).toContain('Shift+1–4: Enemy');
   });
 
   it('leaves out what is put away, and keeps the rest', () => {

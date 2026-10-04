@@ -46,14 +46,17 @@ describe('Level 3', () => {
     expect(arena.core.maxY).toBeLessThan(LEVEL_3_GROUND_Y); // the plateau
   });
 
-  it('sends five Waves of 6, 8, 10, 10 and 12, every Enemy type in each', () => {
+  it('sends five Waves of 6, 8, 10, 10 and 12, every Enemy type but the Siege Walker in each', () => {
     const waves = LEVEL_3.waves!;
 
     expect(
       waves.map((wave) => ENEMY_TYPES.reduce((n, t) => n + (sentCounts(wave)[t] ?? 0), 0)),
     ).toEqual([6, 8, 10, 10, 12]);
-    for (const wave of waves)
-      for (const type of ENEMY_TYPES) expect(sentCounts(wave)[type]).toBeGreaterThan(0);
+    for (const wave of waves) {
+      for (const type of ENEMY_TYPES.filter((type) => type !== 'siegeWalker'))
+        expect(sentCounts(wave)[type]).toBeGreaterThan(0);
+      expect(sentCounts(wave).siegeWalker).toBeUndefined();
+    }
   });
 
   it('loads at its first Wave of five', () => {

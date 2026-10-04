@@ -8,7 +8,7 @@ import { SPAWN_ARROW_RISE } from '../rendering/world-renderer';
 import { inward, spawnEdgeX } from '../sandbox/arena';
 
 /**
- * The control hints: the Eraser (E) and sending in Enemies (Shift+1–3)
+ * The control hints: the Eraser (E) and sending in Enemies (Shift+1–4)
  * only while they are on hand.
  */
 export function helpText({ eraser, spawning }: Pick<Allowed, 'eraser' | 'spawning'>): string {

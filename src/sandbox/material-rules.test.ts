@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { polygonBounds, type Polygon } from '../geometry/polygon';
-import { transformPoints } from '../geometry/transform';
+import type { Polygon } from '../geometry/polygon';
 import type { Vec2 } from '../geometry/vec2';
 import type { Colour } from '../materials/colour';
 import { fillInk, outlineInk } from '../materials/ink';
@@ -22,7 +21,7 @@ import {
 import { LINE_THICKNESS } from '../stroke/stroke-rules';
 import { drawDrop, type DropInk } from './drops';
 import type { Walker } from './enemies';
-import { boxOutline, boxShape, type EnemyShape } from './enemy-shape';
+import { boxOutline, boxShape, siegeWalkerShape, type EnemyShape } from './enemy-shape';
 import { fuseBurns, impactDamage, wakes, type Broken } from './material-rules';
 import { Numbers, type Breakable } from './numbers';
 import { Random } from './random';
@@ -891,29 +890,11 @@ describe('Material rules: Enemies', () => {
       add(bodyOf(b), partyOf(a));
     }
 
-    /**
-     * A shape that is no box: a trunk on two legs, all three parts of one
-     * body, that turns, never climbs, and is Tipped if `tipped`.
-     */
-    const legged = (tipped: boolean): EnemyShape => {
-      const box = (minX: number, minY: number, maxX: number, maxY: number) => [
-        { x: minX, y: minY },
-        { x: maxX, y: minY },
-        { x: maxX, y: maxY },
-        { x: minX, y: maxY },
-      ];
-      const parts = [box(-40, -40, 40, 0), box(-40, 0, -30, 40), box(30, 0, 40, 40)];
-      const outline = box(-40, -40, 40, 40);
-      return {
-        parts,
-        outline,
-        staysUpright: false,
-        bounds: (at) => polygonBounds(transformPoints(outline, at)),
-        feet: (at) =>
-          Math.max(...parts.flatMap((part) => transformPoints(part, at).map((p) => p.y))),
-        upright: () => !tipped,
-      };
-    };
+    /** The Siege Walker's shape, a hull on legs that turns and never climbs, Tipped if `tipped`. */
+    const legged = (tipped: boolean): EnemyShape => ({
+      ...siegeWalkerShape(220, 200),
+      upright: () => !tipped,
+    });
 
     it('lets a Tipped Enemy push nowhere, standing or not', () => {
       const walker = { ...enemy(1, 'heavy', 80), shape: legged(true) };

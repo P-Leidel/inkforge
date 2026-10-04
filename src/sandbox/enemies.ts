@@ -11,7 +11,7 @@ import { inward, type Arena } from './arena';
 import type { ArenaBodies } from './arena-bodies';
 import { motionOf, type Kind, type Motion, type Poses } from './arena-contents';
 import type { ArenaQuery } from './arena-query';
-import { boxShape, type EnemyShape } from './enemy-shape';
+import { boxShape, siegeWalkerShape, type EnemyShape } from './enemy-shape';
 import type { PartyId } from './contact-ledger';
 import type { Why } from './happenings';
 import type { Numbers } from './numbers';
@@ -37,6 +37,7 @@ const SHAPES: Readonly<Record<EnemyType, (numbers: EnemyMaterial) => EnemyShape>
   crawler: box,
   runner: box,
   heavy: box,
+  siegeWalker: ({ width, height }) => siegeWalkerShape(width, height),
 };
 
 /**
@@ -217,7 +218,7 @@ export class Enemies implements Kind<'enemies', readonly SavedEnemy[], readonly 
     while (!at && y - height > 0 && this.blocked(shape, { x, y, angle: 0 }))
       y -= height + SPAWN_GAP;
     const id = this.nextId++;
-    const mass = enemyMass(numbers, this.materials);
+    const mass = enemyMass(numbers, shape.area, this.materials);
     const party = this.bodies.newId();
     const enemy = { id, party, type, shape, belly, mass, damage: 0 };
     this.addBody(enemy, {
