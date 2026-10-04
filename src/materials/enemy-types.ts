@@ -7,7 +7,7 @@
  */
 
 /** The Enemy types, in order. */
-export const ENEMY_TYPES = ['crawler', 'runner', 'heavy'] as const;
+export const ENEMY_TYPES = ['crawler', 'runner', 'heavy', 'siegeWalker'] as const;
 
 export type EnemyType = (typeof ENEMY_TYPES)[number];
 
@@ -16,6 +16,7 @@ const NAMES: Readonly<Record<EnemyType, readonly [string, string]>> = {
   crawler: ['Crawler', 'Crawlers'],
   runner: ['Runner', 'Runners'],
   heavy: ['Heavy', 'Heavies'],
+  siegeWalker: ['Siege Walker', 'Siege Walkers'],
 };
 
 /** What `count` Enemies of `type` are called: "Crawler" for one, "Crawlers" otherwise. */

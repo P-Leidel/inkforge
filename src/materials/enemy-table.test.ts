@@ -50,8 +50,10 @@ describe('Enemy table', () => {
   });
 
   it('weighs a Heavy about four Crawlers and a Runner about half of one', () => {
-    const weigh = (type: (typeof ENEMY_TYPES)[number]) =>
-      enemyMass(DEFAULT_ENEMY_TABLE.types[type], DEFAULT_MATERIAL_TABLE);
+    const weigh = (type: (typeof ENEMY_TYPES)[number]) => {
+      const numbers = DEFAULT_ENEMY_TABLE.types[type];
+      return enemyMass(numbers, numbers.width * numbers.height, DEFAULT_MATERIAL_TABLE);
+    };
     expect(weigh('heavy') / weigh('crawler')).toBeCloseTo(4, 1);
     expect(weigh('runner') / weigh('crawler')).toBeCloseTo(0.5, 1);
   });
@@ -93,7 +95,8 @@ describe('Enemy table', () => {
   });
 
   it('weighs a Crawler a little less than a 60 px hollow grey box', () => {
-    const crawler = enemyMass(DEFAULT_ENEMY_TABLE.types.crawler, DEFAULT_MATERIAL_TABLE);
+    const numbers = DEFAULT_ENEMY_TABLE.types.crawler;
+    const crawler = enemyMass(numbers, numbers.width * numbers.height, DEFAULT_MATERIAL_TABLE);
     expect(crawler).toBeCloseTo(1.2, 9);
   });
 

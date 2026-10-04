@@ -35,9 +35,12 @@ export function fillMass(outline: Polygon, fill: Colour | null, table: MaterialT
   return table.inkMass * fillInk(outline) * table.colours[fill].fill.density;
 }
 
-/** An Enemy weighs its body's box, width × height, as ink of its type's density. */
-export function enemyMass(enemy: EnemyMaterial, table: MaterialTable): number {
-  return table.inkMass * enemy.width * enemy.height * enemy.density;
+/**
+ * An Enemy weighs the `area` (px²) of its body's shape as ink of its type's
+ * density: a box's whole width × height, the Siege Walker's hull and legs.
+ */
+export function enemyMass(enemy: EnemyMaterial, area: number, table: MaterialTable): number {
+  return table.inkMass * area * enemy.density;
 }
 
 export function objectMass(

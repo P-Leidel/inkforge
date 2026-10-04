@@ -29,11 +29,11 @@ export interface BellyMaterial {
 
 /** One Enemy type's numbers. */
 export interface EnemyMaterial {
-  /** Width (px) of its body, an upright rounded box. */
+  /** Width (px) of its body: an upright rounded box, or the Siege Walker's hull and legs all told. */
   width: number;
   /** Height (px) of its body. */
   height: number;
-  /** Weight of its body (width × height) relative to plain ink. */
+  /** Weight of its body (the area of its shape) relative to plain ink. */
   density: number;
   /**
    * Coulomb friction coefficient. It walks by a force, not by its grip
@@ -162,6 +162,35 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
         red: { min: 10, max: 40 },
       },
       belly: { ink: 3000, weights: { grey: 2, blue: 1, green: 1, black: 4, red: 2 } },
+    },
+    siegeWalker: {
+      // A hull 220 × 110 on four legs 20 × 90, outer foot to outer foot 180.
+      width: 220,
+      height: 200,
+      // About twenty Crawlers' weight.
+      density: 1,
+      friction: 0,
+      restitution: 0,
+      walkingSpeed: 30,
+      walkForce: 2,
+      // It never climbs, and is never a step.
+      climb: 0,
+      pressing: 4000,
+      // Three or four good answers: a 100 px black box dropped 400 px onto it deals about 24000.
+      hp: 85000,
+      // Just above a 60 px grey box dropped 300 px onto it.
+      damageThreshold: 4000,
+      coreDamage: 8,
+      // About three times a Heavy's.
+      drop: {
+        grey: { min: 180, max: 450 },
+        blue: { min: 0, max: 120 },
+        green: { min: 60, max: 180 },
+        black: { min: 60, max: 180 },
+        red: { min: 30, max: 120 },
+      },
+      // About four times a Heavy's ink, leaning hard to red: most kills end in a large Blast.
+      belly: { ink: 12000, weights: { grey: 1, blue: 1, green: 1, black: 3, red: 5 } },
     },
   },
   floorWear: 1,

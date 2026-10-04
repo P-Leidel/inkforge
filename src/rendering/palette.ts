@@ -22,6 +22,9 @@ export const PALETTE = {
   /** A Heavy's, placeholder art: dark. */
   heavy: 0x3a3634,
   heavyEdge: 0x151312,
+  /** A Siege Walker's, placeholder art: a dark rust red, bigger than everything else. */
+  siegeWalker: 0x5a2a24,
+  siegeWalkerEdge: 0x1e0d0b,
   enemyEye: 0xf2e6c8,
   /** The Ink Core: a glowing block. */
   core: 0x6fe3ff,

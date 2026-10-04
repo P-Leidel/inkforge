@@ -1,4 +1,4 @@
-import { polygonBounds, type Bounds, type Polygon } from '../geometry/polygon';
+import { polygonArea, polygonBounds, type Bounds, type Polygon } from '../geometry/polygon';
 import { transformPoints, type Transform } from '../geometry/transform';
 
 /**
@@ -13,6 +13,8 @@ export interface EnemyShape {
   readonly parts: readonly Polygon[];
   /** Its outline about its centre: what is drawn, and what pops. */
   readonly outline: Polygon;
+  /** The area (px²) it weighs, as ink of its type's density. */
+  readonly area: number;
   /** Whether the engine keeps it upright: it never turns. */
   readonly staysUpright: boolean;
   /** What it covers posed at `at`, in world coordinates. */
@@ -97,6 +99,8 @@ function newBoxShape(width: number, height: number): EnemyShape {
   return {
     parts: [outline],
     outline,
+    // Its whole box, bevels and cuts included, as it has always weighed.
+    area: width * height,
     staysUpright: true,
     bounds: (at) => polygonBounds(transformPoints(outline, at)),
     feet: (at) => at.y + height / 2,
@@ -117,5 +121,100 @@ function newBoxShape(width: number, height: number): EnemyShape {
         ];
       },
     },
+  };
+}
+
+/**
+ * The Siege Walker's proportions, for a body 220 wide and 200 tall: a hull
+ * 110 tall on four legs 20 wide and 90 tall, outer foot to outer foot 180.
+ * Its shape scales them to the width and height its numbers give.
+ */
+const WALKER_WIDTH = 220;
+const WALKER_HEIGHT = 200;
+const HULL_HEIGHT = 110;
+const LEG_WIDTH = 20;
+const FOOTPRINT = 180;
+const LEGS = 4;
+/**
+ * The bevel at each side of a foot, in its own leg's widths across and
+ * px up: taller than a Line is thick, so a foot rides up onto one lying on
+ * the ground rather than catching on it.
+ */
+const FOOT_RUN = 0.35;
+const FOOT_RISE = 12;
+/** How far (radians) it tilts, either way, before it is Tipped. */
+export const TIP_ANGLE = (40 * Math.PI) / 180;
+
+/** `angle` (radians) brought into -π to π. */
+function wrapped(angle: number): number {
+  return angle - 2 * Math.PI * Math.round(angle / (2 * Math.PI));
+}
+
+/** Siege Walker shapes made so far, by size. */
+const walkers = new Map<string, EnemyShape>();
+
+/**
+ * The Siege Walker's shape, `width` × `height` all told: a hull on four
+ * legs, each a convex part of one rigid body that can tip (ADR 0019),
+ * about the centre of its box. Its weight is high, on a footprint narrower
+ * than it is tall. It is upright while it is tilted less than `TIP_ANGLE`
+ * either way. It never climbs, and is never a step.
+ */
+export function siegeWalkerShape(width: number, height: number): EnemyShape {
+  const key = `${width}x${height}`;
+  let shape = walkers.get(key);
+  if (!shape) walkers.set(key, (shape = newSiegeWalkerShape(width, height)));
+  return shape;
+}
+
+function newSiegeWalkerShape(width: number, height: number): EnemyShape {
+  const sx = width / WALKER_WIDTH;
+  const w = width / 2;
+  const h = height / 2;
+  // Where the hull's underside is, and the legs' tops.
+  const knee = -h + (HULL_HEIGHT * height) / WALKER_HEIGHT;
+  const cut = Math.min(TOP_CUT, w / 4);
+  const hull = [
+    { x: -w + cut, y: -h },
+    { x: w - cut, y: -h },
+    { x: w, y: -h + cut },
+    { x: w, y: knee },
+    { x: -w, y: knee },
+    { x: -w, y: -h + cut },
+  ];
+  const legWidth = LEG_WIDTH * sx;
+  const outer = (FOOTPRINT * sx - legWidth) / 2;
+  const run = FOOT_RUN * legWidth;
+  const rise = Math.min(FOOT_RISE, (h - knee) / 4);
+  // Each leg from the back (left) to the front, from its top left corner round.
+  const legs: Polygon[] = Array.from({ length: LEGS }, (_, k) => {
+    const middle = -outer + (2 * outer * k) / (LEGS - 1);
+    const [left, right] = [middle - legWidth / 2, middle + legWidth / 2];
+    return [
+      { x: left, y: knee },
+      { x: right, y: knee },
+      { x: right, y: h - rise },
+      { x: right - run, y: h },
+      { x: left + run, y: h },
+      { x: left, y: h - rise },
+    ];
+  });
+  // Its silhouette: round the hull's top, then along its underside from the
+  // front back, down and up each leg on the way.
+  const outline: Polygon = [
+    ...hull.slice(0, 4),
+    ...[...legs].reverse().flatMap((leg) => [1, 2, 3, 4, 5, 0].map((k) => leg[k]!)),
+    ...hull.slice(4),
+  ];
+  const parts = [hull, ...legs];
+  const posed = (at: Transform) => parts.flatMap((part) => transformPoints(part, at));
+  return {
+    parts,
+    outline,
+    area: parts.reduce((sum, part) => sum + polygonArea(part), 0),
+    staysUpright: false,
+    bounds: (at) => polygonBounds(posed(at)),
+    feet: (at) => polygonBounds(posed(at)).maxY,
+    upright: (at) => Math.abs(wrapped(at.angle)) < TIP_ANGLE,
   };
 }

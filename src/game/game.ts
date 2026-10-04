@@ -93,7 +93,7 @@ export type SpawnOutcome =
 export interface Allowed {
   /** Whether the Eraser is on hand: always, in the Campaign as in Free play. */
   readonly eraser: boolean;
-  /** Whether sending in Enemies (Shift+1–3) is on hand: in Free play, never in a Campaign Level. */
+  /** Whether sending in Enemies (Shift+1–4) is on hand: in Free play, never in a Campaign Level. */
   readonly spawning: boolean;
   readonly draw: Bar | null;
   readonly fill: Bar | null;

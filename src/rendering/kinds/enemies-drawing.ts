@@ -1,6 +1,7 @@
 import type Phaser from 'phaser';
 import { polygonBounds } from '../../geometry/polygon';
-import { transformPoints } from '../../geometry/transform';
+import { transformPoints, type Transform } from '../../geometry/transform';
+import type { Vec2 } from '../../geometry/vec2';
 import type { EnemyType } from '../../materials/enemy-types';
 import type { EnemyView } from '../../sandbox/sandbox-world';
 import { fillPolygon, strokePolygon } from '../draw';
@@ -17,28 +18,46 @@ const EDGE_WIDTH = 2;
 const EYE_SIZE = 4;
 const EYE_IN = 7;
 const EYE_DOWN = 9;
-/**
- * The Belly's window: its width and height as shares of the Enemy's, how far
- * below its centre it sits (a share of its height), and its rim, light
- * enough to show black on a dark Heavy.
- */
-const BELLY_WIDTH = 0.56;
-const BELLY_HEIGHT = 0.4;
-const BELLY_DROP = 0.14;
+/** The Belly's window's rim, light enough to show black on a dark Heavy. */
 const BELLY_RIM = 0xd9d6cc;
 const BELLY_RIM_WIDTH = 1.5;
 
-/** How an Enemy type looks: its body and edge colours, and how far (px per px up) it leans forward. */
+/**
+ * Where an Enemy shows its Belly: the window's width and height as shares
+ * of the Enemy's, and how far below its centre the window's centre sits (a
+ * share of its height).
+ */
+interface BellyPlace {
+  readonly width: number;
+  readonly height: number;
+  readonly drop: number;
+}
+
+/** A box's Belly window: low in its body, clear of its eyes. */
+const LOW_IN_BODY: BellyPlace = { width: 0.56, height: 0.4, drop: 0.14 };
+
+/**
+ * How an Enemy type looks: its body and edge colours, how far (px per px
+ * up) it leans forward, and where it shows its Belly.
+ */
 interface Look {
   readonly body: number;
   readonly edge: number;
   readonly lean: number;
+  readonly belly: BellyPlace;
 }
 
 const LOOKS: Readonly<Record<EnemyType, Look>> = {
-  crawler: { body: PALETTE.crawler, edge: PALETTE.crawlerEdge, lean: 0 },
-  runner: { body: PALETTE.runner, edge: PALETTE.runnerEdge, lean: 0.25 },
-  heavy: { body: PALETTE.heavy, edge: PALETTE.heavyEdge, lean: 0 },
+  crawler: { body: PALETTE.crawler, edge: PALETTE.crawlerEdge, lean: 0, belly: LOW_IN_BODY },
+  runner: { body: PALETTE.runner, edge: PALETTE.runnerEdge, lean: 0.25, belly: LOW_IN_BODY },
+  heavy: { body: PALETTE.heavy, edge: PALETTE.heavyEdge, lean: 0, belly: LOW_IN_BODY },
+  // Its Belly in its hull, above its legs.
+  siegeWalker: {
+    body: PALETTE.siegeWalker,
+    edge: PALETTE.siegeWalkerEdge,
+    lean: 0,
+    belly: { width: 0.5, height: 0.3, drop: -0.22 },
+  },
 };
 
 /** The colours an Enemy's pop bursts in, by its type, taken in turn: its body, edge and eyes. */
@@ -46,6 +65,12 @@ export const POP_HUES: Readonly<Record<EnemyType, readonly number[]>> = {
   crawler: [PALETTE.crawler, PALETTE.crawler, PALETTE.crawlerEdge, PALETTE.enemyEye],
   runner: [PALETTE.runner, PALETTE.runner, PALETTE.runnerEdge, PALETTE.enemyEye],
   heavy: [PALETTE.heavy, PALETTE.heavy, PALETTE.heavyEdge, PALETTE.enemyEye],
+  siegeWalker: [
+    PALETTE.siegeWalker,
+    PALETTE.siegeWalker,
+    PALETTE.siegeWalkerEdge,
+    PALETTE.enemyEye,
+  ],
 };
 
 /**
@@ -53,11 +78,12 @@ export const POP_HUES: Readonly<Record<EnemyType, readonly number[]>> = {
  * HP bar above it once it is hurt. Placeholder art, with two eyes on the
  * side it walks toward, the Ink Core's, which is to the right: a Crawler is
  * a low grey-brown box, a Runner a narrow one leaning forward, a Heavy a
- * big dark one. Each shows its Belly, the ink it carries, as a window low
+ * big dark one, a Siege Walker a dark red hull on four legs, standing (its
+ * gait is to come). Each shows its Belly, the ink it carries, as a window
  * in its body, in that Colour's hue (a plain box, to keep each Enemy a few
- * drawing calls), so the player can see what
- * it will spill. The lean is only drawn: its body stays upright. Its pop is
- * Debris, which the renderer bursts.
+ * drawing calls), so the player can see what it will spill. The window and
+ * the eyes turn with a body that tips. The lean is only drawn: its body
+ * stays upright. Its pop is Debris, which the renderer bursts.
  */
 export class EnemiesDrawing implements DrawnKind {
   private readonly graphics: Phaser.GameObjects.Graphics;
@@ -79,26 +105,26 @@ export class EnemiesDrawing implements DrawnKind {
     g.clear();
     for (const enemy of this.views()) {
       const transform = drawn(enemy, fraction);
-      const { body: hue, edge, lean } = LOOKS[enemy.type];
+      const { body: hue, edge, lean, belly: place } = LOOKS[enemy.type];
       // Leaning forward: each point shifts ahead by how far it is above the underside.
-      const leant = enemy.outline.map(({ x, y }) => ({ x: x + lean * (enemy.height / 2 - y), y }));
-      const body = transformPoints(leant, transform);
+      const leaning = ({ x, y }: Vec2) => ({ x: x + lean * (enemy.height / 2 - y), y });
+      const body = transformPoints(enemy.outline.map(leaning), transform);
       g.fillStyle(hue, 1);
       fillPolygon(g, body);
-      const belly = bellyWindow(enemy.width, enemy.height);
-      const bellyX = transform.x + belly.x + lean * (enemy.height / 2 - belly.y - belly.height / 2);
-      const bellyY = transform.y + belly.y;
+      const belly = bellyWindow(enemy.width, enemy.height, place);
+      const bellyAt = leaning({ x: belly.x, y: belly.y + belly.height / 2 });
+      const window = { ...belly, x: bellyAt.x };
       g.fillStyle(INK_HUES[enemy.belly], 1);
-      g.fillRect(bellyX, bellyY, belly.width, belly.height);
+      fillBox(g, window, transform);
       g.lineStyle(BELLY_RIM_WIDTH, BELLY_RIM, 1);
-      g.strokeRect(bellyX, bellyY, belly.width, belly.height);
+      strokeBox(g, window, transform);
       g.lineStyle(EDGE_WIDTH, edge, 1);
       strokePolygon(g, body);
-      const front = transform.x + enemy.width / 2 - EYE_IN + lean * (enemy.height - EYE_DOWN);
-      const top = transform.y - enemy.height / 2 + EYE_DOWN;
+      const front = enemy.width / 2 - EYE_IN + lean * (enemy.height - EYE_DOWN);
+      const top = -enemy.height / 2 + EYE_DOWN;
       g.fillStyle(PALETTE.enemyEye, 1);
-      g.fillRect(front - EYE_SIZE, top, EYE_SIZE, EYE_SIZE);
-      g.fillRect(front - 3 * EYE_SIZE, top, EYE_SIZE, EYE_SIZE);
+      for (const right of [front, front - 2 * EYE_SIZE])
+        fillBox(g, { x: right - EYE_SIZE, y: top, width: EYE_SIZE, height: EYE_SIZE }, transform);
       if (enemy.hp < enemy.fullHp) {
         const over = polygonBounds(transformPoints(enemy.outline, transform));
         drawHpBar(g, over, enemy.hp, enemy.fullHp, 'small');
@@ -107,16 +133,44 @@ export class EnemiesDrawing implements DrawnKind {
   }
 }
 
+/** A box by its top left corner and its size. */
+interface Box {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** A box's corners, clockwise from its top left, posed at `at`. */
+function boxCorners({ x, y, width, height }: Box, at: Transform): Vec2[] {
+  const corners = [
+    { x, y },
+    { x: x + width, y },
+    { x: x + width, y: y + height },
+    { x, y: y + height },
+  ];
+  return transformPoints(corners, at);
+}
+
+/** Fills a box about a body posed at `at`: a plain rectangle while the body is unturned. */
+function fillBox(g: Phaser.GameObjects.Graphics, box: Box, at: Transform): void {
+  if (at.angle === 0) g.fillRect(at.x + box.x, at.y + box.y, box.width, box.height);
+  else fillPolygon(g, boxCorners(box, at));
+}
+
+/** Outlines a box about a body posed at `at`, as `fillBox` fills it. */
+function strokeBox(g: Phaser.GameObjects.Graphics, box: Box, at: Transform): void {
+  if (at.angle === 0) g.strokeRect(at.x + box.x, at.y + box.y, box.width, box.height);
+  else strokePolygon(g, boxCorners(box, at));
+}
+
 /**
  * The window an Enemy `width` by `height` shows its Belly in, relative to
- * its centre: a box low in its body, clear of its eyes, by its top left
- * corner and its size.
+ * its centre, where its type's look puts it: by its top left corner and its
+ * size.
  */
-export function bellyWindow(
-  width: number,
-  height: number,
-): { x: number; y: number; width: number; height: number } {
-  const w = BELLY_WIDTH * width;
-  const h = BELLY_HEIGHT * height;
-  return { x: -w / 2, y: BELLY_DROP * height - h / 2, width: w, height: h };
+function bellyWindow(width: number, height: number, place: BellyPlace): Box {
+  const w = place.width * width;
+  const h = place.height * height;
+  return { x: -w / 2, y: place.drop * height - h / 2, width: w, height: h };
 }

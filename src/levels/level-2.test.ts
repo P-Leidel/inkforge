@@ -59,7 +59,7 @@ describe('Level 2', () => {
     expect(Object.keys(LEVEL_2.hints!).sort()).toEqual(['blue', 'green', 'heavy']);
   });
 
-  it.each(ENEMY_TYPES)(
+  it.each(ENEMY_TYPES.filter((type) => waves.some((wave) => sent(wave).includes(type))))(
     'lets a %s sent in with no defence cross the valley and reach the Ink Core',
     (type: EnemyType) => {
       const game = createGame(true);
