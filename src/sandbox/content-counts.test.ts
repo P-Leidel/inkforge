@@ -16,8 +16,8 @@ describe('Content counts', () => {
     ]);
 
     expect(contentCounts(world.contents)).toEqual([
-      { name: 'lines', count: 1 },
       { name: 'objects', count: 2 },
+      { name: 'lines', count: 1 },
       { name: 'rubble', count: 0 },
       { name: 'enemies', count: 0 },
       { name: 'bonds', count: 0 },

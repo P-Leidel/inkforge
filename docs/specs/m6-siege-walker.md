@@ -12,6 +12,7 @@
 - [ ] The boss arena.
 - [x] **Waves that list what they send, in order, and Enemy types named once** ([ADR 0020](../adr/0020-a-wave-lists-what-it-sends-in-order.md)), candidate 2 of the [architecture review after #176](../adr/reports/architecture-review-2026-10-03-after-176.html). Built before this milestone as a refactor that changes no behaviour.
 - [x] **The Session owns the start of a Level, and the Tutorial is a Level** ([ADR 0022](../adr/0022-the-tutorial-is-a-level.md)), candidate 6 of the same review. The boss Level's start and end have a home: a Level can bring Cards before the Wave they teach, and its end offers what comes next.
+- [x] **Objects are a sibling of Lines**, candidate 5 of the same review: `Objects` and `Lines` are each a kind of Arena contents and the only record of what they hold, and `Strokes` keeps only what goes for both (ids, adding and the squeeze, Releasing, taking back and breaking by id). Built before this milestone as a refactor that changes no behaviour, so dropping things on the boss lands on Objects testable on their own.
 - [ ] The exit playtest.
 
 ## Decided

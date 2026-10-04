@@ -84,6 +84,19 @@ export interface Motion {
   readonly angularVelocity: number;
 }
 
+/** The fastest a body may move and still be at rest, to be Frozen again, px/s. */
+const REST_SPEED = 5;
+/** The fastest a body may turn and still be at rest, rad/s. */
+const REST_SPIN = 0.05;
+
+/**
+ * Whether a body moving so is at rest, to be Frozen again in the Aftermath:
+ * slower than `REST_SPEED`, turning slower than `REST_SPIN`.
+ */
+export function resting({ velocity, angularVelocity }: Motion): boolean {
+  return Math.hypot(velocity.x, velocity.y) < REST_SPEED && Math.abs(angularVelocity) < REST_SPIN;
+}
+
 export function motionOf(
   physics: Pick<PhysicsWorld, 'getTransform' | 'getVelocity' | 'getAngularVelocity'>,
   body: BodyId,

@@ -10,14 +10,14 @@ import type { MaterialTable } from '../materials/material-table';
 import type { BodyId, PhysicsWorld } from '../physics';
 import { pieceCentre } from '../stroke/pieces';
 import type { ArenaBodies } from './arena-bodies';
-import { motionOf, type Motion, type Poses } from './arena-contents';
+import { motionOf, resting, type Kind, type Motion, type Poses } from './arena-contents';
 import type { ArenaQuery, Capsule, FoundPiece, LineTouches } from './arena-query';
 import type { PartyId } from './contact-ledger';
 import type { Happening, Why } from './happenings';
 import type { Broken } from './material-rules';
 import type { Breakable, Numbers } from './numbers';
 import type { PreviousPoses } from './previous-poses';
-import type { StrokeId, StrokeTarget } from './strokes';
+import type { StrokeId, StrokeTarget } from './stroke-id';
 
 /** No pose: a Grounded Line's, whose own coordinates are the world's. */
 const AT_ORIGIN: Transform = { x: 0, y: 0, angle: 0 };
@@ -158,8 +158,31 @@ export interface SavedRun {
 
 /** A Line in a snapshot. */
 export interface SavedLine extends LineBase {
-  readonly kind: 'line';
   readonly runs: readonly SavedRun[];
+}
+
+/** The Lines' part of a snapshot. */
+export interface SavedLines {
+  readonly lines: readonly SavedLine[];
+}
+
+/**
+ * `saved` with every Run of a Line that isn't Grounded at rest Frozen
+ * again, where it is (`resting`): the Lines' part of the Aftermath of a
+ * Wave.
+ */
+export function freezeRestingLines(saved: SavedLines): SavedLines {
+  const still = { velocity: { x: 0, y: 0 }, angularVelocity: 0, frozen: true };
+  return {
+    lines: saved.lines.map((line) => ({
+      ...line,
+      runs: line.runs.map((run): SavedRun => {
+        const { form } = run;
+        if (form.kind === 'grounded' || form.motion.frozen || !resting(form.motion)) return run;
+        return { ...run, form: { ...form, motion: { ...form.motion, ...still } } };
+      }),
+    })),
+  };
 }
 
 /** What a Line that was taken away left: its Colour and the Ink of its Pieces still there. */
@@ -280,9 +303,11 @@ export interface LinesDeps {
  * a Piece that went held up falls as Runs of their own, or a Run that isn't
  * Grounded comes apart where a Piece of it went. A Collapse waits until
  * whatever took Pieces away is done (`together`), or until the end of the
- * step, and is never left for anyone else to start.
+ * step, and is never left for anyone else to start. A sibling of `Objects`;
+ * `Strokes` holds what goes for both.
  */
-export class Lines {
+export class Lines implements Kind<'lines', SavedLines, readonly LineView[]> {
+  readonly name = 'lines';
   /** By id, in the order they were drawn. */
   private lines = new Map<StrokeId, Line>();
   /**
@@ -300,7 +325,7 @@ export class Lines {
 
   constructor(private readonly deps: LinesDeps) {}
 
-  get views(): LineView[] {
+  get views(): readonly LineView[] {
     return [...this.lines.values()].map((line) => ({
       id: line.id,
       colour: line.colour,
@@ -673,11 +698,13 @@ export class Lines {
     };
   }
 
-  /** Line `id` as a snapshot keeps it. */
-  save(id: StrokeId): SavedLine {
-    const { runs, ...base } = this.lines.get(id)!;
+  save(): SavedLines {
+    return { lines: [...this.lines.values()].map((line) => this.saveLine(line)) };
+  }
+
+  /** A Line as a snapshot keeps it. */
+  private saveLine({ runs, ...base }: Line): SavedLine {
     return {
-      kind: 'line',
       ...base,
       runs: runs.map((run) => ({
         pieces: run.pieces.map(({ body: _body, ...piece }) => piece),
@@ -703,8 +730,14 @@ export class Lines {
     };
   }
 
+  /** Adds the Lines again in the order they were drawn, each Line's Pieces in order. */
+  restore(saved: SavedLines): void {
+    this.clear();
+    for (const line of saved.lines) this.restoreLine(line);
+  }
+
   /** Adds a Line again as it was saved, after the Lines there are. */
-  restore({ kind: _kind, runs, ...line }: SavedLine): void {
+  private restoreLine({ runs, ...line }: SavedLine): void {
     this.lines.set(line.id, {
       ...line,
       runs: runs.map(({ pieces, form }) =>
@@ -720,6 +753,9 @@ export class Lines {
     this.cut = [];
     this.split = new Set();
   }
+
+  /** Nothing of it is attached to anything else. */
+  gone(): void {}
 
   /**
    * Notes which Runs moved this step, then lets what a fixed Piece that
