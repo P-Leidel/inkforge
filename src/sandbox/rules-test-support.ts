@@ -10,7 +10,8 @@ import type { BlastSize, Reach } from './blasts';
 import type { NewContact, Party, PartyHit, Touching } from './contact-ledger';
 import type { Landing, LooseDroplet } from './droplets';
 import type { DropInk } from './drops';
-import { enemyOutline, type Walker } from './enemies';
+import type { Walker } from './enemies';
+import { boxOutline } from './enemy-shape';
 import type { Gluer } from './glue';
 import type { Thing, Why } from './happenings';
 import { EnemyRules, type EnemyArena, type Killed } from './enemy-rules';
@@ -319,7 +320,7 @@ export class FakeArena<T, S, W extends Walker = Walker> implements RulesArena<T,
         type: 'crawler',
         at: { x: 0, y: 0 },
         belly,
-        outline: enemyOutline(40, 40),
+        outline: boxOutline(40, 40),
         from: { transform: { x: 0, y: 0, angle: 0 }, velocity: { x: 0, y: 0 }, angularVelocity: 0 },
       }
     );
