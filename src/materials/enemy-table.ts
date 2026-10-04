@@ -55,6 +55,12 @@ export interface EnemyMaterial {
   climb: number;
   /** Durability per second it wears off what it presses. */
   pressing: number;
+  /**
+   * What it adds to the wear of the Enemy at the front of a Push it is in
+   * (ADR 0021): that one wears what it presses at its pressing rate times 1
+   * plus the push of each Enemy in its Push, on top of its Stack.
+   */
+  push: number;
   /** Damage it takes before it dies. */
   hp: number;
   /** Hits and Blasts with a smaller impulse (mass × px/s) than this don't damage it. */
@@ -104,6 +110,8 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
       walkForce: 1,
       climb: 1.2,
       pressing: 300,
+      // Four of them behind a Siege Walker roughly double its wear.
+      push: 0.2,
       hp: 3000,
       damageThreshold: 300,
       coreDamage: 1,
@@ -127,6 +135,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
       walkForce: 0.6,
       climb: 1.2,
       pressing: 150,
+      push: 0.1,
       hp: 1500,
       damageThreshold: 200,
       coreDamage: 1,
@@ -151,6 +160,7 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
       // Heavies never climb, though they can be climbed.
       climb: 0,
       pressing: 1500,
+      push: 0.6,
       hp: 12000,
       damageThreshold: 1500,
       coreDamage: 3,
@@ -176,6 +186,8 @@ export const DEFAULT_ENEMY_TABLE: EnemyTable = {
       // It never climbs, and is never a step.
       climb: 0,
       pressing: 4000,
+      // A Crawler it pushes wears five times as fast.
+      push: 4,
       // Three or four good answers: a 100 px black box dropped 400 px onto it deals about 24000.
       hp: 85000,
       // Just above a 60 px grey box dropped 300 px onto it.
