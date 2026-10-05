@@ -141,7 +141,7 @@ Every Enemy is full of one Colour of ink, its **Belly**, shown as a window in it
 
 - Each Colour has an **Ink Tank** with a maximum. Red and black are the rarest Colours.
 - **Overlap charging:** only the parts of a Line that lie on another Line are free. Where a Line crosses an Object, or an Object is drawn over a Line, it costs full price, since the Object is about to be pushed away.
-- **Wave:** draw anywhere at the normal cost, except closer than about one Enemy's width to an Enemy ([ADR 0012](adr/0012-continuous-building-between-intermissions.md)). Undo refunds fully. The Eraser clears away the player's own leftovers, refunding them like undo.
+- **Wave:** draw anywhere at the normal cost, except inside an Enemy or within 5 px of it ([ADR 0012](adr/0012-continuous-building-between-intermissions.md)). Undo refunds fully. The Eraser clears away the player's own leftovers, refunding them like undo.
 - **Intermission:** every Tank refills to its maximum (the Aftermath).
 - **Drops:** enemies drop random amounts of every Colour, weighted by enemy type, on every death except reaching the Ink Core, Pit kills included. Drops are picked up automatically on death. Drops that don't fit in the Tank are lost, so saving ink leaves less room for drops.
 - A Level's Tank maximums say which Colours it has: a Colour at 0 is greyed out on the palette and refused with "Not in this Level".

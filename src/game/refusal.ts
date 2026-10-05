@@ -6,7 +6,7 @@ export type Refusal =
   | 'lost'
   /** With Waves on, it is not a Wave, or a rules switch bars it now (see `Rules`). */
   | 'not-now'
-  /** During a Wave, a Stroke reaches closer to an Enemy than about the Enemy's width. */
+  /** During a Wave, a Stroke reaches inside an Enemy or within the small margin around it. */
   | 'near-enemy'
   /** A closing Stroke's Object would overlap the Terrain or an Object. */
   | 'overlaps'

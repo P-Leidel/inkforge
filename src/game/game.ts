@@ -547,8 +547,8 @@ export class Game {
   }
 
   /**
-   * Whether a Stroke along `samples` comes closer to any Enemy than about
-   * that Enemy's width: so close it would be drawn onto it.
+   * Whether a Stroke along `samples` comes inside any Enemy or within the
+   * small margin around it (`ENEMY_DRAW_MARGIN`): so it would be drawn onto it.
    */
   private nearEnemy(samples: readonly Vec2[]): boolean {
     return this.world.nearEnemy(samples);

@@ -96,7 +96,7 @@ export type StrokeOutcome =
 /**
  * What a Stroke would be, as the Sandbox world is when it is looked at:
  * the Ink it would take, what it would run into, and whether its raw
- * samples come closer to an Enemy than its width.
+ * samples come within `ENEMY_DRAW_MARGIN` of an Enemy.
  */
 export type StrokeLook =
   /**

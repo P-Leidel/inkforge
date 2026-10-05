@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Vec2 } from '../geometry/vec2';
 import { createEnemyTable } from '../materials/enemy-table';
+import { ENEMY_TYPES } from '../materials/enemy-types';
 import { SANDBOX_ARENA } from '../sandbox/arena';
 import { dragAlong, dragBox } from '../stroke/pointer-paths';
 import { DEFAULT_RULES } from './defence-loop';
@@ -293,7 +294,7 @@ describe('During a Wave', () => {
     expect(game.submitStroke(across(300, 300, 100), 'grey').kind).toBe('line');
   });
 
-  it('bars a Stroke closer to an Enemy than its width, with its path to flash', () => {
+  it('bars a Stroke within the margin around an Enemy, with its path to flash', () => {
     const game = wavesGame(false);
     game.togglePause();
     game.world.spawn('crawler', CRAWLER);
@@ -305,6 +306,18 @@ describe('During a Wave', () => {
     expect(game.world.lines).toEqual([]);
     expect(game.prospect(game.lookAtStroke(NEAR)!, 'grey').refusal).toBe('near-enemy');
     expect(game.prospect(game.lookAtStroke(FAR)!, 'grey').refusal).toBeNull();
+  });
+
+  it.each(ENEMY_TYPES)('keeps the same 5 px margin over a %s, however big', (type) => {
+    const game = wavesGame(false);
+    game.togglePause();
+    game.world.spawn(type, { x: 800, y: GROUND - 300 });
+    const { outline, transform } = game.world.enemies[0]!;
+    const top = transform.y + Math.min(...outline.map(({ y }) => y));
+    const over = (gap: number) => game.submitStroke(across(760, top - gap, 80), 'grey').kind;
+
+    expect(over(3)).toBe('refused');
+    expect(over(8)).toBe('line');
   });
 
   it('bars a closing Stroke just above an Enemy too', () => {
