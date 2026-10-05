@@ -408,11 +408,11 @@ describe('Drawing input', () => {
       return { game, ...drawing };
     }
 
-    /** A Crawler sent in by hand onto the ground at x = 800; 20 px above its head, and far from it. */
+    /** A Crawler sent in by hand onto the ground at x = 800; 3 px above its head, and far from it. */
     const crawler = (world: SandboxWorld) => world.spawn('crawler', { x: 800, y: GROUND - 22 });
     const near = dragAlong([
-      { x: 760, y: GROUND - 62 },
-      { x: 840, y: GROUND - 62 },
+      { x: 760, y: GROUND - 45 },
+      { x: 840, y: GROUND - 45 },
     ]);
     const far = dragAlong([
       { x: 600, y: 200 },

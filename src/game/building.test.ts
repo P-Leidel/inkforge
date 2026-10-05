@@ -32,8 +32,8 @@ const across = (x: number, y: number, length: number): Vec2[] =>
 const GROUND = SANDBOX_ARENA.spawn.y;
 /** A Crawler (40 px wide) standing on the ground at x = 800, sent in by hand. */
 const CRAWLER = { x: 800, y: GROUND - 22 };
-/** 20 px above that Crawler's head: closer than its width. */
-const NEAR = across(760, GROUND - 62, 80);
+/** 3 px above that Crawler's head: inside the margin around it. */
+const NEAR = across(760, GROUND - 45, 80);
 /** High in the air, far from it. */
 const FAR = across(600, 200, 200);
 
@@ -312,7 +312,7 @@ describe('During a Wave', () => {
     game.togglePause();
     game.world.spawn('crawler', CRAWLER);
 
-    expect(game.submitStroke(dragBox(760, GROUND - 130, 80, 80), 'grey')).toMatchObject({
+    expect(game.submitStroke(dragBox(760, GROUND - 125, 80, 80), 'grey')).toMatchObject({
       kind: 'refused',
       reason: 'near-enemy',
     });
