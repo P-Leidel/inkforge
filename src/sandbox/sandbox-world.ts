@@ -78,6 +78,9 @@ export const GRAVITY = 1000;
 /** At most this many steps per `advance`, so a long frame can't stall the game. */
 const MAX_STEPS_PER_ADVANCE = 8;
 
+/** How close, in px, to an Enemy's outline a Stroke may not come. */
+export const ENEMY_DRAW_MARGIN = 5;
+
 /**
  * What a submitted Stroke became. A Line or an Object carries its Colour
  * and the Ink (px²) it took: a Line's as drawn, with each Piece's and how
@@ -621,12 +624,11 @@ export class SandboxWorld {
   }
 
   /**
-   * Whether a Stroke along raw `samples` would come within an Enemy's
-   * width of it, where it is now (`ArenaQuery.nearEnemy`).
+   * Whether a Stroke along raw `samples` would come within
+   * `ENEMY_DRAW_MARGIN` of an Enemy, where it is now (`ArenaQuery.nearEnemy`).
    */
   nearEnemy(samples: readonly Vec2[]): boolean {
-    const widest = Math.max(0, ...this.enemiesKind.views.map(({ width }) => width));
-    return widest > 0 && this.query.nearEnemy(samples, widest);
+    return this.query.nearEnemy(samples, ENEMY_DRAW_MARGIN);
   }
 
   /**

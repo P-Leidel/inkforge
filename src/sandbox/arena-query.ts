@@ -543,21 +543,19 @@ export class ArenaQuery {
 
   /**
    * Near an Enemy: whether a path along `samples`, in world coordinates,
-   * comes within an Enemy body's width of its outline, where it is now:
-   * every body an Enemy has counts, each by its own width. `widest` is at
-   * least the widest Enemy body's width, how far around the path to look.
+   * comes within `margin` of an Enemy body's outline, where it is now:
+   * every body an Enemy has counts.
    */
-  nearEnemy(samples: readonly Vec2[], widest: number): boolean {
+  nearEnemy(samples: readonly Vec2[], margin: number): boolean {
     if (samples.length === 0) return false;
     const path: Segment[] =
       samples.length === 1
         ? [{ a: samples[0]!, b: samples[0]! }]
         : samples.slice(1).map((b, k) => ({ a: samples[k]!, b }));
-    return this.near(polygonBounds(samples), widest).some(({ body, form }) => {
+    return this.near(polygonBounds(samples), margin).some(({ body, form }) => {
       if (form.kind !== 'enemy') return false;
-      const { minX, maxX } = polygonBounds(this.enemyOutline(body, form));
       return this.enemyParts(body, form).some((part) =>
-        path.some(({ a, b }) => capsuleOverlapsPolygon(a, b, maxX - minX, part, 0)),
+        path.some(({ a, b }) => capsuleOverlapsPolygon(a, b, margin, part, 0)),
       );
     });
   }
